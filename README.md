@@ -62,7 +62,23 @@ folds ASCII letters; non-ASCII characters match exactly). Escape closes find
 and returns focus to the document. Source and Live preview support find,
 including table text; invoking it in Reading view switches to Source mode.
 Ctrl+F also works from the notebook sidebar. Find state resets when another
-document is loaded. Replacement and notebook-wide search are not included.
+document is loaded. Replacement is not included.
+
+`Ctrl+Shift+F` or the **Search** toolbar button searches literal text across all
+`.md` and `.markdown` files in the active notebook, including unsaved changes in
+the open note. The sidebar search panel groups matches by file and shows line
+numbers and highlighted snippets. **Match case** uses the same ASCII case rules
+as Ctrl+F. Up/Down selects a result; Enter or a click opens it and selects the
+match, with the usual Save/Discard/Cancel protection. Reading view switches to
+Source for navigation. Escape returns focus to the editor; **Files** returns to
+the notebook tree. Reopening Search retains its query and results until switching
+notebooks. Without an active notebook, Search asks you to open one.
+
+Search refreshes after edits to the open note. Use **Refresh** for external file
+changes. Scans run in the background and superseded queries are cancelled.
+Filesystem links and `.gpui-note` are excluded. Searches show up to 2,000 matches;
+files over 8 MiB and unreadable/non-UTF-8 files are skipped with a visible count.
+A changed match is rechecked against the loaded text before navigation.
 
 ## Check
 

@@ -99,3 +99,4 @@ preserves prefixes and continues numbering and unchecked tasks in both modes.
 Live preview renders nested bullets with lossless mappings. Parser tests and
 in-app diagnostics cover subtree edits, selection boundaries, Unicode, CRLF,
 undo/redo, disabled editing, Reading hierarchy, and nested checkbox hit geometry.
+`select_source_range()` validates UTF-8 byte boundaries, selects and reveals a source match without changing text or undo history, for notebook-wide search navigation.

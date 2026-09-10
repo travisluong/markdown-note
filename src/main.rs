@@ -8,6 +8,8 @@ mod find_diagnostics;
 mod goto;
 mod notebook;
 mod notebook_ui;
+mod search;
+mod search_ui;
 mod settings_ui;
 mod templates;
 
@@ -32,6 +34,7 @@ actions!(
         Open,
         GoTo,
         CommandPalette,
+        SearchAllFiles,
         ToggleTasks,
         Save,
         SourceMode,
@@ -64,6 +67,7 @@ enum Next {
     Close,
     File(PathBuf),
     TreeFile(PathBuf),
+    SearchResult(search::Destination),
     RemoveNotebook(PathBuf),
     Notebook { path: PathBuf, create: bool },
 }
@@ -163,6 +167,8 @@ struct Notes {
     autosave_subscription: Option<Subscription>,
     autosave_validation: Option<String>,
     palette: Option<goto::Palette>,
+    search: Option<search_ui::SearchPanel>,
+    search_destination: Option<search::Destination>,
     document: Option<Document>,
     editor: Entity<InputState>,
     editor_subscription: Subscription,
@@ -210,6 +216,8 @@ impl Notes {
             autosave_subscription: None,
             autosave_validation: None,
             palette: None,
+            search: None,
+            search_destination: None,
             document: None,
             editor,
             editor_subscription,
@@ -240,6 +248,7 @@ impl Notes {
             if matches!(event, InputEvent::Change) {
                 this.check_dirty(window, cx);
                 this.schedule_autosave(window, cx);
+                this.schedule_search(window, cx);
                 if this.mode == ViewMode::Reading {
                     this.reading_text = this.editor.read(cx).value();
                 }
@@ -384,6 +393,11 @@ impl Notes {
             Next::Close => self.finish_close(window, cx),
             Next::File(path) => self.open_path(path, false, window, cx),
             Next::TreeFile(path) => self.open_path(path, true, window, cx),
+            Next::SearchResult(destination) => {
+                let path = destination.path.clone();
+                self.search_destination = Some(destination);
+                self.open_path(path, false, window, cx);
+            }
             Next::RemoveNotebook(path) => self.remove_notebook(path, window, cx),
             Next::Notebook { path, create } => self.activate_notebook(path, create, window, cx),
         }
@@ -586,6 +600,11 @@ impl Render for Notes {
             }))
             .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
             .on_action(
+                cx.listener(|this, _: &SearchAllFiles, window, cx| {
+                    this.open_search_all(window, cx)
+                }),
+            )
+            .on_action(
                 cx.listener(|this, _: &CommandPalette, window, cx| {
                     this.command_palette(window, cx)
                 }),
@@ -659,6 +678,15 @@ impl Render for Notes {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.show_menu(MenuKind::Notebooks, window, cx)
                             })),
+                    )
+                    .child(
+                        Button::new("search-all")
+                            .ghost()
+                            .small()
+                            .label("Search")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.open_search_all(window, cx)),
+                            ),
                     ),
             )
             .when_some(self.saves.error.clone(), |view, error| {
@@ -674,7 +702,11 @@ impl Render for Notes {
                     .min_h_0()
                     .overflow_hidden()
                     .when(self.notebooks.active.is_some(), |view| {
-                        view.child(self.render_sidebar(window, cx))
+                        if self.search.as_ref().is_some_and(|panel| panel.visible) {
+                            view.child(self.render_search_panel(cx))
+                        } else {
+                            view.child(self.render_sidebar(window, cx))
+                        }
                     })
                     .child(
                         div()
@@ -739,6 +771,7 @@ fn main() {
             cx.bind_keys([
                 KeyBinding::new("ctrl-o", GoTo, Some("Notes")),
                 KeyBinding::new("ctrl-f", Search, Some("Notes")),
+                KeyBinding::new("ctrl-shift-f", SearchAllFiles, Some("Notes")),
                 KeyBinding::new("ctrl-p", CommandPalette, Some("Notes")),
                 KeyBinding::new("ctrl-l", ToggleTasks, Some("DocumentEditor")),
                 KeyBinding::new("ctrl-s", Save, Some("Notes")),

@@ -253,12 +253,13 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
         crate::goto::diagnostic_palette(&notes, cx).await;
         crate::goto::diagnostic_task_shortcut(&notes, cx).await;
         crate::find_diagnostics::run(&notes, cx).await;
+        crate::search_ui::diagnostic_search(&notes, cx).await;
         let pending = notes.update(cx, |this, _| this.notebooks.persistence.take()).unwrap();
         if let Some(pending) = pending { pending.await; }
         let restored = notebook::load_index(&index).unwrap();
         assert_eq!(restored.notebooks.len(), 1);
         assert_eq!(restored.active, Some(fs::canonicalize(&first).unwrap()));
-        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration, notebook removal, per-notebook appearance, font bounds, session preferences, palette keyboard navigation and focus restoration, Ctrl+F matching and keyboard navigation\n").unwrap();
+        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration, notebook removal, per-notebook appearance, font bounds, session preferences, palette keyboard navigation and focus restoration, Ctrl+F matching and keyboard navigation, Ctrl+Shift+F notebook search and save-aware result navigation\n").unwrap();
         drop(fixture);
         cx.update(|_, cx| cx.quit()).unwrap();
     }).detach();

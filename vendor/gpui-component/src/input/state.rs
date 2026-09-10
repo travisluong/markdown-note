@@ -846,6 +846,26 @@ impl InputState {
         &self.text
     }
 
+    /// Select and reveal a UTF-8 source range without modifying the document.
+    /// Returns false for an invalid range or a split UTF-8 character.
+    pub fn select_source_range(
+        &mut self,
+        range: std::ops::Range<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let text = self.text.to_string();
+        if range.start > range.end || text.get(range.clone()).is_none() {
+            return false;
+        }
+        self.move_to(range.start, None, cx);
+        self.selection_reversed = false;
+        self.select_to(range.end, cx);
+        self.scroll_to(range.start, None, cx);
+        self.focus(window, cx);
+        true
+    }
+
     /// Return the (0-based) [`Position`] of the cursor.
     pub fn cursor_position(&self) -> Position {
         let offset = self.cursor();

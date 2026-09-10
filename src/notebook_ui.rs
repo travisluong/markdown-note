@@ -481,6 +481,7 @@ impl Notes {
             .is_some_and(|book| book.root == path)
         {
             self.notebooks.active = None;
+            self.search = None;
             self.apply_appearance(window, cx);
             self.notebooks.generation += 1;
             self.notebooks.directories.clear();
@@ -605,6 +606,7 @@ impl Notes {
                 this.busy = false;
                 match result {
                     Ok((book, document)) => {
+                        this.search = None;
                         this.notebooks.index.register(book.root.clone());
                         this.notebooks.active = Some(book);
                         this.apply_appearance(window, cx);
@@ -717,8 +719,13 @@ impl Notes {
                         if keep_tree_focus {
                             this.notebooks.tree_focus.focus(window);
                         }
+                        if let Some(destination) = this.search_destination.take() {
+                            this.reveal_search_result(destination, window, cx);
+                        }
+                        this.schedule_search(window, cx);
                     }
                     Err(error) => {
+                        this.search_destination = None;
                         if keep_tree_focus {
                             this.restore_tree_cursor(window, cx);
                         }
