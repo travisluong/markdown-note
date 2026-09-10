@@ -1067,9 +1067,11 @@ impl Notes {
                                     .items_center()
                                     .overflow_hidden()
                                     .whitespace_nowrap()
+                                    .border_1()
+                                    .border_color(gpui::transparent_black())
                                     .when(selected, |view| view.bg(cx.theme().accent))
                                     .when(this.notebooks.cursor == Some(index), |view| {
-                                        view.border_1().border_color(cx.theme().border)
+                                        view.border_color(cx.theme().border)
                                     })
                                     .when(row.disabled, |view| {
                                         view.text_color(cx.theme().muted_foreground)
