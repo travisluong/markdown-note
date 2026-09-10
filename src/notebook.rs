@@ -11,6 +11,34 @@ const VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+pub struct Autosave {
+    pub enabled: bool,
+    pub delay_ms: u64,
+}
+impl Default for Autosave {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            delay_ms: 1_000,
+        }
+    }
+}
+impl Autosave {
+    pub fn normalized(mut self) -> Self {
+        self.delay_ms = self.delay_ms.clamp(100, 60_000);
+        self
+    }
+    pub fn parse_delay(value: &str) -> Option<u64> {
+        value
+            .trim()
+            .parse()
+            .ok()
+            .filter(|value| (100..=60_000).contains(value))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Appearance {
     pub content_font_size: u16,
     pub ui_font_size: u16,
@@ -42,6 +70,8 @@ pub struct Settings {
     pub expanded: BTreeSet<PathBuf>,
     #[serde(default)]
     pub appearance: Appearance,
+    #[serde(default)]
+    pub autosave: Autosave,
 }
 
 impl Default for Settings {
@@ -51,6 +81,7 @@ impl Default for Settings {
             last_file: None,
             expanded: BTreeSet::new(),
             appearance: Appearance::default(),
+            autosave: Autosave::default(),
         }
     }
 }
@@ -345,6 +376,29 @@ mod tests {
 
     #[test]
     fn appearance_compatibility_and_round_trip() {
+        let old: Settings =
+            serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
+        assert_eq!(old.autosave, Autosave::default());
+        assert_eq!(
+            serde_json::from_str::<Autosave>(r#"{"enabled":false}"#)
+                .unwrap()
+                .delay_ms,
+            1000
+        );
+        for value in ["", "99", "60001", "1.5", "-100", "abc"] {
+            assert_eq!(Autosave::parse_delay(value), None);
+        }
+        for value in [100, 1000, 60000] {
+            assert_eq!(Autosave::parse_delay(&value.to_string()), Some(value));
+        }
+        let settings = Autosave {
+            enabled: false,
+            delay_ms: 2500,
+        };
+        assert_eq!(
+            serde_json::from_str::<Autosave>(&serde_json::to_string(&settings).unwrap()).unwrap(),
+            settings
+        );
         let old: Settings =
             serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
         assert_eq!(old.appearance, Appearance::default());

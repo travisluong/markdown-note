@@ -25,6 +25,7 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
         editor.set_cursor_position(Position::new(0, 0), window, cx);
     });
     notes.update(cx, |notes, cx| {
+        notes.saves.session.enabled = false;
         notes.editor_subscription = Notes::subscribe_editor(&diagnostic, window, cx);
         notes.editor = diagnostic;
         notes.document = Some(Document {

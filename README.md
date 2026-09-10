@@ -112,3 +112,7 @@ fixtures, hardware, limitations, and reproduction commands.
 Ctrl+O searches all Markdown files and folders in the active notebook, including collapsed folders. Results show relative paths; Up/Down selects, Enter opens, and Escape returns focus. File > Open still opens external files; without a notebook Ctrl+O uses that picker.
 
 Task checkboxes are clickable in Live preview and Reading view, including [X]. Toggles are undoable and preserve the rest of the Markdown. Enter continues a task unchecked in either editable mode; Enter on an empty task removes its marker and moves to the next line.
+
+Autosave is enabled by default after 1,000 ms without edits. Settings offers an enable switch and a delay from 100 to 60,000 ms; invalid input keeps the previous setting. Preferences persist per notebook, while external files use session preferences. Saves preserve BOM and newline conventions, allow continued typing, and serialize with manual saves and navigation. Failures leave changes dirty with a nonmodal error; edit again or Save to retry.
+
+The opt-in GPUI_NOTE_AUTOSAVE_CHECK diagnostic (editor-diagnostics build) exercises timers, save races, failure recovery, task autosave, and validation against disposable files.

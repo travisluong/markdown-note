@@ -56,6 +56,29 @@ impl Notes {
             return;
         }
         self.menu = None;
+        let delay = self.autosave_settings().delay_ms.to_string();
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(delay));
+        self.autosave_validation = None;
+        self.autosave_subscription =
+            Some(
+                cx.subscribe_in(&input, window, |this, input, event, window, cx| {
+                    if !matches!(event, InputEvent::Change) {
+                        return;
+                    }
+                    let value = input.read(cx).value();
+                    if let Some(delay_ms) = notebook::Autosave::parse_delay(&value) {
+                        this.autosave_validation = None;
+                        let mut settings = this.autosave_settings();
+                        settings.delay_ms = delay_ms;
+                        this.update_autosave(settings, window, cx);
+                    } else {
+                        this.autosave_validation =
+                            Some("Enter a whole number from 100 to 60,000 ms.".into());
+                    }
+                    cx.notify();
+                }),
+            );
+        self.autosave_delay = Some(input);
         let owner = cx.weak_entity();
         window.open_dialog(cx, move |dialog, window, cx| {
             owner
@@ -135,6 +158,23 @@ impl Notes {
             );
         }
         body = body
+            .child(
+                Switch::new("autosave-enabled")
+                    .label("Autosave")
+                    .checked(self.autosave_settings().enabled)
+                    .on_click(cx.listener(|this, enabled: &bool, window, cx| {
+                        let mut settings = this.autosave_settings();
+                        settings.enabled = *enabled;
+                        this.update_autosave(settings, window, cx);
+                    })),
+            )
+            .child("Autosave delay (milliseconds)")
+            .when_some(self.autosave_delay.clone(), |view, input| {
+                view.child(Input::new(&input))
+            })
+            .when_some(self.autosave_validation.clone(), |view, message| {
+                view.child(div().text_sm().text_color(cx.theme().danger).child(message))
+            })
             .child(
                 Switch::new("dark-mode")
                     .label("Dark mode")

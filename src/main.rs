@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod autosave;
 #[cfg(feature = "editor-diagnostics")]
 mod benchmark;
 mod goto;
@@ -147,6 +148,10 @@ fn save_file(path: &Path, text: &str, bom: bool, newline: Newline) -> io::Result
 }
 
 struct Notes {
+    saves: autosave::SaveState,
+    autosave_delay: Option<Entity<InputState>>,
+    autosave_subscription: Option<Subscription>,
+    autosave_validation: Option<String>,
     palette: Option<goto::Palette>,
     document: Option<Document>,
     editor: Entity<InputState>,
@@ -175,13 +180,8 @@ impl Notes {
                 if this.busy {
                     return false;
                 }
-                if this.dirty(cx) {
-                    this.request(Next::Close, window, cx);
-                    false
-                } else {
-                    this.finish_close(window, cx);
-                    false
-                }
+                this.request(Next::Close, window, cx);
+                false
             })
             .unwrap_or(true)
         });
@@ -190,6 +190,10 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            saves: autosave::SaveState::default(),
+            autosave_delay: None,
+            autosave_subscription: None,
+            autosave_validation: None,
             palette: None,
             document: None,
             editor,
@@ -220,6 +224,7 @@ impl Notes {
         cx.subscribe_in(editor, window, |this, _, event, window, cx| {
             if matches!(event, InputEvent::Change) {
                 this.check_dirty(window, cx);
+                this.schedule_autosave(window, cx);
                 if this.mode == ViewMode::Reading {
                     this.reading_text = this.editor.read(cx).value();
                 }
@@ -303,6 +308,13 @@ impl Notes {
         if self.busy {
             return;
         }
+        self.saves.timer = None;
+        if self.saves.writing {
+            self.saves.pending = Some(autosave::Pending::Request(next));
+            self.busy = true;
+            cx.notify();
+            return;
+        }
         if !self.dirty(cx) {
             self.continue_with(next, window, cx);
             return;
@@ -344,6 +356,7 @@ impl Notes {
                 if matches!(next, Next::TreeFile(_)) {
                     self.restore_tree_cursor(window, cx);
                 }
+                self.schedule_autosave(window, cx);
                 self.refresh(window, cx);
             }
         }
@@ -392,43 +405,6 @@ impl Notes {
                     }
                     Ok(None) => {}
                     Err(error) => this.error("Could not open file", error, window, cx),
-                }
-                this.refresh(window, cx);
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    fn save(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy {
-            return;
-        }
-        let Some(document) = &self.document else {
-            return;
-        };
-        let (path, bom, newline) = (document.path.clone(), document.bom, document.newline);
-        let text = self.editor.read(cx).value().to_string();
-        self.busy = true;
-        let task = cx
-            .background_executor()
-            .spawn(async move { save_file(&path, &text, bom, newline).map(|()| text) });
-        cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
-                match result {
-                    Ok(text) => {
-                        if let Some(document) = &mut this.document {
-                            document.saved_rope = Rope::from(text.as_str());
-                            document.saved = text;
-                            this.dirty_task = None;
-                            this.dirty_revision += 1;
-                            this.dirty_cached = false;
-                        }
-                        this.continue_with(next, window, cx);
-                    }
-                    Err(error) => this.error("Could not save file", error, window, cx),
                 }
                 this.refresh(window, cx);
             });
@@ -648,6 +624,9 @@ impl Render for Notes {
                             })),
                     ),
             )
+            .when_some(self.saves.error.clone(), |view, error| {
+                view.child(div().p_2().text_sm().child(error))
+            })
             .when_some(self.notebooks.notice.clone(), |view, notice| {
                 view.child(div().p_2().text_sm().child(notice))
             })
@@ -754,7 +733,8 @@ fn main() {
                     notes.update(cx, |this, cx| this.apply_appearance(window, cx));
                     let diagnostic_run = cfg!(feature = "editor-diagnostics")
                         && (std::env::var_os("GPUI_NOTE_BENCH").is_some()
-                            || std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK").is_some());
+                            || std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK").is_some()
+                            || std::env::var_os("GPUI_NOTE_AUTOSAVE_CHECK").is_some());
                     if !diagnostic_run {
                         notes.update(cx, |this, cx| this.restore_notebooks(window, cx));
                     }
@@ -768,6 +748,10 @@ fn main() {
                     #[cfg(feature = "editor-diagnostics")]
                     if let Some(output) = std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK") {
                         notebook_ui::diagnostics::start(notes.clone(), output.into(), window, cx);
+                    }
+                    #[cfg(feature = "editor-diagnostics")]
+                    if let Some(output) = std::env::var_os("GPUI_NOTE_AUTOSAVE_CHECK") {
+                        autosave::diagnostics::start(notes.clone(), output.into(), window, cx);
                     }
                     let view = cx.new(|cx| NotesWindow {
                         _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),

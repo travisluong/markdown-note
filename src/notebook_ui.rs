@@ -637,6 +637,9 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.saves.timer = None;
+        self.saves.identity += 1;
+        self.saves.error = None;
         // A fresh editor prevents undo from restoring another document.
         let text = document
             .as_ref()
