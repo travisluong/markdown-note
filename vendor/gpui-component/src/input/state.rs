@@ -667,7 +667,9 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.disabled { return; }
+        if self.disabled {
+            return;
+        }
         let history = std::mem::replace(&mut self.history, History::new());
         self.history = history.group_interval(std::time::Duration::ZERO);
         self.list_enter_boundary = false;
@@ -1331,6 +1333,26 @@ impl InputState {
                 + painted.origin,
             painted.size,
         ))
+    }
+
+    /// Create or toggle tasks on intersected lines as one isolated edit.
+    pub fn toggle_selected_tasks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled || !self.mode.is_multi_line() {
+            return;
+        }
+        let edit =
+            super::live_preview::toggle_lines(&self.text.to_string(), self.selected_range.into());
+        let reversed = self.selection_reversed;
+        let range = self.range_to_utf16(&edit.range);
+        let history = std::mem::replace(&mut self.history, History::new());
+        self.history = history.group_interval(std::time::Duration::ZERO);
+        self.list_enter_boundary = false;
+        self.replace_text_in_range_silent(Some(range), &edit.text, window, cx);
+        self.list_enter_boundary = true;
+        self.selected_range = edit.selection.into();
+        self.selection_reversed = reversed;
+        self.selected_word_range = None;
+        cx.notify();
     }
 
     /// Toggle a task's UTF-8 state byte only when its source snapshot is current.
@@ -2321,6 +2343,22 @@ impl InputState {
 
     #[doc(hidden)]
     pub fn diagnostic_checks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for live in [false, true] {
+            self.set_live_preview(live, cx);
+            let original = "  plain\n> - [X] 你好\nlast";
+            self.set_value(original, window, cx);
+            let end = original.find("last").unwrap();
+            self.selected_range = (0..end).into();
+            self.selection_reversed = true;
+            self.toggle_selected_tasks(window, cx);
+            assert_eq!(self.value().as_str(), "  - [ ] plain\n> - [ ] 你好\nlast");
+            assert!(self.selection_reversed);
+            assert_eq!(self.selected_range.end, end + 6);
+            self.undo(&Undo, window, cx);
+            assert_eq!(self.value().as_str(), original);
+            self.redo(&Redo, window, cx);
+            assert_eq!(self.value().as_str(), "  - [ ] plain\n> - [ ] 你好\nlast");
+        }
         self.set_value("a你好z", window, cx);
         self.selected_range = (1..7).into();
         self.selection_reversed = true;
@@ -2492,7 +2530,10 @@ impl InputState {
             .find_map(|(row, line)| super::live_preview::task_state(line).map(|state| (row, state)))
             .unwrap();
         let hit = self.task_hit_bounds(task.0, task.1).unwrap();
-        assert_eq!(hit.size, gpui::size(window.rem_size() * 0.875, window.rem_size() * 0.875));
+        assert_eq!(
+            hit.size,
+            gpui::size(window.rem_size() * 0.875, window.rem_size() * 0.875)
+        );
         let layout = self.last_layout.as_ref().unwrap();
         let line = &layout.lines[task.0 - layout.visible_range.start];
         let (state, checked, width) = line.task.unwrap();
@@ -2504,7 +2545,11 @@ impl InputState {
         opposite.segment_start = line.segment_start;
         opposite.segment_ranges = line.segment_ranges.clone();
         opposite.set_wrapped_lines(line.wrapped_lines.clone());
-        assert_eq!(line.task_bounds(layout.line_height), opposite.task_bounds(layout.line_height), "checked state does not change painted bounds");
+        assert_eq!(
+            line.task_bounds(layout.line_height),
+            opposite.task_bounds(layout.line_height),
+            "checked state does not change painted bounds"
+        );
         let original = self.text.to_string();
         self.on_mouse_down(
             &MouseDownEvent {

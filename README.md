@@ -95,7 +95,7 @@ a manual smoke test.
 
 Live preview recognizes one to six leading `#` characters immediately, even
 without a space. Heading hashes and separating whitespace hide off the cursor source line and reappear on that line. `- ` becomes a bullet and `1. ` starts
-an ordered item. Only unindented lists are supported. Matched `**bold**`,
+an ordered item. Task lists also support indentation and quote prefixes. Matched `**bold**`,
 `__bold__`, `*italic*`, and `_italic_` delimiters disappear off the cursor's source
 line and reappear on that line. Unsupported syntax stays literal.
 
@@ -132,3 +132,10 @@ unsupported alphabetic tokens, unmatched brackets, nested brackets, and trailing
 backslashes are rejected. This is a supported subset of
 [Moment formatting](https://momentjs.com/docs/#/displaying/format/), translated to
 [Chrono formatting](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
+
+Ctrl+L in the focused Source or Live preview document editor creates or toggles
+tasks on the current line or every selected line. A final line touched only at
+its starting boundary is excluded. Existing tasks toggle independently; other
+list items gain `[ ] `, and plain or empty lines gain `- [ ] `. Indentation,
+quote prefixes, ordered/unordered markers, Unicode, and selection direction are
+preserved. The entire selection changes in one undoable edit.

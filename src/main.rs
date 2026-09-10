@@ -30,6 +30,7 @@ actions!(
         Open,
         GoTo,
         CommandPalette,
+        ToggleTasks,
         Save,
         SourceMode,
         LivePreview,
@@ -510,6 +511,13 @@ impl Render for Notes {
                 .into_any_element()
         } else if self.mode != ViewMode::Reading {
             div()
+                .key_context("DocumentEditor")
+                .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {
+                    if this.can_insert_date() && this.editor.focus_handle(cx).is_focused(window) {
+                        this.editor
+                            .update(cx, |editor, cx| editor.toggle_selected_tasks(window, cx));
+                    }
+                }))
                 .size_full()
                 .when(self.mode == ViewMode::Source, |view| {
                     view.font_family("Consolas")
@@ -719,6 +727,7 @@ fn main() {
             cx.bind_keys([
                 KeyBinding::new("ctrl-o", GoTo, Some("Notes")),
                 KeyBinding::new("ctrl-p", CommandPalette, Some("Notes")),
+                KeyBinding::new("ctrl-l", ToggleTasks, Some("DocumentEditor")),
                 KeyBinding::new("ctrl-s", Save, Some("Notes")),
                 KeyBinding::new("alt-f", FileMenu, Some("Notes")),
                 KeyBinding::new("alt-v", ViewMenu, Some("Notes")),

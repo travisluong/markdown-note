@@ -251,6 +251,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
             step += 1;
         }
         crate::goto::diagnostic_palette(&notes, cx).await;
+        crate::goto::diagnostic_task_shortcut(&notes, cx).await;
         let pending = notes.update(cx, |this, _| this.notebooks.persistence.take()).unwrap();
         if let Some(pending) = pending { pending.await; }
         let restored = notebook::load_index(&index).unwrap();

@@ -16,8 +16,11 @@ fn quote_prefixes(line: &str) -> Vec<Range<usize>> {
     let mut quote_prefixes = Vec::new();
     let mut prefix = 0;
     loop {
-        let spaces = line[prefix..].bytes().take_while(|b| *b == b' ').count();
-        if spaces > 3 || !line[prefix + spaces..].starts_with('>') {
+        let spaces = line[prefix..]
+            .bytes()
+            .take_while(|b| matches!(b, b' ' | b'\t'))
+            .count();
+        if !line[prefix + spaces..].starts_with('>') {
             break;
         }
         let start = prefix;
@@ -30,20 +33,37 @@ fn quote_prefixes(line: &str) -> Vec<Range<usize>> {
     quote_prefixes
 }
 
-// Byte offset of the state character, including any explicit quote prefixes.
-pub(super) fn task_state(line: &str) -> Option<usize> {
-    let prefixes = quote_prefixes(line);
-    let start = prefixes.last().map_or(0, |r| r.end);
+fn content_start(line: &str) -> usize {
+    let start = quote_prefixes(line).last().map_or(0, |r| r.end);
+    start
+        + line[start..]
+            .bytes()
+            .take_while(|b| matches!(b, b' ' | b'\t'))
+            .count()
+}
+
+fn list_content_start(line: &str, start: usize) -> Option<usize> {
     let body = &line[start..];
-    let prefix = if body.starts_with("- ") || body.starts_with("* ") || body.starts_with("+ ") {
-        2
+    let marker = if body.starts_with(['-', '*', '+']) {
+        1
     } else {
-        let n = body.bytes().take_while(u8::is_ascii_digit).count();
-        if n == 0 || !body[n..].starts_with(". ") {
+        let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 || !body[digits..].starts_with(['.', ')']) {
             return None;
         }
-        n + 2
+        digits + 1
     };
+    let spaces = body[marker..]
+        .bytes()
+        .take_while(|b| matches!(b, b' ' | b'\t'))
+        .count();
+    (spaces > 0).then_some(start + marker + spaces)
+}
+
+// Byte offset of the state character, including any explicit quote prefixes.
+pub(super) fn task_state(line: &str) -> Option<usize> {
+    let body = line;
+    let prefix = list_content_start(line, content_start(line))?;
     let marker = body.as_bytes().get(prefix..prefix + 3)?;
     if marker[0] == b'['
         && matches!(marker[1], b' ' | b'x' | b'X')
@@ -53,7 +73,7 @@ pub(super) fn task_state(line: &str) -> Option<usize> {
             .get(prefix + 3)
             .is_none_or(|c| c.is_ascii_whitespace())
     {
-        Some(start + prefix + 1)
+        Some(prefix + 1)
     } else {
         None
     }
@@ -125,7 +145,9 @@ impl Presentation {
         if let Some(state) = result.task {
             result.bullet = false;
             // Retain a mapped fixed-width object; hide the rest of its marker.
-            result.hidden.extend([0..state, state + 1..state + 2]);
+            result
+                .hidden
+                .extend([content_start(line)..state, state + 1..state + 2]);
         }
         if result.heading > 0 {
             let separator = line[hashes..]
@@ -193,14 +215,14 @@ impl Presentation {
         let mut source_to_display = vec![0; source.len() + 1];
         let mut display_to_source = vec![0];
         let mut hidden_index = 0;
+        let task_start = self.task.map(|_| content_start(source));
         for (ix, ch) in source.char_indices() {
             while self.hidden.get(hidden_index).is_some_and(|r| r.end <= ix) {
                 hidden_index += 1;
             }
-            let task_marker = self.task.is_some_and(|state| {
-                (self.quote_prefixes.last().map_or(0, |r| r.end)..state).contains(&ix)
-                    || ix == state + 1
-            });
+            let task_marker = self
+                .task
+                .is_some_and(|state| (task_start.unwrap()..state).contains(&ix) || ix == state + 1);
             let hidden = task_marker
                 || !reveal
                     && self
@@ -352,4 +374,112 @@ pub fn editor_work() -> EditorWork {
 }
 pub(super) fn record_shaped(bytes: usize) {
     SHAPED.fetch_add(bytes as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// A single buffer replacement and the mapped, forward selection range.
+pub(super) struct TaskEdit {
+    pub range: Range<usize>,
+    pub text: String,
+    pub selection: Range<usize>,
+}
+
+pub(super) fn toggle_lines(source: &str, selection: Range<usize>) -> TaskEdit {
+    let start = source[..selection.start].rfind('\n').map_or(0, |i| i + 1);
+    let last = if selection.end > selection.start && source.as_bytes()[selection.end - 1] == b'\n' {
+        selection.end - 1
+    } else {
+        selection.end
+    };
+    let end = source[last..].find('\n').map_or(source.len(), |i| last + i);
+    let mut replacements = Vec::new();
+    let mut offset = start;
+    for line in source[start..end].split('\n') {
+        if let Some(state) = task_state(line) {
+            replacements.push((
+                offset + state..offset + state + 1,
+                if line.as_bytes()[state] == b' ' {
+                    "x"
+                } else {
+                    " "
+                },
+            ));
+        } else {
+            let content = content_start(line);
+            let (at, marker) =
+                list_content_start(line, content).map_or((content, "- [ ] "), |at| (at, "[ ] "));
+            replacements.push((offset + at..offset + at, marker));
+        }
+        offset += line.len() + 1;
+    }
+    let map = |position: usize| {
+        position
+            + replacements
+                .iter()
+                .filter(|(range, _)| range.start <= position)
+                .map(|(range, text)| text.len() - range.len())
+                .sum::<usize>()
+    };
+    let mapped = map(selection.start)..map(selection.end);
+    let mut text = String::new();
+    let mut from = start;
+    for (range, replacement) in replacements {
+        text.push_str(&source[from..range.start]);
+        text.push_str(replacement);
+        from = range.end;
+    }
+    text.push_str(&source[from..end]);
+    TaskEdit {
+        range: start..end,
+        text,
+        selection: mapped,
+    }
+}
+
+#[cfg(test)]
+mod task_tests {
+    use super::*;
+    fn apply(source: &str, selection: Range<usize>) -> (String, Range<usize>) {
+        let edit = toggle_lines(source, selection);
+        let mut result = source.to_owned();
+        result.replace_range(edit.range, &edit.text);
+        (result, edit.selection)
+    }
+    #[test]
+    fn mixed_lines_and_prefixes() {
+        let source = "  plain\n> > - [X] café\n\t12. ordered\n  > + bullet\n\n- [ ] 你好\n";
+        let (result, selection) = apply(source, 0..source.len());
+        assert_eq!(
+            result,
+            "  - [ ] plain\n> > - [ ] café\n\t12. [ ] ordered\n  > + [ ] bullet\n- [ ] \n- [x] 你好\n"
+        );
+        assert_eq!(selection.end, result.len());
+        assert!(result.is_char_boundary(selection.start));
+        for line in result.lines() {
+            assert!(task_state(line).is_some(), "{line}");
+        }
+    }
+    #[test]
+    fn caret_empty_lines_and_final_boundary() {
+        assert_eq!(apply("", 0..0), ("- [ ] ".into(), 6..6));
+        assert_eq!(apply("abc\n", 4..4), ("abc\n- [ ] ".into(), 10..10));
+        assert_eq!(apply("abc\ndef", 0..4), ("- [ ] abc\ndef".into(), 6..10));
+        assert_eq!(
+            apply("abc\ndef", 2..5),
+            ("- [ ] abc\n- [ ] def".into(), 8..17)
+        );
+        assert_eq!(apply("你好 café", 3..3), ("- [ ] 你好 café".into(), 9..9));
+        assert_eq!(apply("  > 9) x", 8..8).0, "  > 9) [ ] x");
+        assert_eq!(apply("\t> >\t*\ttext", 0..0).0, "\t> >\t*\t[ ] text");
+    }
+    #[test]
+    fn independent_toggle_and_preserved_indentation() {
+        let source = "  - [ ] a\n  - [x] b\n>  2) [X] c";
+        assert_eq!(
+            apply(source, 0..source.len()).0,
+            "  - [x] a\n  - [ ] b\n>  2) [ ] c"
+        );
+        let parsed = Presentation::parse("  - [ ] café");
+        assert_eq!(parsed.display("  - [ ] café", true).text, "  \u{fffc} café");
+        assert_eq!(task_state("  - [bad]"), None);
+    }
 }

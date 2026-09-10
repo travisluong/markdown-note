@@ -501,3 +501,55 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
         .unwrap();
     }
 }
+
+#[cfg(feature = "editor-diagnostics")]
+pub(super) async fn diagnostic_task_shortcut(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
+    for step in 0..=8 {
+        Timer::after(std::time::Duration::from_millis(150)).await;
+        cx.update(|window, cx| match step {
+            1 | 4 | 7 => {
+                window.dispatch_keystroke(Keystroke::parse("ctrl-l").unwrap(), cx);
+            }
+            _ => notes.update(cx, |this, cx| match step {
+                0 => {
+                    this.set_mode(ViewMode::Source, window, cx);
+                    this.editor
+                        .update(cx, |e, cx| e.set_value("- [ ] task", window, cx));
+                }
+                2 => {
+                    assert_eq!(this.editor.read(cx).value().as_str(), "- [x] task");
+                    this.set_mode(ViewMode::Reading, window, cx);
+                }
+                3 => {}
+                5 => {
+                    assert_eq!(
+                        this.editor.read(cx).value().as_str(),
+                        "- [x] task",
+                        "Reading has no task shortcut"
+                    );
+                    this.set_mode(ViewMode::LivePreview, window, cx);
+                    this.command_palette(window, cx);
+                }
+                6 => {}
+                8 => {
+                    assert_eq!(
+                        this.palette
+                            .as_ref()
+                            .unwrap()
+                            .query
+                            .read(cx)
+                            .value()
+                            .as_str(),
+                        "",
+                        "Palette input has no task shortcut"
+                    );
+                    assert_eq!(this.editor.read(cx).value().as_str(), "- [x] task");
+                    window.close_dialog(cx);
+                    this.close_palette(window, cx);
+                }
+                _ => unreachable!(),
+            }),
+        })
+        .unwrap();
+    }
+}
