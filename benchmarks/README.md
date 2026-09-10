@@ -94,3 +94,33 @@ Remove-Item Env:GPUI_NOTE_AUTOSAVE_CHECK
 The benchmark and keyboard smoke check need a rendered window; launching them
 hidden can prevent frame-driven checks from running. Native picker buttons,
 physical mouse interaction, and visual appearance still warrant a manual check.
+
+
+## Editable tables (2026-09-10)
+
+The release run in [tables.csv](tables.csv) retains the existing fixtures and
+adds a 10,000-body-row GFM table with Unicode and inline emphasis. It uses the
+same 60-operation groups, six settling frames, and next-frame p95 measurement.
+The final run measured large-table edits at 11.306 ms p95 and scrolling at
+6.552 ms p95. The existing long-line edit case measured 41.771 ms p95; all edit
+and scroll groups remain below the 50 ms / 33 ms targets. Cold table parsing,
+mode switches, and structural row/column commands are not timing claims.
+
+The parsed-line column counts the existing line-local presentation parser;
+it does not count GFM block-parser bytes. Integration tests separately assert
+that ordinary edits outside tables and ordinary cell typing do not reparse the
+whole document/table. Context-changing Markdown edits can conservatively rebuild
+the block index. Documents without any pipes bypass GFM block parsing.
+
+The frame-driven checks passed for table commands, stale revisions, isolated
+undo/redo, disabled editing, IME replacement, wrapped cell hit testing, selections,
+and 16/20 px fonts in both themes. Desktop inspection also exercised the table
+context menu, row insertion, cell typing with a literal pipe, Tab navigation,
+separate undo steps, and horizontal scrolling without moving surrounding text.
+Native IME candidate-window placement remains a manual check.
+
+To leave the disposable table fixture open for visual inspection, build with
+editor-diagnostics and set both GPUI_NOTE_BENCH to an output path and
+GPUI_NOTE_TABLE_PREVIEW=1 before launching. Autosave is disabled for this fixture.
+The normal benchmark exits automatically; preview mode stays open. The separate
+GPUI_NOTE_AUTOSAVE_CHECK harness includes cell edits followed by row insertion.

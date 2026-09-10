@@ -48,10 +48,16 @@ impl InputState {
         let has_paste = is_enable && cx.read_from_clipboard().is_some();
 
         let action_context = self.focus_handle.clone();
+        let table_target = self
+            .live_preview
+            .then(|| self.text_wrapper.tables.at(offset))
+            .flatten()
+            .map(|(t, r, c)| (r, c, t.alignments.len(), self.text_wrapper.tables.revision));
+        let editor = cx.entity().downgrade();
         self.mouse_context_menu.update(cx, |this, cx| {
             this.mouse_position = event.position;
             this.menu.update(cx, |menu, cx| {
-                let new_menu = PopupMenu::new(cx)
+                let mut new_menu = PopupMenu::new(cx)
                     .when(is_code_editor, |m| {
                         m.menu_with_enable(
                             t!("Input.Go to Definition"),
@@ -74,6 +80,35 @@ impl InputState {
                     .menu_with_enable(t!("Input.Paste"), Box::new(input::Paste), has_paste)
                     .separator()
                     .menu(t!("Input.Select All"), Box::new(input::SelectAll));
+
+                if let Some((row, _, columns, revision)) = table_target {
+                    use crate::menu::PopupMenuItem;
+                    use input::table::{Alignment, Command};
+                    new_menu.menu_items.push(PopupMenuItem::separator());
+                    for (label, command, enabled) in [
+                        ("Insert row above", Command::RowAbove, true),
+                        ("Insert row below", Command::RowBelow, true),
+                        ("Delete row", Command::DeleteRow, row > 0),
+                        ("Insert column left", Command::ColumnLeft, true),
+                        ("Insert column right", Command::ColumnRight, true),
+                        ("Delete column", Command::DeleteColumn, columns > 1),
+                        ("Align left", Command::Align(Alignment::Left), true),
+                        ("Align center", Command::Align(Alignment::Center), true),
+                        ("Align right", Command::Align(Alignment::Right), true),
+                        ("Delete table", Command::DeleteTable, true),
+                    ] {
+                        let editor = editor.clone();
+                        new_menu.menu_items.push(
+                            PopupMenuItem::new(label)
+                                .disabled(!is_enable || !enabled)
+                                .on_click(move |_, window, cx| {
+                                    let _ = editor.update(cx, |editor, cx| {
+                                        editor.table_command(command, offset, revision, window, cx);
+                                    });
+                                }),
+                        );
+                    }
+                }
 
                 menu.menu_items = new_menu.menu_items;
                 menu.action_context = Some(action_context);

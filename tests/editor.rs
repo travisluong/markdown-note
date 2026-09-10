@@ -13,3 +13,7 @@ mod live_preview;
 mod scroll;
 #[path = "../vendor/gpui-component/src/input/text_wrapper.rs"]
 mod text_wrapper;
+
+mod table {
+    pub use gpui_component::input::table::*;
+}

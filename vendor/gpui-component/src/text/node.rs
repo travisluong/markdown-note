@@ -6,9 +6,9 @@ use std::{
 
 use gpui::{
     AnyElement, App, DefiniteLength, Div, Element, ElementId, FontStyle, FontWeight, Half,
-    HighlightStyle, InteractiveElement as _, IntoElement, Length, ListState, ObjectFit,
-    ParentElement, SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage as _,
-    Window, div, img, prelude::FluentBuilder as _, px, relative, rems,
+    HighlightStyle, InteractiveElement as _, IntoElement, ListState, ObjectFit, ParentElement,
+    SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage as _, Window, div,
+    img, prelude::FluentBuilder as _, px, relative, rems,
 };
 use markdown::mdast;
 use ropey::Rope;
@@ -1020,6 +1020,11 @@ impl Node {
         window: &mut Window,
         cx: &mut App,
     ) -> impl IntoElement {
+        let font_size: f32 = window
+            .text_style()
+            .font_size
+            .to_pixels(window.rem_size())
+            .into();
         const DEFAULT_LENGTH: usize = 5;
         const MAX_LENGTH: usize = 150;
         let col_lens = match item {
@@ -1049,6 +1054,7 @@ impl Node {
                 .child(
                     div()
                         .id("table")
+                        .overflow_x_scroll()
                         .w_full()
                         .border_1()
                         .border_color(cx.theme().border)
@@ -1058,8 +1064,11 @@ impl Node {
                             for (row_ix, row) in table.children.iter().enumerate() {
                                 rows.push(
                                     div()
-                                        .id("row")
-                                        .w_full()
+                                        .id(("table-row", row_ix))
+                                        .min_w_full()
+                                        .when(row_ix == 0, |this| {
+                                            this.font_weight(gpui::FontWeight::SEMIBOLD)
+                                        })
                                         .when(row_ix < table.children.len() - 1, |this| {
                                             this.border_b_1()
                                         })
@@ -1079,7 +1088,7 @@ impl Node {
 
                                                 cells.push(
                                                     div()
-                                                        .id("cell")
+                                                        .id(("table-cell", ix))
                                                         .flex()
                                                         .when(
                                                             align == ColumnumnAlign::Center,
@@ -1089,14 +1098,15 @@ impl Node {
                                                             align == ColumnumnAlign::Right,
                                                             |this| this.justify_end(),
                                                         )
-                                                        .w(Length::Definite(relative(len as f32)))
-                                                        .px_2()
-                                                        .py_1()
+                                                        .w(px(crate::input::table::column_width(
+                                                            len, font_size,
+                                                        )))
+                                                        .flex_shrink_0()
+                                                        .px(px(crate::input::table::CELL_PADDING))
                                                         .when(!is_last_col, |this| {
                                                             this.border_r_1()
                                                                 .border_color(cx.theme().border)
                                                         })
-                                                        .truncate()
                                                         .child(
                                                             cell.children
                                                                 .render(node_cx, window, cx),

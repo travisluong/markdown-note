@@ -16,7 +16,20 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
     );
     TextView::diagnostic_task_mappings(cx);
     let diagnostic = cx.new(|cx| InputState::new(window, cx).multi_line(true));
-    diagnostic.update(cx, |editor, cx| editor.diagnostic_checks(window, cx));
+    diagnostic.update(cx, |editor, cx| {
+        editor.diagnostic_checks(window, cx);
+        fs::write(
+            output.with_extension("progress.txt"),
+            "checking table behavior",
+        )
+        .unwrap();
+        editor.diagnostic_table_checks(window, cx);
+        fs::write(
+            output.with_extension("progress.txt"),
+            "table behavior passed",
+        )
+        .unwrap();
+    });
     let fixture = format!(
         "#{}\n- **café** _你好_\n##Wrapped heading\nplain **bold** text\n> **quoted café** _你好_\n> > - [X] nested task\n>>Unicode quote wrapping words 你好 café words repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated",
         "Heading words ".repeat(16)
@@ -41,6 +54,11 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
     geometry_round(notes.clone(), output, 0, window);
 }
 fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &mut Window) {
+    fs::write(
+        output.with_extension("progress.txt"),
+        format!("geometry {round}"),
+    )
+    .unwrap();
     window.on_next_frame(move |window, cx| {
         notes.update(cx, |notes, cx| {
             notes
@@ -61,17 +79,13 @@ fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &
             geometry_round(notes, output, round + 1, window);
             return;
         }
-        notes.update(cx, |notes, cx| install(notes, false, window, cx));
-        advance(
-            notes,
-            Run {
-                step: 0,
-                samples: Vec::new(),
-                output,
-            },
-            window,
-            cx,
-        );
+        notes.update(cx, |notes,cx| {
+            let fixture = format!("before\n\n| Name | Details | {} |\n| --- | :---: | {} |\n| café | **你好** words words words words words words | {} |\n| second | other | {} |\n\nafter",
+                (0..10).map(|i| format!("C{i}")).collect::<Vec<_>>().join(" | "),
+                vec!["---:";10].join(" | "), vec!["value";10].join(" | "),vec!["";10].join(" | "));
+            notes.editor.update(cx,|editor,cx| { editor.set_value(fixture,window,cx); editor.set_cursor_position(Position::new(0,0),window,cx); });
+        });
+        table_round(notes,output,0,window);
     });
 }
 fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<Notes>) {
@@ -100,10 +114,10 @@ fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<
 
 fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App) {
     // A setup frame precedes each group; sample the following complete render frame.
-    if run.step == 480 {
+    if run.step == 600 {
         let mut output =
             String::from("fixture,operation,p95_ms,max_parsed_lines,max_shaped_bytes\n");
-        for group in 0..8 {
+        for group in 0..10 {
             let mut samples = run
                 .samples
                 .iter()
@@ -115,7 +129,7 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
             let shaped = samples.iter().map(|x| x.3).max().unwrap();
             output.push_str(&format!(
                 "{},{},{p95:.3},{parsed},{shaped}\n",
-                ["beginning", "middle", "end", "long-line"][group / 2],
+                ["beginning", "middle", "end", "long-line", "large-table"][group / 2],
                 if group % 2 == 0 { "edit" } else { "scroll" }
             ));
         }
@@ -127,7 +141,7 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
     let group = run.step / 60;
     let _ = fs::write(
         run.output.with_extension("progress.txt"),
-        format!("frame {} of 480", run.step),
+        format!("frame {} of 600", run.step),
     );
     let sample = run.step % 60;
     if sample == 0 {
@@ -135,11 +149,29 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
             if group == 6 {
                 install(notes, true, window, cx);
             }
+            if group == 8 {
+                notes.editor.update(cx, |editor, cx| {
+                    editor.set_value(
+                        format!(
+                            "| Name | Details |\n| --- | --- |\n{}",
+                            "| café | **你好** table text |\n".repeat(10000)
+                        ),
+                        window,
+                        cx,
+                    )
+                });
+            }
             notes.editor.update(cx, |editor, cx| {
                 editor.set_cursor_position(
                     Position::new(
-                        [0, 0, 50_000, 50_000, 99_950, 99_950, 0, 0][group],
-                        if group >= 6 { 400_000 } else { 20 },
+                        [0, 0, 50_000, 50_000, 99_950, 99_950, 0, 0, 5000, 5000][group],
+                        if group >= 8 {
+                            4
+                        } else if group >= 6 {
+                            400_000
+                        } else {
+                            20
+                        },
                     ),
                     window,
                     cx,
@@ -170,5 +202,48 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
         }
         run.step += 1;
         advance(notes, run, window, cx);
+    });
+}
+
+fn table_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &mut Window) {
+    fs::write(
+        output.with_extension("progress.txt"),
+        format!("table geometry {round}"),
+    )
+    .unwrap();
+    window.on_next_frame(move |window, cx| {
+        notes.update(cx, |notes, cx| {
+            notes.editor.update(cx, |editor, cx| {
+                editor.diagnostic_table_geometry(window, cx)
+            });
+        });
+        if round < 2 {
+            notes.update(cx, |notes, cx| {
+                let mut appearance = notes.appearance();
+                appearance.content_font_size = if round == 0 { 20 } else { 16 };
+                appearance.dark_mode = Some(round == 0);
+                notes.update_appearance(appearance, window, cx);
+                notes.editor.update(cx, |editor, cx| {
+                    editor.set_cursor_position(Position::new(4, 3), window, cx)
+                });
+            });
+            table_round(notes, output, round + 1, window);
+        } else {
+            if std::env::var_os("GPUI_NOTE_TABLE_PREVIEW").is_some() {
+                fs::write(output.with_extension("progress.txt"), "table preview ready").unwrap();
+                return;
+            }
+            notes.update(cx, |notes, cx| install(notes, false, window, cx));
+            advance(
+                notes,
+                Run {
+                    step: 0,
+                    samples: Vec::new(),
+                    output,
+                },
+                window,
+                cx,
+            );
+        }
     });
 }

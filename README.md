@@ -139,3 +139,21 @@ its starting boundary is excluded. Existing tasks toggle independently; other
 list items gain `[ ] `, and plain or empty lines gain `- [ ] `. Indentation,
 quote prefixes, ordered/unordered markers, Unicode, and selection direction are
 preserved. The entire selection changes in one undoable edit.
+
+
+Live preview renders top-level GFM pipe tables with editable header and body
+cells. Click a cell to edit its inline Markdown; inactive cells show formatting.
+Tab/Shift+Tab move between cells, Enter moves down a column, and Tab or Enter
+from the last row adds a body row when needed. Arrow keys cross cell boundaries,
+Home/End stay within a cell, and Escape exits the table. At the document edges,
+exiting creates a blank line as an undoable edit.
+
+Right-click a table cell to insert/delete rows or columns, set column alignment,
+or delete the table. The header row and final column cannot be removed through
+the row/column commands. Horizontal scrolling (or Shift+wheel) moves wide tables
+without scrolling the surrounding document. Cell edits and structural commands
+use the same undo history and autosave as ordinary text. Literal pipes are
+escaped, and pasted line breaks within a cell become spaces. Missing cells in
+uneven rows are added to the Markdown when entered. Nested/container tables,
+merged cells, formulas, and rectangular spreadsheet paste are not supported by
+the live table editor; Source mode remains available for literal Markdown.

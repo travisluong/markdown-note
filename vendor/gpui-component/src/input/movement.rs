@@ -93,7 +93,13 @@ impl InputState {
                 if let Some(x) = line.closest_index_for_position(
                     Point {
                         x: preferred_x,
-                        y: next_display_point.local_row * last_layout.line_height * line.scale,
+                        y: if line.table.is_some() {
+                            display_point.row.saturating_sub(
+                                self.text_wrapper.lines.prefix_wraps(next_point.row),
+                            ) * last_layout.line_height
+                        } else {
+                            next_display_point.local_row * last_layout.line_height * line.scale
+                        },
                     },
                     last_layout.line_height,
                 ) {
@@ -118,7 +124,10 @@ impl InputState {
         cx.notify();
     }
 
-    pub(super) fn left(&mut self, _: &MoveLeft, _: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn left(&mut self, _: &MoveLeft, window: &mut Window, cx: &mut Context<Self>) {
+        if self.table_horizontal(false, window, cx) {
+            return;
+        }
         self.pause_blink_cursor(cx);
         if self.selected_range.is_empty() {
             self.move_to(self.previous_boundary(self.cursor()), None, cx);
@@ -127,7 +136,10 @@ impl InputState {
         }
     }
 
-    pub(super) fn right(&mut self, _: &MoveRight, _: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn right(&mut self, _: &MoveRight, window: &mut Window, cx: &mut Context<Self>) {
+        if self.table_horizontal(true, window, cx) {
+            return;
+        }
         self.pause_blink_cursor(cx);
         if self.selected_range.is_empty() {
             self.move_to(self.next_boundary(self.selected_range.end), None, cx);
@@ -138,6 +150,9 @@ impl InputState {
 
     pub(super) fn up(&mut self, action: &MoveUp, window: &mut Window, cx: &mut Context<Self>) {
         if self.handle_action_for_context_menu(Box::new(action.clone()), window, cx) {
+            return;
+        }
+        if self.selected_range.is_empty() && self.table_vertical(false, window, cx) {
             return;
         }
 
@@ -158,6 +173,9 @@ impl InputState {
 
     pub(super) fn down(&mut self, action: &MoveDown, window: &mut Window, cx: &mut Context<Self>) {
         if self.handle_action_for_context_menu(Box::new(action.clone()), window, cx) {
+            return;
+        }
+        if self.selected_range.is_empty() && self.table_vertical(true, window, cx) {
             return;
         }
 
@@ -210,13 +228,18 @@ impl InputState {
 
     pub(super) fn home(&mut self, _: &MoveHome, _: &mut Window, cx: &mut Context<Self>) {
         self.pause_blink_cursor(cx);
-        let offset = self.start_of_line();
+        let offset = self.active_table().map_or_else(
+            || self.start_of_line(),
+            |(t, r, c)| t.rows[r].cells[c].start,
+        );
         self.move_to(offset, Some(MoveDirection::Up), cx);
     }
 
     pub(super) fn end(&mut self, _: &MoveEnd, _: &mut Window, cx: &mut Context<Self>) {
         self.pause_blink_cursor(cx);
-        let offset = self.end_of_line();
+        let offset = self
+            .active_table()
+            .map_or_else(|| self.end_of_line(), |(t, r, c)| t.rows[r].cells[c].end);
         self.move_to(offset, Some(MoveDirection::Down), cx);
     }
 

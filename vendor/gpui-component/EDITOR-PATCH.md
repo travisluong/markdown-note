@@ -37,3 +37,29 @@ Command insertion exposes an isolated selection replacement API, retaining the e
 Live-preview task controls now reserve an exact 0.875 rem object slot during wrapping and shaping. They paint Reading mode's primary border/fill, half-radius corners, and 0.5 rem check icon; both states share the same source mapping and geometry. Mouse hit testing uses the painted square. Geometry diagnostics cover fixed dimensions, state-independent bounds, nested quotes, themes, font changes, and scrolling.
 
 Ctrl+L uses the public isolated multiline task edit API. Shared recognition accepts indentation, nested quote prefixes, unordered markers, and ordered `.`/`)` markers. Insertions map both selection endpoints while preserving direction; a final line touched only at its start is excluded. Parser tests cover mixed lines, Unicode, indentation, empty lines and boundaries; InputState diagnostics cover reversed selections and undo/redo in both editable modes.
+
+Live-preview tables use the installed markdown crate's GFM recognition and a
+source-range block index. Plain documents without pipes bypass the GFM parser;
+ordinary cell edits update ranges locally, while syntax/context changes reparse
+neighboring blocks or rebuild the index conservatively. Header/body cells share
+column widths, mapped inline formatting, wrapped heights, and a table-local
+horizontal offset. The delimiter line has zero height in the line index.
+Visible shaped cell segments are cached; active-table widths stay fixed during
+typing. Reading mode shares column sizing and padding with live preview.
+
+Table editing stays in InputState's rope, selection, history, and change-event
+pipeline. Tab/Shift+Tab, Enter, arrows, Home/End, and Escape navigate cells;
+Tab at the end adds a body row. Context menus insert/delete rows and columns,
+set alignment, and delete tables. Commands validate the source revision and
+produce isolated undo transactions. Missing cells in uneven rows materialize
+on entry. Input preserves escaped pipes and normalizes pasted cell newlines.
+IME composition selection is mapped relative to the inserted text, including
+normalization. Nested/container tables remain source text in live preview.
+
+The doc-hidden input::table module exposes the parser/model to the application's
+integration tests; it is not an upstream public API commitment. Tests cover
+GFM recognition, source ranges, Unicode, structural edits, incremental/full
+parser equivalence, and layout indexing. Editor diagnostics cover commands,
+stale targets, undo/redo, disabled editing, IME, cell hit testing, selection,
+and font/theme changes. The release harness includes a 10,000-row table;
+autosave diagnostics exercise cell editing and row insertion together.

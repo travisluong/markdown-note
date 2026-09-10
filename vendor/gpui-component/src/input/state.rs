@@ -260,6 +260,7 @@ impl LastLayout {
 /// InputState to keep editing state of the [`super::Input`].
 pub struct InputState {
     pub(super) live_preview: bool,
+    pub(super) table_editing: bool,
     list_enter_boundary: bool,
     pub(super) focus_handle: FocusHandle,
     pub(super) mode: InputMode,
@@ -372,6 +373,7 @@ impl InputState {
             focus_handle: focus_handle.clone(),
             text: Default::default(),
             live_preview: false,
+            table_editing: false,
             list_enter_boundary: false,
             text_wrapper: TextWrapper::new(text_style.font(), window.rem_size(), None),
             blink_cursor,
@@ -1178,6 +1180,9 @@ impl InputState {
         if self.handle_action_for_context_menu(Box::new(action.clone()), window, cx) {
             return;
         }
+        if self.table_tab(false, true, window, cx) {
+            return;
+        }
 
         // Clear inline completion on enter (user chose not to accept it)
         if self.has_inline_completion() {
@@ -1232,6 +1237,10 @@ impl InputState {
 
     pub(super) fn escape(&mut self, action: &Escape, window: &mut Window, cx: &mut Context<Self>) {
         if self.handle_action_for_context_menu(Box::new(action.clone()), window, cx) {
+            return;
+        }
+        if let Some((table, _, _)) = self.active_table() {
+            self.table_exit(&table, false, window, cx);
             return;
         }
 
@@ -1294,6 +1303,36 @@ impl InputState {
             }
         }
 
+        if self.live_preview
+            && !self.disabled
+            && event.button == MouseButton::Left
+            && !event.modifiers.shift
+        {
+            let row = self.text.offset_to_point(offset).row;
+            if let Some((table, r, _)) = self.text_wrapper.tables.at(offset) {
+                if let Some(paint) = self
+                    .last_layout
+                    .as_ref()
+                    .and_then(|l| l.line(row))
+                    .and_then(|l| l.table.as_ref())
+                {
+                    let x = event.position.x
+                        - self.last_bounds.unwrap().origin.x
+                        - self.last_layout.as_ref().unwrap().line_number_width
+                        + paint.scroll.get();
+                    let col = paint
+                        .cells
+                        .iter()
+                        .position(|(_, left, w, _)| x < *left + *w)
+                        .unwrap_or(paint.cells.len() - 1);
+                    if col >= table.rows[r].present_cells {
+                        let table = table.clone();
+                        self.focus_table_cell(&table, r, col, window, cx);
+                        return;
+                    }
+                }
+            }
+        }
         if self.handle_click_hover_definition(event, offset, window, cx) {
             return;
         }
@@ -1456,6 +1495,30 @@ impl InputState {
             .unwrap_or(window.line_height());
         let delta = event.delta.pixel_delta(line_height);
 
+        let horizontal = if event.modifiers.shift {
+            delta.y
+        } else {
+            delta.x
+        };
+        if horizontal != px(0.) && self.live_preview {
+            let offset = self.index_for_mouse_position(event.position);
+            let row = self.text.offset_to_point(offset).row;
+            if let Some(table) = self
+                .last_layout
+                .as_ref()
+                .and_then(|l| l.line(row))
+                .and_then(|l| l.table.as_ref())
+            {
+                let width = table.cells.last().map_or(px(0.), |(_, x, w, _)| *x + *w);
+                table.scroll.set(
+                    (table.scroll.get() - horizontal)
+                        .clamp(px(0.), (width - table.viewport).max(px(0.))),
+                );
+                cx.notify();
+                cx.stop_propagation();
+                return;
+            }
+        }
         let old_offset = self.scroll_handle.offset();
         self.update_scroll_offset(Some(old_offset + delta), cx);
 
@@ -2111,6 +2174,10 @@ impl EntityInputHandler for InputState {
             }))
             .unwrap_or(self.selected_range.into());
 
+        let Some(table_text) = self.table_input(&range, new_text) else {
+            return;
+        };
+        let new_text = table_text.as_str();
         let old_text = self.text.clone();
         self.text.replace(range.clone(), new_text);
 
@@ -2184,6 +2251,22 @@ impl EntityInputHandler for InputState {
             }))
             .unwrap_or(self.selected_range.into());
 
+        let relative_selection = new_selected_range_utf16.as_ref().map(|selection| {
+            let raw = Rope::from(new_text);
+            let start = raw.offset_utf16_to_offset(selection.start);
+            let end = raw.offset_utf16_to_offset(selection.end);
+            let start = self
+                .table_input(&range, &new_text[..start])
+                .map_or(start, |s| s.len());
+            let end = self
+                .table_input(&range, &new_text[..end])
+                .map_or(end, |s| s.len());
+            start..end
+        });
+        let Some(table_text) = self.table_input(&range, new_text) else {
+            return;
+        };
+        let new_text = table_text.as_str();
         let old_text = self.text.clone();
         self.text.replace(range.clone(), new_text);
 
@@ -2209,10 +2292,8 @@ impl EntityInputHandler for InputState {
             self.ime_marked_range = None;
         } else {
             self.ime_marked_range = Some((range.start..range.start + new_text.len()).into());
-            self.selected_range = new_selected_range_utf16
-                .as_ref()
-                .map(|range_utf16| self.range_from_utf16(range_utf16))
-                .map(|new_range| new_range.start + range.start..new_range.end + range.end)
+            self.selected_range = relative_selection
+                .map(|new_range| new_range.start + range.start..new_range.end + range.start)
                 .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len())
                 .into();
         }

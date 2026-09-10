@@ -19,7 +19,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
     });
     window.spawn(cx, async move |cx| {
         let started = Instant::now();
-        for step in 0..=12 {
+        for step in 0..=13 {
             fs::write(output.with_extension("progress.txt"), format!("step {step}")).unwrap();
             loop {
                 Timer::after(Duration::from_millis(250)).await;
@@ -114,12 +114,22 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.editor.update(cx, |e, cx| e.set_value("debounce two", window, cx));
                         this.update_autosave(notebook::Autosave { enabled: true, delay_ms: 100 }, window, cx);
                     }
-                    12 => assert_eq!(Document::open(path.clone()).unwrap().saved, "debounce two"),
+                    12 => {
+                        assert_eq!(Document::open(path.clone()).unwrap().saved, "debounce two");
+                        this.set_mode(ViewMode::LivePreview,window,cx);
+                        this.editor.update(cx,|e,cx| e.diagnostic_table_autosave(window,cx));
+                    }
+                    13 => {
+                        let saved = Document::open(path.clone()).unwrap().saved;
+                        assert_eq!(saved,this.editor.read(cx).value().as_str());
+                        assert!(saved.contains("edited x"));
+                        assert!(!this.dirty(cx));
+                    },
                     _ => unreachable!(),
                 }
             })).unwrap();
         }
-        fs::write(output, "passed: cancellation, debounce rescheduling, typing during save, saved snapshots, queued manual saves, navigation serialization, BOM/CRLF, nonmodal failure recovery, validation, discard cancellation, reading task refresh and autosave\n").unwrap();
+        fs::write(output, "passed: cancellation, debounce rescheduling, typing during save, saved snapshots, queued manual saves, navigation serialization, BOM/CRLF, nonmodal failure recovery, validation, discard cancellation, reading task refresh, editable table cells/rows and autosave\n").unwrap();
         drop(fixture);
         cx.update(|_, cx| cx.quit()).unwrap();
     }).detach();

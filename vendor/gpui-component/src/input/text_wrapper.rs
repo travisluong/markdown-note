@@ -6,9 +6,31 @@ use smallvec::SmallVec;
 
 use crate::input::RopeExt;
 
+#[derive(Debug, Clone)]
+pub(super) struct TableCellLayout {
+    pub source: Range<usize>,
+    pub x: Pixels,
+    pub width: Pixels,
+    pub alignment: super::table::Alignment,
+    pub styles: Vec<(Range<usize>, u8)>,
+    pub mapped: std::rc::Rc<super::live_preview::MappedText>,
+    pub wraps: Vec<Range<usize>>,
+}
+#[derive(Debug, Clone)]
+pub(super) struct TableRowLayout {
+    pub scroll: std::rc::Rc<std::cell::Cell<Pixels>>,
+    pub viewport: Pixels,
+    pub cells: Vec<TableCellLayout>,
+    pub height: usize,
+    pub header: bool,
+    pub active: Option<usize>,
+    pub widths: Vec<Pixels>,
+}
+
 /// A line with soft wrapped lines info.
 #[derive(Debug, Clone)]
 pub(super) struct LineItem {
+    pub(super) table: Option<std::rc::Rc<TableRowLayout>>,
     /// The original line text, without end `\n`.
     pub(super) line: Rope,
     measured: bool,
@@ -33,7 +55,9 @@ impl LineItem {
     /// Get number of soft wrapped lines of this line (include the first line).
     #[inline]
     pub(super) fn lines_len(&self) -> usize {
-        self.wrapped_lines.len()
+        self.table
+            .as_ref()
+            .map_or(self.wrapped_lines.len(), |t| t.height)
     }
 
     /// Get the height of this line item with given line height.
@@ -54,6 +78,11 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    pub(super) tables: super::table::TableIndex,
+    active_offset: usize,
+    table_rows: std::collections::HashSet<usize>,
+    table_scroll: std::collections::HashMap<usize, std::rc::Rc<std::cell::Cell<Pixels>>>,
+    table_widths: std::collections::HashMap<usize, Vec<Pixels>>,
     text: Rope,
     /// Total wrapped lines (Inlucde the first line), value is start and end index of the line.
     soft_lines: usize,
@@ -77,6 +106,11 @@ pub(super) struct TextWrapper {
 impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
+            tables: Default::default(),
+            active_offset: usize::MAX,
+            table_rows: Default::default(),
+            table_scroll: Default::default(),
+            table_widths: Default::default(),
             text: Rope::new(),
             font,
             font_size,
@@ -94,6 +128,10 @@ impl TextWrapper {
 
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
         self.live_preview = enabled;
+        if enabled {
+            self.tables.rebuild(&self.text);
+        }
+        self.table_widths.clear();
         self.update_all(&self.text.clone(), cx);
     }
 
@@ -122,6 +160,22 @@ impl TextWrapper {
         }
     }
 
+    pub(super) fn reveal_cell(&mut self, offset: usize, cx: &mut App) {
+        let previous = self
+            .tables
+            .at(self.active_offset)
+            .map(|(t, r, c)| (t.source.start, r, c));
+        let next = self
+            .tables
+            .at(offset)
+            .map(|(t, r, c)| (t.source.start, r, c));
+        self.active_offset = offset;
+        if self.live_preview && previous != next {
+            let text = self.text.clone();
+            self.update(&text, &(offset..offset), &Rope::new(), cx);
+        }
+    }
+
     #[inline]
     pub(super) fn set_default_text(&mut self, text: &Rope) {
         self.text = text.clone();
@@ -145,6 +199,7 @@ impl TextWrapper {
         }
 
         self.wrap_width = wrap_width;
+        self.table_widths.clear();
         self.update_all(&self.text.clone(), cx);
     }
 
@@ -155,6 +210,7 @@ impl TextWrapper {
 
         self.font = font;
         self.font_size = font_size;
+        self.table_widths.clear();
         self.update_all(&self.text.clone(), cx);
     }
 
@@ -189,6 +245,36 @@ impl TextWrapper {
         new_text: &Rope,
         cx: &mut App,
     ) {
+        if self.live_preview {
+            if self.active_offset != usize::MAX && (!range.is_empty() || new_text.len() > 0) {
+                self.active_offset = if self.active_offset < range.start {
+                    self.active_offset
+                } else if self.active_offset <= range.end {
+                    range.start + new_text.len()
+                } else {
+                    self.active_offset
+                        .saturating_add_signed(new_text.len() as isize - range.len() as isize)
+                };
+            }
+            let first = self.text.offset_to_point(range.start).row;
+            let last = self.text.offset_to_point(range.end).row;
+            let delta = new_text.lines_len() as isize - 1 - (last - first) as isize;
+            self.table_rows = self
+                .table_rows
+                .iter()
+                .filter_map(|r| {
+                    if *r < first {
+                        Some(*r)
+                    } else if *r > last {
+                        Some(r.saturating_add_signed(delta))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            self.tables
+                .update(&self.text, changed_text, range, new_text);
+        }
         let mut line_wrapper = cx
             .text_system()
             .line_wrapper(self.font.clone(), self.font_size);
@@ -210,6 +296,14 @@ impl TextWrapper {
                 line_wrapper.wrap_line(&fragments, wrap_width).collect()
             },
         );
+        if self.live_preview {
+            self.layout_tables(&mut |text, width| {
+                line_wrapper
+                    .wrap_line(&[LineFragment::text(text)], width)
+                    .map(|b| b.ix)
+                    .collect()
+            });
+        }
     }
 
     fn _update<F>(
@@ -261,6 +355,7 @@ impl TextWrapper {
                     .map(|i| (i * columns).min(line.len())..((i + 1) * columns).min(line.len()))
                     .collect();
                 new_lines.push(LineItem {
+                    table: None,
                     line: Rope::from(line),
                     measured: false,
                     presentation: None,
@@ -315,6 +410,7 @@ impl TextWrapper {
             }
 
             new_lines.push(LineItem {
+                table: None,
                 line: Rope::from(line),
                 measured: true,
                 cache: Default::default(),
@@ -348,6 +444,156 @@ impl TextWrapper {
         self.estimating = false;
     }
 
+    fn layout_tables(&mut self, wrap: &mut impl FnMut(&str, Pixels) -> Vec<usize>) {
+        use super::table::{CELL_PADDING, MIN_COLUMN};
+        let mut valid_rows = std::collections::HashSet::new();
+        for table in &self.tables.tables {
+            let active = table.cell_at(self.active_offset);
+            let widths = if active.is_some() {
+                self.table_widths.get(&table.source.start).cloned()
+            } else {
+                None
+            };
+            let widths = widths.unwrap_or_else(|| {
+                let mut widths = vec![px(MIN_COLUMN); table.alignments.len()];
+                for row in &table.rows {
+                    for (i, c) in row.cells.iter().take(widths.len()).enumerate() {
+                        let chars = self.text.slice(c.clone()).chars().count();
+                        widths[i] = widths[i]
+                            .max(px(super::table::column_width(chars, self.font_size.into())));
+                    }
+                }
+                let available = self.wrap_width.unwrap_or(px(800.));
+                let sum: Pixels = widths.iter().copied().fold(px(0.), |a, b| a + b);
+                if sum > available {
+                    for w in &mut widths {
+                        *w = (*w * (available / sum)).max(px(MIN_COLUMN));
+                    }
+                }
+                widths
+            });
+            self.table_widths.insert(table.source.start, widths.clone());
+            let scroll = self
+                .table_scroll
+                .entry(table.source.start)
+                .or_default()
+                .clone();
+            let viewport = self.wrap_width.unwrap_or(px(800.));
+            let total = widths.iter().copied().fold(px(0.), |a, b| a + b);
+            scroll.set(scroll.get().clamp(px(0.), (total - viewport).max(px(0.))));
+            for (r, source_row) in table.rows.iter().enumerate() {
+                let row = self.text.offset_to_point(source_row.source.start).row;
+                valid_rows.insert(row);
+                let Some(old) = self.lines.get(row) else {
+                    continue;
+                };
+                let active_col = active.filter(|(ar, _)| *ar == r).map(|(_, c)| c);
+                if old.table.as_ref().is_some_and(|t| {
+                    t.widths == widths
+                        && t.active == active_col
+                        && t.header == (r == 0)
+                        && t.cells
+                            .iter()
+                            .zip(&table.alignments)
+                            .all(|(cell, align)| cell.alignment == *align)
+                }) {
+                    continue;
+                }
+                let line_start = self.text.line_start_offset(row);
+                let mut cells = vec![];
+                let mut x = px(0.);
+                let mut height = 1;
+                for (c, range) in source_row.cells.iter().take(widths.len()).enumerate() {
+                    let text = self.text.slice(range.clone()).to_string();
+                    let inline = super::table::inline(&text);
+                    let presentation = super::live_preview::Presentation {
+                        hidden: inline.hidden,
+                        ..Default::default()
+                    };
+                    let mapped =
+                        std::rc::Rc::new(presentation.display(&text, active_col == Some(c)));
+                    let mut starts = vec![0];
+                    starts.extend(wrap(&mapped.text, widths[c] - px(CELL_PADDING * 2.)));
+                    starts.push(mapped.text.len());
+                    let wraps = starts.windows(2).map(|p| p[0]..p[1]).collect::<Vec<_>>();
+                    height = height.max(wraps.len());
+                    cells.push(TableCellLayout {
+                        source: range.start - line_start..range.end - line_start,
+                        x,
+                        width: widths[c],
+                        alignment: table.alignments[c],
+                        styles: inline.styles,
+                        mapped,
+                        wraps,
+                    });
+                    x += widths[c];
+                }
+                let mut item = old.clone();
+                item.table = Some(std::rc::Rc::new(TableRowLayout {
+                    scroll: scroll.clone(),
+                    viewport,
+                    cells,
+                    height,
+                    header: r == 0,
+                    active: active_col,
+                    widths: widths.clone(),
+                }));
+                item.scale = 1.;
+                item.measured = true;
+                item.mapped = None;
+                item.presentation = None;
+                item.wrapped_lines = std::rc::Rc::new(vec![0..item.line.len(); height]);
+                item.cache.borrow_mut().clear();
+                self.lines.splice(row..=row, vec![item]);
+            }
+            let row = self.text.offset_to_point(table.separator.start).row;
+            valid_rows.insert(row);
+            if let Some(old) = self.lines.get(row) {
+                let mut item = old.clone();
+                item.table = Some(std::rc::Rc::new(TableRowLayout {
+                    scroll: scroll.clone(),
+                    viewport,
+                    cells: vec![],
+                    height: 0,
+                    header: false,
+                    active: None,
+                    widths,
+                }));
+                item.scale = 0.;
+                item.measured = true;
+                item.mapped = None;
+                item.presentation = None;
+                item.wrapped_lines = std::rc::Rc::new(vec![0..item.line.len()]);
+                self.lines.splice(row..=row, vec![item]);
+            }
+        }
+        // Restore rows of tables that an edit made invalid.
+        let stale = self
+            .table_rows
+            .difference(&valid_rows)
+            .copied()
+            .collect::<Vec<_>>();
+        self.table_rows = valid_rows;
+        for row in stale {
+            let Some(mut item) = self.lines.get(row).cloned() else {
+                continue;
+            };
+            item.table = None;
+            item.measured = false;
+            item.scale = 1.;
+            self.lines.splice(row..=row, vec![item]);
+        }
+        self.soft_lines = self.lines.wraps();
+        let starts = self
+            .tables
+            .tables
+            .iter()
+            .map(|t| t.source.start)
+            .collect::<std::collections::HashSet<_>>();
+        self.table_widths.retain(|start, _| starts.contains(start));
+        self.table_scroll.retain(|start, _| starts.contains(start));
+    }
+
     /// Return display point (with soft wrap) from the given byte offset in the text.
     ///
     /// Panics if the `offset` is out of bounds.
@@ -358,6 +604,23 @@ impl TextWrapper {
 
         let wrapped_row = self.lines.prefix_wraps(row);
         let local_offset = offset.saturating_sub(start);
+        if let Some(table) = &line.table {
+            if let Some(cell) = table
+                .cells
+                .iter()
+                .find(|c| local_offset <= c.source.end)
+                .or_else(|| table.cells.last())
+            {
+                let display = cell.mapped.source_to_display[local_offset
+                    .saturating_sub(cell.source.start)
+                    .min(cell.source.len())];
+                let wrap = cell
+                    .wraps
+                    .partition_point(|r| r.end <= display)
+                    .min(cell.wraps.len() - 1);
+                return DisplayPoint::new(wrapped_row + wrap, wrap, local_offset);
+            }
+        }
         let local_offset = line
             .mapped
             .as_ref()
@@ -387,6 +650,11 @@ impl TextWrapper {
         }
         let row = self.lines.row_at_wrap(point.row);
         let line = &self.lines[row];
+        if line.table.is_some() {
+            return self.text.floor_char_boundary(
+                self.text.line_start_offset(row) + point.column.min(line.len()),
+            );
+        }
         let local_row = point.row - self.lines.prefix_wraps(row);
         let range = &line.wrapped_lines[local_row];
         let display = (range.start + point.column).min(range.end);
@@ -440,6 +708,7 @@ impl DisplayPoint {
 
 /// The layout info of a line with soft wrapped lines.
 pub(crate) struct LineLayout {
+    pub(super) table: Option<TablePaintLayout>,
     pub(super) task: Option<(usize, bool, Pixels)>,
     /// Total bytes length of this line.
     len: usize,
@@ -454,6 +723,13 @@ pub(crate) struct LineLayout {
     pub(super) segment_ranges: Option<std::rc::Rc<Vec<Range<usize>>>>,
 }
 
+pub(super) struct TablePaintLayout {
+    pub scroll: std::rc::Rc<std::cell::Cell<Pixels>>,
+    pub viewport: Pixels,
+    pub cells: Vec<(Range<usize>, Pixels, Pixels, LineLayout)>,
+    pub height: usize,
+}
+
 impl LineLayout {
     pub(super) fn task_bounds(&self, line_height: Pixels) -> Option<gpui::Bounds<Pixels>> {
         let (state, _, width) = self.task?;
@@ -463,6 +739,7 @@ impl LineLayout {
     }
     pub(crate) fn new() -> Self {
         Self {
+            table: None,
             task: None,
             len: 0,
             mapped: None,
@@ -512,6 +789,22 @@ impl LineLayout {
         offset: usize,
         line_height: Pixels,
     ) -> Option<Point<Pixels>> {
+        if let Some(table) = &self.table {
+            if offset > self.len {
+                return None;
+            }
+            let (range, x, _, cell) = table
+                .cells
+                .iter()
+                .find(|(r, _, _, _)| offset <= r.end)
+                .or_else(|| table.cells.last())?;
+            return cell
+                .position_for_index(
+                    offset.saturating_sub(range.start).min(range.len()),
+                    line_height,
+                )
+                .map(|p| p + point(*x - table.scroll.get(), px(0.)));
+        }
         let line_height = line_height * self.scale;
         let offset = self
             .mapped
@@ -545,6 +838,11 @@ impl LineLayout {
     }
     /// Get the closest index for the given x in this line layout.
     pub(super) fn closest_index_for_x(&self, x: Pixels) -> usize {
+        if self.table.is_some() {
+            return self
+                .closest_index_for_position(point(x, px(0.)), px(20.))
+                .unwrap_or(0);
+        }
         let x = x - self.indent;
         let mut acc_len = 0;
         for (i, line) in self.wrapped_lines.iter().enumerate() {
@@ -574,6 +872,24 @@ impl LineLayout {
         pos: Point<Pixels>,
         line_height: Pixels,
     ) -> Option<usize> {
+        if let Some(table) = &self.table {
+            if pos.y < px(0.) || pos.y >= table.height * line_height {
+                return None;
+            }
+            let pos = pos + point(table.scroll.get(), px(0.));
+            let (range, x, _, cell) = table
+                .cells
+                .iter()
+                .find(|(_, x, w, _)| pos.x < *x + *w)
+                .or_else(|| table.cells.last())?;
+            let y = pos
+                .y
+                .min(cell.size(line_height).height - px(0.01))
+                .max(px(0.));
+            return cell
+                .closest_index_for_position(point(pos.x - *x, y), line_height)
+                .map(|i| range.start + i.min(range.len()));
+        }
         let mut offset = self
             .segment_ranges
             .as_ref()
@@ -605,6 +921,9 @@ impl LineLayout {
         pos: Point<Pixels>,
         line_height: Pixels,
     ) -> Option<usize> {
+        if self.table.is_some() {
+            return self.closest_index_for_position(pos, line_height);
+        }
         let mut offset = self
             .segment_ranges
             .as_ref()
@@ -632,6 +951,9 @@ impl LineLayout {
     }
 
     pub(super) fn size(&self, line_height: Pixels) -> Size<Pixels> {
+        if let Some(table) = &self.table {
+            return size(self.longest_width, table.height * line_height);
+        }
         let line_height = line_height * self.scale;
         size(
             self.longest_width,
@@ -649,6 +971,35 @@ impl LineLayout {
         window: &mut Window,
         cx: &mut App,
     ) {
+        if let Some(table) = &self.table {
+            use crate::ActiveTheme as _;
+            window.with_content_mask(
+                Some(gpui::ContentMask {
+                    bounds: gpui::Bounds::new(
+                        pos,
+                        size(table.viewport, table.height * line_height),
+                    ),
+                }),
+                |window| {
+                    for (_, x, width, cell) in &table.cells {
+                        let origin = pos + point(*x - table.scroll.get(), px(0.));
+                        let bounds =
+                            gpui::Bounds::new(origin, size(*width, table.height * line_height));
+                        // Transparent fill preserves document selection painted underneath.
+                        window.paint_quad(gpui::quad(
+                            bounds,
+                            px(0.),
+                            gpui::transparent_black(),
+                            px(1.),
+                            cx.theme().border,
+                            gpui::BorderStyle::Solid,
+                        ));
+                        cell.paint(origin, line_height, window, cx);
+                    }
+                },
+            );
+            return;
+        }
         let line_height = line_height * self.scale;
         if self.quote_depth > 0 {
             use crate::ActiveTheme as _;
@@ -706,6 +1057,32 @@ impl LineLayout {
                 );
             }
         }
+    }
+}
+
+impl LineLayout {
+    pub(super) fn table_row(
+        len: usize,
+        cells: Vec<(Range<usize>, Pixels, Pixels, LineLayout)>,
+        height: usize,
+        _header: bool,
+        scroll: std::rc::Rc<std::cell::Cell<Pixels>>,
+        viewport: Pixels,
+    ) -> Self {
+        let mut line = Self::new();
+        line.len = len;
+        line.longest_width = cells
+            .iter()
+            .map(|(_, _, w, _)| *w)
+            .fold(px(0.), |a, b| a + b);
+        line.longest_width = line.longest_width.min(viewport);
+        line.table = Some(TablePaintLayout {
+            cells,
+            height,
+            scroll,
+            viewport,
+        });
+        line
     }
 }
 
@@ -961,6 +1338,7 @@ mod tests {
         wrapper.lines = vec![
             // range: 0..15
             LineItem {
+                table: None,
                 line: Rope::from("Hello, 世界!\r"),
                 wrapped_lines: std::rc::Rc::new(vec![0..15]),
                 presentation: None,
@@ -971,6 +1349,7 @@ mod tests {
             },
             // range: 16..36
             LineItem {
+                table: None,
                 line: Rope::from("This is second line."),
                 wrapped_lines: std::rc::Rc::new(vec![0..10, 10..20]),
                 presentation: None,
@@ -981,6 +1360,7 @@ mod tests {
             },
             // range: 37..56
             LineItem {
+                table: None,
                 line: Rope::from("This is third line."),
                 wrapped_lines: std::rc::Rc::new(vec![0..9, 9..15, 15..20]),
                 presentation: None,
@@ -991,6 +1371,7 @@ mod tests {
             },
             // range: 57..79
             LineItem {
+                table: None,
                 line: Rope::from("这里是第 4 行。"),
                 wrapped_lines: std::rc::Rc::new(vec![0..22]),
                 presentation: None,
@@ -1071,6 +1452,7 @@ mod tests {
 impl LineItem {
     pub(super) fn diagnostic_line(n: usize) -> Self {
         Self {
+            table: None,
             line: Rope::from("x".repeat(n)),
             measured: true,
             presentation: None,
@@ -1116,5 +1498,69 @@ mod preview_tests {
         let offset = wrapper.display_point_to_offset(point);
         assert!(text.to_string().is_char_boundary(offset));
         assert_eq!(wrapper.lines.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod table_layout_tests {
+    use super::*;
+    #[test]
+    fn table_rows_share_widths_hide_separator_and_map_unicode() {
+        let text = Rope::from(
+            "before\n\n| **name** | value |\n| --- | ---: |\n| café | 你好 words words |\n\nafter",
+        );
+        let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(16.), Some(px(180.)));
+        wrapper.live_preview = true;
+        wrapper.tables.rebuild(&text);
+        let at = wrapper.tables.tables[0].rows[1].cells[1].start;
+        wrapper.active_offset = at;
+        wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
+        let mut wrap = |text: &str, _| {
+            text.char_indices()
+                .enumerate()
+                .filter(|(i, _)| *i > 0 && i % 5 == 0)
+                .map(|(_, (at, _))| at)
+                .collect()
+        };
+        wrapper.layout_tables(&mut wrap);
+        assert_eq!(wrapper.lines[3].lines_len(), 0);
+        assert_eq!(wrapper.lines.prefix(4), wrapper.lines.prefix(3));
+        let widths = wrapper.lines[2].table.as_ref().unwrap().widths.clone();
+        assert_eq!(widths, wrapper.lines[4].table.as_ref().unwrap().widths);
+        assert_eq!(
+            wrapper.lines[2].table.as_ref().unwrap().cells[0]
+                .mapped
+                .text,
+            "name"
+        );
+        assert!(wrapper.lines[4].lines_len() > 1);
+        for cell in &wrapper.lines[4].table.as_ref().unwrap().cells {
+            let source = text
+                .slice(
+                    text.line_start_offset(4) + cell.source.start
+                        ..text.line_start_offset(4) + cell.source.end,
+                )
+                .to_string();
+            for (i, _) in cell.mapped.text.char_indices() {
+                assert!(source.is_char_boundary(cell.mapped.display_to_source[i]));
+            }
+        }
+        let mut changed = text.clone();
+        changed.replace(at..at, "long inserted text ");
+        let inserted = Rope::from("long inserted text ");
+        wrapper.tables.update(&text, &changed, &(at..at), &inserted);
+        wrapper._update(&changed, &(at..at), &inserted, &mut |_, _, _| vec![]);
+        wrapper.layout_tables(&mut wrap);
+        assert_eq!(
+            widths,
+            wrapper.lines[4].table.as_ref().unwrap().widths,
+            "columns stay stable during editing"
+        );
+        for offset in [at, at + 4] {
+            assert_eq!(
+                wrapper.display_point_to_offset(wrapper.offset_to_display_point(offset)),
+                offset
+            );
+        }
     }
 }

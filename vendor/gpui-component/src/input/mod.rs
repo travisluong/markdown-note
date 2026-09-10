@@ -14,11 +14,14 @@ mod number_input;
 mod otp_input;
 pub(crate) mod popovers;
 mod rope_ext;
-mod search;
 mod scroll;
-mod state;
-mod text_wrapper;
+mod search;
 mod selection;
+mod state;
+#[doc(hidden)]
+pub mod table;
+mod table_edit;
+mod text_wrapper;
 
 pub(crate) use clear_button::*;
 pub use cursor::*;
@@ -34,4 +37,4 @@ pub use lsp_types::Position;
 pub use rope_ext::*;
 pub use ropey::Rope;
 mod line_index;
-pub use live_preview::{editor_work, EditorWork};
+pub use live_preview::{EditorWork, editor_work};

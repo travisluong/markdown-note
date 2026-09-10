@@ -93,6 +93,27 @@ impl TextElement {
         let mut scroll_offset = state.scroll_handle.offset();
         let mut cursor_bounds = None;
 
+        if state.last_selected_range != Some(selected_range) {
+            let p = state.text.offset_to_point(cursor);
+            if let Some(line) = last_layout.line(p.row) {
+                if let Some(table) = &line.table {
+                    if let Some(pos) = line.position_for_index(p.column, line_height) {
+                        let delta = if pos.x > table.viewport - px(12.) {
+                            pos.x - table.viewport + px(12.)
+                        } else if pos.x < px(8.) {
+                            pos.x - px(8.)
+                        } else {
+                            px(0.)
+                        };
+                        let width = table.cells.last().map_or(px(0.), |(_, x, w, _)| *x + *w);
+                        table.scroll.set(
+                            (table.scroll.get() + delta)
+                                .clamp(px(0.), (width - table.viewport).max(px(0.))),
+                        );
+                    }
+                }
+            }
+        }
         let position = |offset: usize| {
             let p = state.text.offset_to_point(offset.min(state.text.len()));
             let top = text_wrapper.lines.prefix(p.row) * line_height;
@@ -213,6 +234,51 @@ impl TextElement {
         let mut line_corners = vec![];
 
         for line in lines.iter() {
+            if let Some(table) = &line.table {
+                for (cell_range, x, _, cell) in &table.cells {
+                    let absolute =
+                        prev_lines_offset + cell_range.start..prev_lines_offset + cell_range.end;
+                    if end_ix <= absolute.start || start_ix > absolute.end {
+                        continue;
+                    }
+                    let m = cell.mapped.as_ref().unwrap();
+                    let from = m.source_to_display[start_ix
+                        .saturating_sub(absolute.start)
+                        .min(cell_range.len())];
+                    let to = m.source_to_display
+                        [end_ix.saturating_sub(absolute.start).min(cell_range.len())];
+                    for (i, shaped) in cell.wrapped_lines.iter().enumerate() {
+                        let range = &cell.segment_ranges.as_ref().unwrap()[i + cell.segment_start];
+                        if to < range.start || from > range.end {
+                            continue;
+                        }
+                        let left = (*x - table.scroll.get()
+                            + cell.indent
+                            + shaped
+                                .x_for_index(from.saturating_sub(range.start).min(range.len())))
+                        .max(px(0.))
+                        .min(table.viewport);
+                        let right = (*x - table.scroll.get()
+                            + cell.indent
+                            + shaped.x_for_index(to.saturating_sub(range.start).min(range.len())))
+                        .max(left + px(2.))
+                        .min(table.viewport);
+                        if right <= left {
+                            continue;
+                        }
+                        let top = offset_y + (i + cell.segment_start) * line_height;
+                        line_corners.push(Corners {
+                            top_left: point(left, top),
+                            top_right: point(right, top),
+                            bottom_left: point(left, top + line_height),
+                            bottom_right: point(right, top + line_height),
+                        });
+                    }
+                }
+                offset_y += line.size(line_height).height;
+                prev_lines_offset += line.len() + 1;
+                continue;
+            }
             let line_size = line.size(line_height);
             let row_height = line_height * line.scale;
             let line_wrap_width = line_size.width;
@@ -288,45 +354,18 @@ impl TextElement {
             prev_lines_offset += line.len() + 1;
         }
 
-        let mut points = vec![];
         if line_corners.is_empty() {
             return None;
         }
-
-        // Fix corners to make sure the left to right direction
-        for corners in &mut line_corners {
-            if corners.top_left.x > corners.top_right.x {
-                std::mem::swap(&mut corners.top_left, &mut corners.top_right);
-                std::mem::swap(&mut corners.bottom_left, &mut corners.bottom_right);
-            }
-        }
-
-        for corners in &line_corners {
-            points.push(corners.top_right);
-            points.push(corners.bottom_right);
-            points.push(corners.bottom_left);
-        }
-
-        let mut rev_line_corners = line_corners.iter().rev().peekable();
-        while let Some(corners) = rev_line_corners.next() {
-            points.push(corners.top_left);
-            if let Some(next) = rev_line_corners.peek() {
-                if next.top_left.x > corners.top_left.x {
-                    points.push(point(next.top_left.x, corners.top_left.y));
-                }
-            }
-        }
-
-        // print_points_as_svg_path(&line_corners, &points);
-
-        let path_origin = bounds.origin + point(line_number_width, px(0.));
-        let first_p = *points.get(0).unwrap();
+        let origin = bounds.origin + point(line_number_width, px(0.));
         let mut builder = gpui::PathBuilder::fill();
-        builder.move_to(path_origin + first_p);
-        for p in points.iter().skip(1) {
-            builder.line_to(path_origin + *p);
+        for corners in line_corners {
+            builder.move_to(origin + corners.top_left);
+            builder.line_to(origin + corners.top_right);
+            builder.line_to(origin + corners.bottom_right);
+            builder.line_to(origin + corners.bottom_left);
+            builder.close();
         }
-
         builder.build().ok()
     }
 
@@ -620,12 +659,131 @@ impl TextElement {
         let mut offset = 0;
         for row in visible_range.clone() {
             let line_item = &text_wrapper.lines[row];
+            if let Some(table) = &line_item.table {
+                let mut cells = vec![];
+                let mut cache = line_item.cache.borrow_mut();
+                let mut used = std::collections::HashSet::new();
+                let mut key_base = 0;
+                let scroll_y = state
+                    .deferred_scroll_offset
+                    .unwrap_or(state.scroll_handle.offset())
+                    .y;
+                let top = text_wrapper.lines.prefix(row) * last_layout.line_height;
+                let viewport = state.last_bounds.map_or(px(1000.), |b| b.size.height);
+                for cell in &table.cells {
+                    let mut layout = LineLayout::new();
+                    layout.mapped = Some(cell.mapped.clone());
+                    layout.indent = px(super::table::CELL_PADDING);
+                    let mut shaped = SmallVec::new();
+                    let first = (((-scroll_y - viewport - top) / last_layout.line_height)
+                        .floor()
+                        .max(0.) as usize)
+                        .min(cell.wraps.len().saturating_sub(1));
+                    let end = (((-scroll_y + viewport * 2. - top) / last_layout.line_height)
+                        .ceil()
+                        .max(1.) as usize)
+                        .min(cell.wraps.len())
+                        .max(first + 1);
+                    layout.segment_start = first;
+                    for (segment, range) in cell.wraps.iter().enumerate().take(end).skip(first) {
+                        let mut local_runs = vec![];
+                        for (i, ch) in cell.mapped.text[range.clone()].char_indices() {
+                            let source = cell.mapped.display_to_source[range.start + i];
+                            let mut run = runs[0].clone();
+                            run.len = ch.len_utf8();
+                            if table.header {
+                                run.font.weight = gpui::FontWeight::SEMIBOLD;
+                            }
+                            for (span, style) in &cell.styles {
+                                if span.contains(&source) {
+                                    match style {
+                                        1 => run.font.weight = gpui::FontWeight::BOLD,
+                                        2 => run.font.style = gpui::FontStyle::Italic,
+                                        3 => run.font.family = cx.theme().mono_font_family.clone(),
+                                        4 => {
+                                            run.strikethrough = Some(gpui::StrikethroughStyle {
+                                                thickness: px(1.),
+                                                color: Some(run.color),
+                                            })
+                                        }
+                                        5 => run.color = cx.theme().primary,
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            if state.ime_marked_range.is_some_and(|r| {
+                                (r.start..r.end).contains(
+                                    &(visible_range_offset.start
+                                        + offset
+                                        + cell.source.start
+                                        + source),
+                                )
+                            }) {
+                                run.underline = Some(UnderlineStyle {
+                                    thickness: px(1.),
+                                    color: Some(run.color),
+                                    wavy: false,
+                                });
+                            }
+                            local_runs.push(run);
+                        }
+                        let key = key_base + segment;
+                        used.insert(key);
+                        let line = if let Some((_, line)) =
+                            cache.get(&key).filter(|(runs, _)| *runs == local_runs)
+                        {
+                            line.clone()
+                        } else {
+                            super::live_preview::record_shaped(range.len());
+                            let line = window.text_system().shape_line(
+                                cell.mapped.text[range.clone()].to_string().into(),
+                                font_size,
+                                &local_runs,
+                                None,
+                            );
+                            cache.insert(key, (local_runs, line.clone()));
+                            line
+                        };
+                        shaped.push(line);
+                    }
+                    key_base += cell.wraps.len();
+                    layout.segment_ranges = Some(Rc::new(cell.wraps.clone()));
+                    layout.set_wrapped_lines(shaped);
+                    let space = (cell.width
+                        - px(super::table::CELL_PADDING * 2.)
+                        - (layout.longest_width - layout.indent))
+                        .max(px(0.));
+                    layout.indent += match cell.alignment {
+                        super::table::Alignment::Left => px(0.),
+                        super::table::Alignment::Center => space / 2.,
+                        super::table::Alignment::Right => space,
+                    };
+                    cells.push((cell.source.clone(), cell.x, cell.width, layout));
+                }
+                cache.retain(|key, _| used.contains(key));
+                lines.push(LineLayout::table_row(
+                    line_item.len(),
+                    cells,
+                    table.height,
+                    table.header,
+                    table.scroll.clone(),
+                    table.viewport,
+                ));
+                offset += line_item.len() + 1;
+                continue;
+            }
             let mut line_layout = LineLayout::new();
             line_layout.scale = line_item.scale;
             if let Some(p) = &line_item.presentation {
                 line_layout.indent = px(p.quote_indent(font_size.into()));
                 line_layout.quote_depth = p.quote_depth;
-                line_layout.task = p.task.map(|state| (state, line_item.line.byte(state) != b' ', window.rem_size() * 0.875));
+                line_layout.task = p.task.map(|state| {
+                    (
+                        state,
+                        line_item.line.byte(state) != b' ',
+                        window.rem_size() * 0.875,
+                    )
+                });
             }
             line_layout.mapped = line_item.mapped.clone();
             let source;
@@ -746,7 +904,11 @@ impl TextElement {
                     if let Some((state, _, width)) = line_layout.task {
                         let offset = line_item.mapped.as_ref().unwrap().source_to_display[state];
                         if range.contains(&offset) {
-                            super::text_wrapper::reserve_task_slot(&mut shaped, offset - range.start, width);
+                            super::text_wrapper::reserve_task_slot(
+                                &mut shaped,
+                                offset - range.start,
+                                width,
+                            );
                         }
                     }
                     cache.insert(segment, (line_runs, shaped.clone()));
@@ -965,11 +1127,14 @@ impl Element for TextElement {
                     .set_wrap_width(Some(bounds.size.width - RIGHT_MARGIN), cx);
             }
             state.text_wrapper.set_font(font, text_size, cx);
-            state.text_wrapper.set_task_size(window.rem_size() * 0.875, cx);
+            state
+                .text_wrapper
+                .set_task_size(window.rem_size() * 0.875, cx);
             state.text_wrapper.prepare_if_need(&state.text, cx);
             state
                 .text_wrapper
                 .reveal(state.text.offset_to_point(state.cursor()).row, cx);
+            state.text_wrapper.reveal_cell(state.cursor(), cx);
         });
 
         let state = self.state.read(cx);
