@@ -38,7 +38,9 @@ in `.gpui-note/settings.json`. This internal folder is hidden from the sidebar.
 `%APPDATA%\gpui-note\notebooks.json` stores only the notebook paths and active
 notebook, so the menu and active notebook can be restored on launch. Settings use
 atomic writes. Missing notebooks remain in the menu; corrupt or unsupported
-settings are reported and preserved. There is no notebook rename/remove UI yet.
+settings are reported and preserved. Manage notebooks lists registered notebooks;
+Remove forgets a notebook without deleting its folder or files. Removing the active
+notebook closes it, with Save/Discard/Cancel protection for unsaved edits.
 
 An asterisk in the title means there are unsaved changes. Opening another file
 or switching notebooks or closing prompts to Save, Discard, or Cancel. Failed opens/saves preserve the

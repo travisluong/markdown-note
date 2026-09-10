@@ -44,6 +44,13 @@ impl Default for Index {
 }
 
 impl Index {
+    pub fn forget(&mut self, path: &Path) {
+        self.notebooks.retain(|entry| entry != path);
+        if self.active.as_deref() == Some(path) {
+            self.active = None;
+        }
+    }
+
     pub fn register(&mut self, path: PathBuf) {
         if !self.notebooks.contains(&path) {
             self.notebooks.push(path.clone());
@@ -305,6 +312,30 @@ mod tests {
         for value in ["Work", "My notes", "日本語", "COM10", "notes.v2"] {
             validate_name(value).unwrap();
         }
+    }
+
+    #[test]
+    fn forget_preserves_files_and_other_notebooks() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("First");
+        let second = temp.path().join("Second");
+        Notebook::open(&first, true).unwrap();
+        fs::write(first.join("note.md"), "keep me").unwrap();
+        let mut index = Index::default();
+        index.register(first.clone());
+        index.register(second.clone());
+        index.forget(&first);
+        assert_eq!(index.active, Some(second.clone()));
+        assert_eq!(
+            fs::read_to_string(first.join("note.md")).unwrap(),
+            "keep me"
+        );
+        index.forget(&second);
+        assert!(index.active.is_none());
+        assert!(index.notebooks.is_empty());
+        let path = temp.path().join("index.json");
+        save_state(&path, &index, None).unwrap();
+        assert!(load_index(&path).unwrap().notebooks.is_empty());
     }
 
     #[test]

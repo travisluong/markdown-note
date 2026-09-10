@@ -53,6 +53,7 @@ enum Next {
     Open,
     Close,
     File(PathBuf),
+    RemoveNotebook(PathBuf),
     Notebook { path: PathBuf, create: bool },
 }
 
@@ -331,6 +332,7 @@ impl Notes {
             Next::Open => self.open(window, cx),
             Next::Close => self.finish_close(window, cx),
             Next::File(path) => self.open_path(path, window, cx),
+            Next::RemoveNotebook(path) => self.remove_notebook(path, window, cx),
             Next::Notebook { path, create } => self.activate_notebook(path, create, window, cx),
         }
     }

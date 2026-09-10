@@ -349,22 +349,48 @@ impl Notes {
                     if active { " (active)" } else { "" }
                 );
                 let path = path.clone();
+                let remove_path = path.clone();
                 list = list.child(
-                    div().flex().items_center().gap_2().child(
-                        Button::new(("managed-notebook", index))
-                            .label(label)
-                            .disabled(self.busy)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.request(
-                                    Next::Notebook {
-                                        path: path.clone(),
-                                        create: false,
-                                    },
-                                    window,
-                                    cx,
-                                );
-                            })),
-                    ),
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            Button::new(("managed-notebook", index))
+                                .label(label)
+                                .disabled(self.busy)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.request(
+                                        Next::Notebook {
+                                            path: path.clone(),
+                                            create: false,
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                })),
+                        )
+                        .child(
+                            Button::new(("remove-notebook", index))
+                                .label("Remove")
+                                .disabled(self.busy)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    if this
+                                        .notebooks
+                                        .active
+                                        .as_ref()
+                                        .is_some_and(|book| book.root == remove_path)
+                                    {
+                                        this.request(
+                                            Next::RemoveNotebook(remove_path.clone()),
+                                            window,
+                                            cx,
+                                        );
+                                    } else {
+                                        this.remove_notebook(remove_path.clone(), window, cx);
+                                    }
+                                })),
+                        ),
                 );
             }
             body = body
@@ -396,6 +422,33 @@ impl Notes {
                 view.child(div().text_sm().child(error))
             }),
         )
+    }
+
+    pub(super) fn remove_notebook(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy || !self.notebooks.index_writable {
+            return;
+        }
+        if self
+            .notebooks
+            .active
+            .as_ref()
+            .is_some_and(|book| book.root == path)
+        {
+            self.notebooks.active = None;
+            self.notebooks.generation += 1;
+            self.notebooks.directories.clear();
+            self.notebooks.rows.clear();
+            self.notebooks.cursor = None;
+            self.install_document(None, window, cx);
+        }
+        self.notebooks.index.forget(&path);
+        self.persist_notebooks(cx);
+        self.refresh(window, cx);
     }
 
     fn create_from_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
