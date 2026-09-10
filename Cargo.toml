@@ -13,3 +13,13 @@ tempfile = "=3.27.0"
 [profile.dev]
 debug = 0
 
+[patch.crates-io]
+gpui-component = { path = "vendor/gpui-component" }
+
+
+[dev-dependencies]
+smallvec = "1"
+tree-sitter = "0.25.4"
+
+[features]
+editor-diagnostics = ["gpui-component/editor-diagnostics"]

@@ -1,0 +1,4 @@
+﻿*.progress.txt
+*.panic.txt
+stderr.txt
+stdout.txt

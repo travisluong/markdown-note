@@ -1,5 +1,8 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+#[cfg(feature = "editor-diagnostics")]
+mod benchmark;
+
 use std::{
     fs,
     io::{self, Write},
@@ -10,19 +13,28 @@ use gpui::{prelude::*, *};
 use gpui_component::{
     ActiveTheme, Root, Sizable,
     button::{Button, ButtonVariants},
-    input::{Input, InputEvent, InputState},
+    input::{Input, InputEvent, InputState, Rope},
     menu::PopupMenu,
     text::TextView,
 };
 
 actions!(
     notes,
-    [Open, Save, SourceMode, ReadingView, FileMenu, ViewMenu]
+    [
+        Open,
+        Save,
+        SourceMode,
+        LivePreview,
+        ReadingView,
+        FileMenu,
+        ViewMenu
+    ]
 );
 
 #[derive(Clone, Copy, PartialEq)]
 enum ViewMode {
     Source,
+    LivePreview,
     Reading,
 }
 
@@ -43,6 +55,7 @@ enum Newline {
 struct Document {
     path: PathBuf,
     saved: String,
+    saved_rope: Rope,
     bom: bool,
     newline: Newline,
 }
@@ -70,14 +83,17 @@ impl Document {
             Some(i) if raw.as_bytes()[i] == b'\r' => Newline::Cr,
             _ => Newline::Lf,
         };
+        let saved = normalize_newlines(raw);
         Ok(Self {
             path,
-            saved: normalize_newlines(raw),
+            saved_rope: Rope::from(saved.as_str()),
+            saved,
             bom,
             newline,
         })
     }
 
+    #[cfg(test)]
     fn dirty(&self, text: &str) -> bool {
         self.saved != text
     }
@@ -110,8 +126,12 @@ struct Notes {
     editor: Entity<InputState>,
     editor_subscription: Subscription,
     mode: ViewMode,
+    reading_text: SharedString,
     focus: FocusHandle,
     busy: bool,
+    dirty_cached: bool,
+    dirty_revision: u64,
+    dirty_task: Option<Task<()>>,
     menu: Option<(bool, Entity<PopupMenu>)>,
     menu_subscription: Option<Subscription>,
 }
@@ -142,8 +162,12 @@ impl Notes {
             editor,
             editor_subscription,
             mode: ViewMode::Source,
+            reading_text: SharedString::default(),
             focus,
             busy: false,
+            dirty_cached: false,
+            dirty_revision: 0,
+            dirty_task: None,
             menu: None,
             menu_subscription: None,
         }
@@ -156,7 +180,7 @@ impl Notes {
     ) -> Subscription {
         cx.subscribe_in(editor, window, |this, _, event, window, cx| {
             if matches!(event, InputEvent::Change) {
-                this.refresh(window, cx);
+                this.check_dirty(window, cx);
             }
         })
     }
@@ -164,7 +188,32 @@ impl Notes {
     fn dirty(&self, cx: &App) -> bool {
         self.document
             .as_ref()
-            .is_some_and(|d| d.dirty(&self.editor.read(cx).value()))
+            .is_some_and(|d| d.saved_rope != self.editor.read(cx).snapshot())
+    }
+
+    fn check_dirty(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(document) = self.document.as_ref() else {
+            return;
+        };
+        let saved = document.saved_rope.clone();
+        let current = self.editor.read(cx).snapshot();
+        self.dirty_revision += 1;
+        let revision = self.dirty_revision;
+        self.dirty_cached = true;
+        self.refresh(window, cx);
+        self.dirty_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let dirty = cx
+                .background_executor()
+                .spawn(async move { saved != current })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.dirty_revision != revision {
+                    return;
+                }
+                this.dirty_cached = dirty;
+                this.refresh(window, cx);
+            });
+        }));
     }
 
     fn refresh(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -176,7 +225,7 @@ impl Notes {
             .unwrap_or_else(|| "GPUI Note".into());
         window.set_window_title(&format!(
             "{}{} — GPUI Note",
-            if self.dirty(cx) { "* " } else { "" },
+            if self.dirty_cached { "* " } else { "" },
             name
         ));
         cx.notify();
@@ -286,7 +335,16 @@ impl Notes {
                         this.editor_subscription = Self::subscribe_editor(&editor, window, cx);
                         this.editor = editor;
                         this.document = Some(document);
-                        if this.mode == ViewMode::Source {
+                        if this.mode == ViewMode::Reading {
+                            this.reading_text = this.editor.read(cx).value();
+                        }
+                        this.dirty_task = None;
+                        this.dirty_revision += 1;
+                        this.dirty_cached = false;
+                        this.editor.update(cx, |editor, cx| {
+                            editor.set_live_preview(this.mode == ViewMode::LivePreview, cx)
+                        });
+                        if this.mode != ViewMode::Reading {
                             this.editor
                                 .update(cx, |editor, cx| editor.focus(window, cx));
                         }
@@ -321,7 +379,11 @@ impl Notes {
                 match result {
                     Ok(text) => {
                         if let Some(document) = &mut this.document {
+                            document.saved_rope = Rope::from(text.as_str());
                             document.saved = text;
+                            this.dirty_task = None;
+                            this.dirty_revision += 1;
+                            this.dirty_cached = false;
                         }
                         this.continue_with(next, window, cx);
                     }
@@ -335,8 +397,16 @@ impl Notes {
     }
 
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
+        self.reading_text = if mode == ViewMode::Reading {
+            self.editor.read(cx).value()
+        } else {
+            SharedString::default()
+        };
         self.mode = mode;
-        if mode == ViewMode::Source && self.document.is_some() {
+        self.editor.update(cx, |editor, cx| {
+            editor.set_live_preview(mode == ViewMode::LivePreview, cx)
+        });
+        if mode != ViewMode::Reading && self.document.is_some() {
             self.editor
                 .update(cx, |editor, cx| editor.focus(window, cx));
         } else {
@@ -360,6 +430,11 @@ impl Notes {
                     "Source mode",
                     mode == ViewMode::Source,
                     Box::new(SourceMode),
+                )
+                .menu_with_check(
+                    "Live preview",
+                    mode == ViewMode::LivePreview,
+                    Box::new(LivePreview),
                 )
                 .menu_with_check(
                     "Reading view",
@@ -392,10 +467,12 @@ impl Render for Notes {
                 .text_color(cx.theme().muted_foreground)
                 .child("Open a Markdown file with File → Open… (Ctrl+O)")
                 .into_any_element()
-        } else if self.mode == ViewMode::Source {
+        } else if self.mode != ViewMode::Reading {
             div()
                 .size_full()
-                .font_family("Consolas")
+                .when(self.mode == ViewMode::Source, |view| {
+                    view.font_family("Consolas")
+                })
                 .child(
                     Input::new(&self.editor)
                         .h_full()
@@ -408,7 +485,7 @@ impl Render for Notes {
                 .size_full()
                 .p_6()
                 .child(
-                    TextView::markdown("reading", self.editor.read(cx).value(), window, cx)
+                    TextView::markdown("reading", self.reading_text.clone(), window, cx)
                         .selectable(true)
                         .scrollable(true)
                         .size_full(),
@@ -427,6 +504,9 @@ impl Render for Notes {
             )
             .on_action(cx.listener(|this, _: &SourceMode, window, cx| {
                 this.set_mode(ViewMode::Source, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &LivePreview, window, cx| {
+                this.set_mode(ViewMode::LivePreview, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ReadingView, window, cx| {
                 this.set_mode(ViewMode::Reading, window, cx)
@@ -485,6 +565,17 @@ impl Render for Notes {
 }
 
 fn main() {
+    #[cfg(feature = "editor-diagnostics")]
+    if let Some(output) = std::env::var_os("GPUI_NOTE_BENCH") {
+        let output = PathBuf::from(output);
+        let _ = fs::write(
+            output.with_extension("progress.txt"),
+            "starting application",
+        );
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = fs::write(output.with_extension("panic.txt"), info.to_string());
+        }));
+    }
     Application::new()
         .with_assets(gpui_component_assets::Assets)
         .run(|cx: &mut App| {
@@ -514,6 +605,13 @@ fn main() {
                 },
                 |window, cx| {
                     let notes = cx.new(|cx| Notes::new(window, cx));
+                    #[cfg(feature = "editor-diagnostics")]
+                    if let Some(output) = std::env::var_os("GPUI_NOTE_BENCH") {
+                        let notes = notes.clone();
+                        window.on_next_frame(move |window, cx| {
+                            benchmark::start(&notes, output.into(), window, cx)
+                        });
+                    }
                     cx.new(|cx| Root::new(notes, window, cx))
                 },
             )

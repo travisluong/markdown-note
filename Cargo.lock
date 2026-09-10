@@ -2269,8 +2269,6 @@ dependencies = [
 [[package]]
 name = "gpui-component"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d021d46b4088d3d93a57ccdf443da85695a77272108caca2f6fe5369f584966a"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2347,7 +2345,9 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "smallvec",
  "tempfile",
+ "tree-sitter",
 ]
 
 [[package]]
