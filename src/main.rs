@@ -220,6 +220,9 @@ impl Notes {
         cx.subscribe_in(editor, window, |this, _, event, window, cx| {
             if matches!(event, InputEvent::Change) {
                 this.check_dirty(window, cx);
+                if this.mode == ViewMode::Reading {
+                    this.reading_text = this.editor.read(cx).value();
+                }
             }
         })
     }
@@ -538,6 +541,23 @@ impl Render for Notes {
                 .p_6()
                 .child(
                     TextView::markdown("reading", self.reading_text.clone(), window, cx)
+                        .on_task_toggle({
+                            let owner = cx.weak_entity();
+                            let document_path = self.document.as_ref().map(|d| d.path.clone());
+                            move |offset, source, window, cx| {
+                                let _ = owner.update(cx, |this, cx| {
+                                    if this.busy
+                                        || this.document.as_ref().map(|d| &d.path)
+                                            != document_path.as_ref()
+                                    {
+                                        return;
+                                    }
+                                    this.editor.update(cx, |editor, cx| {
+                                        editor.toggle_markdown_task(offset, source, window, cx);
+                                    });
+                                });
+                            }
+                        })
                         .text_size(content_size)
                         .line_height(relative(1.5))
                         .style(gpui_component::text::TextViewStyle {

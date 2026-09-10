@@ -409,6 +409,8 @@ impl CodeBlock {
 /// A context for rendering nodes, contains link references.
 #[derive(Default, Clone)]
 pub(crate) struct NodeContext {
+    pub(crate) task_toggle: Option<Arc<super::text_view::TaskToggleFn>>,
+    pub(crate) source: SharedString,
     pub(crate) link_refs: HashMap<SharedString, LinkMark>,
     pub(crate) style: TextViewStyle,
     pub(crate) code_block_actions: Option<Arc<CodeBlockActionsFn>>,
@@ -451,6 +453,7 @@ pub(crate) enum Node {
         spread: bool,
         /// Whether the list item is checked, if None, it's not a checkbox
         checked: Option<bool>,
+        task_offset: Option<usize>,
     },
     CodeBlock(CodeBlock),
     Table(Table),
@@ -896,6 +899,7 @@ impl Node {
                 children,
                 spread,
                 checked,
+                task_offset,
             } => v_flex()
                 .id("li")
                 .when(*spread, |this| this.child(div()))
@@ -947,6 +951,24 @@ impl Node {
                                             // Todo list checkbox
                                             this.child(
                                                 div()
+                                                    .id(("task", task_offset.unwrap_or(ix)))
+                                                    .when_some(
+                                                        node_cx
+                                                            .task_toggle
+                                                            .clone()
+                                                            .zip(*task_offset),
+                                                        |view, (toggle, offset)| {
+                                                            let source = node_cx.source.clone();
+                                                            view.cursor_pointer().on_click(
+                                                                move |_, window, cx| {
+                                                                    toggle(
+                                                                        offset, &source, window, cx,
+                                                                    );
+                                                                    cx.stop_propagation();
+                                                                },
+                                                            )
+                                                        },
+                                                    )
                                                     .flex()
                                                     .mt(rems(0.4))
                                                     .mr_1p5()

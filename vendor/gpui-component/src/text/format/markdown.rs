@@ -1,17 +1,17 @@
 use gpui::SharedString;
 use markdown::{
-    mdast::{self, Node},
     ParseOptions,
+    mdast::{self, Node},
 };
 
 use crate::{
     highlighter::HighlightTheme,
     text::{
+        TextViewStyle,
         node::{
             self, CodeBlock, ImageNode, InlineNode, LinkMark, NodeContext, Paragraph, Span, Table,
             TableRow, TextMark,
         },
-        TextViewStyle,
     },
 };
 
@@ -22,6 +22,7 @@ pub(crate) fn parse(
     cx: &mut NodeContext,
     highlight_theme: &HighlightTheme,
 ) -> Result<node::Node, SharedString> {
+    cx.source = raw.to_owned().into();
     markdown::to_mdast(&raw, &ParseOptions::gfm())
         .map(|n| ast_to_node(n, style, cx, highlight_theme))
         .map_err(|e| e.to_string().into())
@@ -268,6 +269,17 @@ fn ast_to_node(
                 children,
                 spread: val.spread,
                 checked: val.checked,
+                task_offset: val.position.as_ref().and_then(|pos| {
+                    let tail = cx.source.get(pos.start.offset..pos.end.offset)?;
+                    let line = tail.lines().next()?;
+                    let bracket = line.find('[')?;
+                    let bytes = line.as_bytes();
+                    (bytes.get(bracket + 2) == Some(&b']')
+                        && bytes
+                            .get(bracket + 1)
+                            .is_some_and(|c| matches!(c, b' ' | b'x' | b'X')))
+                    .then_some(pos.start.offset + bracket + 1)
+                }),
             }
         }
         Node::Break(_) => node::Node::Break { html: false },

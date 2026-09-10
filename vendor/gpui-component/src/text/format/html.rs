@@ -476,6 +476,7 @@ fn parse_node(
                     children,
                     spread: false,
                     checked: None,
+                    task_offset: None,
                 })
             }
             local_name!("table") => {

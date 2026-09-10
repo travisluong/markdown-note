@@ -24,3 +24,5 @@ actual InputState edit, undo, redo, mode, selection, disabled, and IME paths.
 
 When updating upstream, rebase these input changes and rerun the tests and
 release benchmark. Do not silently remove the Cargo patch.
+
+Task checkboxes retain UTF-8 state offsets in the reading AST and expose an opt-in TextView callback with the parsed source snapshot. Live preview maps task glyphs to the source state; InputState toggles one byte as an isolated undo operation and rejects stale snapshots. Task Enter continues unchecked tasks or exits empty tasks onto the next line in both editable modes.

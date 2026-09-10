@@ -26,6 +26,8 @@ use crate::{
     },
 };
 
+pub(crate) type TaskToggleFn = dyn Fn(usize, &str, &mut Window, &mut App) + Send + Sync;
+
 const CONTEXT: &'static str = "TextView";
 
 pub(crate) fn init(cx: &mut App) {
@@ -39,6 +41,7 @@ pub(crate) fn init(cx: &mut App) {
 
 #[derive(IntoElement, Clone)]
 struct TextViewElement {
+    task_toggle: Option<Arc<TaskToggleFn>>,
     list_state: Option<ListState>,
     state: Entity<TextViewState>,
 }
@@ -46,6 +49,9 @@ struct TextViewElement {
 impl RenderOnce for TextViewElement {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         self.state.update(cx, |state, cx| {
+            if let Some(Ok(content)) = &mut state.parsed_result {
+                content.node_cx.task_toggle = self.task_toggle.clone();
+            }
             v_flex()
                 .size_full()
                 .map(|this| match &mut state.parsed_result {
@@ -89,6 +95,7 @@ pub(crate) type CodeBlockActionsFn =
 /// See also [`MarkdownElement`], [`HtmlElement`]
 #[derive(Clone)]
 pub struct TextView {
+    task_toggle: Option<Arc<TaskToggleFn>>,
     id: ElementId,
     init_state: Option<InitState>,
     raw: SharedString,
@@ -378,6 +385,14 @@ impl Styled for TextView {
 }
 
 impl TextView {
+    /// Opt in to task checkbox clicks. Offset and source belong to the rendered parse.
+    pub fn on_task_toggle(
+        mut self,
+        callback: impl Fn(usize, &str, &mut Window, &mut App) + Send + Sync + 'static,
+    ) -> Self {
+        self.task_toggle = Some(Arc::new(callback));
+        self
+    }
     fn create_init_state(
         type_: TextViewType,
         text: &SharedString,
@@ -431,6 +446,7 @@ impl TextView {
             selectable: false,
             scrollable: false,
             code_block_actions: None,
+            task_toggle: None,
         }
     }
 
@@ -462,6 +478,7 @@ impl TextView {
             selectable: false,
             scrollable: false,
             code_block_actions: None,
+            task_toggle: None,
         }
     }
 
@@ -654,6 +671,7 @@ impl Element for TextView {
                 }
             })
             .child(TextViewElement {
+                task_toggle: self.task_toggle.clone(),
                 list_state: if self.scrollable {
                     Some(list_state.clone())
                 } else {

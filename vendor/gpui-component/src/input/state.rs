@@ -1167,12 +1167,13 @@ impl InputState {
             self.clear_inline_completion(cx);
         }
 
-        if self.live_preview && self.selected_range.is_empty() && !self.disabled {
+        if self.selected_range.is_empty() && !self.disabled && self.mode.is_multi_line() {
             let row = self.text.offset_to_point(self.cursor()).row;
             let start = self.text.line_start_offset(row);
             let line = self.text.slice_line(row).to_string();
-            if let Some((range, insertion)) =
-                super::live_preview::list_enter(&line, self.cursor() - start)
+            if (self.live_preview || super::live_preview::task_state(&line).is_some())
+                && let Some((range, insertion)) =
+                    super::live_preview::list_enter(&line, self.cursor() - start)
             {
                 let range = self.range_to_utf16(&(start + range.start..start + range.end));
                 let history = std::mem::replace(&mut self.history, History::new());
@@ -1253,6 +1254,25 @@ impl InputState {
 
         self.selecting = true;
         let offset = self.index_for_mouse_position(event.position);
+        if self.live_preview
+            && !self.disabled
+            && event.button == MouseButton::Left
+            && event.click_count == 1
+            && !event.modifiers.shift
+        {
+            let row = self.text.offset_to_point(offset).row;
+            let start = self.text.line_start_offset(row);
+            let line = self.text.slice_line(row).to_string();
+            if let Some(state) = super::live_preview::task_state(&line) {
+                if (state - 1..=state + 1).contains(&(offset - start)) {
+                    let snapshot = self.text.to_string();
+                    self.toggle_markdown_task(start + state, &snapshot, window, cx);
+                    self.selecting = false;
+                    cx.stop_propagation();
+                    return;
+                }
+            }
+        }
 
         if self.handle_click_hover_definition(event, offset, window, cx) {
             return;
@@ -1275,6 +1295,43 @@ impl InputState {
         } else {
             self.move_to(offset, None, cx)
         }
+    }
+
+    /// Toggle a task's UTF-8 state byte only when its source snapshot is current.
+    /// The edit is isolated from adjacent typing in undo history.
+    pub fn toggle_markdown_task(
+        &mut self,
+        offset: usize,
+        expected: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.disabled || self.text.to_string() != expected {
+            return false;
+        }
+        let Some(state) = expected.as_bytes().get(offset) else {
+            return false;
+        };
+        if !matches!(state, b' ' | b'x' | b'X')
+            || offset == 0
+            || expected.as_bytes().get(offset - 1) != Some(&b'[')
+            || expected.as_bytes().get(offset + 1) != Some(&b']')
+        {
+            return false;
+        }
+        let replacement = if *state == b' ' { "x" } else { " " };
+        let selection = self.selected_range.clone();
+        let reversed = self.selection_reversed;
+        let range = self.range_to_utf16(&(offset..offset + 1));
+        let history = std::mem::replace(&mut self.history, History::new());
+        self.history = history.group_interval(std::time::Duration::ZERO);
+        self.list_enter_boundary = false;
+        self.replace_text_in_range_silent(Some(range), replacement, window, cx);
+        self.list_enter_boundary = true;
+        self.selected_range = selection;
+        self.selection_reversed = reversed;
+        cx.notify();
+        true
     }
 
     pub(super) fn on_mouse_up(
@@ -2253,10 +2310,52 @@ impl InputState {
             self.undo(&Undo, window, cx);
             assert_eq!(self.text.to_string(), line);
         }
+        for live in [false, true] {
+            self.set_live_preview(live, cx);
+            for (line, expected) in [("- [X] café", "- [X] café\n- [ ] "), ("- [ ] ", "\n")] {
+                self.set_value(line, window, cx);
+                self.selected_range = (line.len()..line.len()).into();
+                self.enter(&Enter { secondary: false }, window, cx);
+                assert_eq!(self.text.to_string(), expected);
+                assert_eq!(self.cursor(), expected.len());
+                self.undo(&Undo, window, cx);
+                assert_eq!(self.text.to_string(), line);
+            }
+            self.set_value("- [X] café", window, cx);
+            assert!(self.toggle_markdown_task(3, "- [X] café", window, cx));
+            assert_eq!(self.text.to_string(), "- [ ] café");
+            assert!(!self.toggle_markdown_task(3, "- [X] café", window, cx));
+            self.undo(&Undo, window, cx);
+            assert_eq!(self.text.to_string(), "- [X] café");
+            self.redo(&Redo, window, cx);
+            assert_eq!(self.text.to_string(), "- [ ] café");
+        }
+        self.set_live_preview(true, cx);
         self.set_value("- abc", window, cx);
         self.selected_range = (2..5).into();
         self.enter(&Enter { secondary: false }, window, cx);
         assert_eq!(self.text.to_string(), "- \n");
+        for live in [false, true] {
+            self.set_live_preview(live, cx);
+            for (line, expected) in [("- [X] café", "- [X] café\n- [ ] "), ("- [ ] ", "\n")] {
+                self.set_value(line, window, cx);
+                self.selected_range = (line.len()..line.len()).into();
+                self.enter(&Enter { secondary: false }, window, cx);
+                assert_eq!(self.text.to_string(), expected);
+                assert_eq!(self.cursor(), expected.len());
+                self.undo(&Undo, window, cx);
+                assert_eq!(self.text.to_string(), line);
+            }
+            self.set_value("- [X] café", window, cx);
+            assert!(self.toggle_markdown_task(3, "- [X] café", window, cx));
+            assert_eq!(self.text.to_string(), "- [ ] café");
+            assert!(!self.toggle_markdown_task(3, "- [X] café", window, cx));
+            self.undo(&Undo, window, cx);
+            assert_eq!(self.text.to_string(), "- [X] café");
+            self.redo(&Redo, window, cx);
+            assert_eq!(self.text.to_string(), "- [ ] café");
+        }
+        self.set_live_preview(true, cx);
         self.set_value("- abc", window, cx);
         self.selected_range = (5..5).into();
         self.insert("\n", window, cx);
