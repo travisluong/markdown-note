@@ -53,6 +53,7 @@ enum Next {
     Open,
     Close,
     File(PathBuf),
+    TreeFile(PathBuf),
     RemoveNotebook(PathBuf),
     Notebook { path: PathBuf, create: bool },
 }
@@ -322,7 +323,12 @@ impl Notes {
         match answer {
             Some(0) => self.save(next, window, cx),
             Some(1) => self.continue_with(next, window, cx),
-            _ => self.refresh(window, cx),
+            _ => {
+                if matches!(next, Next::TreeFile(_)) {
+                    self.restore_tree_cursor(window, cx);
+                }
+                self.refresh(window, cx);
+            }
         }
     }
 
@@ -331,7 +337,8 @@ impl Notes {
             Next::Nothing => self.refresh(window, cx),
             Next::Open => self.open(window, cx),
             Next::Close => self.finish_close(window, cx),
-            Next::File(path) => self.open_path(path, window, cx),
+            Next::File(path) => self.open_path(path, false, window, cx),
+            Next::TreeFile(path) => self.open_path(path, true, window, cx),
             Next::RemoveNotebook(path) => self.remove_notebook(path, window, cx),
             Next::Notebook { path, create } => self.activate_notebook(path, create, window, cx),
         }

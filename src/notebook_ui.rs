@@ -35,6 +35,8 @@ pub(super) struct NotebookState {
     scroll: UniformListScrollHandle,
     tree_focus: FocusHandle,
     persistence: Option<Task<()>>,
+    tree_loading: bool,
+    tree_target: Option<PathBuf>,
     pub notice: Option<String>,
     creating: bool,
     name: Entity<InputState>,
@@ -60,6 +62,8 @@ impl NotebookState {
             scroll: UniformListScrollHandle::new(),
             tree_focus: cx.focus_handle(),
             persistence: None,
+            tree_loading: false,
+            tree_target: None,
             notice: None,
             creating: false,
             name,
@@ -641,8 +645,17 @@ impl Notes {
         }
     }
 
-    pub(super) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_path(
+        &mut self,
+        path: PathBuf,
+        keep_tree_focus: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.busy = true;
+        self.notebooks.tree_loading = keep_tree_focus;
+        self.notebooks.tree_target = keep_tree_focus.then(|| path.clone());
+        let loading_path = path.clone();
         let root = self.notebooks.active.as_ref().map(|book| book.root.clone());
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
@@ -658,12 +671,31 @@ impl Notes {
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.busy = false;
+                this.notebooks.tree_loading = false;
+                if keep_tree_focus && this.notebooks.tree_target.as_ref() != Some(&loading_path) {
+                    if let Some(target) = this.notebooks.tree_target.take() {
+                        if !this.document.as_ref().is_some_and(|doc| doc.path == target) {
+                            this.open_path(target, true, window, cx);
+                        }
+                    }
+                    cx.notify();
+                    return;
+                }
+                this.notebooks.tree_target = None;
                 match result {
                     Ok(document) => {
                         this.install_document(Some(document), window, cx);
                         this.remember_file(cx);
+                        if keep_tree_focus {
+                            this.notebooks.tree_focus.focus(window);
+                        }
                     }
-                    Err(error) => this.error("Could not open file", error, window, cx),
+                    Err(error) => {
+                        if keep_tree_focus {
+                            this.restore_tree_cursor(window, cx);
+                        }
+                        this.error("Could not open file", error, window, cx);
+                    }
                 }
                 this.refresh(window, cx);
             });
@@ -818,15 +850,15 @@ impl Notes {
         } else {
             let path = book.root.join(row.path);
             if !self.document.as_ref().is_some_and(|d| d.path == path) {
-                self.request(Next::File(path), window, cx);
+                self.request(Next::TreeFile(path), window, cx);
             }
         }
         cx.notify();
     }
 
-    fn tree_move(&mut self, down: bool, cx: &mut Context<Self>) {
+    fn tree_move(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
         let len = self.notebooks.rows.len();
-        if len == 0 || self.busy {
+        if len == 0 || (self.busy && !self.notebooks.tree_loading) {
             return;
         }
         let next = match self.notebooks.cursor {
@@ -843,10 +875,56 @@ impl Notes {
                 ScrollStrategy::Top
             },
         );
+        self.open_selected_row(window, cx);
         cx.notify();
     }
 
+    pub(super) fn restore_tree_cursor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.notebooks.cursor = self
+            .notebooks
+            .active
+            .as_ref()
+            .zip(self.document.as_ref())
+            .and_then(|(book, doc)| {
+                self.notebooks
+                    .rows
+                    .iter()
+                    .position(|row| !row.directory && book.root.join(&row.path) == doc.path)
+            });
+        if let Some(index) = self.notebooks.cursor {
+            self.notebooks
+                .scroll
+                .scroll_to_item(index, ScrollStrategy::Top);
+        }
+        self.notebooks.tree_focus.focus(window);
+        cx.notify();
+    }
+
+    fn open_selected_row(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let target = self
+            .notebooks
+            .cursor
+            .and_then(|index| self.notebooks.rows.get(index))
+            .filter(|row| !row.directory && !row.disabled && !row.retry)
+            .and_then(|row| {
+                self.notebooks
+                    .active
+                    .as_ref()
+                    .map(|book| book.root.join(&row.path))
+            });
+        if self.notebooks.tree_loading {
+            self.notebooks.tree_target = target;
+        } else if let Some(path) = target {
+            if !self.document.as_ref().is_some_and(|doc| doc.path == path) {
+                self.request(Next::TreeFile(path), window, cx);
+            }
+        }
+    }
+
     fn tree_horizontal(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy && !self.notebooks.tree_loading {
+            return;
+        }
         let Some(index) = self.notebooks.cursor else {
             return;
         };
@@ -861,7 +939,7 @@ impl Notes {
         if row.directory && expanded != right {
             self.activate_row(index, window, cx);
         } else if right && row.directory && expanded {
-            self.tree_move(true, cx);
+            self.tree_move(true, window, cx);
         } else if !right {
             let parent = row.path.parent().map(Path::to_path_buf);
             self.notebooks.cursor = self
@@ -872,6 +950,7 @@ impl Notes {
             if let Some(i) = self.notebooks.cursor {
                 self.notebooks.scroll.scroll_to_item(i, ScrollStrategy::Top);
             }
+            self.open_selected_row(window, cx);
             cx.notify();
         }
     }
@@ -891,8 +970,12 @@ impl Notes {
             .id("notebook-sidebar")
             .key_context("NotebookTree")
             .track_focus(&self.notebooks.tree_focus)
-            .on_action(cx.listener(|this, _: &TreeUp, _, cx| this.tree_move(false, cx)))
-            .on_action(cx.listener(|this, _: &TreeDown, _, cx| this.tree_move(true, cx)))
+            .on_action(
+                cx.listener(|this, _: &TreeUp, window, cx| this.tree_move(false, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &TreeDown, window, cx| this.tree_move(true, window, cx)),
+            )
             .on_action(
                 cx.listener(|this, _: &TreeLeft, window, cx| {
                     this.tree_horizontal(false, window, cx)

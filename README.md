@@ -29,7 +29,7 @@ are never replaced by Create; use Open folder as notebook instead.
 
 The sidebar displays folders and files recursively. Click a folder to expand it
 and a `.md` or `.markdown` file to open it in the current view mode. Arrow keys
-navigate the sidebar; Left/Right collapse/expand and Enter activates a row.
+navigate the sidebar and immediately load selected Markdown files in the current view mode, keeping keyboard focus in the sidebar. Left/Right collapse/expand and Enter activates a row.
 Other files and filesystem links are displayed but cannot be opened. Empty folders
 remain visible. Use **Refresh** to pick up external changes; there is no file watcher.
 

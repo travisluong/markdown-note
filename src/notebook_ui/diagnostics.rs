@@ -20,12 +20,12 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
     window.spawn(cx, async move |cx| {
         let started = Instant::now();
         let mut step = 0;
-        while step <= 14 {
+        while step <= 19 {
             cx.background_executor().timer(Duration::from_millis(60)).await;
             assert!(started.elapsed() < Duration::from_secs(40), "Notebook smoke check timed out at step {step}");
             let ready = notes.update(cx, |this, _| !this.busy && !this.notebooks.directories.values().any(|d| matches!(d, DirectoryState::Loading))).unwrap();
             if !ready { continue; }
-            fs::write(output.with_extension("progress.txt"), format!("step {step} of 14")).unwrap();
+            fs::write(output.with_extension("progress.txt"), format!("step {step} of 19")).unwrap();
             cx.update(|window, cx| notes.update(cx, |this, cx| {
                 match step {
                     0 => this.manage_notebooks(window, cx),
@@ -114,7 +114,59 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(this.notebooks.rows.iter().any(|r| r.label == "nested.md"));
                         this.show_menu(MenuKind::Notebooks, window, cx);
                     }
-                    14 => { assert!(this.menu.is_some()); }
+                    14 => {
+                        assert!(this.menu.is_some());
+                        this.menu = None;
+                        this.set_mode(ViewMode::Source, window, cx);
+                        this.notebooks.tree_focus.focus(window);
+                        let nested = this.notebooks.rows.iter().position(|r| r.label == "nested.md").unwrap();
+                        this.notebooks.cursor = Some(nested + 1);
+                        this.tree_move(false, window, cx);
+                    }
+                    15 => {
+                        assert!(this.mode == ViewMode::Source);
+                        assert_eq!(this.editor.read(cx).value().as_str(), "# Saved");
+                        assert!(this.notebooks.tree_focus.is_focused(window));
+                        this.set_mode(ViewMode::LivePreview, window, cx);
+                        this.notebooks.tree_focus.focus(window);
+                        let root = this.notebooks.rows.iter().position(|r| r.label == "root.md").unwrap();
+                        this.notebooks.cursor = Some(root - 1);
+                        this.tree_move(true, window, cx);
+                    }
+                    16 => {
+                        assert!(this.mode == ViewMode::LivePreview);
+                        assert_eq!(this.editor.read(cx).value().as_str(), "# Root");
+                        assert!(this.notebooks.tree_focus.is_focused(window));
+                        this.set_mode(ViewMode::Reading, window, cx);
+                        this.notebooks.tree_focus.focus(window);
+                        let nested = this.notebooks.rows.iter().position(|r| r.label == "nested.md").unwrap();
+                        this.notebooks.cursor = Some(nested + 1);
+                        this.tree_move(false, window, cx);
+                    }
+                    17 => {
+                        assert_eq!(this.reading_text.as_str(), "# Saved");
+                        assert!(this.notebooks.tree_focus.is_focused(window));
+                        let root = this.notebooks.rows.iter().position(|r| r.label == "root.md").unwrap();
+                        this.notebooks.cursor = Some(root - 1);
+                        this.tree_move(true, window, cx);
+                        // Move again before the first asynchronous read can complete.
+                        let nested = this.notebooks.rows.iter().position(|r| r.label == "nested.md").unwrap();
+                        this.notebooks.cursor = Some(nested + 1);
+                        this.tree_move(false, window, cx);
+                    }
+                    18 => {
+                        assert_eq!(this.reading_text.as_str(), "# Saved");
+                        assert!(this.notebooks.tree_focus.is_focused(window));
+                        this.editor.update(cx, |editor, cx| editor.set_value("unsaved", window, cx));
+                        this.answer_request(None, Next::TreeFile(first.join("root.md")), window, cx);
+                        assert!(this.dirty(cx));
+                        assert_eq!(this.notebooks.rows[this.notebooks.cursor.unwrap()].label, "nested.md");
+                        this.answer_request(Some(1), Next::TreeFile(first.join("root.md")), window, cx);
+                    }
+                    19 => {
+                        assert_eq!(this.reading_text.as_str(), "# Root");
+                        assert!(this.notebooks.tree_focus.is_focused(window));
+                    }
                     _ => unreachable!(),
                 }
                 cx.notify();
@@ -126,7 +178,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
         let restored = notebook::load_index(&index).unwrap();
         assert_eq!(restored.notebooks.len(), 2);
         assert_eq!(restored.active, Some(fs::canonicalize(&first).unwrap()));
-        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, all view modes, save/discard/cancel responses, missing notebook preservation, persistence and restoration\n").unwrap();
+        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration\n").unwrap();
         drop(fixture);
         cx.update(|_, cx| cx.quit()).unwrap();
     }).detach();
