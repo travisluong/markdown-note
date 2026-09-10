@@ -450,7 +450,11 @@ impl TextWrapper {
         for table in &self.tables.tables {
             let active = table.cell_at(self.active_offset);
             let widths = if active.is_some() {
-                self.table_widths.get(&table.source.start).cloned()
+                // Keep widths stable while typing, but rebuild them after column edits.
+                self.table_widths
+                    .get(&table.source.start)
+                    .filter(|widths| widths.len() == table.alignments.len())
+                    .cloned()
             } else {
                 None
             };
@@ -1504,6 +1508,79 @@ mod preview_tests {
 #[cfg(test)]
 mod table_layout_tests {
     use super::*;
+    #[test]
+    fn column_edits_refresh_active_table_widths_and_preserve_cells() {
+        use super::super::table::Command;
+
+        for newline in ["\n", "\r\n"] {
+            for command in [
+                Command::ColumnLeft,
+                Command::ColumnRight,
+                Command::DeleteColumn,
+            ] {
+                let original = Rope::from(
+                    ["| name | value |", "| --- | ---: |", "| café | 你好 |"].join(newline),
+                );
+                let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(16.), Some(px(800.)));
+                wrapper.live_preview = true;
+                wrapper.tables.rebuild(&original);
+                wrapper.active_offset = wrapper.tables.tables[0].rows[1].cells[0].start;
+                wrapper._update(&original, &(0..0), &original, &mut |_, _, _| vec![]);
+                wrapper.layout_tables(&mut |_, _| vec![]);
+                let edit = wrapper.tables.tables[0]
+                    .edit(&original, 1, 0, command)
+                    .unwrap();
+                let mut edited = original.clone();
+                edited.replace(edit.range.clone(), &edit.text);
+
+                // Apply the edit, undo it, and redo it while the caret stays in the table.
+                for next in [&edited, &original, &edited] {
+                    let old = wrapper.text.clone();
+                    let range = 0..old.len();
+                    wrapper.active_offset = next.len();
+                    wrapper.tables.update(&old, next, &range, next);
+                    wrapper._update(next, &range, next, &mut |_, _, _| vec![]);
+                    wrapper.layout_tables(&mut |_, _| vec![]);
+                    let expected: Vec<&str> = if next == &original {
+                        vec!["café", "你好"]
+                    } else {
+                        match command {
+                            Command::ColumnLeft => vec!["", "café", "你好"],
+                            Command::ColumnRight => vec!["café", "", "你好"],
+                            Command::DeleteColumn => vec!["你好"],
+                            _ => unreachable!(),
+                        }
+                    };
+                    let table = &wrapper.tables.tables[0];
+                    for row in &table.rows {
+                        let layout = wrapper.lines[next.offset_to_point(row.source.start).row]
+                            .table
+                            .as_ref()
+                            .unwrap();
+                        assert_eq!(layout.widths.len(), expected.len(), "{command:?}");
+                        assert_eq!(layout.cells.len(), expected.len(), "{command:?}");
+                    }
+                    let body = wrapper.lines[2].table.as_ref().unwrap();
+                    assert_eq!(
+                        body.cells
+                            .iter()
+                            .map(|c| c.mapped.text.as_str())
+                            .collect::<Vec<_>>(),
+                        expected
+                    );
+                    assert_eq!(
+                        table.rows[1]
+                            .cells
+                            .iter()
+                            .map(|c| next.slice(c.clone()).to_string())
+                            .collect::<Vec<_>>(),
+                        expected
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn table_rows_share_widths_hide_separator_and_map_unicode() {
         let text = Rope::from(

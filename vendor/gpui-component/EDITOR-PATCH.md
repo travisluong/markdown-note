@@ -63,3 +63,8 @@ parser equivalence, and layout indexing. Editor diagnostics cover commands,
 stale targets, undo/redo, disabled editing, IME, cell hit testing, selection,
 and font/theme changes. The release harness includes a 10,000-row table;
 autosave diagnostics exercise cell editing and row insertion together.
+
+Active-table width caching validates the current column count after structural
+edits. Inserted columns no longer hide the rightmost cells, and column deletion
+cannot reuse an oversized width vector. Layout regressions cover insertion on
+both sides, deletion, undo/redo snapshots, Unicode content, and LF/CRLF text.
