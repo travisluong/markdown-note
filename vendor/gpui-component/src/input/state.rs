@@ -1193,9 +1193,8 @@ impl InputState {
             let row = self.text.offset_to_point(self.cursor()).row;
             let start = self.text.line_start_offset(row);
             let line = self.text.slice_line(row).to_string();
-            if (self.live_preview || super::live_preview::task_state(&line).is_some())
-                && let Some((range, insertion)) =
-                    super::live_preview::list_enter(&line, self.cursor() - start)
+            if let Some((range, insertion)) =
+                super::live_preview::list_enter(&line, self.cursor() - start)
             {
                 let range = self.range_to_utf16(&(start + range.start..start + range.end));
                 let history = std::mem::replace(&mut self.history, History::new());
@@ -1372,6 +1371,40 @@ impl InputState {
                 + painted.origin,
             painted.size,
         ))
+    }
+
+    /// Move selected list subtrees as one isolated edit.
+    pub(super) fn nest_list(
+        &mut self,
+        outdent: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(edit) = super::live_preview::nest_lines(
+            &self.text.to_string(),
+            self.selected_range.into(),
+            outdent,
+            self.mode.tab_size().tab_size,
+        ) else {
+            return false;
+        };
+        if edit.range.is_empty() && edit.text.is_empty() {
+            return true;
+        }
+        let reversed = self.selection_reversed;
+        let range = self.range_to_utf16(&edit.range);
+        let history = std::mem::replace(&mut self.history, History::new());
+        self.history = history.group_interval(std::time::Duration::ZERO);
+        self.list_enter_boundary = false;
+        self.replace_text_in_range_silent(Some(range), &edit.text, window, cx);
+        self.list_enter_boundary = true;
+        self.selected_range = edit.selection.into();
+        self.selection_reversed = reversed;
+        self.selected_word_range = None;
+        self.update_preferred_column();
+        self.pause_blink_cursor(cx);
+        cx.notify();
+        true
     }
 
     /// Create or toggle tasks on intersected lines as one isolated edit.
@@ -2426,6 +2459,39 @@ impl InputState {
     pub fn diagnostic_checks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for live in [false, true] {
             self.set_live_preview(live, cx);
+            let source = "10. parent\n- café\n  - [X] child\n- sibling";
+            let at = source.find("café").unwrap() + "café".len();
+            self.set_value(source, window, cx);
+            self.selected_range = (at..at).into();
+            self.indent_inline(&IndentInline, window, cx);
+            let nested = "10. parent\n    - café\n      - [X] child\n- sibling";
+            assert_eq!(self.value().as_str(), nested);
+            assert_eq!(self.cursor(), at + 4);
+            self.undo(&Undo, window, cx);
+            assert_eq!(self.value().as_str(), source);
+            self.redo(&Redo, window, cx);
+            assert_eq!(self.value().as_str(), nested);
+            self.selected_range = (at + 4..at + 4).into();
+            self.outdent_inline(&OutdentInline, window, cx);
+            assert_eq!(self.value().as_str(), source);
+            assert_eq!(self.cursor(), at);
+            self.selected_range =
+                (source.find("- café").unwrap()..source.find("- sibling").unwrap()).into();
+            self.selection_reversed = true;
+            self.indent_inline(&IndentInline, window, cx);
+            assert_eq!(self.value().as_str(), nested);
+            assert!(self.selection_reversed);
+            let selection = self.selected_range;
+            self.disabled = true;
+            self.indent_inline(&IndentInline, window, cx);
+            self.outdent_inline(&OutdentInline, window, cx);
+            assert_eq!(self.value().as_str(), nested);
+            assert_eq!(self.selected_range, selection);
+            self.disabled = false;
+            self.set_value("  9) [X] café", window, cx);
+            self.selected_range = (self.text.len()..self.text.len()).into();
+            self.enter(&Enter { secondary: false }, window, cx);
+            assert_eq!(self.value().as_str(), "  9) [X] café\n  10) [ ] ");
             let original = "  plain\n> - [X] 你好\nlast";
             self.set_value(original, window, cx);
             let end = original.find("last").unwrap();

@@ -428,6 +428,39 @@ impl TextView {
             .collect::<Vec<_>>();
         assert_eq!(actual, expected, "reading task UTF-8 offsets");
         assert_eq!(content.node_cx.source.as_ref(), source);
+        fn lists(node: &node::Node, depth: usize, found: &mut Vec<(usize, bool)>) {
+            match node {
+                node::Node::List { children, ordered } => {
+                    found.push((depth, *ordered));
+                    for child in children {
+                        lists(child, depth + 1, found);
+                    }
+                }
+                node::Node::Root { children }
+                | node::Node::Blockquote { children }
+                | node::Node::ListItem { children, .. } => {
+                    for child in children {
+                        lists(child, depth, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let source = "10. parent\n    - child\n      1. [X] 你好\n11. sibling";
+        let content = parse_content(
+            TextViewType::Markdown,
+            source,
+            TextViewStyle::default(),
+            &cx.theme().highlight_theme,
+            &None,
+        )
+        .unwrap();
+        let mut hierarchy = Vec::new();
+        lists(&content.root_node, 0, &mut hierarchy);
+        assert_eq!(hierarchy, vec![(0, true), (1, false), (2, true)]);
+        let mut actual = Vec::new();
+        offsets(&content.root_node, &mut actual);
+        assert_eq!(actual, vec![source.find('[').unwrap() + 1]);
     }
     /// Opt in to task checkbox clicks. Offset and source belong to the rendered parse.
     pub fn on_task_toggle(

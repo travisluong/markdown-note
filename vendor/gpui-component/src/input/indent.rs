@@ -252,6 +252,9 @@ impl InputState {
     }
 
     pub(super) fn indent(&mut self, block: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled {
+            return;
+        }
         if !block && self.table_tab(false, false, window, cx) {
             return;
         }
@@ -259,6 +262,10 @@ impl InputState {
             cx.propagate();
             return;
         };
+
+        if self.nest_list(false, window, cx) {
+            return;
+        }
 
         let tab_indent = self.mode.tab_size().to_string();
         let selected_range = self.selected_range;
@@ -313,6 +320,9 @@ impl InputState {
     }
 
     pub(super) fn outdent(&mut self, block: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled {
+            return;
+        }
         if !block && self.table_tab(true, false, window, cx) {
             return;
         }
@@ -320,6 +330,10 @@ impl InputState {
             cx.propagate();
             return;
         };
+
+        if self.nest_list(true, window, cx) {
+            return;
+        }
 
         let tab_indent = self.mode.tab_size().to_string();
         let selected_range = self.selected_range;

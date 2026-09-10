@@ -326,8 +326,12 @@ impl InputState {
         self.set_value(original, window, cx);
         self.history.clear();
         self.move_to(at, None, cx);
-        assert!(self.table_tab(false, false, window, cx));
+        self.indent_inline(&super::IndentInline, window, cx);
         assert_eq!(self.active_table().map(|(_, r, c)| (r, c)), Some((1, 1)));
+        assert_eq!(self.value().as_str(), original);
+        self.outdent_inline(&super::OutdentInline, window, cx);
+        assert_eq!(self.active_table().map(|(_, r, c)| (r, c)), Some((1, 0)));
+        self.indent_inline(&super::IndentInline, window, cx);
         assert!(self.table_tab(false, false, window, cx));
         assert_eq!(self.text_wrapper.tables.tables[0].rows.len(), 3);
         self.undo(&Undo, window, cx);

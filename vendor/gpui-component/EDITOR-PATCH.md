@@ -77,3 +77,17 @@ Rows in both views reserve at least two text lines of height, including empty
 headers and body rows. This scales with the font, while longer content can grow
 the row. Live-preview height indexing uses the same minimum and keeps the
 Markdown separator hidden; regression checks cover row heights and offsets.
+
+Tab/Shift+Tab nest list items in Source and Live preview, moving their descendants
+and indented continuation lines together. Nesting aligns to the preceding sibling's
+list content column (before a task checkbox); outdent aligns to the enclosing
+parent, with the configured space step as a fallback. Selected siblings retain
+their relative level, and each subtree is edited once. Quote prefixes, markers,
+checkbox states, line endings, and selection direction are preserved. Markdown
+tabs are measured at four-column stops and edited indentation is written as spaces.
+Table navigation keeps precedence, and each nesting command is one undo operation.
+Shared marker recognition covers indented unordered and ordered lists; Enter
+preserves prefixes and continues numbering and unchecked tasks in both modes.
+Live preview renders nested bullets with lossless mappings. Parser tests and
+in-app diagnostics cover subtree edits, selection boundaries, Unicode, CRLF,
+undo/redo, disabled editing, Reading hierarchy, and nested checkbox hit geometry.

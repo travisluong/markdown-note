@@ -31,7 +31,7 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
         .unwrap();
     });
     let fixture = format!(
-        "#{}\n- **café** _你好_\n##Wrapped heading\nplain **bold** text\n> **quoted café** _你好_\n> > - [X] nested task\n>>Unicode quote wrapping words 你好 café words repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated",
+        "#{}\n- **café** _你好_\n##Wrapped heading\nplain **bold** text\n> **quoted café** _你好_\n> > - parent\n> >   - [X] nested task\n>>Unicode quote wrapping words 你好 café words repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated",
         "Heading words ".repeat(16)
     );
     diagnostic.update(cx, |editor, cx| {

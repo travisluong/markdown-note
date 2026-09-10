@@ -80,12 +80,12 @@ pub(super) fn task_state(line: &str) -> Option<usize> {
 }
 
 pub(super) fn marker(line: &str) -> Option<(usize, String)> {
-    if line.starts_with("- ") {
-        return Some((2, "- ".into()));
-    }
-    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
-    if digits > 0 && line[digits..].starts_with(". ") {
-        let mut next = line[..digits].as_bytes().to_vec();
+    let start = content_start(line);
+    let end = list_content_start(line, start)?;
+    let body = &line[start..];
+    let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+    let next_marker = if digits > 0 {
+        let mut next = body[..digits].as_bytes().to_vec();
         let mut carry = true;
         for digit in next.iter_mut().rev() {
             if *digit == b'9' {
@@ -101,9 +101,11 @@ pub(super) fn marker(line: &str) -> Option<(usize, String)> {
         }
         let next = String::from_utf8(next).ok()?;
         let next = next.trim_start_matches('0');
-        return Some((digits + 2, format!("{next}. ")));
-    }
-    None
+        format!("{next}{}", &body[digits..end - start])
+    } else {
+        line[start..end].to_owned()
+    };
+    Some((end, format!("{}{next_marker}", &line[..start])))
 }
 
 pub(super) fn list_enter(line: &str, cursor: usize) -> Option<(Range<usize>, String)> {
@@ -115,9 +117,8 @@ pub(super) fn list_enter(line: &str, cursor: usize) -> Option<(Range<usize>, Str
         if line[end..].trim().is_empty() {
             return Some((0..line.len(), "\n".into()));
         }
-        let mut next = line[..end].to_string();
-        next.replace_range(state..state + 1, " ");
-        return Some((cursor..cursor, format!("\n{next} ")));
+        let (_, next) = marker(line)?;
+        return Some((cursor..cursor, format!("\n{next}[ ] ")));
     }
     let (prefix, next) = marker(line)?;
     if line[prefix..].trim().is_empty() {
@@ -138,7 +139,8 @@ impl Presentation {
         let hashes = line.bytes().take_while(|b| *b == b'#').count();
         let mut result = Self {
             heading: if hashes <= 6 { hashes } else { 0 },
-            bullet: line.starts_with("- "),
+            bullet: list_content_start(line, content_start(line)).is_some()
+                && line[content_start(line)..].starts_with(['-', '*', '+']),
             task: task_state(line),
             ..Self::default()
         };
@@ -158,7 +160,10 @@ impl Presentation {
         }
         let bytes = line.as_bytes();
         let mut openings = [None; 4];
-        let mut i = result.task.map_or(0, |state| state + 2);
+        let mut i = result.task.map_or_else(
+            || list_content_start(line, content_start(line)).unwrap_or(0),
+            |state| state + 2,
+        );
         while i < bytes.len() {
             if bytes[i] != b'*' && bytes[i] != b'_' {
                 i += 1;
@@ -215,6 +220,7 @@ impl Presentation {
         let mut source_to_display = vec![0; source.len() + 1];
         let mut display_to_source = vec![0];
         let mut hidden_index = 0;
+        let marker_start = content_start(source);
         let task_start = self.task.map(|_| content_start(source));
         for (ix, ch) in source.char_indices() {
             while self.hidden.get(hidden_index).is_some_and(|r| r.end <= ix) {
@@ -236,7 +242,7 @@ impl Presentation {
             if !hidden {
                 text.push(if self.task == Some(ix) {
                     '\u{fffc}'
-                } else if ix == self.quote_prefixes.last().map_or(0, |r| r.end) && self.bullet {
+                } else if ix == marker_start && self.bullet {
                     '•'
                 } else {
                     ch
@@ -302,7 +308,7 @@ mod tests {
         }
         assert_eq!(Presentation::parse("#######title").heading, 0);
         assert!(marker("-x").is_none());
-        assert!(marker(" 1. x").is_none());
+        assert_eq!(marker(" 1. x"), Some((4, " 2. ".into())));
         let p = Presentation::parse("- **café** _你好_");
         let m = p.display("- **café** _你好_", false);
         assert_eq!(m.text, "• café 你好");
@@ -381,6 +387,194 @@ pub(super) struct TaskEdit {
     pub range: Range<usize>,
     pub text: String,
     pub selection: Range<usize>,
+}
+
+/// List nesting uses source columns, excluding explicit blockquote prefixes.
+/// Markdown tabs advance to the next four-column stop.
+fn columns(text: &str) -> usize {
+    text.bytes().fold(0, |column, b| {
+        if b == b'\t' {
+            column + 4 - column % 4
+        } else {
+            column + 1
+        }
+    })
+}
+
+pub(super) fn nest_lines(
+    source: &str,
+    selection: Range<usize>,
+    outdent: bool,
+    step: usize,
+) -> Option<TaskEdit> {
+    struct Line<'a> {
+        text: &'a str,
+        offset: usize,
+        prefix: usize,
+        depth: usize,
+        start: usize,
+        indent: usize,
+        content: Option<usize>,
+    }
+    let mut offset = 0;
+    let mut fence: Option<(u8, usize)> = None;
+    let lines: Vec<_> = source
+        .split('\n')
+        .map(|text| {
+            let quotes = quote_prefixes(text);
+            let prefix = quotes.last().map_or(0, |r| r.end);
+            let start = content_start(text);
+            let body = text[start..].trim_end_matches('\r');
+            let fence_char = body.as_bytes().first().copied().unwrap_or(0);
+            let fence_len = body.bytes().take_while(|b| *b == fence_char).count();
+            let in_fence = fence.is_some();
+            if let Some((ch, len)) = fence {
+                if ch == fence_char && fence_len >= len && body[fence_len..].trim().is_empty() {
+                    fence = None;
+                }
+            } else if matches!(fence_char, b'`' | b'~') && fence_len >= 3 {
+                fence = Some((fence_char, fence_len));
+            }
+            let line = Line {
+                text,
+                offset,
+                prefix,
+                depth: quotes.len(),
+                start,
+                indent: columns(&text[prefix..start]),
+                content: if in_fence || fence.is_some() {
+                    None
+                } else {
+                    list_content_start(text, start).map(|end| columns(&text[prefix..end]))
+                },
+            };
+            offset += text.len() + 1;
+            line
+        })
+        .collect();
+    let first = lines
+        .partition_point(|line| line.offset <= selection.start)
+        .saturating_sub(1);
+    let last_offset =
+        if selection.end > selection.start && source.as_bytes()[selection.end - 1] == b'\n' {
+            selection.end - 1
+        } else {
+            selection.end
+        };
+    let last = lines
+        .partition_point(|line| line.offset <= last_offset)
+        .saturating_sub(1);
+    let mut replacements = Vec::new();
+    let mut handled = false;
+    let mut targets = vec![None; lines.len()];
+    let mut row = first;
+    while row <= last {
+        let root = &lines[row];
+        if root.content.is_none() {
+            row += 1;
+            continue;
+        }
+        handled = true;
+        let mut target = if outdent {
+            root.indent.saturating_sub(step.max(1))
+        } else {
+            root.indent + step.max(1)
+        };
+        for (previous_row, previous) in lines[..row].iter().enumerate().rev() {
+            if previous.depth != root.depth {
+                break;
+            }
+            if previous.text[previous.prefix..].trim().is_empty() {
+                continue;
+            }
+            if outdent {
+                if previous.indent < root.indent {
+                    if previous.content.is_some() {
+                        target = previous.indent;
+                    }
+                    break;
+                }
+            } else if previous.indent <= root.indent {
+                if previous.indent == root.indent {
+                    if let Some(content) = previous.content {
+                        // Selected siblings stay siblings even when their marker widths differ.
+                        target = targets[previous_row].unwrap_or(content);
+                    }
+                }
+                break;
+            }
+            if previous.content.is_none() && previous.indent <= root.indent {
+                break;
+            }
+        }
+        targets[row] = Some(target);
+        // Include descendants and continuation lines, but not trailing blank lines.
+        let mut end = row + 1;
+        for (next, line) in lines.iter().enumerate().skip(row + 1) {
+            if line.depth != root.depth {
+                break;
+            }
+            if line.text[line.prefix..].trim().is_empty() {
+                continue;
+            }
+            if line.indent <= root.indent {
+                break;
+            }
+            end = next + 1;
+        }
+        if target != root.indent {
+            for line in &lines[row..end] {
+                if line.text[line.prefix..].trim().is_empty() {
+                    continue;
+                }
+                let new_indent = if target > root.indent {
+                    line.indent + target - root.indent
+                } else {
+                    line.indent.saturating_sub(root.indent - target)
+                };
+                replacements.push((
+                    line.offset + line.prefix..line.offset + line.start,
+                    " ".repeat(new_indent),
+                ));
+            }
+        }
+        row = end;
+    }
+    if !handled {
+        return None;
+    }
+    let map = |position: usize| {
+        let mut shift = 0isize;
+        for (range, text) in &replacements {
+            if position < range.start {
+                break;
+            }
+            if position < range.end {
+                return (range.start as isize + shift) as usize
+                    + (position - range.start).min(text.len());
+            }
+            shift += text.len() as isize - range.len() as isize;
+        }
+        (position as isize + shift) as usize
+    };
+    let mapped = map(selection.start)..map(selection.end);
+    let start = replacements
+        .first()
+        .map_or(selection.start, |(range, _)| range.start);
+    let end = replacements.last().map_or(start, |(range, _)| range.end);
+    let mut text = String::new();
+    let mut from = start;
+    for (range, replacement) in replacements {
+        text.push_str(&source[from..range.start]);
+        text.push_str(&replacement);
+        from = range.end;
+    }
+    text.push_str(&source[from..end]);
+    Some(TaskEdit {
+        range: start..end,
+        text,
+        selection: mapped,
+    })
 }
 
 pub(super) fn toggle_lines(source: &str, selection: Range<usize>) -> TaskEdit {
@@ -481,5 +675,136 @@ mod task_tests {
         let parsed = Presentation::parse("  - [ ] café");
         assert_eq!(parsed.display("  - [ ] café", true).text, "  \u{fffc} café");
         assert_eq!(task_state("  - [bad]"), None);
+    }
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use super::*;
+
+    fn nest(source: &str, selection: Range<usize>, outdent: bool) -> (String, Range<usize>) {
+        let edit = nest_lines(source, selection, outdent, 2).unwrap();
+        let mut result = source.to_owned();
+        result.replace_range(edit.range, &edit.text);
+        (result, edit.selection)
+    }
+
+    #[test]
+    fn marker_width_and_subtrees() {
+        for parent in [
+            "- parent",
+            "* parent",
+            "+ parent",
+            "9. parent",
+            "10) parent",
+            "- [X] parent",
+        ] {
+            let source = format!("{parent}\n- café\n  1. child\n     continuation\n- sibling");
+            let at = source.find("café").unwrap() + "café".len();
+            let width = list_content_start(parent, 0).unwrap();
+            let spaces = " ".repeat(width);
+            let (result, selection) = nest(&source, at..at, false);
+            assert_eq!(
+                result,
+                format!(
+                    "{parent}\n{spaces}- café\n{spaces}  1. child\n{spaces}     continuation\n- sibling"
+                )
+            );
+            assert_eq!(selection, at + width..at + width);
+            assert_eq!(nest(&result, selection, true).0, source);
+        }
+    }
+
+    #[test]
+    fn repeated_steps_and_top_level() {
+        let (one, caret) = nest("- [x] task", 10..10, false);
+        assert_eq!(one, "  - [x] task");
+        let (two, caret) = nest(&one, caret, false);
+        assert_eq!(two, "    - [x] task");
+        let (one_again, caret) = nest(&two, caret, true);
+        assert_eq!(one_again, one);
+        assert_eq!(nest(&one_again, caret, true).0, "- [x] task");
+        assert_eq!(nest("- top", 0..0, true), ("- top".into(), 0..0));
+        assert_eq!(nest(" - odd", 0..0, true), ("- odd".into(), 0..0));
+    }
+
+    #[test]
+    fn selections_move_each_subtree_once() {
+        let source = "10. first\n11. second\n    - child";
+        assert_eq!(
+            nest(source, 0..source.len(), false).0,
+            "  10. first\n  11. second\n      - child"
+        );
+        let source = "- parent\n- one\n  - child\n- two\n- untouched";
+        let start = source.find("one").unwrap();
+        let end = source.find("- untouched").unwrap();
+        let (result, selection) = nest(source, start..end, false);
+        assert_eq!(
+            result,
+            "- parent\n  - one\n    - child\n  - two\n- untouched"
+        );
+        assert_eq!(selection, start + 2..end + 6);
+        assert_eq!(nest(&result, selection, true).0, source);
+        let source = "plain\n- one\nplain\n- two";
+        assert_eq!(
+            nest(source, 0..source.len(), false).0,
+            "plain\n  - one\nplain\n  - two"
+        );
+    }
+
+    #[test]
+    fn quotes_tabs_crlf_and_block_boundaries() {
+        let source = "> > 10. parent\r\n> > - [X] 你好\r\n> >   continuation\r\n> outside\r\n- end";
+        let at = source.find("你好").unwrap();
+        let (result, caret) = nest(source, at..at, false);
+        assert_eq!(
+            result,
+            "> > 10. parent\r\n> >     - [X] 你好\r\n> >       continuation\r\n> outside\r\n- end"
+        );
+        assert_eq!(nest(&result, caret, true).0, source);
+        assert_eq!(nest("\t- task", 7..7, false).0, "      - task");
+        assert_eq!(
+            nest("- a\n\n  continuation\n\nparagraph\n- next", 3..3, false).0,
+            "  - a\n\n    continuation\n\nparagraph\n- next"
+        );
+        let source = "```md\n- code\n```\nplain";
+        assert!(nest_lines(source, 8..8, false, 2).is_none());
+        assert!(nest_lines("plain", 2..2, false, 2).is_none());
+    }
+
+    #[test]
+    fn nested_enter_and_preview_mappings() {
+        let source = "  * *italic*";
+        assert_eq!(
+            Presentation::parse(source).display(source, false).text,
+            "  • italic"
+        );
+        for (source, next) in [
+            ("  * café", "\n  * "),
+            ("> >   + 你好", "\n> >   + "),
+            ("    99) text", "\n    100) "),
+            (">   9. [X] text", "\n>   10. [ ] "),
+            ("  - [x] text", "\n  - [ ] "),
+        ] {
+            assert_eq!(
+                list_enter(source, source.len()),
+                Some((source.len()..source.len(), next.into()))
+            );
+        }
+        for source in [
+            "  - café",
+            "    * 你好",
+            "> >   + **café**",
+            "    - [x] 你好",
+        ] {
+            let p = Presentation::parse(source);
+            let mapped = p.display(source, false);
+            assert!(!mapped.text.contains(['-', '*', '+']));
+            for (offset, _) in mapped.text.char_indices() {
+                let source_offset = mapped.display_to_source[offset];
+                assert!(source.is_char_boundary(source_offset));
+                assert_eq!(mapped.source_to_display[source_offset], offset);
+            }
+        }
     }
 }
