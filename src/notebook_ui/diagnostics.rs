@@ -177,6 +177,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     21 => {
                         assert!(window.has_active_dialog(cx));
                         this.update_appearance(notebook::Appearance { content_font_size: 40, ui_font_size: 24, dark_mode: Some(true) }, window, cx);
+                        this.save_sidebar_width(375., cx);
                     }
                     22 => {
                         assert!(cx.theme().mode.is_dark());
@@ -186,6 +187,8 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.request(Next::Notebook { path: second.clone(), create: false }, window, cx);
                     }
                     23 => {
+                        assert_eq!(this.notebooks.active.as_ref().unwrap().settings.sidebar_width, 280.);
+                        this.save_sidebar_width(210., cx);
                         assert_eq!(this.appearance().content_font_size, 16);
                         assert_eq!(this.appearance().dark_mode, Some(this.startup_dark));
                         this.update_appearance(notebook::Appearance { content_font_size: 10, ui_font_size: 10, dark_mode: Some(false) }, window, cx);
@@ -198,6 +201,9 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.request(Next::Notebook { path: first.clone(), create: false }, window, cx);
                     }
                     25 => {
+                        assert_eq!(this.notebooks.active.as_ref().unwrap().settings.sidebar_width, 375.);
+
+                        assert_eq!(notebook::Notebook::open(&second, false).unwrap().settings.sidebar_width, 210.);
                         assert_eq!(this.appearance().content_font_size, 40);
                         assert_eq!(this.appearance().ui_font_size, 24);
                         assert!(cx.theme().mode.is_dark());

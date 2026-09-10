@@ -11,6 +11,7 @@ mod notebook_ui;
 mod search;
 mod search_ui;
 mod settings_ui;
+mod sidebar_ui;
 mod templates;
 
 use std::{
@@ -157,6 +158,7 @@ fn save_file(path: &Path, text: &str, bom: bool, newline: Newline) -> io::Result
 }
 
 struct Notes {
+    sidebar_resize: Entity<gpui_component::resizable::ResizableState>,
     session_date_format: String,
     date_input: Option<Entity<InputState>>,
     date_subscription: Option<Subscription>,
@@ -206,6 +208,7 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),
             session_date_format: templates::default_format(),
             date_input: None,
             date_subscription: None,
@@ -701,21 +704,7 @@ impl Render for Notes {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .when(self.notebooks.active.is_some(), |view| {
-                        if self.search.as_ref().is_some_and(|panel| panel.visible) {
-                            view.child(self.render_search_panel(cx))
-                        } else {
-                            view.child(self.render_sidebar(window, cx))
-                        }
-                    })
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .overflow_hidden()
-                            .child(content),
-                    ),
+                    .child(self.render_sidebar_layout(content.into_any_element(), window, cx)),
             )
             .when_some(self.menu.clone(), |this, (kind, menu)| {
                 this.child(deferred(

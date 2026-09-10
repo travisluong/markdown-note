@@ -80,6 +80,10 @@ Filesystem links and `.gpui-note` are excluded. Searches show up to 2,000 matche
 files over 8 MiB and unreadable/non-UTF-8 files are skipped with a visible count.
 A changed match is rechecked against the loaded text before navigation.
 
+Drag the sidebar’s right border to resize Explorer and Search together. Each
+notebook saves its width in .gpui-note/settings.json (default 280 px, range
+160–600 px). The layout keeps at least 200 px available for the editor.
+
 ## Check
 
 ```powershell

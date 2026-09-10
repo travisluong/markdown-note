@@ -607,6 +607,7 @@ impl Notes {
                 match result {
                     Ok((book, document)) => {
                         this.search = None;
+                        this.reset_sidebar_resize(cx);
                         this.notebooks.index.register(book.root.clone());
                         this.notebooks.active = Some(book);
                         this.apply_appearance(window, cx);
@@ -1040,9 +1041,8 @@ impl Notes {
                     this.activate_row(i, window, cx);
                 }
             }))
-            .w(px(240.))
-            .min_w(px(160.))
-            .flex_shrink_0()
+            .w_full()
+            .min_w_0()
             .h_full()
             .flex()
             .flex_col()

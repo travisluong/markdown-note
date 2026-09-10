@@ -65,6 +65,8 @@ impl Appearance {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f32,
     #[serde(default = "crate::templates::default_format")]
     pub date_format: String,
     pub version: u32,
@@ -79,6 +81,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            sidebar_width: default_sidebar_width(),
             version: VERSION,
             last_file: None,
             date_format: crate::templates::default_format(),
@@ -86,6 +89,18 @@ impl Default for Settings {
             appearance: Appearance::default(),
             autosave: Autosave::default(),
         }
+    }
+}
+
+pub fn default_sidebar_width() -> f32 {
+    280.
+}
+
+pub fn normalize_sidebar_width(width: f32) -> f32 {
+    if width.is_finite() {
+        width.clamp(160., 600.)
+    } else {
+        default_sidebar_width()
     }
 }
 
@@ -292,7 +307,8 @@ impl Notebook {
             }
         }
         let existing: Option<Settings> = read_json(&path)?;
-        let settings = existing.clone().unwrap_or_default();
+        let mut settings = existing.clone().unwrap_or_default();
+        settings.sidebar_width = normalize_sidebar_width(settings.sidebar_width);
         check_version(settings.version)?;
         if settings
             .last_file
@@ -375,6 +391,40 @@ mod tests {
         for value in ["Work", "My notes", "日本語", "COM10", "notes.v2"] {
             validate_name(value).unwrap();
         }
+    }
+
+    #[test]
+    fn sidebar_width_compatibility_normalization_and_persistence() {
+        let old: Settings =
+            serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
+        assert_eq!(old.sidebar_width, 280.);
+        assert_eq!(normalize_sidebar_width(-1.), 160.);
+        assert_eq!(normalize_sidebar_width(900.), 600.);
+        assert_eq!(normalize_sidebar_width(f32::NAN), 280.);
+        assert_eq!(normalize_sidebar_width(f32::INFINITY), 280.);
+        let fixture = tempfile::tempdir().unwrap();
+        for (name, saved, expected) in [
+            ("First", 375.5, 375.5),
+            ("Second", 210., 210.),
+            ("Small", 0., 160.),
+            ("Large", 999., 600.),
+        ] {
+            let root = fixture.path().join(name);
+            let mut book = Notebook::open(&root, true).unwrap();
+            book.settings.sidebar_width = saved;
+            write_json(&settings_path(&root), &book.settings).unwrap();
+            assert_eq!(
+                Notebook::open(&root, false).unwrap().settings.sidebar_width,
+                expected
+            );
+        }
+        assert_eq!(
+            Notebook::open(&fixture.path().join("First"), false)
+                .unwrap()
+                .settings
+                .sidebar_width,
+            375.5
+        );
     }
 
     #[test]
