@@ -176,12 +176,19 @@ impl Notes {
         cx.notify();
     }
 
-    fn palette_dialog(&mut self, dialog: Dialog, _: &mut Window, cx: &mut Context<Self>) -> Dialog {
+    fn palette_dialog(
+        &mut self,
+        dialog: Dialog,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Dialog {
         let owner = cx.weak_entity();
         let Some(palette) = &self.palette else {
             return dialog;
         };
         let body = div()
+            .w_full()
+            .min_w_0()
             .flex()
             .flex_col()
             .gap_2()
@@ -228,18 +235,23 @@ impl Notes {
                                 let entry = &p.results[i];
                                 div()
                                     .id(i)
+                                    .w_full()
+                                    .min_w_0()
+                                    .overflow_hidden()
                                     .h(px(48.))
                                     .px_2()
                                     .flex()
                                     .flex_col()
                                     .when(i == p.selected, |v| v.bg(cx.theme().accent))
-                                    .child(format!(
+                                    .child(div().w_full().truncate().child(format!(
                                         "{}{}",
                                         if entry.directory { "▸ " } else { "" },
                                         notebook::name(&entry.relative)
-                                    ))
+                                    )))
                                     .child(
                                         div()
+                                            .w_full()
+                                            .truncate()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
                                             .child(entry.relative.display().to_string()),
@@ -254,13 +266,15 @@ impl Notes {
                             .collect::<Vec<_>>()
                     }),
                 )
+                .w_full()
+                .min_w_0()
                 .h(px(336.))
                 .track_scroll(palette.scroll.clone())
                 .into_any_element()
             });
         dialog
             .title("Go to")
-            .w(px(560.))
+            .w(px(560.).min(window.viewport_size().width - px(32.)))
             .on_close(move |_, window, cx| {
                 let _ = owner.update(cx, |this, cx| this.close_palette(window, cx));
             })
