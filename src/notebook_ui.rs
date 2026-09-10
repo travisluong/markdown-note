@@ -648,6 +648,7 @@ impl Notes {
         let editor = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
+                .find_only()
                 .default_value(text)
         });
         self.editor_subscription = Self::subscribe_editor(&editor, window, cx);

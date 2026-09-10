@@ -54,6 +54,16 @@ use LF. The file picker shows all files; unsupported extensions are rejected.
 There is no New, Save As, autosave, file watching, tabs, or database. Reading view
 uses GPUI Component's built-in Markdown support. Source and Live preview share a rope buffer, selection, and undo history.
 
+`Ctrl+F` finds literal text in the current document, including unsaved edits.
+Selected text seeds the query. Matches are highlighted with an active-match
+counter; Enter/Shift+Enter or the arrow buttons move between matches and wrap.
+The **Match case** button toggles case sensitivity (case-insensitive matching
+folds ASCII letters; non-ASCII characters match exactly). Escape closes find
+and returns focus to the document. Source and Live preview support find,
+including table text; invoking it in Reading view switches to Source mode.
+Ctrl+F also works from the notebook sidebar. Find state resets when another
+document is loaded. Replacement and notebook-wide search are not included.
+
 ## Check
 
 ```powershell

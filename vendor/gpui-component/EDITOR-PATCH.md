@@ -7,6 +7,14 @@ The original Apache 2.0 license is retained. Cargo uses this copy via the root
 
 Changes are confined to input support and the `editor-diagnostics` feature:
 
+- Opt-in `find_only()` configuration hides replacement controls, with a public
+  `open_search()` entry point for app-level Ctrl+F. Non-searchable inputs propagate
+  the search action; the find query handles repeated Ctrl+F locally. Find selects
+  and reveals the active source range, wraps from the end, notifies after edits,
+  and closes on Escape from either the panel or document. Literal matching retains
+  upstream ASCII case folding. Find diagnostics exercise matching and keyboard
+  integration in Source, Reading, and Live preview, including tables.
+
 - Opt-in live-preview presentation and cheap immutable rope snapshots.
 - Heading markers hide outside the cursor source line, using lossless source mappings.
 - Line-local Markdown parser, bidirectional UTF-8 display mappings, and list Enter.

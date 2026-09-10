@@ -3,23 +3,22 @@ use rust_i18n::t;
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    App, AppContext as _, Context, Empty, Entity, FocusHandle, Focusable, Half,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Render, Styled,
-    Subscription, Window, actions, canvas, div, prelude::FluentBuilder as _,
+    actions, canvas, div, prelude::FluentBuilder as _, App, AppContext as _, Context, Empty,
+    Entity, FocusHandle, Focusable, Half, InteractiveElement as _, IntoElement, KeyBinding,
+    ParentElement as _, Pixels, Render, Styled, Subscription, Window,
 };
 use ropey::Rope;
 
 use crate::{
-    ActiveTheme, Disableable, IconName, Selectable, Sizable,
     actions::SelectUp,
     button::{Button, ButtonVariants},
     h_flex,
     input::{
-        Enter, Escape, IndentInline, Input, InputEvent, InputState, RopeExt as _, Search,
-        movement::MoveDirection,
+        movement::MoveDirection, Enter, Escape, IndentInline, Input, InputEvent, InputState,
+        RopeExt as _, Search,
     },
     label::Label,
-    v_flex,
+    v_flex, ActiveTheme, Disableable, IconName, Selectable, Sizable,
 };
 
 const CONTEXT: &'static str = "SearchPanel";
@@ -120,12 +119,11 @@ impl SearchMatcher {
 
     /// Update the current match index based on the given offset.
     fn update_cursor_by_offset(&mut self, offset: usize) {
-        for (ix, range) in self.matched_ranges.iter().enumerate() {
-            self.current_match_ix = ix;
-            if range.contains(&offset) || range.end >= offset {
-                return;
-            }
-        }
+        self.current_match_ix = self
+            .matched_ranges
+            .iter()
+            .position(|range| range.end > offset)
+            .unwrap_or(0);
     }
 }
 
@@ -178,6 +176,61 @@ pub(super) struct SearchPanel {
 }
 
 impl InputState {
+    #[cfg(feature = "editor-diagnostics")]
+    pub fn diagnostic_find_matcher() {
+        let mut matcher = SearchMatcher::new();
+        matcher.update(&Rope::from("你好 Cat cat [.*]\ncat"));
+        matcher.update_query("cat", true);
+        assert_eq!(matcher.len(), 3);
+        matcher.update_query("cat", false);
+        assert_eq!(matcher.len(), 2);
+        matcher.update_query("你好", false);
+        assert_eq!(matcher.matched_ranges.as_ref(), &[0..6]);
+        matcher.update_query("[.*]", false);
+        assert_eq!(matcher.len(), 1);
+        matcher.update_cursor_by_offset(100);
+        assert_eq!(matcher.current_match_ix, 0);
+        matcher.update_query("", false);
+        assert_eq!(matcher.len(), 0);
+        assert_eq!(matcher.next(), None);
+        assert_eq!(matcher.next_back(), None);
+        matcher.update_query("cat", true);
+        matcher.update(&Rope::from("cat"));
+        assert_eq!(matcher.len(), 1);
+        assert_eq!(matcher.next_back(), Some(0..3));
+        matcher.update(&Rope::from(""));
+        assert_eq!(matcher.label(), "0/0");
+    }
+
+    pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(panel) = self.search_panel.clone() else {
+            return false;
+        };
+        if !panel.read(cx).open {
+            return false;
+        }
+        panel.update(cx, |panel, cx| {
+            panel.open = false;
+            cx.notify();
+        });
+        self.focus(window, cx);
+        cx.notify();
+        true
+    }
+
+    #[cfg(feature = "editor-diagnostics")]
+    pub fn diagnostic_find(&self, cx: &App) -> Option<(Entity<InputState>, usize, usize, String)> {
+        let panel = self.search_panel.as_ref()?.read(cx);
+        panel.open.then(|| {
+            (
+                panel.search_input.clone(),
+                panel.matcher.len(),
+                panel.matcher.current_match_ix,
+                self.selected_text().to_string(),
+            )
+        })
+    }
+
     /// Update the search matcher when text changes.
     pub(super) fn update_search(&mut self, cx: &mut App) {
         let Some(search_panel) = self.search_panel.as_ref() else {
@@ -185,8 +238,9 @@ impl InputState {
         };
 
         let text = self.text.clone();
-        search_panel.update(cx, |this, _| {
+        search_panel.update(cx, |this, cx| {
             this.matcher.update(&text);
+            cx.notify();
         });
     }
 
@@ -197,6 +251,15 @@ impl InputState {
         cx: &mut Context<Self>,
     ) {
         if !self.searchable {
+            cx.propagate();
+            return;
+        }
+        self.open_search(window, cx);
+    }
+
+    /// Open and focus find, using the current selection as the initial query.
+    pub fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.searchable || self.disabled {
             return;
         }
 
@@ -220,22 +283,23 @@ impl InputState {
 
 impl SearchPanel {
     pub fn new(editor: Entity<InputState>, window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let search_input = cx.new(|cx| InputState::new(window, cx));
+        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx));
 
         cx.new(|cx| {
-            let _subscriptions =
-                vec![
-                    cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
-                        // Handle search input changes
-                        match ev {
-                            InputEvent::Change => {
-                                this.update_search_query(cx);
-                            }
-                            _ => {}
+            let _subscriptions = vec![cx.subscribe_in(
+                &search_input,
+                window,
+                |this: &mut Self, _, ev: &InputEvent, window, cx| {
+                    // Handle search input changes
+                    match ev {
+                        InputEvent::Change => {
+                            this.update_search_query(window, cx);
                         }
-                    }),
-                ];
+                        _ => {}
+                    }
+                },
+            )];
 
             Self {
                 editor,
@@ -267,30 +331,25 @@ impl SearchPanel {
             }
             this.select_all(&super::SelectAll, window, cx);
         });
+        cx.notify();
     }
 
-    fn update_search_query(&mut self, cx: &mut Context<Self>) {
+    fn update_search_query(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         let query = self.search_input.read(cx).value();
-        let visible_range_offset = self
-            .editor
-            .read(cx)
-            .last_layout
-            .as_ref()
-            .map(|l| l.visible_range_offset.clone());
+        let offset = self.editor.read(cx).selected_range.start;
 
         self.matcher
             .update_query(query.as_str(), self.case_insensitive);
 
-        if let Some(visible_range_offset) = visible_range_offset {
-            self.matcher
-                .update_cursor_by_offset(visible_range_offset.start);
-        }
+        self.matcher.update_cursor_by_offset(offset);
+        self.select_current(cx);
         cx.notify();
     }
 
     pub(super) fn hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = false;
         self.editor.read(cx).focus_handle.focus(window);
+        self.editor.update(cx, |_, cx| cx.notify());
         cx.notify();
     }
 
@@ -311,19 +370,30 @@ impl SearchPanel {
     }
 
     fn prev(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(range) = self.matcher.next_back() {
-            self.editor.update(cx, |state, cx| {
-                state.scroll_to(range.start, Some(MoveDirection::Up), cx);
-            });
-        }
+        self.matcher.next_back();
+        self.select_current(cx);
     }
 
     fn next(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(range) = self.matcher.next() {
-            self.editor.update(cx, |state, cx| {
-                state.scroll_to(range.end, Some(MoveDirection::Down), cx);
-            });
-        }
+        self.matcher.next();
+        self.select_current(cx);
+    }
+
+    fn select_current(&self, cx: &mut Context<Self>) {
+        let range = self
+            .matcher
+            .matched_ranges
+            .get(self.matcher.current_match_ix)
+            .cloned();
+        self.editor.update(cx, |state, cx| {
+            if let Some(range) = range {
+                state.move_to(range.start, None, cx);
+                state.selection_reversed = false;
+                state.select_to(range.end, cx);
+            }
+            cx.notify();
+        });
+        cx.notify();
     }
 
     pub(super) fn matcher(&self) -> Option<&SearchMatcher> {
@@ -418,6 +488,12 @@ impl Render for SearchPanel {
             .on_action(cx.listener(Self::on_action_next))
             .on_action(cx.listener(Self::on_action_escape))
             .on_action(cx.listener(Self::on_action_tab))
+            .on_action(cx.listener(|this, _: &Search, window, cx| {
+                this.search_input.update(cx, |input, cx| {
+                    input.focus(window, cx);
+                    input.select_all(&super::SelectAll, window, cx);
+                });
+            }))
             .font_family(cx.theme().font_family.clone())
             .items_center()
             .py_2()
@@ -446,9 +522,10 @@ impl Render for SearchPanel {
                                             .compact()
                                             .ghost()
                                             .icon(IconName::CaseSensitive)
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                            .tooltip("Match case")
+                                            .on_click(cx.listener(|this, _, window, cx| {
                                                 this.case_insensitive = !this.case_insensitive;
-                                                this.update_search_query(cx);
+                                                this.update_search_query(window, cx);
                                                 cx.notify();
                                             })),
                                     )
@@ -472,27 +549,30 @@ impl Render for SearchPanel {
                                 .size_full(),
                             ),
                     )
-                    .child(
-                        Button::new("replace-mode")
-                            .xsmall()
-                            .ghost()
-                            .icon(IconName::Replace)
-                            .selected(self.replace_mode)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.replace_mode = !this.replace_mode;
-                                if this.replace_mode {
-                                    this.replace_input.read(cx).focus_handle.focus(window);
-                                } else {
-                                    this.search_input.read(cx).focus_handle.focus(window);
-                                }
-                                cx.notify();
-                            })),
-                    )
+                    .when(self.editor.read(cx).search_replaceable, |row| {
+                        row.child(
+                            Button::new("replace-mode")
+                                .xsmall()
+                                .ghost()
+                                .icon(IconName::Replace)
+                                .selected(self.replace_mode)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.replace_mode = !this.replace_mode;
+                                    if this.replace_mode {
+                                        this.replace_input.read(cx).focus_handle.focus(window);
+                                    } else {
+                                        this.search_input.read(cx).focus_handle.focus(window);
+                                    }
+                                    cx.notify();
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("prev")
                             .xsmall()
                             .ghost()
                             .icon(IconName::ChevronLeft)
+                            .tooltip("Previous match (Shift+Enter)")
                             .disabled(!has_matches)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.prev(window, cx);
@@ -503,6 +583,7 @@ impl Render for SearchPanel {
                             .xsmall()
                             .ghost()
                             .icon(IconName::ChevronRight)
+                            .tooltip("Next match (Enter)")
                             .disabled(!has_matches)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.next(window, cx);
@@ -629,9 +710,9 @@ mod tests {
         assert_eq!(matcher.current_match_ix, 1);
 
         matcher.update_cursor_by_offset(30);
-        assert_eq!(matcher.current_match_ix, 2);
+        assert_eq!(matcher.current_match_ix, 0);
 
         matcher.update_cursor_by_offset(31);
-        assert_eq!(matcher.current_match_ix, 2);
+        assert_eq!(matcher.current_match_ix, 0);
     }
 }

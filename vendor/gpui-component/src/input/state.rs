@@ -276,6 +276,7 @@ pub struct InputState {
     pub(super) selected_range: Selection,
     pub(super) search_panel: Option<Entity<SearchPanel>>,
     pub(super) searchable: bool,
+    pub(super) search_replaceable: bool,
     /// Range for save the selected word, use to keep word range when drag move.
     pub(super) selected_word_range: Option<Selection>,
     pub(super) selection_reversed: bool,
@@ -381,6 +382,7 @@ impl InputState {
             selected_range: Selection::default(),
             search_panel: None,
             searchable: false,
+            search_replaceable: true,
             selected_word_range: None,
             selection_reversed: false,
             ime_marked_range: None,
@@ -466,6 +468,14 @@ impl InputState {
     pub fn searchable(mut self, searchable: bool) -> Self {
         debug_assert!(self.mode.is_multi_line());
         self.searchable = searchable;
+        self
+    }
+
+    /// Enable literal find without exposing replacement controls.
+    pub fn find_only(mut self) -> Self {
+        debug_assert!(self.mode.is_multi_line());
+        self.searchable = true;
+        self.search_replaceable = false;
         self
     }
 
@@ -1236,6 +1246,9 @@ impl InputState {
 
     pub(super) fn escape(&mut self, action: &Escape, window: &mut Window, cx: &mut Context<Self>) {
         if self.handle_action_for_context_menu(Box::new(action.clone()), window, cx) {
+            return;
+        }
+        if self.close_search(window, cx) {
             return;
         }
         if let Some((table, _, _)) = self.active_table() {

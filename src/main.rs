@@ -3,6 +3,8 @@
 mod autosave;
 #[cfg(feature = "editor-diagnostics")]
 mod benchmark;
+#[cfg(feature = "editor-diagnostics")]
+mod find_diagnostics;
 mod goto;
 mod notebook;
 mod notebook_ui;
@@ -19,7 +21,7 @@ use gpui::{prelude::*, *};
 use gpui_component::{
     ActiveTheme, Root, Sizable, WindowExt,
     button::{Button, ButtonVariants},
-    input::{Input, InputEvent, InputState, Rope},
+    input::{Input, InputEvent, InputState, Rope, Search},
     menu::PopupMenu,
     text::TextView,
 };
@@ -180,7 +182,7 @@ struct Notes {
 
 impl Notes {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let editor = cx.new(|cx| InputState::new(window, cx).multi_line(true));
+        let editor = cx.new(|cx| InputState::new(window, cx).multi_line(true).find_only());
         let editor_subscription = Self::subscribe_editor(&editor, window, cx);
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
@@ -572,6 +574,16 @@ impl Render for Notes {
             .id("notes")
             .key_context("Notes")
             .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &Search, window, cx| {
+                if this.document.is_none() || this.busy || window.has_active_dialog(cx) {
+                    return;
+                }
+                if this.mode == ViewMode::Reading {
+                    this.set_mode(ViewMode::Source, window, cx);
+                }
+                this.editor
+                    .update(cx, |editor, cx| editor.open_search(window, cx));
+            }))
             .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
             .on_action(
                 cx.listener(|this, _: &CommandPalette, window, cx| {
@@ -726,6 +738,7 @@ fn main() {
             gpui_component::init(cx);
             cx.bind_keys([
                 KeyBinding::new("ctrl-o", GoTo, Some("Notes")),
+                KeyBinding::new("ctrl-f", Search, Some("Notes")),
                 KeyBinding::new("ctrl-p", CommandPalette, Some("Notes")),
                 KeyBinding::new("ctrl-l", ToggleTasks, Some("DocumentEditor")),
                 KeyBinding::new("ctrl-s", Save, Some("Notes")),
