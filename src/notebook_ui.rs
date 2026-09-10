@@ -350,25 +350,40 @@ impl Notes {
                 );
                 let path = path.clone();
                 let remove_path = path.clone();
+                let path_label = path.display().to_string();
                 list = list.child(
                     div()
                         .flex()
                         .items_center()
                         .gap_2()
                         .child(
-                            Button::new(("managed-notebook", index))
-                                .label(label)
-                                .disabled(self.busy)
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.request(
-                                        Next::Notebook {
-                                            path: path.clone(),
-                                            create: false,
-                                        },
-                                        window,
-                                        cx,
-                                    );
-                                })),
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    Button::new(("managed-notebook", index))
+                                        .label(label)
+                                        .disabled(self.busy)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.request(
+                                                Next::Notebook {
+                                                    path: path.clone(),
+                                                    create: false,
+                                                },
+                                                window,
+                                                cx,
+                                            );
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(path_label),
+                                ),
                         )
                         .child(
                             Button::new(("remove-notebook", index))
