@@ -981,7 +981,7 @@ mod preview_tests {
         wrapper.reveal_row = 1;
         let mut text = Rope::from("#**caf\u{e9}**\n- \u{4f60}\u{597d}\nlast");
         wrapper._update(&text, &(0..0), &text, &mut |_, _| vec![]);
-        assert_eq!(wrapper.lines[0].mapped.as_ref().unwrap().text, "#caf\u{e9}");
+        assert_eq!(wrapper.lines[0].mapped.as_ref().unwrap().text, "caf\u{e9}");
         let unchanged = wrapper.lines[0].mapped.clone().unwrap();
         let at = text.line_start_offset(2);
         text.replace(at..at, "x");

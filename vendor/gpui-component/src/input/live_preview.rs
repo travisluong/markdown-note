@@ -56,6 +56,13 @@ impl Presentation {
             bullet: line.starts_with("- "),
             ..Self::default()
         };
+        if result.heading > 0 {
+            let separator = line[hashes..]
+                .bytes()
+                .take_while(|b| *b == b' ' || *b == b'\t')
+                .count();
+            result.hidden.push(0..hashes + separator);
+        }
         let bytes = line.as_bytes();
         let mut openings = [None; 4];
         let mut i = 0;
@@ -139,6 +146,32 @@ pub(super) struct MappedText {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn heading_markers_and_mapping() {
+        for hashes in 1..=6 {
+            for suffix in ["", " title", "\t title", "caf\u{e9}", " **bold**"] {
+                let source = format!("{}{suffix}", "#".repeat(hashes));
+                let p = Presentation::parse(&source);
+                assert_eq!(p.display(&source, true).text, source);
+                let hidden = p.display(&source, false);
+                assert!(!hidden.text.starts_with('#'));
+                assert!(!hidden.text.starts_with(' '));
+                assert_eq!(hidden.source_to_display.len(), source.len() + 1);
+                for (offset, _) in hidden.text.char_indices() {
+                    let original = hidden.display_to_source[offset];
+                    assert!(source.is_char_boundary(original));
+                    assert_eq!(hidden.source_to_display[original], offset);
+                }
+            }
+        }
+        for source in ["####### title", "not # heading"] {
+            assert_eq!(
+                Presentation::parse(source).display(source, false).text,
+                source
+            );
+        }
+    }
+
     #[test]
     fn triggers_and_mapping() {
         for n in 1..=6 {

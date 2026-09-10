@@ -1,4 +1,4 @@
-﻿# Local editor patch
+# Local editor patch
 
 Upstream: gpui-component 0.5.1, commit
 `0f0ab35233212f8f3277028995caf0c41e13ee6c`, `crates/ui`.
@@ -8,6 +8,7 @@ The original Apache 2.0 license is retained. Cargo uses this copy via the root
 Changes are confined to input support and the `editor-diagnostics` feature:
 
 - Opt-in live-preview presentation and cheap immutable rope snapshots.
+- Heading markers hide outside the cursor source line, using lossless source mappings.
 - Line-local Markdown parser, bidirectional UTF-8 display mappings, and list Enter.
 - An implicit treap indexes source rows, wrapped rows, and cumulative heights.
 - Unmeasured lines use estimates; viewport measurements preserve the scroll anchor.

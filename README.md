@@ -88,7 +88,7 @@ Native folder-picker interaction and the save prompt's actual buttons still need
 a manual smoke test.
 
 Live preview recognizes one to six leading `#` characters immediately, even
-without a space. The hashes stay visible. `- ` becomes a bullet and `1. ` starts
+without a space. Heading hashes and separating whitespace hide off the cursor source line and reappear on that line. `- ` becomes a bullet and `1. ` starts
 an ordered item. Only unindented lists are supported. Matched `**bold**`,
 `__bold__`, `*italic*`, and `_italic_` delimiters disappear off the cursor's source
 line and reappear on that line. Unsupported syntax stays literal.
