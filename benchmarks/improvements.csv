@@ -1,0 +1,10 @@
+fixture,operation,p95_ms,max_parsed_lines,max_shaped_bytes
+beginning,edit,7.064,1,166
+beginning,scroll,6.823,4,400
+middle,edit,6.779,1,166
+middle,scroll,6.827,4,400
+end,edit,6.937,1,166
+end,scroll,6.312,4,300
+long-line,edit,27.364,1,11529
+long-line,scroll,6.917,0,558
+diagnostics,passed,,,

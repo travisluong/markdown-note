@@ -13,6 +13,9 @@ pub(super) struct Palette {
 }
 
 pub fn discover(root: &Path) -> io::Result<Vec<notebook::Entry>> {
+    if notebook::is_link(&fs::symlink_metadata(root)?) {
+        return Err(io::Error::other("Notebook links are not traversed."));
+    }
     let mut pending = vec![PathBuf::new()];
     let mut found = Vec::new();
     while let Some(path) = pending.pop() {
@@ -161,6 +164,18 @@ impl Notes {
         }
     }
 
+    fn move_palette(&mut self, down: bool, cx: &mut Context<Self>) {
+        if let Some(p) = &mut self.palette {
+            p.selected = if down {
+                (p.selected + 1).min(p.results.len().saturating_sub(1))
+            } else {
+                p.selected.saturating_sub(1)
+            };
+            p.scroll.scroll_to_item(p.selected, ScrollStrategy::Top);
+        }
+        cx.notify();
+    }
+
     fn palette_dialog(&mut self, dialog: Dialog, _: &mut Window, cx: &mut Context<Self>) -> Dialog {
         let owner = cx.weak_entity();
         let Some(palette) = &self.palette else {
@@ -170,25 +185,31 @@ impl Notes {
             .flex()
             .flex_col()
             .gap_2()
-            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                match event.keystroke.key.as_str() {
-                    "up" | "down" => {
-                        if let Some(p) = &mut this.palette {
-                            p.selected = if event.keystroke.key == "up" {
-                                p.selected.saturating_sub(1)
-                            } else {
-                                (p.selected + 1).min(p.results.len().saturating_sub(1))
-                            };
-                            p.scroll.scroll_to_item(p.selected, ScrollStrategy::Top);
-                        }
-                        cx.notify();
-                    }
-                    "enter" => this.activate_palette(window, cx),
-                    _ => return,
-                }
-                cx.stop_propagation();
-                window.prevent_default();
-            }))
+            .capture_action(
+                cx.listener(|this, _: &gpui_component::input::MoveUp, _, cx| {
+                    this.move_palette(false, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .capture_action(
+                cx.listener(|this, _: &gpui_component::input::MoveDown, _, cx| {
+                    this.move_palette(true, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .capture_action(
+                cx.listener(|this, _: &gpui_component::input::Enter, window, cx| {
+                    this.activate_palette(window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .capture_action(
+                cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
+                    window.close_dialog(cx);
+                    this.close_palette(window, cx);
+                    cx.stop_propagation();
+                }),
+            )
             .child(Input::new(&palette.query))
             .child(if let Some(status) = &palette.status {
                 div().child(status.clone()).into_any_element()
@@ -281,5 +302,82 @@ mod tests {
                 .any(|e| e.relative == Path::new("a/deep/Note.md"))
         );
         assert!(discover(&temp.path().join("missing")).is_err());
+    }
+}
+
+#[cfg(feature = "editor-diagnostics")]
+pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
+    for step in 0..=13 {
+        Timer::after(std::time::Duration::from_millis(150)).await;
+        cx.update(|window, cx| match step {
+            1 | 7 | 10 => {
+                window.dispatch_keystroke(Keystroke::parse("ctrl-o").unwrap(), cx);
+            }
+            3 => {
+                window.dispatch_keystroke(Keystroke::parse("down").unwrap(), cx);
+                window.dispatch_keystroke(Keystroke::parse("up").unwrap(), cx);
+            }
+            5 | 12 => {
+                window.dispatch_keystroke(Keystroke::parse("enter").unwrap(), cx);
+            }
+            8 => {
+                window.dispatch_keystroke(Keystroke::parse("escape").unwrap(), cx);
+            }
+            _ => notes.update(cx, |this, cx| match step {
+                0 => this.set_mode(ViewMode::Source, window, cx),
+                2 => {
+                    assert!(
+                        this.palette.as_ref().is_some_and(|p| p.results.len() >= 3),
+                        "Ctrl+O opens recursive palette"
+                    );
+                }
+                4 => {
+                    assert_eq!(
+                        this.editor.read(cx).value().as_str(),
+                        "# Root",
+                        "arrow keys do not open results"
+                    );
+                    let query = this.palette.as_ref().unwrap().query.clone();
+                    query.update(cx, |q, cx| q.set_value("nested", window, cx));
+                }
+                6 => {
+                    assert_eq!(
+                        this.editor.read(cx).value().as_str(),
+                        "# Saved",
+                        "Enter opens result"
+                    );
+                    assert!(this.editor.focus_handle(cx).is_focused(window));
+                }
+                9 => {
+                    assert!(this.palette.is_none(), "Escape closes palette");
+                    assert!(
+                        this.editor.focus_handle(cx).is_focused(window),
+                        "Escape restores focus"
+                    );
+                }
+                11 => {
+                    let query = this.palette.as_ref().unwrap().query.clone();
+                    query.update(cx, |q, cx| q.set_value("folder", window, cx));
+                }
+                13 => {
+                    assert!(this.palette.is_none());
+                    assert!(
+                        this.notebooks
+                            .active
+                            .as_ref()
+                            .unwrap()
+                            .settings
+                            .expanded
+                            .contains(Path::new("folder"))
+                    );
+                    assert!(
+                        !this.editor.focus_handle(cx).is_focused(window),
+                        "folder activation focuses tree"
+                    );
+                }
+                _ => unreachable!(),
+            }),
+        })
+        .unwrap();
     }
 }

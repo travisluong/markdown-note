@@ -274,7 +274,15 @@ impl TextWrapper {
             // If wrap_width is Pixels::MAX, skip wrapping to disable word wrap
             if let Some(wrap_width) = wrap_width {
                 // Here only have wrapped line, if there is no wrap meet, the `line_wraps` result will empty.
-                for boundary in wrap_line(&line_str, wrap_width / scale) {
+                for boundary in wrap_line(
+                    &line_str,
+                    (wrap_width
+                        - presentation
+                            .as_ref()
+                            .map_or(px(0.), |p| px(p.quote_indent(self.font_size.into()))))
+                    .max(self.font_size)
+                        / scale,
+                ) {
                     wrapped_lines.push(prev_boundary_ix..boundary.ix);
                     prev_boundary_ix = boundary.ix;
                 }
@@ -418,6 +426,8 @@ pub(crate) struct LineLayout {
     /// The soft wrapped lines of this line (Include the first line).
     pub(crate) wrapped_lines: SmallVec<[ShapedLine; 1]>,
     pub(crate) longest_width: Pixels,
+    pub(super) indent: Pixels,
+    pub(super) quote_depth: usize,
     pub(super) segment_start: usize,
     pub(super) segment_ranges: Option<std::rc::Rc<Vec<Range<usize>>>>,
 }
@@ -429,6 +439,8 @@ impl LineLayout {
             mapped: None,
             scale: 1.,
             longest_width: px(0.),
+            indent: px(0.),
+            quote_depth: 0,
             segment_start: 0,
             segment_ranges: None,
             wrapped_lines: SmallVec::new(),
@@ -451,7 +463,7 @@ impl LineLayout {
             .map(|l| l.width)
             .max()
             .unwrap_or_default();
-        self.longest_width = width;
+        self.longest_width = width + self.indent;
         self.wrapped_lines = wrapped_lines;
     }
 
@@ -488,13 +500,13 @@ impl LineLayout {
                 .checked_sub(self.segment_start)
                 .and_then(|i| self.wrapped_lines.get(i))
                 .map_or(px(0.), |line| line.x_for_index(offset - ranges[row].start));
-            return Some(point(x, row as f32 * line_height));
+            return Some(point(x + self.indent, row as f32 * line_height));
         }
         let mut acc_len = 0;
         for (i, line) in self.wrapped_lines.iter().enumerate() {
             if offset <= acc_len + line.len {
                 return Some(point(
-                    line.x_for_index(offset - acc_len),
+                    self.indent + line.x_for_index(offset - acc_len),
                     i as f32 * line_height,
                 ));
             }
@@ -504,6 +516,7 @@ impl LineLayout {
     }
     /// Get the closest index for the given x in this line layout.
     pub(super) fn closest_index_for_x(&self, x: Pixels) -> usize {
+        let x = x - self.indent;
         let mut acc_len = 0;
         for (i, line) in self.wrapped_lines.iter().enumerate() {
             let is_last = i + 1 == self.wrapped_lines.len();
@@ -542,7 +555,7 @@ impl LineLayout {
             let is_last = i + 1 == self.wrapped_lines.len();
             let line_bottom = line_top + line_height;
             if pos.y >= line_top && pos.y < line_bottom {
-                let mut ix = line.closest_index_for_x(pos.x);
+                let mut ix = line.closest_index_for_x(pos.x - self.indent);
                 if !is_last && ix == line.len {
                     // For soft wrap line, we can't put the cursor at the end of the line.
                     let c_len = line.text.chars().last().map(|c| c.len_utf8()).unwrap_or(0);
@@ -572,7 +585,7 @@ impl LineLayout {
         for line in self.wrapped_lines.iter() {
             let line_bottom = line_top + line_height;
             if pos.y >= line_top && pos.y < line_bottom {
-                let ix = line.index_for_x(pos.x)?;
+                let ix = line.index_for_x(pos.x - self.indent)?;
                 return Some(self.source_index(offset + ix));
             }
 
@@ -608,9 +621,25 @@ impl LineLayout {
         cx: &mut App,
     ) {
         let line_height = line_height * self.scale;
+        if self.quote_depth > 0 {
+            use crate::ActiveTheme as _;
+            let unit = self.indent / self.quote_depth as f32;
+            for level in 0..self.quote_depth {
+                window.paint_quad(gpui::fill(
+                    gpui::Bounds::new(
+                        pos + point(
+                            unit * (level as f32 + 0.25),
+                            self.segment_start as f32 * line_height,
+                        ),
+                        size(px(2.), self.wrapped_lines.len() as f32 * line_height),
+                    ),
+                    cx.theme().border,
+                ));
+            }
+        }
         for (ix, line) in self.wrapped_lines.iter().enumerate() {
             _ = line.paint(
-                pos + point(px(0.), (ix + self.segment_start) * line_height),
+                pos + point(self.indent, (ix + self.segment_start) * line_height),
                 line_height,
                 window,
                 cx,
@@ -976,6 +1005,17 @@ mod preview_tests {
     use super::*;
     #[test]
     fn mapping_survives_wrapping_and_incremental_edits() {
+        let mut quotes = TextWrapper::new(gpui::font("Arial"), px(20.), Some(px(160.)));
+        quotes.live_preview = true;
+        let text = Rope::from("> > **你好 café**");
+        quotes._update(&text, &(0..0), &text, &mut |_, width| {
+            assert_eq!(width, px(120.), "quote indentation reduces wrapping width");
+            vec![]
+        });
+        assert_eq!(
+            quotes.lines[0].presentation.as_ref().unwrap().quote_depth,
+            2
+        );
         let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(14.), None);
         wrapper.live_preview = true;
         wrapper.reveal_row = 1;

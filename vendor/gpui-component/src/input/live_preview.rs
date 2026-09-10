@@ -8,17 +8,32 @@ pub(super) struct Presentation {
     pub hidden: Vec<Range<usize>>,
     pub bullet: bool,
     pub task: Option<usize>,
+    pub quote_prefixes: Vec<Range<usize>>,
+    pub quote_depth: usize,
+}
+
+fn quote_prefixes(line: &str) -> Vec<Range<usize>> {
+    let mut quote_prefixes = Vec::new();
+    let mut prefix = 0;
+    loop {
+        let spaces = line[prefix..].bytes().take_while(|b| *b == b' ').count();
+        if spaces > 3 || !line[prefix + spaces..].starts_with('>') {
+            break;
+        }
+        let start = prefix;
+        prefix += spaces + 1;
+        if line[prefix..].starts_with(' ') {
+            prefix += 1;
+        }
+        quote_prefixes.push(start..prefix);
+    }
+    quote_prefixes
 }
 
 // Byte offset of the state character, including any explicit quote prefixes.
 pub(super) fn task_state(line: &str) -> Option<usize> {
-    let mut start = 0;
-    while line[start..].starts_with('>') {
-        start += 1;
-        if line[start..].starts_with(' ') {
-            start += 1;
-        }
-    }
+    let prefixes = quote_prefixes(line);
+    let start = prefixes.last().map_or(0, |r| r.end);
     let body = &line[start..];
     let prefix = if body.starts_with("- ") || body.starts_with("* ") || body.starts_with("+ ") {
         2
@@ -97,6 +112,9 @@ pub(super) fn list_enter(line: &str, cursor: usize) -> Option<(Range<usize>, Str
 impl Presentation {
     pub fn parse(line: &str) -> Self {
         PARSED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let quote_prefixes = quote_prefixes(line);
+        let prefix = quote_prefixes.last().map_or(0, |r| r.end);
+        let line = &line[prefix..];
         let hashes = line.bytes().take_while(|b| *b == b'#').count();
         let mut result = Self {
             heading: if hashes <= 6 { hashes } else { 0 },
@@ -118,7 +136,7 @@ impl Presentation {
         }
         let bytes = line.as_bytes();
         let mut openings = [None; 4];
-        let mut i = 0;
+        let mut i = result.task.map_or(0, |state| state + 2);
         while i < bytes.len() {
             if bytes[i] != b'*' && bytes[i] != b'_' {
                 i += 1;
@@ -139,9 +157,25 @@ impl Presentation {
             }
             i += n;
         }
+        for range in &mut result.hidden {
+            range.start += prefix;
+            range.end += prefix;
+        }
+        for (range, _) in &mut result.spans {
+            range.start += prefix;
+            range.end += prefix;
+        }
+        result.task = result.task.map(|offset| offset + prefix);
+        result.quote_depth = quote_prefixes.len();
+        result.hidden.extend(quote_prefixes.iter().cloned());
+        result.quote_prefixes = quote_prefixes;
         result.hidden.sort_by_key(|r| r.start);
         result.spans.sort_by_key(|(r, _)| r.start);
         result
+    }
+
+    pub fn quote_indent(&self, font_size: f32) -> f32 {
+        self.quote_depth as f32 * font_size
     }
 
     pub fn scale(&self) -> f32 {
@@ -163,19 +197,24 @@ impl Presentation {
             while self.hidden.get(hidden_index).is_some_and(|r| r.end <= ix) {
                 hidden_index += 1;
             }
-            let hidden = !reveal
-                && self
-                    .hidden
-                    .get(hidden_index)
-                    .is_some_and(|r| r.contains(&ix));
+            let task_marker = self.task.is_some_and(|state| {
+                (self.quote_prefixes.last().map_or(0, |r| r.end)..state).contains(&ix)
+                    || ix == state + 1
+            });
+            let hidden = task_marker
+                || !reveal
+                    && self
+                        .hidden
+                        .get(hidden_index)
+                        .is_some_and(|r| r.contains(&ix));
             let start = text.len();
             for pos in ix..ix + ch.len_utf8() {
                 source_to_display[pos] = start;
             }
             if !hidden {
-                text.push(if !reveal && self.task == Some(ix) {
+                text.push(if self.task == Some(ix) {
                     if ch == ' ' { '☐' } else { '☑' }
-                } else if ix == 0 && self.bullet {
+                } else if ix == self.quote_prefixes.last().map_or(0, |r| r.end) && self.bullet {
                     '•'
                 } else {
                     ch
@@ -258,13 +297,31 @@ mod tests {
     }
     #[test]
     fn list_edits() {
+        let source = "> > - [X] **café** _你好_";
+        let p = Presentation::parse(source);
+        assert_eq!(p.quote_depth, 2);
+        assert_eq!(p.quote_prefixes, vec![0..2, 2..4]);
+        assert_eq!(p.quote_indent(20.), 40.);
+        assert_eq!(p.display(source, false).text, "☑ café 你好");
+        assert_eq!(p.display(source, true).text, "> > ☑ **café** _你好_");
+        assert_eq!(p.task, Some(7));
+        for (source, depth, text) in [
+            (">", 1, ""),
+            (">>text", 2, "text"),
+            ("   > quoted", 1, "quoted"),
+            ("continuation", 0, "continuation"),
+        ] {
+            let p = Presentation::parse(source);
+            assert_eq!(p.quote_depth, depth);
+            assert_eq!(p.display(source, false).text, text);
+        }
         for marker in ["- [ ]", "- [x]", "- [X]", "1. [X]"] {
             let source = format!("{marker} café");
             let p = Presentation::parse(&source);
             let mapped = p.display(&source, false);
             assert!(mapped.text.starts_with(['☐', '☑']));
             assert_eq!(mapped.display_to_source[0], p.task.unwrap());
-            assert_eq!(p.display(&source, true).text, source);
+            assert_eq!(p.display(&source, true).text, mapped.text);
             assert_eq!(
                 list_enter(&format!("{marker} "), marker.len() + 1),
                 Some((0..marker.len() + 1, "\n".into()))

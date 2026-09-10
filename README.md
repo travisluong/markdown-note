@@ -116,3 +116,5 @@ Task checkboxes are clickable in Live preview and Reading view, including [X]. T
 Autosave is enabled by default after 1,000 ms without edits. Settings offers an enable switch and a delay from 100 to 60,000 ms; invalid input keeps the previous setting. Preferences persist per notebook, while external files use session preferences. Saves preserve BOM and newline conventions, allow continued typing, and serialize with manual saves and navigation. Failures leave changes dirty with a nonmodal error; edit again or Save to retry.
 
 The opt-in GPUI_NOTE_AUTOSAVE_CHECK diagnostic (editor-diagnostics build) exercises timers, save races, failure recovery, task autosave, and validation against disposable files.
+
+Live preview renders explicitly marked blockquotes with muted text, indentation, and one vertical bar per nesting level. Quote prefixes reappear on the cursor source line. Emphasis and clickable tasks work inside quotes; unmarked continuation lines remain literal under the line-local renderer.

@@ -66,3 +66,31 @@ IME checks exercise buffer/composition paths rather than a physical IME session.
 Long-line parsing and wrapping remain proportional to the edited source line;
 only shaping and painting are segmented. Timing claims apply to these recorded
 fixtures and hardware, not arbitrary line lengths or machines.
+
+## Five-improvement validation
+
+The follow-up release run is recorded in [improvements.csv](improvements.csv).
+It uses the same fixtures and timing method. Editor diagnostics now also check
+Reading-view task offsets after Unicode text, task Enter in both editable modes,
+checkbox click/undo in a nested quote, and quote geometry across 16/20 px fonts,
+light/dark themes, scrolling, and source-line marker reveal. Autosave is disabled
+for the synthetic benchmark documents so they never write to disk.
+
+The separate notebook smoke check dispatches actual GPUI Ctrl+O, Up/Down, Enter,
+and Escape keystrokes, checking file activation, folder expansion, and restored
+focus. The autosave smoke check exercises actual debounce timers and asynchronous
+atomic writes, typing during a save, queued manual saves and navigation, discard,
+BOM/CRLF preservation, invalid settings, nonmodal failure recovery, and Reading
+view task autosave. All fixtures and notebook indexes are disposable.
+
+Run the autosave check with an editor-diagnostics build:
+
+```powershell
+$env:GPUI_NOTE_AUTOSAVE_CHECK = Join-Path $pwd 'target/autosave-smoke.txt'
+& ./target/release/gpui-note.exe
+Remove-Item Env:GPUI_NOTE_AUTOSAVE_CHECK
+```
+
+The benchmark and keyboard smoke check need a rendered window; launching them
+hidden can prevent frame-driven checks from running. Native picker buttons,
+physical mouse interaction, and visual appearance still warrant a manual check.

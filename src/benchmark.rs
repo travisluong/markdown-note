@@ -14,10 +14,11 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
         output.with_extension("progress.txt"),
         "checking input behavior",
     );
+    TextView::diagnostic_task_mappings(cx);
     let diagnostic = cx.new(|cx| InputState::new(window, cx).multi_line(true));
     diagnostic.update(cx, |editor, cx| editor.diagnostic_checks(window, cx));
     let fixture = format!(
-        "#{}\n- **café** _你好_\n##Wrapped heading\nplain **bold** text",
+        "#{}\n- **café** _你好_\n##Wrapped heading\nplain **bold** text\n> **quoted café** _你好_\n> > - [X] nested task\n>>Unicode quote wrapping words 你好 café words repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated repeated",
         "Heading words ".repeat(16)
     );
     diagnostic.update(cx, |editor, cx| {
@@ -37,13 +38,29 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
         });
         notes.set_mode(ViewMode::LivePreview, window, cx);
     });
-    let notes = notes.clone();
+    geometry_round(notes.clone(), output, 0, window);
+}
+fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &mut Window) {
     window.on_next_frame(move |window, cx| {
         notes.update(cx, |notes, cx| {
             notes
                 .editor
-                .update(cx, |editor, cx| editor.diagnostic_geometry(window, cx))
+                .update(cx, |editor, cx| editor.diagnostic_geometry(window, cx));
         });
+        if round < 2 {
+            notes.update(cx, |notes, cx| {
+                let mut appearance = notes.appearance();
+                appearance.content_font_size = if round == 0 { 20 } else { 16 };
+                appearance.dark_mode = Some(round == 0);
+                notes.update_appearance(appearance, window, cx);
+                notes.editor.update(cx, |editor, cx| {
+                    editor.set_cursor_position(Position::new(4, 0), window, cx);
+                    editor.diagnostic_scroll(-24., cx);
+                });
+            });
+            geometry_round(notes, output, round + 1, window);
+            return;
+        }
         notes.update(cx, |notes, cx| install(notes, false, window, cx));
         advance(
             notes,

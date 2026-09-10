@@ -5,7 +5,13 @@ use std::time::{Duration, Instant};
 pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, cx: &mut App) {
     let panic_path = output.with_extension("panic.txt");
     std::panic::set_hook(Box::new(move |info| {
-        let _ = fs::write(&panic_path, info.to_string());
+        if let Ok(mut file) = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&panic_path)
+        {
+            let _ = writeln!(file, "{info}");
+        }
     }));
     let fixture = tempfile::tempdir().expect("temporary notebook fixture");
     let first = fixture.path().join("First");
@@ -244,12 +250,13 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
             })).unwrap();
             step += 1;
         }
+        crate::goto::diagnostic_palette(&notes, cx).await;
         let pending = notes.update(cx, |this, _| this.notebooks.persistence.take()).unwrap();
         if let Some(pending) = pending { pending.await; }
         let restored = notebook::load_index(&index).unwrap();
         assert_eq!(restored.notebooks.len(), 1);
         assert_eq!(restored.active, Some(fs::canonicalize(&first).unwrap()));
-        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration, notebook removal, per-notebook appearance, font bounds, session preferences\n").unwrap();
+        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration, notebook removal, per-notebook appearance, font bounds, session preferences, palette keyboard navigation and focus restoration\n").unwrap();
         drop(fixture);
         cx.update(|_, cx| cx.quit()).unwrap();
     }).detach();

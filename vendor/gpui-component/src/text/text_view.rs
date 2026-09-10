@@ -385,6 +385,50 @@ impl Styled for TextView {
 }
 
 impl TextView {
+    #[cfg(feature = "editor-diagnostics")]
+    #[doc(hidden)]
+    pub fn diagnostic_task_mappings(cx: &App) {
+        fn offsets(node: &node::Node, found: &mut Vec<usize>) {
+            match node {
+                node::Node::ListItem {
+                    task_offset,
+                    children,
+                    ..
+                } => {
+                    found.extend(task_offset.iter().copied());
+                    for child in children {
+                        offsets(child, found);
+                    }
+                }
+                node::Node::Root { children }
+                | node::Node::Blockquote { children }
+                | node::Node::List { children, .. } => {
+                    for child in children {
+                        offsets(child, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let source =
+            "# café 你好\n\n- [ ] plain\n- [X] upper\n\n> - [x] quoted\n>   - [ ] nested\n";
+        let content = parse_content(
+            TextViewType::Markdown,
+            source,
+            TextViewStyle::default(),
+            &cx.theme().highlight_theme,
+            &None,
+        )
+        .unwrap();
+        let mut actual = Vec::new();
+        offsets(&content.root_node, &mut actual);
+        let expected = source
+            .match_indices('[')
+            .map(|(i, _)| i + 1)
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "reading task UTF-8 offsets");
+        assert_eq!(content.node_cx.source.as_ref(), source);
+    }
     /// Opt in to task checkbox clicks. Offset and source belong to the rendered parse.
     pub fn on_task_toggle(
         mut self,

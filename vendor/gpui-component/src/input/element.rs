@@ -253,7 +253,7 @@ impl TextElement {
                     as f32
                     * row_height;
                 if start.y < top {
-                    start = point(px(0.), top);
+                    start = point(line.indent, top);
                 }
                 if end.y > bottom {
                     end = point(line_wrap_width, bottom);
@@ -280,7 +280,7 @@ impl TextElement {
 
                 // wrapped lines
                 for i in 1..=wrapped_lines {
-                    let start = point(px(0.), start.y + i as f32 * row_height);
+                    let start = point(line.indent, start.y + i as f32 * row_height);
                     let mut end = point(end.x, end.y + i as f32 * row_height);
                     if i < wrapped_lines {
                         end.x = line_size.width;
@@ -597,6 +597,7 @@ impl TextElement {
         runs: &[TextRun],
         bg_segments: &[(Range<usize>, Hsla)],
         window: &mut Window,
+        cx: &App,
     ) -> Vec<LineLayout> {
         let is_single_line = state.mode.is_single_line();
         let text_wrapper = &state.text_wrapper;
@@ -637,6 +638,10 @@ impl TextElement {
             let line_item = &text_wrapper.lines[row];
             let mut line_layout = LineLayout::new();
             line_layout.scale = line_item.scale;
+            if let Some(p) = &line_item.presentation {
+                line_layout.indent = px(p.quote_indent(font_size.into()));
+                line_layout.quote_depth = p.quote_depth;
+            }
             line_layout.mapped = line_item.mapped.clone();
             let source;
             let line = if let Some(mapped) = &line_item.mapped {
@@ -687,6 +692,9 @@ impl TextElement {
                             let source = m.display_to_source[range.start + ix];
                             let mut run = base.clone();
                             run.len = ch.len_utf8();
+                            if p.quote_depth > 0 {
+                                run.color = cx.theme().muted_foreground;
+                            }
                             if p.heading > 0 {
                                 run.font.weight = if p.heading == 1 {
                                     gpui::FontWeight::BOLD
@@ -1129,6 +1137,7 @@ impl Element for TextElement {
             &runs,
             &document_colors,
             window,
+            cx,
         );
 
         let mut longest_line_width = wrap_width.unwrap_or(px(0.));

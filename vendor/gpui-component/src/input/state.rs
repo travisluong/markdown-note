@@ -1264,7 +1264,10 @@ impl InputState {
             let start = self.text.line_start_offset(row);
             let line = self.text.slice_line(row).to_string();
             if let Some(state) = super::live_preview::task_state(&line) {
-                if (state - 1..=state + 1).contains(&(offset - start)) {
+                if self
+                    .task_hit_bounds(row, state)
+                    .is_some_and(|bounds| bounds.contains(&event.position))
+                {
                     let snapshot = self.text.to_string();
                     self.toggle_markdown_task(start + state, &snapshot, window, cx);
                     self.selecting = false;
@@ -1295,6 +1298,30 @@ impl InputState {
         } else {
             self.move_to(offset, None, cx)
         }
+    }
+
+    fn task_hit_bounds(&self, row: usize, state: usize) -> Option<Bounds<Pixels>> {
+        let layout = self.last_layout.as_ref()?;
+        let bounds = self.last_bounds?;
+        let line = layout
+            .lines
+            .get(row.checked_sub(layout.visible_range.start)?)?;
+        let left = line.position_for_index(state - 1, layout.line_height)?;
+        let right = line.position_for_index(state + 2, layout.line_height)?;
+        let width = if right.y == left.y {
+            right.x - left.x
+        } else {
+            line.longest_width - left.x
+        };
+        Some(Bounds::new(
+            bounds.origin
+                + point(
+                    layout.line_number_width,
+                    self.text_wrapper.lines.prefix(row) * layout.line_height,
+                )
+                + left,
+            gpui::size(width.max(px(1.)), layout.line_height * line.scale),
+        ))
     }
 
     /// Toggle a task's UTF-8 state byte only when its source snapshot is current.
@@ -2430,5 +2457,40 @@ impl InputState {
             .bounds_for_range(range, bounds, window, cx)
             .expect("composition bounds");
         assert!(composition.size.height > px(0.));
+        assert!(
+            self.last_layout
+                .as_ref()
+                .unwrap()
+                .lines
+                .iter()
+                .any(|line| line.quote_depth == 2 && line.indent > px(0.)),
+            "nested quote geometry"
+        );
+        let task = self
+            .text
+            .to_string()
+            .lines()
+            .enumerate()
+            .find_map(|(row, line)| super::live_preview::task_state(line).map(|state| (row, state)))
+            .unwrap();
+        let hit = self.task_hit_bounds(task.0, task.1).unwrap();
+        let original = self.text.to_string();
+        self.on_mouse_down(
+            &MouseDownEvent {
+                button: MouseButton::Left,
+                click_count: 1,
+                position: hit.center(),
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        assert_ne!(
+            self.text.to_string(),
+            original,
+            "click toggles nested quote checkbox"
+        );
+        self.undo(&Undo, window, cx);
+        assert_eq!(self.text.to_string(), original);
     }
 }
