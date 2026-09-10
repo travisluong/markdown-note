@@ -1041,29 +1041,14 @@ impl Notes {
             .border_r_1()
             .border_color(cx.theme().border)
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .p_2()
-                    .gap_1()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .text_sm()
-                            .child(title),
-                    )
-                    .child(
-                        Button::new("refresh-notebook")
-                            .ghost()
-                            .small()
-                            .label("Refresh")
-                            .disabled(self.busy)
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.refresh_tree(window, cx)),
-                            ),
-                    ),
+                div().flex().items_center().p_2().min_h(px(40.)).child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_sm()
+                        .child(title),
+                ),
             )
             .child(
                 uniform_list(
