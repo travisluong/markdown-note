@@ -93,15 +93,6 @@ impl TextElement {
         let mut scroll_offset = state.scroll_handle.offset();
         let mut cursor_bounds = None;
 
-        // If the input has a fixed height (Otherwise is auto-grow), we need to add a bottom margin to the input.
-        let top_bottom_margin = if state.mode.is_auto_grow() {
-            line_height
-        } else if visible_range.len() < BOTTOM_MARGIN_ROWS * 8 {
-            line_height
-        } else {
-            BOTTOM_MARGIN_ROWS * line_height
-        };
-
         let position = |offset: usize| {
             let p = state.text.offset_to_point(offset.min(state.text.len()));
             let top = text_wrapper.lines.prefix(p.row) * line_height;
@@ -122,6 +113,10 @@ impl TextElement {
         if let (Some(cursor_pos), Some(cursor_start), Some(cursor_end)) =
             (cursor_pos, cursor_start, cursor_end)
         {
+            let cursor_line_height = line_height
+                * current_row
+                    .and_then(|row| text_wrapper.lines.get(row))
+                    .map_or(1., |line| line.scale);
             let selection_changed = state.last_selected_range != Some(selected_range);
             if selection_changed && !is_selected_all {
                 scroll_offset.x = if scroll_offset.x + cursor_pos.x
@@ -136,19 +131,12 @@ impl TextElement {
                     scroll_offset.x
                 };
 
-                // If we change the scroll_offset.y, GPUI will render and trigger the next run loop.
-                // So, here we just adjust offset by `line_height` for move smooth.
-                scroll_offset.y =
-                    if scroll_offset.y + cursor_pos.y > bounds.size.height - top_bottom_margin {
-                        // cursor is out of bottom
-                        scroll_offset.y - line_height
-                    } else if scroll_offset.y + cursor_pos.y < top_bottom_margin {
-                        // cursor is out of top
-                        (scroll_offset.y + line_height).min(px(0.))
-                    } else {
-                        scroll_offset.y
-                    };
-
+                scroll_offset.y = super::scroll::reveal_line(
+                    scroll_offset.y,
+                    cursor_pos.y,
+                    cursor_line_height,
+                    bounds.size.height,
+                );
                 if state.selection_reversed {
                     if scroll_offset.x + cursor_start.x < px(0.) {
                         // selection start is out of left
@@ -171,10 +159,6 @@ impl TextElement {
             }
 
             // cursor bounds
-            let cursor_line_height = line_height
-                * current_row
-                    .and_then(|row| text_wrapper.lines.get(row))
-                    .map_or(1., |line| line.scale);
             let cursor_height = match state.size {
                 crate::Size::Large => 1.,
                 crate::Size::Small => 0.75,

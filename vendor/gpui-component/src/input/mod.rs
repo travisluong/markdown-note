@@ -15,6 +15,7 @@ mod otp_input;
 pub(crate) mod popovers;
 mod rope_ext;
 mod search;
+mod scroll;
 mod state;
 mod text_wrapper;
 mod selection;
