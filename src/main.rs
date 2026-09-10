@@ -54,10 +54,14 @@ enum Next {
     Nothing,
     Open,
     Close,
+    #[cfg(feature = "editor-diagnostics")]
     File(PathBuf),
     TreeFile(PathBuf),
     RemoveNotebook(PathBuf),
-    Notebook { path: PathBuf, create: bool },
+    Notebook {
+        path: PathBuf,
+        create: bool,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -158,6 +162,8 @@ struct Notes {
     menu: Option<(MenuKind, Entity<PopupMenu>)>,
     menu_subscription: Option<Subscription>,
     notebooks: notebook_ui::NotebookState,
+    session_appearance: notebook::Appearance,
+    startup_dark: bool,
 }
 
 impl Notes {
@@ -183,6 +189,7 @@ impl Notes {
         let focus = cx.focus_handle();
         focus.focus(window);
         let notebooks = notebook_ui::NotebookState::new(window, cx);
+        let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
             document: None,
             editor,
@@ -197,6 +204,11 @@ impl Notes {
             menu: None,
             menu_subscription: None,
             notebooks,
+            session_appearance: notebook::Appearance {
+                dark_mode: Some(startup_dark),
+                ..Default::default()
+            },
+            startup_dark,
         }
     }
 
@@ -339,6 +351,7 @@ impl Notes {
             Next::Nothing => self.refresh(window, cx),
             Next::Open => self.open(window, cx),
             Next::Close => self.finish_close(window, cx),
+            #[cfg(feature = "editor-diagnostics")]
             Next::File(path) => self.open_path(path, false, window, cx),
             Next::TreeFile(path) => self.open_path(path, true, window, cx),
             Next::RemoveNotebook(path) => self.remove_notebook(path, window, cx),
@@ -491,6 +504,7 @@ impl Notes {
 
 impl Render for Notes {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let content_size = px(self.appearance().content_font_size as f32);
         let content = if self.document.is_none() {
             div()
                 .size_full()
@@ -514,6 +528,8 @@ impl Render for Notes {
                     Input::new(&self.editor)
                         .h_full()
                         .appearance(false)
+                        .text_size(content_size)
+                        .line_height(relative(1.5))
                         .disabled(self.busy),
                 )
                 .into_any_element()
@@ -523,6 +539,14 @@ impl Render for Notes {
                 .p_6()
                 .child(
                     TextView::markdown("reading", self.reading_text.clone(), window, cx)
+                        .text_size(content_size)
+                        .line_height(relative(1.5))
+                        .style(gpui_component::text::TextViewStyle {
+                            heading_base_font_size: content_size,
+                            highlight_theme: cx.theme().highlight_theme.clone(),
+                            is_dark: cx.theme().mode.is_dark(),
+                            ..Default::default()
+                        })
                         .selectable(true)
                         .scrollable(true)
                         .size_full(),
@@ -629,11 +653,11 @@ impl Render for Notes {
                 this.child(deferred(
                     div()
                         .absolute()
-                        .top(px(36.))
-                        .left(px(match kind {
-                            MenuKind::File => 4.,
-                            MenuKind::View => 54.,
-                            MenuKind::Notebooks => 108.,
+                        .top(rems(2.25))
+                        .left(rems(match kind {
+                            MenuKind::File => 0.25,
+                            MenuKind::View => 3.375,
+                            MenuKind::Notebooks => 6.75,
                         }))
                         .child(menu),
                 ))
@@ -654,6 +678,7 @@ impl Render for NotesWindow {
             .size_full()
             .child(self.notes.clone())
             .children(Root::render_dialog_layer(window, cx))
+            .text_size(cx.theme().font_size)
     }
 }
 
@@ -706,6 +731,7 @@ fn main() {
                 },
                 |window, cx| {
                     let notes = cx.new(|cx| Notes::new(window, cx));
+                    notes.update(cx, |this, cx| this.apply_appearance(window, cx));
                     let diagnostic_run = cfg!(feature = "editor-diagnostics")
                         && (std::env::var_os("GPUI_NOTE_BENCH").is_some()
                             || std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK").is_some());

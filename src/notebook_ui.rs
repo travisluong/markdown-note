@@ -242,7 +242,7 @@ impl Notes {
     fn notebook_dialog(
         &mut self,
         dialog: Dialog,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Dialog {
         let owner = cx.weak_entity();
@@ -252,7 +252,8 @@ impl Notes {
             } else {
                 "Manage notebooks"
             })
-            .w(px(460.))
+            .w(px(460.).min(window.viewport_size().width - px(32.)))
+            .max_h((window.viewport_size().height - px(100.)).max(px(120.)))
             .overlay_closable(false)
             .close_button(!self.busy)
             .keyboard(!self.busy)
@@ -357,6 +358,7 @@ impl Notes {
                 let path_label = path.display().to_string();
                 list = list.child(
                     div()
+                        .flex_shrink_0()
                         .flex()
                         .items_center()
                         .gap_2()
@@ -459,6 +461,7 @@ impl Notes {
             .is_some_and(|book| book.root == path)
         {
             self.notebooks.active = None;
+            self.apply_appearance(window, cx);
             self.notebooks.generation += 1;
             self.notebooks.directories.clear();
             self.notebooks.rows.clear();
@@ -584,6 +587,7 @@ impl Notes {
                     Ok((book, document)) => {
                         this.notebooks.index.register(book.root.clone());
                         this.notebooks.active = Some(book);
+                        this.apply_appearance(window, cx);
                         this.install_document(document, window, cx);
                         this.refresh_tree(window, cx);
                         this.remember_file(cx);
@@ -722,7 +726,7 @@ impl Notes {
         self.persist_notebooks(cx);
     }
 
-    fn persist_notebooks(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn persist_notebooks(&mut self, cx: &mut Context<Self>) {
         if !self.notebooks.index_writable {
             return;
         }
@@ -1054,7 +1058,7 @@ impl Notes {
                                 };
                                 div()
                                     .id(index)
-                                    .h(px(28.))
+                                    .h(px(28. * this.appearance().ui_font_size as f32 / 16.))
                                     .w_full()
                                     .pl(px(8. + row.depth as f32 * 16.))
                                     .pr_2()

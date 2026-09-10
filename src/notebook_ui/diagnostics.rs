@@ -20,12 +20,12 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
     window.spawn(cx, async move |cx| {
         let started = Instant::now();
         let mut step = 0;
-        while step <= 19 {
-            cx.background_executor().timer(Duration::from_millis(60)).await;
-            assert!(started.elapsed() < Duration::from_secs(40), "Notebook smoke check timed out at step {step}");
+        while step <= 31 {
+            cx.background_executor().timer(Duration::from_millis(std::env::var("GPUI_NOTE_SMOKE_DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(60).clamp(60, 2000))).await;
+            assert!(started.elapsed() < Duration::from_secs(120), "Notebook smoke check timed out at step {step}");
             let ready = notes.update(cx, |this, _| !this.busy && !this.notebooks.directories.values().any(|d| matches!(d, DirectoryState::Loading))).unwrap();
             if !ready { continue; }
-            fs::write(output.with_extension("progress.txt"), format!("step {step} of 19")).unwrap();
+            fs::write(output.with_extension("progress.txt"), format!("step {step} of 31")).unwrap();
             cx.update(|window, cx| notes.update(cx, |this, cx| {
                 match step {
                     0 => this.manage_notebooks(window, cx),
@@ -167,6 +167,77 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert_eq!(this.reading_text.as_str(), "# Root");
                         assert!(this.notebooks.tree_focus.is_focused(window));
                     }
+                    20 => this.open_settings(window, cx),
+                    21 => {
+                        assert!(window.has_active_dialog(cx));
+                        this.update_appearance(notebook::Appearance { content_font_size: 40, ui_font_size: 24, dark_mode: Some(true) }, window, cx);
+                    }
+                    22 => {
+                        assert!(cx.theme().mode.is_dark());
+                        assert_eq!(cx.theme().font_size, px(24.));
+                        assert_eq!(this.reading_text.as_str(), "# Root");
+                        window.close_dialog(cx);
+                        this.request(Next::Notebook { path: second.clone(), create: false }, window, cx);
+                    }
+                    23 => {
+                        assert_eq!(this.appearance().content_font_size, 16);
+                        assert_eq!(this.appearance().dark_mode, Some(this.startup_dark));
+                        this.update_appearance(notebook::Appearance { content_font_size: 10, ui_font_size: 10, dark_mode: Some(false) }, window, cx);
+                        this.open_settings(window, cx);
+                    }
+                    24 => {
+                        assert!(!cx.theme().mode.is_dark());
+                        assert_eq!(cx.theme().font_size, px(10.));
+                        window.close_dialog(cx);
+                        this.request(Next::Notebook { path: first.clone(), create: false }, window, cx);
+                    }
+                    25 => {
+                        assert_eq!(this.appearance().content_font_size, 40);
+                        assert_eq!(this.appearance().ui_font_size, 24);
+                        assert!(cx.theme().mode.is_dark());
+                        this.manage_notebooks(window, cx);
+                    }
+                    26 => {
+                        assert!(window.has_active_dialog(cx));
+                        let second_path = fs::canonicalize(&second).unwrap();
+                        this.remove_notebook(second_path, window, cx);
+                        assert!(second.is_dir());
+                        assert_eq!(this.notebooks.index.notebooks.len(), 1);
+                        this.editor.update(cx, |editor, cx| editor.set_value("unsaved removal", window, cx));
+                        this.answer_request(None, Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx);
+                        assert!(this.notebooks.active.is_some());
+                        assert!(this.dirty(cx));
+                    }
+                    27 => this.answer_request(Some(1), Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx),
+                    28 => {
+                        assert!(this.notebooks.active.is_none());
+                        assert!(this.document.is_none());
+                        assert!(this.notebooks.rows.is_empty());
+                        assert!(window.has_active_dialog(cx));
+                        assert_eq!(this.appearance().content_font_size, 16);
+                        assert_eq!(fs::read_to_string(first.join("root.md")).unwrap(), "# Root");
+                        this.update_appearance(notebook::Appearance { content_font_size: 20, ui_font_size: 18, dark_mode: Some(false) }, window, cx);
+                        window.close_dialog(cx);
+                        this.open_settings(window, cx);
+                    }
+                    29 => {
+                        assert_eq!(this.appearance().content_font_size, 20);
+                        assert_eq!(cx.theme().font_size, px(18.));
+                        window.close_dialog(cx);
+                        this.request(Next::Notebook { path: first.clone(), create: false }, window, cx);
+                    }
+                    30 => {
+                        assert_eq!(this.appearance().content_font_size, 40);
+                        this.remove_notebook(fs::canonicalize(&first).unwrap(), window, cx);
+                        assert_eq!(this.appearance().content_font_size, 20);
+                        assert!(!cx.theme().mode.is_dark());
+                        this.request(Next::Notebook { path: first.clone(), create: false }, window, cx);
+                    }
+                    31 => {
+                        assert_eq!(this.appearance().content_font_size, 40);
+                        assert!(cx.theme().mode.is_dark());
+                        assert_eq!(this.reading_text.as_str(), "# Root");
+                    }
                     _ => unreachable!(),
                 }
                 cx.notify();
@@ -176,9 +247,9 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
         let pending = notes.update(cx, |this, _| this.notebooks.persistence.take()).unwrap();
         if let Some(pending) = pending { pending.await; }
         let restored = notebook::load_index(&index).unwrap();
-        assert_eq!(restored.notebooks.len(), 2);
+        assert_eq!(restored.notebooks.len(), 1);
         assert_eq!(restored.active, Some(fs::canonicalize(&first).unwrap()));
-        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration\n").unwrap();
+        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration, notebook removal, per-notebook appearance, font bounds, session preferences\n").unwrap();
         drop(fixture);
         cx.update(|_, cx| cx.quit()).unwrap();
     }).detach();

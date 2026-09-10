@@ -14,6 +14,7 @@ cargo run --locked
 ## Use
 
 - **File → Open…** (`Ctrl+O`): open a UTF-8 `.md` or `.markdown` file.
+- **File → Settings**: adjust content font size (10–40 px), UI font size (10–24 px), and dark mode. Changes apply immediately and are saved per notebook. Without an active notebook, settings apply for the session only.
 - **File → Save** (`Ctrl+S`): save back to the opened file.
 - **Notebooks → Manage notebooks**: create a notebook or open an existing folder.
 - **Notebooks → notebook name**: switch notebooks and restore its last selected note.
@@ -33,12 +34,12 @@ navigate the sidebar and immediately load selected Markdown files in the current
 Other files and filesystem links are displayed but cannot be opened. Empty folders
 remain visible. Use **Refresh** to pick up external changes; there is no file watcher.
 
-Each notebook stores its last selected file and expanded folders as relative paths
-in `.gpui-note/settings.json`. This internal folder is hidden from the sidebar.
+Each notebook stores appearance preferences and its last selected file and expanded
+folders in `.gpui-note/settings.json`; file and folder paths are notebook-relative. This internal folder is hidden from the sidebar.
 `%APPDATA%\gpui-note\notebooks.json` stores only the notebook paths and active
 notebook, so the menu and active notebook can be restored on launch. Settings use
 atomic writes. Missing notebooks remain in the menu; corrupt or unsupported
-settings are reported and preserved. Manage notebooks lists registered notebooks;
+settings are reported and preserved. Manage notebooks lists notebook names and full folder paths;
 Remove forgets a notebook without deleting its folder or files. Removing the active
 notebook closes it, with Save/Discard/Cancel protection for unsaved edits.
 
@@ -84,6 +85,11 @@ Get-Content target/notebook-smoke.txt
 ```
 
 The check exits automatically and writes a result, progress file, or panic report.
+Appearance preferences default to 16 px for both font sizes and the startup system
+theme. Switching notebooks restores their preferences; leaving a notebook restores
+the separate session preferences. The smoke check also exercises appearance
+restoration, font limits, and removal without deleting files.
+
 Native folder-picker interaction and the save prompt's actual buttons still need
 a manual smoke test.
 

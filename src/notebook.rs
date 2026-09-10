@@ -9,11 +9,39 @@ use serde::{Deserialize, Serialize};
 
 const VERSION: u32 = 1;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Appearance {
+    pub content_font_size: u16,
+    pub ui_font_size: u16,
+    pub dark_mode: Option<bool>,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            content_font_size: 16,
+            ui_font_size: 16,
+            dark_mode: None,
+        }
+    }
+}
+
+impl Appearance {
+    pub fn normalized(mut self) -> Self {
+        self.content_font_size = self.content_font_size.clamp(10, 40);
+        self.ui_font_size = self.ui_font_size.clamp(10, 24);
+        self
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub version: u32,
     pub last_file: Option<PathBuf>,
     pub expanded: BTreeSet<PathBuf>,
+    #[serde(default)]
+    pub appearance: Appearance,
 }
 
 impl Default for Settings {
@@ -22,6 +50,7 @@ impl Default for Settings {
             version: VERSION,
             last_file: None,
             expanded: BTreeSet::new(),
+            appearance: Appearance::default(),
         }
     }
 }
@@ -312,6 +341,55 @@ mod tests {
         for value in ["Work", "My notes", "日本語", "COM10", "notes.v2"] {
             validate_name(value).unwrap();
         }
+    }
+
+    #[test]
+    fn appearance_compatibility_and_round_trip() {
+        let old: Settings =
+            serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
+        assert_eq!(old.appearance, Appearance::default());
+        let partial: Appearance = serde_json::from_str(r#"{"dark_mode":true}"#).unwrap();
+        assert_eq!(partial.content_font_size, 16);
+        assert_eq!(partial.ui_font_size, 16);
+        assert_eq!(partial.dark_mode, Some(true));
+        let bounds = Appearance {
+            content_font_size: 0,
+            ui_font_size: 500,
+            dark_mode: Some(false),
+        }
+        .normalized();
+        assert_eq!((bounds.content_font_size, bounds.ui_font_size), (10, 24));
+        let temp = tempfile::tempdir().unwrap();
+        let mut book = Notebook::open(temp.path(), false).unwrap();
+        book.settings.appearance = Appearance {
+            content_font_size: 40,
+            ui_font_size: 24,
+            dark_mode: Some(true),
+        };
+        write_json(&settings_path(temp.path()), &book.settings).unwrap();
+        assert_eq!(
+            Notebook::open(temp.path(), false)
+                .unwrap()
+                .settings
+                .appearance,
+            book.settings.appearance
+        );
+        let path = settings_path(temp.path());
+        fs::write(
+            &path,
+            r#"{"version":1,"last_file":null,"expanded":[],"appearance":{"dark_mode":"invalid"}}"#,
+        )
+        .unwrap();
+        let original = fs::read(&path).unwrap();
+        assert!(
+            save_state(
+                &temp.path().join("index.json"),
+                &Index::default(),
+                Some(&book)
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(path).unwrap(), original);
     }
 
     #[test]
