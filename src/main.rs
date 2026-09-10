@@ -4,6 +4,7 @@
 mod benchmark;
 mod notebook;
 mod notebook_ui;
+mod settings_ui;
 
 use std::{
     fs,
@@ -32,6 +33,7 @@ actions!(
         ViewMenu,
         NotebooksMenu,
         ManageNotebooks,
+        OpenSettings,
         TreeUp,
         TreeDown,
         TreeLeft,
@@ -452,6 +454,8 @@ impl Notes {
             if kind == MenuKind::File {
                 menu.menu_with_disabled("Open…", Box::new(Open), busy)
                     .menu_with_disabled("Save", Box::new(Save), !can_save)
+                    .separator()
+                    .menu_with_disabled("Settings", Box::new(OpenSettings), busy)
             } else if kind == MenuKind::View {
                 menu.menu_with_check(
                     "Source mode",
@@ -556,6 +560,9 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &ManageNotebooks, window, cx| {
                 this.manage_notebooks(window, cx)
             }))
+            .on_action(
+                cx.listener(|this, _: &OpenSettings, window, cx| this.open_settings(window, cx)),
+            )
             .relative()
             .flex()
             .flex_col()
