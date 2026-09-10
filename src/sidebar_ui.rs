@@ -55,14 +55,6 @@ impl Notes {
             .gap_1()
             .p_1()
             .child(
-                Button::new("collapse-sidebar")
-                    .small()
-                    .ghost()
-                    .icon(IconName::PanelLeftClose)
-                    .tooltip("Collapse sidebar")
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx))),
-            )
-            .child(
                 Button::new("sidebar-explorer")
                     .small()
                     .ghost()

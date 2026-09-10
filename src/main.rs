@@ -657,22 +657,27 @@ impl Render for Notes {
                     .p_1()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .when(
-                        self.sidebar_collapsed && self.notebooks.active.is_some(),
-                        |view| {
-                            view.child(
-                                Button::new("reveal-sidebar")
-                                    .ghost()
-                                    .small()
-                                    .w(rems(1.75))
-                                    .icon(gpui_component::IconName::PanelLeftOpen)
-                                    .tooltip("Reveal sidebar")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.toggle_sidebar(window, cx);
-                                    })),
-                            )
-                        },
-                    )
+                    .when(self.notebooks.active.is_some(), |view| {
+                        view.child(
+                            Button::new("toggle-sidebar")
+                                .ghost()
+                                .small()
+                                .w(rems(1.75))
+                                .icon(if self.sidebar_collapsed {
+                                    gpui_component::IconName::PanelLeftOpen
+                                } else {
+                                    gpui_component::IconName::PanelLeftClose
+                                })
+                                .tooltip(if self.sidebar_collapsed {
+                                    "Reveal sidebar"
+                                } else {
+                                    "Collapse sidebar"
+                                })
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.toggle_sidebar(window, cx);
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("file-menu")
                             .ghost()
@@ -725,7 +730,7 @@ impl Render for Notes {
                                 MenuKind::File => 0.25,
                                 MenuKind::View => 3.375,
                                 MenuKind::Notebooks => 6.75,
-                            } + if self.sidebar_collapsed && self.notebooks.active.is_some() {
+                            } + if self.notebooks.active.is_some() {
                                 2.
                             } else {
                                 0.
