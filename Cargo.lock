@@ -2345,6 +2345,8 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "serde",
+ "serde_json",
  "smallvec",
  "tempfile",
  "tree-sitter",

@@ -2,6 +2,8 @@
 
 #[cfg(feature = "editor-diagnostics")]
 mod benchmark;
+mod notebook;
+mod notebook_ui;
 
 use std::{
     fs,
@@ -11,7 +13,7 @@ use std::{
 
 use gpui::{prelude::*, *};
 use gpui_component::{
-    ActiveTheme, Root, Sizable,
+    ActiveTheme, Root, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState, Rope},
     menu::PopupMenu,
@@ -27,7 +29,14 @@ actions!(
         LivePreview,
         ReadingView,
         FileMenu,
-        ViewMenu
+        ViewMenu,
+        NotebooksMenu,
+        ManageNotebooks,
+        TreeUp,
+        TreeDown,
+        TreeLeft,
+        TreeRight,
+        TreeOpen
     ]
 );
 
@@ -38,11 +47,20 @@ enum ViewMode {
     Reading,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Next {
     Nothing,
     Open,
     Close,
+    File(PathBuf),
+    Notebook { path: PathBuf, create: bool },
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum MenuKind {
+    File,
+    View,
+    Notebooks,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -72,6 +90,7 @@ impl Document {
                 "Choose a .md or .markdown file.",
             ));
         }
+        let path = fs::canonicalize(path)?;
         let bytes = fs::read(&path)?;
         let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
         let raw = std::str::from_utf8(if bom { &bytes[3..] } else { &bytes }).map_err(|_| {
@@ -132,8 +151,9 @@ struct Notes {
     dirty_cached: bool,
     dirty_revision: u64,
     dirty_task: Option<Task<()>>,
-    menu: Option<(bool, Entity<PopupMenu>)>,
+    menu: Option<(MenuKind, Entity<PopupMenu>)>,
     menu_subscription: Option<Subscription>,
+    notebooks: notebook_ui::NotebookState,
 }
 
 impl Notes {
@@ -150,13 +170,15 @@ impl Notes {
                     this.request(Next::Close, window, cx);
                     false
                 } else {
-                    true
+                    this.finish_close(window, cx);
+                    false
                 }
             })
             .unwrap_or(true)
         });
         let focus = cx.focus_handle();
         focus.focus(window);
+        let notebooks = notebook_ui::NotebookState::new(window, cx);
         Self {
             document: None,
             editor,
@@ -170,6 +192,7 @@ impl Notes {
             dirty_task: None,
             menu: None,
             menu_subscription: None,
+            notebooks,
         }
     }
 
@@ -280,23 +303,35 @@ impl Notes {
         cx.spawn_in(window, async move |this, cx| {
             let answer = prompt.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
-                match answer {
-                    Some(0) => this.save(next, window, cx),
-                    Some(1) => this.continue_with(next, window, cx),
-                    _ => this.refresh(window, cx),
-                }
+                this.answer_request(answer, next, window, cx);
             });
         })
         .detach();
         cx.notify();
     }
 
+    fn answer_request(
+        &mut self,
+        answer: Option<usize>,
+        next: Next,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.busy = false;
+        match answer {
+            Some(0) => self.save(next, window, cx),
+            Some(1) => self.continue_with(next, window, cx),
+            _ => self.refresh(window, cx),
+        }
+    }
+
     fn continue_with(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         match next {
             Next::Nothing => self.refresh(window, cx),
             Next::Open => self.open(window, cx),
-            Next::Close => window.remove_window(),
+            Next::Close => self.finish_close(window, cx),
+            Next::File(path) => self.open_path(path, window, cx),
+            Next::Notebook { path, create } => self.activate_notebook(path, create, window, cx),
         }
     }
 
@@ -326,28 +361,8 @@ impl Notes {
                 this.busy = false;
                 match result {
                     Ok(Some(document)) => {
-                        // A fresh editor keeps undo from restoring the previously opened document.
-                        let editor = cx.new(|cx| {
-                            InputState::new(window, cx)
-                                .multi_line(true)
-                                .default_value(document.saved.clone())
-                        });
-                        this.editor_subscription = Self::subscribe_editor(&editor, window, cx);
-                        this.editor = editor;
-                        this.document = Some(document);
-                        if this.mode == ViewMode::Reading {
-                            this.reading_text = this.editor.read(cx).value();
-                        }
-                        this.dirty_task = None;
-                        this.dirty_revision += 1;
-                        this.dirty_cached = false;
-                        this.editor.update(cx, |editor, cx| {
-                            editor.set_live_preview(this.mode == ViewMode::LivePreview, cx)
-                        });
-                        if this.mode != ViewMode::Reading {
-                            this.editor
-                                .update(cx, |editor, cx| editor.focus(window, cx));
-                        }
+                        this.install_document(Some(document), window, cx);
+                        this.remember_file(cx);
                     }
                     Ok(None) => {}
                     Err(error) => this.error("Could not open file", error, window, cx),
@@ -415,17 +430,20 @@ impl Notes {
         cx.notify();
     }
 
-    fn show_menu(&mut self, file: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn show_menu(&mut self, kind: MenuKind, window: &mut Window, cx: &mut Context<Self>) {
+        if window.has_active_dialog(cx) {
+            return;
+        }
         let busy = self.busy;
         let can_save = self.document.is_some() && !busy;
         let mode = self.mode;
         let focus = self.focus.clone();
-        let menu = PopupMenu::build(window, cx, |menu, _, _| {
+        let menu = PopupMenu::build(window, cx, |menu, _, cx| {
             let menu = menu.action_context(focus);
-            if file {
+            if kind == MenuKind::File {
                 menu.menu_with_disabled("Open…", Box::new(Open), busy)
                     .menu_with_disabled("Save", Box::new(Save), !can_save)
-            } else {
+            } else if kind == MenuKind::View {
                 menu.menu_with_check(
                     "Source mode",
                     mode == ViewMode::Source,
@@ -441,6 +459,8 @@ impl Notes {
                     mode == ViewMode::Reading,
                     Box::new(ReadingView),
                 )
+            } else {
+                self.notebook_menu(menu, cx)
             }
         });
         self.menu_subscription =
@@ -451,7 +471,7 @@ impl Notes {
                 }),
             );
         menu.focus_handle(cx).focus(window);
-        self.menu = Some((file, menu));
+        self.menu = Some((kind, menu));
         cx.notify();
     }
 }
@@ -465,7 +485,11 @@ impl Render for Notes {
                 .items_center()
                 .justify_center()
                 .text_color(cx.theme().muted_foreground)
-                .child("Open a Markdown file with File → Open… (Ctrl+O)")
+                .child(if self.notebooks.active.is_some() {
+                    "Select a Markdown file from the notebook sidebar."
+                } else {
+                    "Open a Markdown file with File → Open… (Ctrl+O)"
+                })
                 .into_any_element()
         } else if self.mode != ViewMode::Reading {
             div()
@@ -511,12 +535,18 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &ReadingView, window, cx| {
                 this.set_mode(ViewMode::Reading, window, cx)
             }))
-            .on_action(
-                cx.listener(|this, _: &FileMenu, window, cx| this.show_menu(true, window, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &ViewMenu, window, cx| this.show_menu(false, window, cx)),
-            )
+            .on_action(cx.listener(|this, _: &FileMenu, window, cx| {
+                this.show_menu(MenuKind::File, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ViewMenu, window, cx| {
+                this.show_menu(MenuKind::View, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NotebooksMenu, window, cx| {
+                this.show_menu(MenuKind::Notebooks, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ManageNotebooks, window, cx| {
+                this.manage_notebooks(window, cx)
+            }))
             .relative()
             .flex()
             .flex_col()
@@ -535,38 +565,87 @@ impl Render for Notes {
                             .ghost()
                             .small()
                             .label("File")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.show_menu(true, window, cx)),
-                            ),
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.show_menu(MenuKind::File, window, cx)
+                            })),
                     )
                     .child(
                         Button::new("view-menu")
                             .ghost()
                             .small()
                             .label("View")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.show_menu(false, window, cx)
-                                }),
-                            ),
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.show_menu(MenuKind::View, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("notebooks-menu")
+                            .ghost()
+                            .small()
+                            .label("Notebooks")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.show_menu(MenuKind::Notebooks, window, cx)
+                            })),
                     ),
             )
-            .child(div().flex_1().min_h_0().overflow_hidden().child(content))
-            .when_some(self.menu.clone(), |this, (file, menu)| {
+            .when_some(self.notebooks.notice.clone(), |view, notice| {
+                view.child(div().p_2().text_sm().child(notice))
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .when(self.notebooks.active.is_some(), |view| {
+                        view.child(self.render_sidebar(window, cx))
+                    })
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .overflow_hidden()
+                            .child(content),
+                    ),
+            )
+            .when_some(self.menu.clone(), |this, (kind, menu)| {
                 this.child(deferred(
                     div()
                         .absolute()
                         .top(px(36.))
-                        .left(px(if file { 4. } else { 54. }))
+                        .left(px(match kind {
+                            MenuKind::File => 4.,
+                            MenuKind::View => 54.,
+                            MenuKind::Notebooks => 108.,
+                        }))
                         .child(menu),
                 ))
             })
     }
 }
 
+// Build modal layers outside Notes::render: their builder updates Notes, and
+// GPUI entities cannot be borrowed recursively during their own render.
+struct NotesWindow {
+    notes: Entity<Notes>,
+    _subscription: Subscription,
+}
+
+impl Render for NotesWindow {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .child(self.notes.clone())
+            .children(Root::render_dialog_layer(window, cx))
+    }
+}
+
 fn main() {
     #[cfg(feature = "editor-diagnostics")]
-    if let Some(output) = std::env::var_os("GPUI_NOTE_BENCH") {
+    if let Some(output) =
+        std::env::var_os("GPUI_NOTE_BENCH").or_else(|| std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK"))
+    {
         let output = PathBuf::from(output);
         let _ = fs::write(
             output.with_extension("progress.txt"),
@@ -585,6 +664,12 @@ fn main() {
                 KeyBinding::new("ctrl-s", Save, Some("Notes")),
                 KeyBinding::new("alt-f", FileMenu, Some("Notes")),
                 KeyBinding::new("alt-v", ViewMenu, Some("Notes")),
+                KeyBinding::new("alt-n", NotebooksMenu, Some("Notes")),
+                KeyBinding::new("up", TreeUp, Some("NotebookTree")),
+                KeyBinding::new("down", TreeDown, Some("NotebookTree")),
+                KeyBinding::new("left", TreeLeft, Some("NotebookTree")),
+                KeyBinding::new("right", TreeRight, Some("NotebookTree")),
+                KeyBinding::new("enter", TreeOpen, Some("NotebookTree")),
             ]);
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {
@@ -605,6 +690,12 @@ fn main() {
                 },
                 |window, cx| {
                     let notes = cx.new(|cx| Notes::new(window, cx));
+                    let diagnostic_run = cfg!(feature = "editor-diagnostics")
+                        && (std::env::var_os("GPUI_NOTE_BENCH").is_some()
+                            || std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK").is_some());
+                    if !diagnostic_run {
+                        notes.update(cx, |this, cx| this.restore_notebooks(window, cx));
+                    }
                     #[cfg(feature = "editor-diagnostics")]
                     if let Some(output) = std::env::var_os("GPUI_NOTE_BENCH") {
                         let notes = notes.clone();
@@ -612,7 +703,15 @@ fn main() {
                             benchmark::start(&notes, output.into(), window, cx)
                         });
                     }
-                    cx.new(|cx| Root::new(notes, window, cx))
+                    #[cfg(feature = "editor-diagnostics")]
+                    if let Some(output) = std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK") {
+                        notebook_ui::diagnostics::start(notes.clone(), output.into(), window, cx);
+                    }
+                    let view = cx.new(|cx| NotesWindow {
+                        _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),
+                        notes,
+                    });
+                    cx.new(|cx| Root::new(view, window, cx))
                 },
             )
             .expect("Could not create the GPUI Note window");

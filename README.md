@@ -15,13 +15,33 @@ cargo run --locked
 
 - **File → Open…** (`Ctrl+O`): open a UTF-8 `.md` or `.markdown` file.
 - **File → Save** (`Ctrl+S`): save back to the opened file.
+- **Notebooks → Manage notebooks**: create a notebook or open an existing folder.
+- **Notebooks → notebook name**: switch notebooks and restore its last selected note.
 - **View → Source mode**: edit plain Markdown, with standard copy/paste and undo/redo.
 - **View → Live preview**: edit headings, emphasis, and flat lists with reading typography.
 - **View → Reading view**: render the current text, including unsaved edits.
-- `Alt+F` / `Alt+V`: open menus; use arrow keys, Enter, and Escape inside them.
+- `Alt+F` / `Alt+V` / `Alt+N`: open menus; use arrow keys, Enter, and Escape inside them.
+
+Creating a notebook makes a new folder named after the notebook inside the chosen
+parent location. Names must be valid Windows folder names, without slashes.
+Opening a folder uses its folder name as the notebook name. Existing folders
+are never replaced by Create; use Open folder as notebook instead.
+
+The sidebar displays folders and files recursively. Click a folder to expand it
+and a `.md` or `.markdown` file to open it in the current view mode. Arrow keys
+navigate the sidebar; Left/Right collapse/expand and Enter activates a row.
+Other files and filesystem links are displayed but cannot be opened. Empty folders
+remain visible. Use **Refresh** to pick up external changes; there is no file watcher.
+
+Each notebook stores its last selected file and expanded folders as relative paths
+in `.gpui-note/settings.json`. This internal folder is hidden from the sidebar.
+`%APPDATA%\gpui-note\notebooks.json` stores only the notebook paths and active
+notebook, so the menu and active notebook can be restored on launch. Settings use
+atomic writes. Missing notebooks remain in the menu; corrupt or unsupported
+settings are reported and preserved. There is no notebook rename/remove UI yet.
 
 An asterisk in the title means there are unsaved changes. Opening another file
-or closing prompts to Save, Discard, or Cancel. Failed opens/saves preserve the
+or switching notebooks or closing prompts to Save, Discard, or Cancel. Failed opens/saves preserve the
 current buffer. Saves write a temporary file beside the original before replacing it.
 
 UTF-8 BOM and LF/CRLF/CR line endings are preserved. Mixed line endings are
@@ -46,6 +66,24 @@ For a UI smoke test, open a disposable Markdown file, edit it, switch both views
 save, and reopen. Check menu selection marks, keyboard navigation, scrolling,
 clipboard, undo/redo, and each Save/Discard/Cancel branch on open and close.
 Also check invalid UTF-8 and a locked/read-only file.
+
+Notebook tests cover folder names, creation collisions, persistence, duplicate
+paths, corrupt settings, missing folders, recursive listing, and Windows junctions.
+An opt-in in-app smoke check exercises the modal screens, sidebar, view modes,
+save-prompt response handling, notebook switches, and restoration using disposable
+fixtures and an isolated index:
+
+```powershell
+cargo build --locked --features editor-diagnostics
+$env:GPUI_NOTE_NOTEBOOK_CHECK = Join-Path (Get-Location) 'target/notebook-smoke.txt'
+Start-Process target/debug/gpui-note.exe -WindowStyle Hidden -Wait
+Remove-Item Env:GPUI_NOTE_NOTEBOOK_CHECK
+Get-Content target/notebook-smoke.txt
+```
+
+The check exits automatically and writes a result, progress file, or panic report.
+Native folder-picker interaction and the save prompt's actual buttons still need
+a manual smoke test.
 
 Live preview recognizes one to six leading `#` characters immediately, even
 without a space. The hashes stay visible. `- ` becomes a bullet and `1. ` starts
