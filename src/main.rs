@@ -7,6 +7,7 @@ mod goto;
 mod notebook;
 mod notebook_ui;
 mod settings_ui;
+mod templates;
 
 use std::{
     fs,
@@ -28,6 +29,7 @@ actions!(
     [
         Open,
         GoTo,
+        CommandPalette,
         Save,
         SourceMode,
         LivePreview,
@@ -148,6 +150,11 @@ fn save_file(path: &Path, text: &str, bom: bool, newline: Newline) -> io::Result
 }
 
 struct Notes {
+    session_date_format: String,
+    date_input: Option<Entity<InputState>>,
+    date_subscription: Option<Subscription>,
+    date_validation: Option<String>,
+    settings_templates: bool,
     saves: autosave::SaveState,
     autosave_delay: Option<Entity<InputState>>,
     autosave_subscription: Option<Subscription>,
@@ -190,6 +197,11 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            session_date_format: templates::default_format(),
+            date_input: None,
+            date_subscription: None,
+            date_validation: None,
+            settings_templates: false,
             saves: autosave::SaveState::default(),
             autosave_delay: None,
             autosave_subscription: None,
@@ -554,6 +566,11 @@ impl Render for Notes {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
             .on_action(
+                cx.listener(|this, _: &CommandPalette, window, cx| {
+                    this.command_palette(window, cx)
+                }),
+            )
+            .on_action(
                 cx.listener(|this, _: &Open, window, cx| this.request(Next::Open, window, cx)),
             )
             .on_action(
@@ -701,6 +718,7 @@ fn main() {
             gpui_component::init(cx);
             cx.bind_keys([
                 KeyBinding::new("ctrl-o", GoTo, Some("Notes")),
+                KeyBinding::new("ctrl-p", CommandPalette, Some("Notes")),
                 KeyBinding::new("ctrl-s", Save, Some("Notes")),
                 KeyBinding::new("alt-f", FileMenu, Some("Notes")),
                 KeyBinding::new("alt-v", ViewMenu, Some("Notes")),

@@ -2,6 +2,7 @@ use super::*;
 use gpui_component::dialog::Dialog;
 
 pub(super) struct Palette {
+    command: bool,
     query: Entity<InputState>,
     _subscription: Subscription,
     entries: Vec<notebook::Entry>,
@@ -59,7 +60,12 @@ impl Palette {
             .entries
             .iter()
             .filter_map(|entry| {
-                let name = notebook::name(&entry.relative).to_lowercase();
+                let name = if self.command {
+                    "Templates: Insert current date".into()
+                } else {
+                    notebook::name(&entry.relative)
+                }
+                .to_lowercase();
                 let path = entry.relative.to_string_lossy().to_lowercase();
                 score(&name, &query)
                     .or_else(|| score(&path, &query).map(|(_, cost)| (4, cost)))
@@ -74,6 +80,44 @@ impl Palette {
 }
 
 impl Notes {
+    pub(super) fn command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || window.has_active_dialog(cx) {
+            return;
+        }
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search commands"));
+        let subscription = cx.subscribe(&query, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                if let Some(palette) = &mut this.palette {
+                    palette.filter(cx);
+                }
+                cx.notify();
+            }
+        });
+        self.palette = Some(Palette {
+            command: true,
+            query: query.clone(),
+            _subscription: subscription,
+            entries: vec![notebook::Entry {
+                relative: PathBuf::from("Templates: Insert current date"),
+                directory: false,
+                link: false,
+            }],
+            results: Vec::new(),
+            selected: 0,
+            scroll: UniformListScrollHandle::new(),
+            status: None,
+            focus: window.focused(cx),
+        });
+        self.palette.as_mut().unwrap().filter(cx);
+        let owner = cx.weak_entity();
+        window.open_dialog(cx, move |dialog, window, cx| {
+            owner
+                .update(cx, |this, cx| this.palette_dialog(dialog, window, cx))
+                .unwrap_or_else(|_| Dialog::new(window, cx))
+        });
+        query.update(cx, |query, cx| query.focus(window, cx));
+    }
+
     pub(super) fn go_to(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy || window.has_active_dialog(cx) {
             return;
@@ -94,6 +138,7 @@ impl Notes {
             }
         });
         self.palette = Some(Palette {
+            command: false,
             query: query.clone(),
             _subscription: subscription,
             entries: Vec::new(),
@@ -147,6 +192,20 @@ impl Notes {
     }
 
     fn activate_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.palette.as_ref().is_some_and(|p| p.command) {
+            if !self.can_insert_date() || self.palette.as_ref().unwrap().results.is_empty() {
+                return;
+            }
+            let Ok(date) = templates::current(self.date_format()) else {
+                return;
+            };
+            window.close_dialog(cx);
+            self.close_palette(window, cx);
+            self.editor.update(cx, |editor, cx| {
+                editor.replace_selection_isolated(&date, window, cx)
+            });
+            return;
+        }
         let entry = self
             .palette
             .as_ref()
@@ -222,7 +281,7 @@ impl Notes {
                 div().child(status.clone()).into_any_element()
             } else if palette.results.is_empty() {
                 div()
-                    .child("No matching files or folders")
+                    .child(if palette.command { "No matching commands" } else { "No matching files or folders" })
                     .into_any_element()
             } else {
                 uniform_list(
@@ -243,6 +302,7 @@ impl Notes {
                                     .flex()
                                     .flex_col()
                                     .when(i == p.selected, |v| v.bg(cx.theme().accent))
+                                    .when(p.command && !this.can_insert_date(), |v| v.text_color(cx.theme().muted_foreground))
                                     .child(div().w_full().truncate().child(format!(
                                         "{}{}",
                                         if entry.directory { "▸ " } else { "" },
@@ -254,7 +314,9 @@ impl Notes {
                                             .truncate()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(entry.relative.display().to_string()),
+                                            .child(if p.command {
+                                                if this.can_insert_date() { "Insert at the editor selection".into() } else { "Open an editable document in Source or Live preview".into() }
+                                            } else { entry.relative.display().to_string() }),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         if let Some(p) = &mut this.palette {
@@ -273,7 +335,11 @@ impl Notes {
                 .into_any_element()
             });
         dialog
-            .title("Go to")
+            .title(if palette.command {
+                "Command palette"
+            } else {
+                "Go to"
+            })
             .w(px(560.).min(window.viewport_size().width - px(32.)))
             .on_close(move |_, window, cx| {
                 let _ = owner.update(cx, |this, cx| this.close_palette(window, cx));
@@ -321,6 +387,46 @@ mod tests {
 
 #[cfg(feature = "editor-diagnostics")]
 pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.set_mode(ViewMode::Source, window, cx);
+            let before = this.editor.read(cx).value();
+            this.command_palette(window, cx);
+            assert!(this.palette.as_ref().unwrap().command);
+            this.palette
+                .as_ref()
+                .unwrap()
+                .query
+                .update(cx, |q, cx| q.set_value("current date", window, cx));
+            assert_eq!(this.palette.as_ref().unwrap().results.len(), 1);
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+            assert!(this.editor.focus_handle(cx).is_focused(window));
+            assert_eq!(this.editor.read(cx).value(), before);
+            this.command_palette(window, cx);
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_none());
+            assert!(this.editor.focus_handle(cx).is_focused(window));
+            assert!(
+                this.editor
+                    .read(cx)
+                    .value()
+                    .contains(&templates::current(this.date_format()).unwrap())
+            );
+            this.editor
+                .update(cx, |editor, cx| editor.set_value(before, window, cx));
+            this.set_mode(ViewMode::Reading, window, cx);
+            this.command_palette(window, cx);
+            this.activate_palette(window, cx);
+            assert!(
+                this.palette.is_some(),
+                "Reading mode disables date insertion"
+            );
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+        });
+    })
+    .unwrap();
     for step in 0..=13 {
         Timer::after(std::time::Duration::from_millis(150)).await;
         cx.update(|window, cx| match step {

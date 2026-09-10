@@ -2,6 +2,25 @@ use super::*;
 use gpui_component::{Disableable, Theme, ThemeMode, dialog::Dialog, switch::Switch};
 
 impl Notes {
+    pub(super) fn can_insert_date(&self) -> bool {
+        self.document.is_some() && !self.busy && self.mode != ViewMode::Reading
+    }
+
+    pub(super) fn date_format(&self) -> &str {
+        let value = self
+            .notebooks
+            .active
+            .as_ref()
+            .map_or(self.session_date_format.as_str(), |book| {
+                book.settings.date_format.as_str()
+            });
+        if templates::current(value).is_ok() {
+            value
+        } else {
+            "YYYY-MM-DD"
+        }
+    }
+
     pub(super) fn appearance(&self) -> notebook::Appearance {
         let mut appearance = self
             .notebooks
@@ -56,6 +75,31 @@ impl Notes {
             return;
         }
         self.menu = None;
+        self.settings_templates = false;
+        self.date_validation = None;
+        let date = self.date_format().to_owned();
+        let date_input = cx.new(|cx| InputState::new(window, cx).default_value(date));
+        self.date_subscription = Some(cx.subscribe(&date_input, |this, input, event, cx| {
+            if !matches!(event, InputEvent::Change) {
+                return;
+            }
+            let value = input.read(cx).value().to_string();
+            match templates::current(&value) {
+                Ok(_) if !this.busy => {
+                    this.date_validation = None;
+                    if let Some(book) = &mut this.notebooks.active {
+                        book.settings.date_format = value;
+                        this.persist_notebooks(cx);
+                    } else {
+                        this.session_date_format = value;
+                    }
+                }
+                Err(error) => this.date_validation = Some(error),
+                _ => {}
+            }
+            cx.notify();
+        }));
+        self.date_input = Some(date_input);
         let delay = self.autosave_settings().delay_ms.to_string();
         let input = cx.new(|cx| InputState::new(window, cx).default_value(delay));
         self.autosave_validation = None;
@@ -117,9 +161,16 @@ impl Notes {
             body = body.child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .gap_2()
-                    .child(div().flex_1().child(label))
+                    .child(
+                        div()
+                            .when(window.viewport_size().width < px(560.), |v| v.w_full())
+                            .when(window.viewport_size().width >= px(560.), |v| v.flex_1())
+                            .min_w_0()
+                            .child(label),
+                    )
                     .child(
                         Button::new(("font-decrease", index))
                             .label("−")
@@ -194,10 +245,52 @@ impl Notes {
                     .label("Close")
                     .on_click(|_, window, cx| window.close_dialog(cx)),
             );
+        let templates_body = div().w_full().min_w_0().flex().flex_col().gap_3()
+            .child("Current date format")
+            .when_some(self.date_input.clone(), |view, input| view.child(Input::new(&input)))
+            .when_some(self.date_validation.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
+            .child(format!("Example: {}", templates::current(self.date_format()).unwrap_or_default()))
+            .child(div().text_sm().child("Moment-style tokens, local time, English names. Use [brackets] for literal text. See README for supported tokens."));
+        let sidebar = div()
+            .w(px(104.))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                Button::new("settings-general")
+                    .label("General")
+                    .when(!self.settings_templates, |v| v.primary())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_templates = false;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Button::new("settings-templates")
+                    .label("Templates")
+                    .when(self.settings_templates, |v| v.primary())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_templates = true;
+                        cx.notify();
+                    })),
+            );
         dialog
             .title("Settings")
-            .w(px(460.).min(window.viewport_size().width - px(32.)))
+            .w(px(620.).min(window.viewport_size().width - px(32.)))
             .max_h((window.viewport_size().height - px(100.)).max(px(120.)))
-            .child(body)
+            .child(
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .gap_3()
+                    .child(sidebar)
+                    .child(div().flex_1().min_w_0().child(if self.settings_templates {
+                        templates_body.into_any_element()
+                    } else {
+                        body.w_full().min_w_0().into_any_element()
+                    })),
+            )
     }
 }

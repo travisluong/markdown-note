@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+chrono = "=0.4.45"
 gpui = "=0.2.2"
 gpui-component = "=0.5.1"
 gpui-component-assets = "=0.5.1"

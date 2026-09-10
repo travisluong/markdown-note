@@ -118,3 +118,17 @@ Autosave is enabled by default after 1,000 ms without edits. Settings offers an 
 The opt-in GPUI_NOTE_AUTOSAVE_CHECK diagnostic (editor-diagnostics build) exercises timers, save races, failure recovery, task autosave, and validation against disposable files.
 
 Live preview renders explicitly marked blockquotes with muted text, indentation, and one vertical bar per nesting level. Quote prefixes reappear on the cursor source line. Emphasis and clickable tasks work inside quotes; unmarked continuation lines remain literal under the line-local renderer.
+
+Ctrl+P opens the command palette. **Templates: Insert current date** replaces the
+remembered editor selection as one undoable edit in Source or Live preview.
+Settings has General and Templates sections; the date format is saved per
+notebook (or for the session without a notebook). Invalid edits show an inline
+error and keep the last valid format. The default is `YYYY-MM-DD`.
+
+Date templates use local time and English names. Supported Moment-style tokens:
+`YY YYYY M MM MMM MMMM D DD Do d dd ddd dddd H HH h hh m mm s ss SSS A a Z ZZ`.
+Use `[literal text]` or a backslash before a character to escape it. Empty formats,
+unsupported alphabetic tokens, unmatched brackets, nested brackets, and trailing
+backslashes are rejected. This is a supported subset of
+[Moment formatting](https://momentjs.com/docs/#/displaying/format/), translated to
+[Chrono formatting](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).

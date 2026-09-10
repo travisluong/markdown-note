@@ -65,6 +65,8 @@ impl Appearance {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "crate::templates::default_format")]
+    pub date_format: String,
     pub version: u32,
     pub last_file: Option<PathBuf>,
     pub expanded: BTreeSet<PathBuf>,
@@ -79,6 +81,7 @@ impl Default for Settings {
         Self {
             version: VERSION,
             last_file: None,
+            date_format: crate::templates::default_format(),
             expanded: BTreeSet::new(),
             appearance: Appearance::default(),
             autosave: Autosave::default(),
@@ -475,6 +478,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("Notes");
         let mut book = Notebook::open(&root, true).unwrap();
+        assert_eq!(book.settings.date_format, "YYYY-MM-DD");
+        book.settings.date_format = "MMMM Do, YYYY".into();
         assert!(Notebook::open(&root, true).is_err());
         fs::create_dir(root.join("folder")).unwrap();
         fs::write(root.join("folder/note.md"), "# Hello").unwrap();
@@ -482,6 +487,7 @@ mod tests {
         book.settings.expanded.insert("folder".into());
         write_json(&settings_path(&root), &book.settings).unwrap();
         let reopened = Notebook::open(&root, false).unwrap();
+        assert_eq!(reopened.settings.date_format, "MMMM Do, YYYY");
         assert_eq!(reopened.settings.last_file, book.settings.last_file);
         assert_eq!(reopened.settings.expanded, book.settings.expanded);
         let mut index = Index::default();

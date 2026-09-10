@@ -660,6 +660,21 @@ impl InputState {
         self.selected_range = (self.selected_range.end..self.selected_range.end).into();
     }
 
+    /// Replace the remembered selection as one edit isolated from adjacent typing.
+    pub fn replace_selection_isolated(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.disabled { return; }
+        let history = std::mem::replace(&mut self.history, History::new());
+        self.history = history.group_interval(std::time::Duration::ZERO);
+        self.list_enter_boundary = false;
+        self.replace_text_in_range_silent(None, text, window, cx);
+        self.list_enter_boundary = true;
+    }
+
     fn replace_text(
         &mut self,
         text: impl Into<SharedString>,
@@ -2312,6 +2327,15 @@ impl InputState {
 
     #[doc(hidden)]
     pub fn diagnostic_checks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_value("a你好z", window, cx);
+        self.selected_range = (1..7).into();
+        self.selection_reversed = true;
+        self.replace_selection_isolated("2026-09-03", window, cx);
+        assert_eq!(self.value().as_str(), "a2026-09-03z");
+        self.undo(&Undo, window, cx);
+        assert_eq!(self.value().as_str(), "a你好z");
+        self.redo(&Redo, window, cx);
+        assert_eq!(self.value().as_str(), "a2026-09-03z");
         self.set_live_preview(true, cx);
         self.set_value("- café", window, cx);
         self.selected_range = (4..4).into();
