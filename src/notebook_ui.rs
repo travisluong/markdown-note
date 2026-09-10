@@ -375,7 +375,7 @@ impl Notes {
                 );
                 let path = path.clone();
                 let remove_path = path.clone();
-                let path_label = path.display().to_string();
+                let path_label = notebook::display_path(&path);
                 list = list.child(
                     div()
                         .flex_shrink_0()

@@ -600,3 +600,52 @@ mod tests {
         assert!(root.exists());
     }
 }
+
+/// A display-only spelling; filesystem operations and stored identities keep the original path.
+pub fn display_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    if let Some(unc) = value.strip_prefix(r"\\?\UNC\") {
+        if unc
+            .split_once('\\')
+            .is_some_and(|(server, share)| !server.is_empty() && !share.is_empty())
+        {
+            return format!(r"\\{unc}");
+        }
+    }
+    if let Some(drive) = value.strip_prefix(r"\\?\") {
+        let bytes = drive.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && bytes[2] == b'\\'
+        {
+            return drive.into();
+        }
+    }
+    value.into_owned()
+}
+
+#[cfg(test)]
+mod path_display_tests {
+    use super::*;
+    #[test]
+    fn only_normalize_verbatim_drive_and_unc_for_display() {
+        for (input, expected) in [
+            (r"\\?\C:\Notes\你好", r"C:\Notes\你好"),
+            (r"\\?\z:\", r"z:\"),
+            (r"\\?\UNC\server\share\Notes", r"\\server\share\Notes"),
+            (r"\\server\share\Notes", r"\\server\share\Notes"),
+            (r"C:\Notes", r"C:\Notes"),
+            (r"relative\Notes", r"relative\Notes"),
+            (r"\\?\Volume{abc}\Notes", r"\\?\Volume{abc}\Notes"),
+            (r"\\.\C:\Notes", r"\\.\C:\Notes"),
+            (r"\\?\C:relative", r"\\?\C:relative"),
+            (r"\\?\UNC\server", r"\\?\UNC\server"),
+            ("/home/notes", "/home/notes"),
+        ] {
+            let path = PathBuf::from(input);
+            assert_eq!(display_path(&path), expected);
+            assert_eq!(path.to_string_lossy(), input);
+        }
+    }
+}
