@@ -265,7 +265,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
         let restored = notebook::load_index(&index).unwrap();
         assert_eq!(restored.notebooks.len(), 1);
         assert_eq!(restored.active, Some(fs::canonicalize(&first).unwrap()));
-        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration, notebook removal, per-notebook appearance, font bounds, session preferences, palette keyboard navigation and focus restoration, Ctrl+F matching and keyboard navigation, Ctrl+Shift+F notebook search and save-aware result navigation\n").unwrap();
+        fs::write(output, "passed: modal screens, creation, registration, recursive sidebar, arrow loading in all view modes, retained focus, rapid navigation, save/discard/cancel responses, missing notebook preservation, persistence and restoration, notebook removal, per-notebook sidebar widths and appearance, font bounds, session preferences, palette keyboard navigation and focus restoration, Ctrl+F matching and keyboard navigation, sidebar panel switching, collapse/reveal, search preservation, Ctrl+Shift+F from a collapsed sidebar, notebook search and save-aware result navigation\n").unwrap();
         drop(fixture);
         cx.update(|_, cx| cx.quit()).unwrap();
     }).detach();

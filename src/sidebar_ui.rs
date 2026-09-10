@@ -1,8 +1,86 @@
 use super::*;
-use gpui_component::PixelsExt;
 use gpui_component::resizable::{ResizableState, h_resizable, resizable_panel};
+use gpui_component::{IconName, PixelsExt, Selectable};
 
 impl Notes {
+    pub(super) fn reveal_sidebar(&mut self, cx: &mut Context<Self>) {
+        if self.sidebar_collapsed {
+            self.sidebar_collapsed = false;
+            self.reset_sidebar_resize(cx);
+        }
+    }
+
+    pub(super) fn toggle_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
+            return;
+        }
+        if self.sidebar_collapsed {
+            self.reveal_sidebar(cx);
+            if self.search.as_ref().is_some_and(|panel| panel.visible) {
+                self.open_search_all(window, cx);
+            } else {
+                self.show_explorer(window, cx);
+            }
+        } else {
+            self.sidebar_collapsed = true;
+            if self.mode == ViewMode::Reading || self.document.is_none() {
+                self.focus.focus(window);
+            } else {
+                self.editor
+                    .update(cx, |editor, cx| editor.focus(window, cx));
+            }
+        }
+        cx.notify();
+    }
+
+    pub(super) fn show_explorer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
+            return;
+        }
+        self.reveal_sidebar(cx);
+        if let Some(panel) = &mut self.search {
+            panel.visible = false;
+        }
+        self.notebooks.tree_focus.focus(window);
+        cx.notify();
+    }
+
+    fn render_sidebar_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let searching = self.search.as_ref().is_some_and(|panel| panel.visible);
+        div()
+            .id("sidebar-toolbar")
+            .flex()
+            .items_center()
+            .flex_shrink_0()
+            .gap_1()
+            .p_1()
+            .child(
+                Button::new("collapse-sidebar")
+                    .small()
+                    .ghost()
+                    .icon(IconName::PanelLeftClose)
+                    .tooltip("Collapse sidebar")
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx))),
+            )
+            .child(
+                Button::new("sidebar-explorer")
+                    .small()
+                    .ghost()
+                    .icon(IconName::Folder)
+                    .tooltip("Explorer")
+                    .selected(!searching)
+                    .on_click(cx.listener(|this, _, window, cx| this.show_explorer(window, cx))),
+            )
+            .child(
+                Button::new("sidebar-search")
+                    .small()
+                    .ghost()
+                    .icon(IconName::Search)
+                    .tooltip("Search all files (Ctrl+Shift+F)")
+                    .selected(searching)
+                    .on_click(cx.listener(|this, _, window, cx| this.open_search_all(window, cx))),
+            )
+    }
     pub(super) fn reset_sidebar_resize(&mut self, cx: &mut Context<Self>) {
         self.sidebar_resize = cx.new(|_| ResizableState::default());
     }
@@ -30,6 +108,9 @@ impl Notes {
             .h_full()
             .overflow_hidden()
             .child(content);
+        if self.sidebar_collapsed {
+            return editor.into_any_element();
+        }
         let Some(book) = self.notebooks.active.as_ref() else {
             return editor.into_any_element();
         };
@@ -40,6 +121,16 @@ impl Notes {
         } else {
             self.render_sidebar(window, cx).into_any_element()
         };
+        let sidebar = div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .min_w_0()
+            .overflow_hidden()
+            .border_r_1()
+            .border_color(cx.theme().border)
+            .child(self.render_sidebar_toolbar(cx))
+            .child(div().flex_1().min_h_0().overflow_hidden().child(sidebar));
         h_resizable("sidebar-layout")
             .with_state(&self.sidebar_resize)
             .child(

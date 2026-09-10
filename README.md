@@ -81,8 +81,13 @@ files over 8 MiB and unreadable/non-UTF-8 files are skipped with a visible count
 A changed match is rechecked against the loaded text before navigation.
 
 Drag the sidebar’s right border to resize Explorer and Search together. Each
-notebook saves its width in .gpui-note/settings.json (default 280 px, range
+notebook saves its width in `.gpui-note/settings.json` (default 280 px, range
 160–600 px). The layout keeps at least 200 px available for the editor.
+
+The sidebar’s top icons collapse the sidebar, open Explorer, and open notebook
+search. When collapsed, use the reveal icon beside File to restore the previous
+panel. Ctrl+Shift+F also reveals Search. Collapse state lasts for the session;
+search queries and results remain available when switching panels.
 
 ## Check
 

@@ -38,6 +38,7 @@ impl Notes {
             return;
         };
         let root = book.root.clone();
+        self.reveal_sidebar(cx);
         if self.search.is_none() {
             let query =
                 cx.new(|cx| InputState::new(window, cx).placeholder("Search notebook text"));
@@ -63,7 +64,6 @@ impl Notes {
         let panel = self.search.as_mut().unwrap();
         panel.visible = true;
         panel.query.update(cx, |query, cx| query.focus(window, cx));
-        self.schedule_search(window, cx);
         cx.notify();
     }
 
@@ -238,8 +238,6 @@ impl Notes {
             .min_h_0()
             .gap_2()
             .p_2()
-            .border_r_1()
-            .border_color(cx.theme().border)
             .capture_action(
                 cx.listener(|this, _: &gpui_component::input::MoveDown, _, cx| {
                     this.move_search_result(true, cx);
@@ -265,28 +263,11 @@ impl Notes {
                     cx.stop_propagation();
                 }),
             )
-            .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .child(
-                        Button::new("search-files-tab")
-                            .small()
-                            .ghost()
-                            .label("Files")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(panel) = &mut this.search {
-                                    panel.visible = false;
-                                }
-                                cx.notify();
-                            })),
-                    )
-                    .child(div().p_1().child("Search")),
-            )
             .child(Input::new(&panel.query))
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap_1()
                     .child(
                         Button::new("search-case")
@@ -419,6 +400,8 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                         fs::write(&b, "prefix needle").unwrap();
                         this.install_document(Some(Document::open(a).unwrap()), window, cx);
                         this.set_mode(ViewMode::Reading, window, cx);
+                        this.toggle_sidebar(window, cx);
+                        assert!(this.sidebar_collapsed);
                     }
                     2 => {
                         let query = this
@@ -428,10 +411,53 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                             .query
                             .clone();
                         assert!(query.focus_handle(cx).is_focused(window));
+                        assert!(!this.sidebar_collapsed);
+                        assert!(this.search.as_ref().unwrap().status.is_empty());
                         query.update(cx, |q, cx| q.set_value("superseded", window, cx));
                         query.update(cx, |q, cx| q.set_value("needle", window, cx));
                     }
-                    3 => assert_eq!(this.search.as_ref().unwrap().hits.len(), 3),
+                    3 => {
+                        assert_eq!(this.search.as_ref().unwrap().hits.len(), 3);
+                        let query = this.search.as_ref().unwrap().query.clone();
+                        let width = this
+                            .notebooks
+                            .active
+                            .as_ref()
+                            .unwrap()
+                            .settings
+                            .sidebar_width;
+                        this.search.as_mut().unwrap().selected = 1;
+                        this.toggle_sidebar(window, cx);
+                        assert!(this.sidebar_collapsed);
+                        assert!(this.focus.is_focused(window));
+                        this.toggle_sidebar(window, cx);
+                        assert!(!this.sidebar_collapsed);
+                        assert!(query.focus_handle(cx).is_focused(window));
+                        this.show_explorer(window, cx);
+                        assert!(!this.search.as_ref().unwrap().visible);
+                        assert!(this.notebooks.tree_focus.is_focused(window));
+                        this.toggle_sidebar(window, cx);
+                        this.toggle_sidebar(window, cx);
+                        assert!(!this.search.as_ref().unwrap().visible);
+                        assert!(this.notebooks.tree_focus.is_focused(window));
+                        this.open_search_all(window, cx);
+                        let panel = this.search.as_ref().unwrap();
+                        assert!(panel.visible);
+                        assert_eq!(panel.query, query);
+                        assert_eq!(query.read(cx).value().as_str(), "needle");
+                        assert_eq!(panel.hits.len(), 3);
+                        assert_eq!(panel.selected, 1);
+                        assert_eq!(
+                            this.notebooks
+                                .active
+                                .as_ref()
+                                .unwrap()
+                                .settings
+                                .sidebar_width,
+                            width
+                        );
+                        this.search.as_mut().unwrap().selected = 0;
+                    }
                     5 | 8 => {
                         let panel = this.search.as_ref().unwrap();
                         assert_eq!(panel.selected, if step == 5 { 0 } else { 1 });
@@ -441,6 +467,10 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                         );
                         assert!(this.mode == ViewMode::Source);
                         assert!(this.editor.focus_handle(cx).is_focused(window));
+                        if step == 5 {
+                            this.toggle_sidebar(window, cx);
+                            assert!(this.sidebar_collapsed);
+                        }
                     }
                     9 => {
                         this.editor

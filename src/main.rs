@@ -158,6 +158,7 @@ fn save_file(path: &Path, text: &str, bom: bool, newline: Newline) -> io::Result
 }
 
 struct Notes {
+    sidebar_collapsed: bool,
     sidebar_resize: Entity<gpui_component::resizable::ResizableState>,
     session_date_format: String,
     date_input: Option<Entity<InputState>>,
@@ -208,6 +209,7 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            sidebar_collapsed: false,
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),
             session_date_format: templates::default_format(),
             date_input: None,
@@ -655,6 +657,22 @@ impl Render for Notes {
                     .p_1()
                     .border_b_1()
                     .border_color(cx.theme().border)
+                    .when(
+                        self.sidebar_collapsed && self.notebooks.active.is_some(),
+                        |view| {
+                            view.child(
+                                Button::new("reveal-sidebar")
+                                    .ghost()
+                                    .small()
+                                    .w(rems(1.75))
+                                    .icon(gpui_component::IconName::PanelLeftOpen)
+                                    .tooltip("Reveal sidebar")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.toggle_sidebar(window, cx);
+                                    })),
+                            )
+                        },
+                    )
                     .child(
                         Button::new("file-menu")
                             .ghost()
@@ -681,15 +699,6 @@ impl Render for Notes {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.show_menu(MenuKind::Notebooks, window, cx)
                             })),
-                    )
-                    .child(
-                        Button::new("search-all")
-                            .ghost()
-                            .small()
-                            .label("Search")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.open_search_all(window, cx)),
-                            ),
                     ),
             )
             .when_some(self.saves.error.clone(), |view, error| {
@@ -711,11 +720,17 @@ impl Render for Notes {
                     div()
                         .absolute()
                         .top(rems(2.25))
-                        .left(rems(match kind {
-                            MenuKind::File => 0.25,
-                            MenuKind::View => 3.375,
-                            MenuKind::Notebooks => 6.75,
-                        }))
+                        .left(rems(
+                            match kind {
+                                MenuKind::File => 0.25,
+                                MenuKind::View => 3.375,
+                                MenuKind::Notebooks => 6.75,
+                            } + if self.sidebar_collapsed && self.notebooks.active.is_some() {
+                                2.
+                            } else {
+                                0.
+                            },
+                        ))
                         .child(menu),
                 ))
             })

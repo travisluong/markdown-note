@@ -33,7 +33,7 @@ pub(super) struct NotebookState {
     rows: Vec<Row>,
     cursor: Option<usize>,
     scroll: UniformListScrollHandle,
-    tree_focus: FocusHandle,
+    pub(super) tree_focus: FocusHandle,
     persistence: Option<Task<()>>,
     tree_loading: bool,
     tree_target: Option<PathBuf>,
@@ -1046,8 +1046,6 @@ impl Notes {
             .h_full()
             .flex()
             .flex_col()
-            .border_r_1()
-            .border_color(cx.theme().border)
             .child(
                 div().flex().items_center().p_2().min_h(px(40.)).child(
                     div()
