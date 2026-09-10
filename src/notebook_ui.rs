@@ -322,7 +322,53 @@ impl Notes {
                         ),
                 );
         } else {
+            let mut list = div()
+                .id("managed-notebooks")
+                .max_h(px(300.))
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .gap_2();
+            if self.notebooks.index.notebooks.is_empty() {
+                list = list.child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("No notebooks yet."),
+                );
+            }
+            for (index, path) in self.notebooks.index.notebooks.iter().enumerate() {
+                let active = self
+                    .notebooks
+                    .active
+                    .as_ref()
+                    .is_some_and(|book| &book.root == path);
+                let label = format!(
+                    "{}{}",
+                    notebook::name(path),
+                    if active { " (active)" } else { "" }
+                );
+                let path = path.clone();
+                list = list.child(
+                    div().flex().items_center().gap_2().child(
+                        Button::new(("managed-notebook", index))
+                            .label(label)
+                            .disabled(self.busy)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.request(
+                                    Next::Notebook {
+                                        path: path.clone(),
+                                        create: false,
+                                    },
+                                    window,
+                                    cx,
+                                );
+                            })),
+                    ),
+                );
+            }
             body = body
+                .child(list)
                 .child(
                     Button::new("new-notebook")
                         .label("Create new notebook")
