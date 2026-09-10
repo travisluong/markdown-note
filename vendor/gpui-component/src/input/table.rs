@@ -5,7 +5,9 @@ use ropey::Rope;
 use std::ops::Range;
 
 pub const CELL_PADDING: f32 = 8.;
-pub const MIN_COLUMN: f32 = 80.;
+pub const MIN_COLUMN: f32 = 120.;
+/// Reserve two text lines even when every cell in a row is empty.
+pub const MIN_ROW_LINES: usize = 2;
 pub const MAX_COLUMN: f32 = 320.;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

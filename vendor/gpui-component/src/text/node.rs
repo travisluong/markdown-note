@@ -1066,6 +1066,7 @@ impl Node {
                                     div()
                                         .id(("table-row", row_ix))
                                         .min_w_full()
+                                        .min_h(window.line_height() * crate::input::table::MIN_ROW_LINES)
                                         .when(row_ix == 0, |this| {
                                             this.font_weight(gpui::FontWeight::SEMIBOLD)
                                         })
@@ -1101,6 +1102,7 @@ impl Node {
                                                         .w(px(crate::input::table::column_width(
                                                             len, font_size,
                                                         )))
+                                                        .min_w(px(crate::input::table::MIN_COLUMN))
                                                         .flex_shrink_0()
                                                         .px(px(crate::input::table::CELL_PADDING))
                                                         .when(!is_last_col, |this| {

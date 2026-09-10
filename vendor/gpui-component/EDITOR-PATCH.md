@@ -68,3 +68,12 @@ Active-table width caching validates the current column count after structural
 edits. Inserted columns no longer hide the rightmost cells, and column deletion
 cannot reuse an oversized width vector. Layout regressions cover insertion on
 both sides, deletion, undo/redo snapshots, Unicode content, and LF/CRLF text.
+
+Reading and live-preview table columns have a 120-pixel minimum, including empty
+columns. Narrow viewports retain that minimum and scroll horizontally instead
+of squeezing cells. Reading cells also declare the minimum in their flex style;
+layout tests cover empty headers/body cells at narrow and wide viewport sizes.
+Rows in both views reserve at least two text lines of height, including empty
+headers and body rows. This scales with the font, while longer content can grow
+the row. Live-preview height indexing uses the same minimum and keeps the
+Markdown separator hidden; regression checks cover row heights and offsets.

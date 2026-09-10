@@ -506,7 +506,7 @@ impl TextWrapper {
                 let line_start = self.text.line_start_offset(row);
                 let mut cells = vec![];
                 let mut x = px(0.);
-                let mut height = 1;
+                let mut height = super::table::MIN_ROW_LINES;
                 for (c, range) in source_row.cells.iter().take(widths.len()).enumerate() {
                     let text = self.text.slice(range.clone()).to_string();
                     let inline = super::table::inline(&text);
@@ -1508,6 +1508,34 @@ mod preview_tests {
 #[cfg(test)]
 mod table_layout_tests {
     use super::*;
+    #[test]
+    fn empty_cells_keep_minimum_dimensions_in_narrow_viewports() {
+        let text = Rope::from("| | | |\n| --- | --- | --- |\n| | | |");
+        for viewport in [90., 240., 800.] {
+            let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(16.), Some(px(viewport)));
+            wrapper.live_preview = true;
+            wrapper.tables.rebuild(&text);
+            wrapper.active_offset = wrapper.tables.tables[0].rows[1].cells[1].start;
+            wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
+            wrapper.layout_tables(&mut |_, _| vec![]);
+            for row in [0, 2] {
+                let layout = wrapper.lines[row].table.as_ref().unwrap();
+                assert_eq!(layout.cells.len(), 3);
+                assert_eq!(layout.height, 2);
+                assert_eq!(wrapper.lines[row].height(px(20.)), px(40.));
+                for (col, cell) in layout.cells.iter().enumerate() {
+                    assert!(cell.mapped.text.is_empty());
+                    assert!(cell.width >= px(120.));
+                    assert_eq!(cell.x, px(120. * col as f32));
+                }
+                assert_eq!(layout.viewport, px(viewport));
+            }
+            assert_eq!(wrapper.lines[1].lines_len(), 0, "separator stays hidden");
+            assert_eq!(wrapper.lines.prefix(2), 2.);
+            assert_eq!(wrapper.lines.prefix(3), 4.);
+        }
+    }
+
     #[test]
     fn column_edits_refresh_active_table_widths_and_preserve_cells() {
         use super::super::table::Command;
