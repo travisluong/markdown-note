@@ -108,3 +108,5 @@ The pinned component is patched locally in `vendor/gpui-component`; see
 [the patch notes](vendor/gpui-component/EDITOR-PATCH.md).
 See [performance validation](benchmarks/README.md) for the release benchmark,
 fixtures, hardware, limitations, and reproduction commands.
+
+Ctrl+O searches all Markdown files and folders in the active notebook, including collapsed folders. Results show relative paths; Up/Down selects, Enter opens, and Escape returns focus. File > Open still opens external files; without a notebook Ctrl+O uses that picker.

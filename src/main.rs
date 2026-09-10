@@ -2,6 +2,7 @@
 
 #[cfg(feature = "editor-diagnostics")]
 mod benchmark;
+mod goto;
 mod notebook;
 mod notebook_ui;
 mod settings_ui;
@@ -25,6 +26,7 @@ actions!(
     notes,
     [
         Open,
+        GoTo,
         Save,
         SourceMode,
         LivePreview,
@@ -54,14 +56,10 @@ enum Next {
     Nothing,
     Open,
     Close,
-    #[cfg(feature = "editor-diagnostics")]
     File(PathBuf),
     TreeFile(PathBuf),
     RemoveNotebook(PathBuf),
-    Notebook {
-        path: PathBuf,
-        create: bool,
-    },
+    Notebook { path: PathBuf, create: bool },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -149,6 +147,7 @@ fn save_file(path: &Path, text: &str, bom: bool, newline: Newline) -> io::Result
 }
 
 struct Notes {
+    palette: Option<goto::Palette>,
     document: Option<Document>,
     editor: Entity<InputState>,
     editor_subscription: Subscription,
@@ -191,6 +190,7 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            palette: None,
             document: None,
             editor,
             editor_subscription,
@@ -351,7 +351,6 @@ impl Notes {
             Next::Nothing => self.refresh(window, cx),
             Next::Open => self.open(window, cx),
             Next::Close => self.finish_close(window, cx),
-            #[cfg(feature = "editor-diagnostics")]
             Next::File(path) => self.open_path(path, false, window, cx),
             Next::TreeFile(path) => self.open_path(path, true, window, cx),
             Next::RemoveNotebook(path) => self.remove_notebook(path, window, cx),
@@ -557,6 +556,7 @@ impl Render for Notes {
             .id("notes")
             .key_context("Notes")
             .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
             .on_action(
                 cx.listener(|this, _: &Open, window, cx| this.request(Next::Open, window, cx)),
             )
@@ -701,7 +701,7 @@ fn main() {
         .run(|cx: &mut App| {
             gpui_component::init(cx);
             cx.bind_keys([
-                KeyBinding::new("ctrl-o", Open, Some("Notes")),
+                KeyBinding::new("ctrl-o", GoTo, Some("Notes")),
                 KeyBinding::new("ctrl-s", Save, Some("Notes")),
                 KeyBinding::new("alt-f", FileMenu, Some("Notes")),
                 KeyBinding::new("alt-v", ViewMenu, Some("Notes")),

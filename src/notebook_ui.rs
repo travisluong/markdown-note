@@ -37,6 +37,7 @@ pub(super) struct NotebookState {
     persistence: Option<Task<()>>,
     tree_loading: bool,
     tree_target: Option<PathBuf>,
+    folder_target: Option<PathBuf>,
     pub notice: Option<String>,
     creating: bool,
     name: Entity<InputState>,
@@ -64,6 +65,7 @@ impl NotebookState {
             persistence: None,
             tree_loading: false,
             tree_target: None,
+            folder_target: None,
             notice: None,
             creating: false,
             name,
@@ -146,6 +148,24 @@ impl NotebookState {
 }
 
 impl Notes {
+    pub(super) fn focus_folder(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(book) = &mut self.notebooks.active else {
+            return;
+        };
+        for ancestor in path.ancestors().filter(|p| !p.as_os_str().is_empty()) {
+            book.settings.expanded.insert(ancestor.to_path_buf());
+        }
+        self.notebooks.folder_target = Some(path);
+        self.refresh_tree(window, cx);
+        self.notebooks.tree_focus.focus(window);
+        self.persist_notebooks(cx);
+    }
+
     pub(super) fn restore_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.busy = true;
         let configured_path = self.notebooks.index_path.clone();
@@ -816,6 +836,20 @@ impl Notes {
                     }
                 }
                 this.notebooks.rebuild_rows();
+                if let Some(target) = &this.notebooks.folder_target {
+                    if let Some(index) = this
+                        .notebooks
+                        .rows
+                        .iter()
+                        .position(|row| row.directory && &row.path == target)
+                    {
+                        this.notebooks.cursor = Some(index);
+                        this.notebooks
+                            .scroll
+                            .scroll_to_item(index, ScrollStrategy::Top);
+                        this.notebooks.folder_target = None;
+                    }
+                }
                 cx.notify();
             });
         })
