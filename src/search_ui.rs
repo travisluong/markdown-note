@@ -54,7 +54,7 @@ impl Notes {
                 case_sensitive: false,
                 hits: Vec::new(),
                 selected: 0,
-                status: "Type to search Markdown files".into(),
+                status: String::new(),
                 scroll: UniformListScrollHandle::new(),
                 cancelled: Arc::new(AtomicBool::new(false)),
                 task: None,
@@ -86,7 +86,7 @@ impl Notes {
         panel.selected = 0;
         panel.scroll.scroll_to_item(0, ScrollStrategy::Top);
         if query.is_empty() {
-            panel.status = "Type to search Markdown files".into();
+            panel.status.clear();
             cx.notify();
             return;
         }
@@ -283,12 +283,6 @@ impl Notes {
                     )
                     .child(div().p_1().child("Search")),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .truncate()
-                    .child(notebook::display_path(&panel.root)),
-            )
             .child(Input::new(&panel.query))
             .child(
                 div()
@@ -320,7 +314,9 @@ impl Notes {
                             ),
                     ),
             )
-            .child(div().text_xs().child(panel.status.clone()))
+            .when(!panel.status.is_empty(), |view| {
+                view.child(div().text_xs().child(panel.status.clone()))
+            })
             .child(
                 uniform_list(
                     "search-results",
