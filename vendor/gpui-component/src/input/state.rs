@@ -1315,27 +1315,21 @@ impl InputState {
         }
     }
 
-    fn task_hit_bounds(&self, row: usize, state: usize) -> Option<Bounds<Pixels>> {
+    fn task_hit_bounds(&self, row: usize, _state: usize) -> Option<Bounds<Pixels>> {
         let layout = self.last_layout.as_ref()?;
         let bounds = self.last_bounds?;
         let line = layout
             .lines
             .get(row.checked_sub(layout.visible_range.start)?)?;
-        let left = line.position_for_index(state - 1, layout.line_height)?;
-        let right = line.position_for_index(state + 2, layout.line_height)?;
-        let width = if right.y == left.y {
-            right.x - left.x
-        } else {
-            line.longest_width - left.x
-        };
+        let painted = line.task_bounds(layout.line_height)?;
         Some(Bounds::new(
             bounds.origin
                 + point(
                     layout.line_number_width,
                     self.text_wrapper.lines.prefix(row) * layout.line_height,
                 )
-                + left,
-            gpui::size(width.max(px(1.)), layout.line_height * line.scale),
+                + painted.origin,
+            painted.size,
         ))
     }
 
@@ -2498,6 +2492,19 @@ impl InputState {
             .find_map(|(row, line)| super::live_preview::task_state(line).map(|state| (row, state)))
             .unwrap();
         let hit = self.task_hit_bounds(task.0, task.1).unwrap();
+        assert_eq!(hit.size, gpui::size(window.rem_size() * 0.875, window.rem_size() * 0.875));
+        let layout = self.last_layout.as_ref().unwrap();
+        let line = &layout.lines[task.0 - layout.visible_range.start];
+        let (state, checked, width) = line.task.unwrap();
+        let mut opposite = super::text_wrapper::LineLayout::new();
+        opposite.task = Some((state, !checked, width));
+        opposite.mapped = line.mapped.clone();
+        opposite.indent = line.indent;
+        opposite.scale = line.scale;
+        opposite.segment_start = line.segment_start;
+        opposite.segment_ranges = line.segment_ranges.clone();
+        opposite.set_wrapped_lines(line.wrapped_lines.clone());
+        assert_eq!(line.task_bounds(layout.line_height), opposite.task_bounds(layout.line_height), "checked state does not change painted bounds");
         let original = self.text.to_string();
         self.on_mouse_down(
             &MouseDownEvent {

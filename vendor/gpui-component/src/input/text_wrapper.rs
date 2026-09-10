@@ -59,6 +59,7 @@ pub(super) struct TextWrapper {
     soft_lines: usize,
     font: Font,
     font_size: Pixels,
+    task_size: Pixels,
     /// If is none, it means the text is not wrapped
     wrap_width: Option<Pixels>,
     /// The longest (row, bytes len) in characters, used to calculate the horizontal scroll width.
@@ -79,6 +80,7 @@ impl TextWrapper {
             text: Rope::new(),
             font,
             font_size,
+            task_size: px(14.),
             wrap_width,
             soft_lines: 0,
             longest_row: LongestRow::default(),
@@ -156,6 +158,13 @@ impl TextWrapper {
         self.update_all(&self.text.clone(), cx);
     }
 
+    pub(super) fn set_task_size(&mut self, size: Pixels, cx: &mut App) {
+        if self.task_size != size {
+            self.task_size = size;
+            self.update_all(&self.text.clone(), cx);
+        }
+    }
+
     pub(super) fn prepare_if_need(&mut self, text: &Rope, cx: &mut App) {
         if self._initialized {
             return;
@@ -183,14 +192,22 @@ impl TextWrapper {
         let mut line_wrapper = cx
             .text_system()
             .line_wrapper(self.font.clone(), self.font_size);
+        let task_size = self.task_size;
         self._update(
             changed_text,
             range,
             new_text,
-            &mut |line_str, wrap_width| {
-                line_wrapper
-                    .wrap_line(&[LineFragment::text(line_str)], wrap_width)
-                    .collect()
+            &mut |line_str, wrap_width, task| {
+                let fragments = if let Some(offset) = task {
+                    vec![
+                        LineFragment::text(&line_str[..offset]),
+                        LineFragment::element(task_size, 3),
+                        LineFragment::text(&line_str[offset + 3..]),
+                    ]
+                } else {
+                    vec![LineFragment::text(line_str)]
+                };
+                line_wrapper.wrap_line(&fragments, wrap_width).collect()
             },
         );
     }
@@ -202,7 +219,7 @@ impl TextWrapper {
         new_text: &Rope,
         wrap_line: &mut F,
     ) where
-        F: FnMut(&str, Pixels) -> Vec<gpui::Boundary>,
+        F: FnMut(&str, Pixels, Option<usize>) -> Vec<gpui::Boundary>,
     {
         // Remove the old changed lines.
         let start_row = self.text.offset_to_point(range.start).row;
@@ -282,6 +299,10 @@ impl TextWrapper {
                             .map_or(px(0.), |p| px(p.quote_indent(self.font_size.into()))))
                     .max(self.font_size)
                         / scale,
+                    presentation
+                        .as_ref()
+                        .and_then(|p| p.task)
+                        .map(|state| mapped.as_ref().unwrap().source_to_display[state]),
                 ) {
                     wrapped_lines.push(prev_boundary_ix..boundary.ix);
                     prev_boundary_ix = boundary.ix;
@@ -419,6 +440,7 @@ impl DisplayPoint {
 
 /// The layout info of a line with soft wrapped lines.
 pub(crate) struct LineLayout {
+    pub(super) task: Option<(usize, bool, Pixels)>,
     /// Total bytes length of this line.
     len: usize,
     pub(super) mapped: Option<std::rc::Rc<super::live_preview::MappedText>>,
@@ -433,8 +455,15 @@ pub(crate) struct LineLayout {
 }
 
 impl LineLayout {
+    pub(super) fn task_bounds(&self, line_height: Pixels) -> Option<gpui::Bounds<Pixels>> {
+        let (state, _, width) = self.task?;
+        let origin =
+            self.position_for_index(state, line_height)? + point(px(0.), width * (0.4 / 0.875));
+        Some(gpui::Bounds::new(origin, size(width, width)))
+    }
     pub(crate) fn new() -> Self {
         Self {
+            task: None,
             len: 0,
             mapped: None,
             scale: 1.,
@@ -645,7 +674,60 @@ impl LineLayout {
                 cx,
             );
         }
+        if let Some(mut bounds) = self.task_bounds(line_height / self.scale) {
+            use crate::ActiveTheme as _;
+            use gpui::Half as _;
+            bounds.origin += pos;
+            let checked = self.task.unwrap().1;
+            window.paint_quad(gpui::quad(
+                bounds,
+                cx.theme().radius.half(),
+                if checked {
+                    cx.theme().primary
+                } else {
+                    gpui::transparent_black()
+                },
+                px(1.),
+                cx.theme().primary,
+                gpui::BorderStyle::Solid,
+            ));
+            if checked {
+                let icon_size = bounds.size.width * (0.5 / 0.875);
+                let inset = (bounds.size.width - icon_size) / 2.;
+                let _ = window.paint_svg(
+                    gpui::Bounds::new(
+                        bounds.origin + point(inset, inset),
+                        size(icon_size, icon_size),
+                    ),
+                    "icons/check.svg".into(),
+                    Default::default(),
+                    cx.theme().primary_foreground,
+                    cx,
+                );
+            }
+        }
     }
+}
+
+/// Give the mapped object replacement character an exact advance, independent of font or state.
+pub(super) fn reserve_task_slot(line: &mut ShapedLine, offset: usize, width: Pixels) {
+    let delta = width - (line.x_for_index(offset + 3) - line.x_for_index(offset));
+    let mut runs = line.runs.clone();
+    for run in &mut runs {
+        for glyph in &mut run.glyphs {
+            if glyph.index > offset {
+                glyph.position.x += delta;
+            }
+        }
+    }
+    **line = std::sync::Arc::new(gpui::LineLayout {
+        font_size: line.font_size,
+        width: line.width + delta,
+        ascent: line.ascent,
+        descent: line.descent,
+        runs,
+        len: line.len,
+    });
 }
 
 #[cfg(test)]
@@ -668,7 +750,7 @@ mod tests {
             "Hello, 世界!\r\nThis is second line.\nThis is third line.\n这里是第 4 行。",
         );
 
-        fn fake_wrap_line(_line: &str, _wrap_width: Pixels) -> Vec<Boundary> {
+        fn fake_wrap_line(_line: &str, _wrap_width: Pixels, _: Option<usize>) -> Vec<Boundary> {
             vec![]
         }
 
@@ -1008,7 +1090,7 @@ mod preview_tests {
         let mut quotes = TextWrapper::new(gpui::font("Arial"), px(20.), Some(px(160.)));
         quotes.live_preview = true;
         let text = Rope::from("> > **你好 café**");
-        quotes._update(&text, &(0..0), &text, &mut |_, width| {
+        quotes._update(&text, &(0..0), &text, &mut |_, width, _| {
             assert_eq!(width, px(120.), "quote indentation reduces wrapping width");
             vec![]
         });
@@ -1020,12 +1102,12 @@ mod preview_tests {
         wrapper.live_preview = true;
         wrapper.reveal_row = 1;
         let mut text = Rope::from("#**caf\u{e9}**\n- \u{4f60}\u{597d}\nlast");
-        wrapper._update(&text, &(0..0), &text, &mut |_, _| vec![]);
+        wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
         assert_eq!(wrapper.lines[0].mapped.as_ref().unwrap().text, "caf\u{e9}");
         let unchanged = wrapper.lines[0].mapped.clone().unwrap();
         let at = text.line_start_offset(2);
         text.replace(at..at, "x");
-        wrapper._update(&text, &(at..at), &Rope::from("x"), &mut |_, _| vec![]);
+        wrapper._update(&text, &(at..at), &Rope::from("x"), &mut |_, _, _| vec![]);
         assert!(std::rc::Rc::ptr_eq(
             &unchanged,
             wrapper.lines[0].mapped.as_ref().unwrap()

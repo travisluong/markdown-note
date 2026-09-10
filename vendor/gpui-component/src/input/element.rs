@@ -625,6 +625,7 @@ impl TextElement {
             if let Some(p) = &line_item.presentation {
                 line_layout.indent = px(p.quote_indent(font_size.into()));
                 line_layout.quote_depth = p.quote_depth;
+                line_layout.task = p.task.map(|state| (state, line_item.line.byte(state) != b' ', window.rem_size() * 0.875));
             }
             line_layout.mapped = line_item.mapped.clone();
             let source;
@@ -707,6 +708,11 @@ impl TextElement {
                                     wavy: false,
                                 });
                             }
+                            if p.task == Some(source) {
+                                run.color = gpui::transparent_black();
+                                run.underline = None;
+                                run.strikethrough = None;
+                            }
                             local.push(run);
                         }
                         local
@@ -731,12 +737,18 @@ impl TextElement {
                     shaped.clone()
                 } else {
                     super::live_preview::record_shaped(range.len());
-                    let shaped = window.text_system().shape_line(
+                    let mut shaped = window.text_system().shape_line(
                         line[range.clone()].to_string().into(),
                         font_size * line_item.scale,
                         &line_runs,
                         None,
                     );
+                    if let Some((state, _, width)) = line_layout.task {
+                        let offset = line_item.mapped.as_ref().unwrap().source_to_display[state];
+                        if range.contains(&offset) {
+                            super::text_wrapper::reserve_task_slot(&mut shaped, offset - range.start, width);
+                        }
+                    }
                     cache.insert(segment, (line_runs, shaped.clone()));
                     shaped
                 };
@@ -953,6 +965,7 @@ impl Element for TextElement {
                     .set_wrap_width(Some(bounds.size.width - RIGHT_MARGIN), cx);
             }
             state.text_wrapper.set_font(font, text_size, cx);
+            state.text_wrapper.set_task_size(window.rem_size() * 0.875, cx);
             state.text_wrapper.prepare_if_need(&state.text, cx);
             state
                 .text_wrapper

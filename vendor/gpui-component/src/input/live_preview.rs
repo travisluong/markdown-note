@@ -124,7 +124,7 @@ impl Presentation {
         };
         if let Some(state) = result.task {
             result.bullet = false;
-            // Retain a single mapped checkbox glyph; hide the rest of its marker.
+            // Retain a mapped fixed-width object; hide the rest of its marker.
             result.hidden.extend([0..state, state + 1..state + 2]);
         }
         if result.heading > 0 {
@@ -213,7 +213,7 @@ impl Presentation {
             }
             if !hidden {
                 text.push(if self.task == Some(ix) {
-                    if ch == ' ' { '☐' } else { '☑' }
+                    '\u{fffc}'
                 } else if ix == self.quote_prefixes.last().map_or(0, |r| r.end) && self.bullet {
                     '•'
                 } else {
@@ -302,8 +302,8 @@ mod tests {
         assert_eq!(p.quote_depth, 2);
         assert_eq!(p.quote_prefixes, vec![0..2, 2..4]);
         assert_eq!(p.quote_indent(20.), 40.);
-        assert_eq!(p.display(source, false).text, "☑ café 你好");
-        assert_eq!(p.display(source, true).text, "> > ☑ **café** _你好_");
+        assert_eq!(p.display(source, false).text, "\u{fffc} café 你好");
+        assert_eq!(p.display(source, true).text, "> > \u{fffc} **café** _你好_");
         assert_eq!(p.task, Some(7));
         for (source, depth, text) in [
             (">", 1, ""),
@@ -319,7 +319,7 @@ mod tests {
             let source = format!("{marker} café");
             let p = Presentation::parse(&source);
             let mapped = p.display(&source, false);
-            assert!(mapped.text.starts_with(['☐', '☑']));
+            assert!(mapped.text.starts_with('\u{fffc}'));
             assert_eq!(mapped.display_to_source[0], p.task.unwrap());
             assert_eq!(p.display(&source, true).text, mapped.text);
             assert_eq!(
