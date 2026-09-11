@@ -199,6 +199,13 @@ impl TextElement {
             scroll_offset = deferred_scroll_offset;
         }
 
+        // Placeholder glyphs are not document content and must never scroll.
+        // Fractional line-height clipping can otherwise shift them on click.
+        scroll_offset = super::scroll::text_offset(
+            scroll_offset,
+            state.text.len() == 0,
+            state.mode.is_single_line(),
+        );
         bounds.origin = bounds.origin + scroll_offset;
 
         (cursor_bounds, scroll_offset, current_row)

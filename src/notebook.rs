@@ -65,6 +65,8 @@ impl Appearance {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub view_mode: crate::ViewMode,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: f32,
     #[serde(default = "crate::templates::default_format")]
@@ -81,6 +83,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            view_mode: crate::ViewMode::default(),
             sidebar_width: default_sidebar_width(),
             version: VERSION,
             last_file: None,
@@ -391,6 +394,69 @@ mod tests {
         for value in ["Work", "My notes", "日本語", "COM10", "notes.v2"] {
             validate_name(value).unwrap();
         }
+    }
+
+    #[test]
+    fn invalid_view_mode_does_not_overwrite_settings() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("book");
+        let mut book = Notebook::open(&root, true).unwrap();
+        let path = settings_path(&root);
+        let mut json = serde_json::to_value(&book.settings).unwrap();
+        json["view_mode"] = "future_mode".into();
+        let saved = serde_json::to_string(&json).unwrap();
+        fs::write(&path, &saved).unwrap();
+        book.settings.view_mode = crate::ViewMode::Source;
+        assert!(
+            save_state(
+                &fixture.path().join("index.json"),
+                &Index::default(),
+                Some(&book)
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), saved);
+    }
+
+    #[test]
+    fn view_modes_default_and_persist_independently() {
+        let old: Settings =
+            serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
+        assert_eq!(old.view_mode, crate::ViewMode::LivePreview);
+        let fixture = tempfile::tempdir().unwrap();
+        for (name, mode, serialized) in [
+            ("source", crate::ViewMode::Source, "source"),
+            ("live", crate::ViewMode::LivePreview, "live_preview"),
+            ("reading", crate::ViewMode::Reading, "reading"),
+        ] {
+            let root = fixture.path().join(name);
+            let mut book = Notebook::open(&root, true).unwrap();
+            assert_eq!(book.settings.view_mode, crate::ViewMode::LivePreview);
+            book.settings.view_mode = mode;
+            write_json(&settings_path(&root), &book.settings).unwrap();
+            assert_eq!(
+                Notebook::open(&root, false).unwrap().settings.view_mode,
+                mode
+            );
+            assert_eq!(
+                serde_json::to_value(&book.settings).unwrap()["view_mode"],
+                serialized
+            );
+        }
+        assert_eq!(
+            Notebook::open(&fixture.path().join("source"), false)
+                .unwrap()
+                .settings
+                .view_mode,
+            crate::ViewMode::Source
+        );
+        assert_eq!(
+            Notebook::open(&fixture.path().join("reading"), false)
+                .unwrap()
+                .settings
+                .view_mode,
+            crate::ViewMode::Reading
+        );
     }
 
     #[test]

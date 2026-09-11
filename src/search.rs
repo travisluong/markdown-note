@@ -35,6 +35,16 @@ pub struct Results {
 
 // ASCII folding preserves byte offsets, matching the editor's Ctrl+F semantics.
 pub fn ranges(text: &str, query: &str, case_sensitive: bool) -> Vec<Range<usize>> {
+    find_ranges(text, query, case_sensitive, MAX_RESULTS + 1)
+}
+
+/// Notebook scans are capped; in-file Find counts and navigates every match.
+pub fn find_ranges(
+    text: &str,
+    query: &str,
+    case_sensitive: bool,
+    limit: usize,
+) -> Vec<Range<usize>> {
     if query.is_empty() {
         return Vec::new();
     }
@@ -48,7 +58,7 @@ pub fn ranges(text: &str, query: &str, case_sensitive: bool) -> Vec<Range<usize>
         (folded.as_str(), needle.as_str())
     };
     text.match_indices(query)
-        .take(MAX_RESULTS + 1)
+        .take(limit)
         .map(|(start, s)| start..start + s.len())
         .collect()
 }
@@ -195,6 +205,16 @@ mod tests {
         AtomicBool, Destination, MAX_RESULTS, Path, Results, Rope, collect, fs, ranges, revalidate,
         scan,
     };
+    #[test]
+    fn in_file_find_is_not_limited_by_the_notebook_result_cap() {
+        let text = "hit ".repeat(MAX_RESULTS + 50);
+        assert_eq!(
+            super::find_ranges(&text, "hit", false, usize::MAX).len(),
+            MAX_RESULTS + 50
+        );
+        assert_eq!(ranges(&text, "hit", false).len(), MAX_RESULTS + 1);
+    }
+
     #[test]
     fn literal_unicode_and_case() {
         assert_eq!(

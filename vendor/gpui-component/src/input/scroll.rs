@@ -64,3 +64,42 @@ mod tests {
         assert_eq!(reveal_line(offset, px(120.), px(40.), px(10.)), offset);
     }
 }
+
+/// Single-line text never scrolls vertically; empty fields never scroll at all.
+/// Normalize deferred caret offsets before painting, not just when saving them.
+pub(super) fn text_offset(
+    mut offset: gpui::Point<Pixels>,
+    empty: bool,
+    single_line: bool,
+) -> gpui::Point<Pixels> {
+    if empty {
+        offset.x = px(0.);
+    }
+    if empty || single_line {
+        offset.y = px(0.);
+    }
+    offset
+}
+
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+    use gpui::point;
+    #[test]
+    fn placeholder_origin_survives_fractional_focus_scroll() {
+        let origin = point(px(8.), px(7.25));
+        for deferred in [
+            point(px(0.), px(0.)),
+            point(px(-1.), px(-0.25)),
+            point(px(0.), px(-0.5)),
+        ] {
+            assert_eq!(origin + text_offset(deferred, true, true), origin);
+        }
+    }
+    #[test]
+    fn populated_inputs_keep_horizontal_scrolling_and_editors_keep_both_axes() {
+        let offset = point(px(-120.), px(-0.25));
+        assert_eq!(text_offset(offset, false, true), point(px(-120.), px(0.)));
+        assert_eq!(text_offset(offset, false, false), offset);
+    }
+}

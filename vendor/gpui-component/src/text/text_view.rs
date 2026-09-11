@@ -42,6 +42,8 @@ pub(crate) fn init(cx: &mut App) {
 #[derive(IntoElement, Clone)]
 struct TextViewElement {
     task_toggle: Option<Arc<TaskToggleFn>>,
+    source_highlights: Option<super::SourceHighlights>,
+    source_snapshot: SharedString,
     list_state: Option<ListState>,
     state: Entity<TextViewState>,
 }
@@ -51,6 +53,23 @@ impl RenderOnce for TextViewElement {
         self.state.update(cx, |state, cx| {
             if let Some(Ok(content)) = &mut state.parsed_result {
                 content.node_cx.task_toggle = self.task_toggle.clone();
+                content.node_cx.highlights = self.source_highlights.clone().filter(|search| {
+                    search.matches_snapshot(&content.node_cx.source)
+                        && search.matches_snapshot(&self.source_snapshot)
+                });
+                if let Some(search) = &content.node_cx.highlights {
+                    let hidden = search
+                        .active
+                        .as_ref()
+                        .is_some_and(|range| !content.root_node.has_visible_source(range));
+                    if search.hidden_match() != hidden {
+                        search.set_hidden(hidden);
+                        if let Some(parent) = state.parent_entity {
+                            let app: &mut App = cx;
+                            app.notify(parent);
+                        }
+                    }
+                }
             }
             v_flex()
                 .size_full()
@@ -96,6 +115,7 @@ pub(crate) type CodeBlockActionsFn =
 #[derive(Clone)]
 pub struct TextView {
     task_toggle: Option<Arc<TaskToggleFn>>,
+    source_highlights: Option<super::SourceHighlights>,
     id: ElementId,
     init_state: Option<InitState>,
     raw: SharedString,
@@ -224,6 +244,8 @@ enum InitState {
 }
 
 pub(crate) struct TextViewState {
+    pub(super) source_snapshot: SharedString,
+    pub(super) active_search: Option<super::SourceHighlights>,
     parent_entity: Option<EntityId>,
     tx: Option<smol::channel::Sender<Update>>,
     parsed_result: Option<Result<ParsedContent, SharedString>>,
@@ -235,7 +257,7 @@ pub(crate) struct TextViewState {
     /// Is current in selection.
     is_selecting: bool,
     is_selectable: bool,
-    list_state: ListState,
+    pub(super) list_state: ListState,
 }
 
 impl TextViewState {
@@ -243,6 +265,8 @@ impl TextViewState {
         let focus_handle = cx.focus_handle();
         Self {
             parent_entity: None,
+            source_snapshot: SharedString::default(),
+            active_search: None,
             tx: None,
             parsed_result: None,
             focus_handle: Some(focus_handle),
@@ -462,6 +486,115 @@ impl TextView {
         offsets(&content.root_node, &mut actual);
         assert_eq!(actual, vec![source.find('[').unwrap() + 1]);
     }
+    #[cfg(feature = "editor-diagnostics")]
+    #[doc(hidden)]
+    pub fn diagnostic_reading_search() {
+        fn collect(node: &node::Node, range: &std::ops::Range<usize>, output: &mut String) {
+            fn paragraph(p: &node::Paragraph, range: &std::ops::Range<usize>, output: &mut String) {
+                for child in &p.children {
+                    for display in super::source_map::project(&child.source_runs, range) {
+                        output.push_str(&child.text[display]);
+                    }
+                }
+            }
+            match node {
+                node::Node::Paragraph(p) | node::Node::Heading { children: p, .. } => {
+                    paragraph(p, range, output)
+                }
+                node::Node::Root { children }
+                | node::Node::List { children, .. }
+                | node::Node::ListItem { children, .. }
+                | node::Node::Blockquote { children } => {
+                    for child in children {
+                        collect(child, range, output);
+                    }
+                }
+                node::Node::CodeBlock(block) => {
+                    for display in super::source_map::project(&block.source_runs, range) {
+                        output.push_str(&block.code()[display]);
+                    }
+                }
+                node::Node::Table(table) => {
+                    for row in &table.children {
+                        for cell in &row.children {
+                            paragraph(&cell.children, range, output);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (source, needle, expected) in [
+            ("# café **你好**", "你好", "你好"),
+            (
+                "a **bold *nested* word**",
+                "bold *nested* word",
+                "bold nested word",
+            ),
+            ("[label](https://example.test)", "label", "label"),
+            ("[label](https://example.test)", "https://example.test", ""),
+            (
+                "[**label**][ref]\n\n[ref]: https://example.test",
+                "label",
+                "label",
+            ),
+            ("> - [ ] **quoted**\n>   - nested", "nested", "nested"),
+            (
+                "| a | b |\n| --- | --- |\n| **你好** | café |",
+                "你好",
+                "你好",
+            ),
+            ("```\n你好\nsecond\n```", "second", "second"),
+            ("`a b`", "a b", "a b"),
+            ("some &amp; &#x4f60; text", "&amp;", "&"),
+            ("some &amp; &#x4f60; text", "&#x4f60;", "你"),
+            ("some \\*literal\\*", "literal", "literal"),
+            ("**bold**", "**", ""),
+        ] {
+            let content = parse_content(
+                TextViewType::Markdown,
+                source,
+                TextViewStyle::default(),
+                &HighlightTheme::default_light(),
+                &None,
+            )
+            .unwrap();
+            let start = source.find(needle).unwrap();
+            let range = start..start + needle.len();
+            let mut actual = String::new();
+            collect(&content.root_node, &range, &mut actual);
+            assert_eq!(actual, expected, "source={source:?}, needle={needle:?}");
+            assert_eq!(
+                content.root_node.has_visible_source(&range),
+                !expected.is_empty()
+            );
+            assert!(super::source_map::containing_block(&content.node_cx.blocks, &range).is_some());
+        }
+        let source = (0..500)
+            .map(|n| format!("paragraph {n}\n\n"))
+            .collect::<String>();
+        let content = parse_content(
+            TextViewType::Markdown,
+            &source,
+            TextViewStyle::default(),
+            &HighlightTheme::default_light(),
+            &None,
+        )
+        .unwrap();
+        let offset = source.find("paragraph 499").unwrap();
+        assert_eq!(
+            super::source_map::containing_block(&content.node_cx.blocks, &(offset..offset + 13)),
+            Some(499)
+        );
+        let search = super::SourceHighlights::new(
+            source.clone().into(),
+            vec![offset..offset + 13],
+            Some(offset..offset + 13),
+        );
+        assert!(search.matches_snapshot(&source));
+        assert!(!search.matches_snapshot("another file"));
+    }
+
     /// Opt in to task checkbox clicks. Offset and source belong to the rendered parse.
     pub fn on_task_toggle(
         mut self,
@@ -504,6 +637,7 @@ impl TextView {
             window.use_keyed_state(SharedString::from(format!("{}/state", id)), cx, |_, cx| {
                 TextViewState::new(cx)
             });
+        state.update(cx, |state, _| state.source_snapshot = markdown.clone());
         let init_state = Self::create_init_state(
             TextViewType::Markdown,
             &markdown,
@@ -524,6 +658,7 @@ impl TextView {
             scrollable: false,
             code_block_actions: None,
             task_toggle: None,
+            source_highlights: None,
         }
     }
 
@@ -541,6 +676,7 @@ impl TextView {
             window.use_keyed_state(SharedString::from(format!("{}/state", id)), cx, |_, cx| {
                 TextViewState::new(cx)
             });
+        state.update(cx, |state, _| state.source_snapshot = html.clone());
         let init_state =
             Self::create_init_state(TextViewType::Html, &html, &highlight_theme, &state, cx);
         if let Some(tx) = &state.read(cx).tx {
@@ -556,6 +692,7 @@ impl TextView {
             scrollable: false,
             code_block_actions: None,
             task_toggle: None,
+            source_highlights: None,
         }
     }
 
@@ -584,6 +721,12 @@ impl TextView {
                 }
             }
         }
+        self
+    }
+
+    /// Highlight and reveal source ranges only when their snapshot matches this view.
+    pub fn source_highlights(mut self, highlights: Option<super::SourceHighlights>) -> Self {
+        self.source_highlights = highlights;
         self
     }
 
@@ -661,6 +804,21 @@ impl Element for TextView {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        self.state.update(cx, |state, _| {
+            state.source_snapshot = self.raw.clone();
+            if let Some(previous) = &state.active_search {
+                if !self
+                    .source_highlights
+                    .as_ref()
+                    .is_some_and(|current| current.same_request(previous))
+                {
+                    previous
+                        .cancelled
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            state.active_search = self.source_highlights.clone();
+        });
         if let Some(InitState::Initializing {
             type_,
             text,
@@ -749,6 +907,8 @@ impl Element for TextView {
             })
             .child(TextViewElement {
                 task_toggle: self.task_toggle.clone(),
+                source_highlights: self.source_highlights.clone(),
+                source_snapshot: self.raw.clone(),
                 list_state: if self.scrollable {
                     Some(list_state.clone())
                 } else {

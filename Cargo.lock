@@ -2346,6 +2346,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "markdown",
  "serde",
  "serde_json",
  "smallvec",

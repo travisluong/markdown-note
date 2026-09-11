@@ -1,8 +1,8 @@
-use crate::{h_flex, ActiveTheme, Disableable, StyledExt};
+use crate::{ActiveTheme, Disableable, StyledExt, h_flex};
 use gpui::{
-    prelude::FluentBuilder as _, AnyElement, App, ClickEvent, ElementId, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, RenderOnce, SharedString,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Window,
+    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _, StyleRefinement,
+    Styled, Window, prelude::FluentBuilder as _,
 };
 use smallvec::SmallVec;
 
@@ -96,6 +96,7 @@ impl RenderOnce for MenuItemElement {
             .items_center()
             .justify_between()
             .refine_style(&self.style)
+            .cursor_default()
             .when_some(self.on_hover, |this, on_hover| {
                 this.on_hover(move |hovered, window, cx| (on_hover)(hovered, window, cx))
             })

@@ -55,12 +55,14 @@ There is no New, Save As, autosave, file watching, tabs, or database. Reading vi
 uses GPUI Component's built-in Markdown support. Source and Live preview share a rope buffer, selection, and undo history.
 
 `Ctrl+F` finds literal text in the current document, including unsaved edits.
-Selected text seeds the query. Matches are highlighted with an active-match
+In Source and Live preview, selected text seeds the query. Matches are highlighted with an active-match
 counter; Enter/Shift+Enter or the arrow buttons move between matches and wrap.
 The **Match case** button toggles case sensitivity (case-insensitive matching
 folds ASCII letters; non-ASCII characters match exactly). Escape closes find
-and returns focus to the document. Source and Live preview support find,
-including table text; invoking it in Reading view switches to Source mode.
+and returns focus to the document. All three view modes support find, including
+table text. Reading view highlights rendered text and scrolls to the active
+match while keeping the selected view mode. Matches in hidden Markdown syntax
+reveal their containing block and show a short explanation.
 Ctrl+F also works from the notebook sidebar. Find state resets when another
 document is loaded. Replacement is not included.
 
@@ -69,13 +71,16 @@ document is loaded. Replacement is not included.
 the open note. The sidebar search panel groups matches by file and shows line
 numbers and highlighted snippets. **Match case** uses the same ASCII case rules
 as Ctrl+F. Up/Down selects a result; Enter or a click opens it and selects the
-match, with the usual Save/Discard/Cancel protection. Reading view switches to
-Source for navigation. Escape returns focus to the editor; **Files** returns to
+match, with the usual Save/Discard/Cancel protection. Reading view reveals the
+match in the rendered document. Opening a result preserves the search list,
+query, selection, and scroll position without restarting the search. Escape leaves the sidebar query;
+**Files** returns to
 the notebook tree. Reopening Search retains its query and results until switching
 notebooks. Without an active notebook, Search asks you to open one.
 
-Search refreshes after edits to the open note. Use **Refresh** for external file
-changes. Scans run in the background and superseded queries are cancelled.
+Search refreshes after edits to the open note or changes to the query or case
+option. To pick up external file changes, change the query or toggle Match case.
+Scans run in the background and superseded queries are cancelled.
 Filesystem links and `.gpui-note` are excluded. Searches show up to 2,000 matches;
 files over 8 MiB and unreadable/non-UTF-8 files are skipped with a visible count.
 A changed match is rechecked against the loaded text before navigation.
@@ -192,3 +197,9 @@ escaped, and pasted line breaks within a cell become spaces. Missing cells in
 uneven rows are added to the Markdown when entered. Nested/container tables,
 merged cells, formulas, and rectangular spreadsheet paste are not supported by
 the live table editor; Source mode remains available for literal Markdown.
+
+Each notebook remembers its selected view mode and restores it when reopened.
+New notebooks and older settings without a saved mode start in Live preview.
+Standalone sessions also start in Live preview. Search and Find never switch
+view modes automatically. Mode selections are saved through the View menu
+or the corresponding commands.

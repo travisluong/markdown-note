@@ -62,6 +62,7 @@ fn parse_paragraph(paragraph: &mut Paragraph, node: &mdast::Node, cx: &mut NodeC
         paragraph.set_span(span);
     }
 
+    let first_child = paragraph.children.len();
     let mut text = String::new();
 
     match node {
@@ -79,28 +80,36 @@ fn parse_paragraph(paragraph: &mut Paragraph, node: &mdast::Node, cx: &mut NodeC
             for child in val.children.iter() {
                 text.push_str(&parse_paragraph(&mut child_paragraph, &child, cx));
             }
-            paragraph.push(
-                InlineNode::new(&text).marks(vec![(0..text.len(), TextMark::default().italic())]),
-            );
+            for child in &mut child_paragraph.children {
+                child
+                    .marks
+                    .push((0..child.text.len(), TextMark::default().italic()));
+            }
+            paragraph.merge(child_paragraph);
         }
         Node::Strong(val) => {
             let mut child_paragraph = Paragraph::default();
             for child in val.children.iter() {
                 text.push_str(&parse_paragraph(&mut child_paragraph, &child, cx));
             }
-            paragraph.push(
-                InlineNode::new(&text).marks(vec![(0..text.len(), TextMark::default().bold())]),
-            );
+            for child in &mut child_paragraph.children {
+                child
+                    .marks
+                    .push((0..child.text.len(), TextMark::default().bold()));
+            }
+            paragraph.merge(child_paragraph);
         }
         Node::Delete(val) => {
             let mut child_paragraph = Paragraph::default();
             for child in val.children.iter() {
                 text.push_str(&parse_paragraph(&mut child_paragraph, &child, cx));
             }
-            paragraph.push(
-                InlineNode::new(&text)
-                    .marks(vec![(0..text.len(), TextMark::default().strikethrough())]),
-            );
+            for child in &mut child_paragraph.children {
+                child
+                    .marks
+                    .push((0..child.text.len(), TextMark::default().strikethrough()));
+            }
+            paragraph.merge(child_paragraph);
         }
         Node::InlineCode(val) => {
             text = val.value.clone();
@@ -199,13 +208,17 @@ fn parse_paragraph(paragraph: &mut Paragraph, node: &mdast::Node, cx: &mut NodeC
                 identifier: Some(link.identifier.clone().into()),
             };
 
-            paragraph.push(InlineNode::new(&child_text).marks(vec![(
-                0..child_text.len(),
-                TextMark {
-                    link: Some(link_mark),
-                    ..Default::default()
-                },
-            )]));
+            for child in &mut child_paragraph.children {
+                child.marks.push((
+                    0..child.text.len(),
+                    TextMark {
+                        link: Some(link_mark.clone()),
+                        ..Default::default()
+                    },
+                ));
+            }
+            paragraph.merge(child_paragraph);
+            text = child_text;
         }
         _ => {
             if cfg!(debug_assertions) {
@@ -214,6 +227,22 @@ fn parse_paragraph(paragraph: &mut Paragraph, node: &mdast::Node, cx: &mut NodeC
         }
     }
 
+    if let Some(span) = span {
+        // Containers retain the exact mappings from their parsed children.
+        if node.children().is_none() {
+            let mut range = span.start..span.end;
+            if matches!(node, Node::InlineCode(_)) {
+                let raw = &cx.source[range.clone()];
+                let delimiter = raw.bytes().take_while(|b| *b == b'`').count();
+                range.start += delimiter;
+                range.end = range.end.saturating_sub(delimiter).max(range.start);
+            }
+            for child in paragraph.children.iter_mut().skip(first_child) {
+                child.source_runs =
+                    super::super::source_map::map_leaf(&cx.source, range.clone(), &child.text);
+            }
+        }
+    }
     text
 }
 
@@ -225,6 +254,15 @@ fn ast_to_node(
 ) -> node::Node {
     match value {
         Node::Root(val) => {
+            cx.blocks = val
+                .children
+                .iter()
+                .map(|child| {
+                    child
+                        .position()
+                        .map_or(0..0, |p| p.start.offset..p.end.offset)
+                })
+                .collect();
             let children = val
                 .children
                 .into_iter()
@@ -283,12 +321,24 @@ fn ast_to_node(
             }
         }
         Node::Break(_) => node::Node::Break { html: false },
-        Node::Code(raw) => node::Node::CodeBlock(CodeBlock::new(
-            raw.value.into(),
-            raw.lang.map(|s| s.into()),
-            style,
-            highlight_theme,
-        )),
+        Node::Code(raw) => {
+            let mut block = CodeBlock::new(
+                raw.value.clone().into(),
+                raw.lang.map(Into::into),
+                style,
+                highlight_theme,
+            );
+            if let Some(position) = raw.position {
+                let mut range = position.start.offset..position.end.offset;
+                let source = &cx.source[range.clone()];
+                if source.starts_with("```") || source.starts_with("~~~") {
+                    range.start += source.find('\n').map_or(source.len(), |i| i + 1);
+                }
+                block.source_runs =
+                    super::super::source_map::map_leaf(&cx.source, range, &raw.value);
+            }
+            node::Node::CodeBlock(block)
+        }
         Node::Heading(val) => {
             let mut paragraph = Paragraph::default();
             val.children.iter().for_each(|c| {
@@ -351,6 +401,7 @@ fn ast_to_node(
         Node::ThematicBreak(_) => node::Node::Divider,
         Node::Table(val) => {
             let mut table = Table::default();
+            table.source_start = val.position.as_ref().map_or(0, |pos| pos.start.offset);
             table.column_aligns = val
                 .align
                 .clone()

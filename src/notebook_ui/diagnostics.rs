@@ -64,7 +64,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.activate_row(nested, window, cx);
                     }
                     6 => {
-                        assert!(this.mode == ViewMode::Source);
+                        assert!(this.mode == ViewMode::LivePreview);
                         assert_eq!(this.editor.read(cx).value().as_str(), "# Nested");
                         this.set_mode(ViewMode::LivePreview, window, cx);
                         this.request(Next::File(first.join("root.md")), window, cx);

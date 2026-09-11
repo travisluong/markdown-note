@@ -8,6 +8,7 @@ mod find_diagnostics;
 mod goto;
 mod notebook;
 mod notebook_ui;
+mod reading_search;
 mod search;
 mod search_ui;
 mod settings_ui;
@@ -41,6 +42,7 @@ actions!(
         SourceMode,
         LivePreview,
         ReadingView,
+        CloseReadingFind,
         FileMenu,
         ViewMenu,
         NotebooksMenu,
@@ -54,9 +56,11 @@ actions!(
     ]
 );
 
-#[derive(Clone, Copy, PartialEq)]
-enum ViewMode {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewMode {
     Source,
+    #[default]
     LivePreview,
     Reading,
 }
@@ -177,6 +181,7 @@ struct Notes {
     editor_subscription: Subscription,
     mode: ViewMode,
     reading_text: SharedString,
+    reading_search: Option<reading_search::ReadingSearch>,
     focus: FocusHandle,
     busy: bool,
     dirty_cached: bool,
@@ -226,8 +231,9 @@ impl Notes {
             document: None,
             editor,
             editor_subscription,
-            mode: ViewMode::Source,
+            mode: ViewMode::default(),
             reading_text: SharedString::default(),
+            reading_search: None,
             focus,
             busy: false,
             dirty_cached: false,
@@ -256,6 +262,7 @@ impl Notes {
                 this.schedule_search(window, cx);
                 if this.mode == ViewMode::Reading {
                     this.reading_text = this.editor.read(cx).value();
+                    this.update_reading_search(cx);
                 }
             }
         })
@@ -454,6 +461,15 @@ impl Notes {
             SharedString::default()
         };
         self.mode = mode;
+        if mode == ViewMode::Reading {
+            self.update_reading_search(cx);
+        }
+        if let Some(book) = &mut self.notebooks.active {
+            if book.settings.view_mode != mode {
+                book.settings.view_mode = mode;
+                self.persist_notebooks(cx);
+            }
+        }
         self.editor.update(cx, |editor, cx| {
             editor.set_live_preview(mode == ViewMode::LivePreview, cx)
         });
@@ -556,36 +572,60 @@ impl Render for Notes {
             div()
                 .size_full()
                 .p_6()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .key_context("ReadingContent")
+                .on_action(cx.listener(|this, _: &CloseReadingFind, window, cx| {
+                    this.reading_search = None;
+                    this.focus.focus(window);
+                    cx.notify();
+                }))
+                .when(self.reading_search.is_some(), |view| {
+                    view.child(self.render_reading_find(cx))
+                })
                 .child(
-                    TextView::markdown("reading", self.reading_text.clone(), window, cx)
-                        .on_task_toggle({
-                            let owner = cx.weak_entity();
-                            let document_path = self.document.as_ref().map(|d| d.path.clone());
-                            move |offset, source, window, cx| {
-                                let _ = owner.update(cx, |this, cx| {
-                                    if this.busy
-                                        || this.document.as_ref().map(|d| &d.path)
-                                            != document_path.as_ref()
-                                    {
-                                        return;
-                                    }
-                                    this.editor.update(cx, |editor, cx| {
-                                        editor.toggle_markdown_task(offset, source, window, cx);
-                                    });
+                    TextView::markdown(
+                        ("reading", self.saves.identity as usize),
+                        self.reading_text.clone(),
+                        window,
+                        cx,
+                    )
+                    .source_highlights(
+                        self.reading_search
+                            .as_ref()
+                            .map(|find| find.highlights.clone()),
+                    )
+                    .on_task_toggle({
+                        let owner = cx.weak_entity();
+                        let document_path = self.document.as_ref().map(|d| d.path.clone());
+                        move |offset, source, window, cx| {
+                            let _ = owner.update(cx, |this, cx| {
+                                if this.busy
+                                    || this.document.as_ref().map(|d| &d.path)
+                                        != document_path.as_ref()
+                                {
+                                    return;
+                                }
+                                this.editor.update(cx, |editor, cx| {
+                                    editor.toggle_markdown_task(offset, source, window, cx);
                                 });
-                            }
-                        })
-                        .text_size(content_size)
-                        .line_height(relative(1.5))
-                        .style(gpui_component::text::TextViewStyle {
-                            heading_base_font_size: content_size,
-                            highlight_theme: cx.theme().highlight_theme.clone(),
-                            is_dark: cx.theme().mode.is_dark(),
-                            ..Default::default()
-                        })
-                        .selectable(true)
-                        .scrollable(true)
-                        .size_full(),
+                            });
+                        }
+                    })
+                    .text_size(content_size)
+                    .line_height(relative(1.5))
+                    .style(gpui_component::text::TextViewStyle {
+                        heading_base_font_size: content_size,
+                        highlight_theme: cx.theme().highlight_theme.clone(),
+                        is_dark: cx.theme().mode.is_dark(),
+                        ..Default::default()
+                    })
+                    .selectable(true)
+                    .scrollable(true)
+                    .min_h_0()
+                    .flex_1()
+                    .size_full(),
                 )
                 .into_any_element()
         };
@@ -598,7 +638,8 @@ impl Render for Notes {
                     return;
                 }
                 if this.mode == ViewMode::Reading {
-                    this.set_mode(ViewMode::Source, window, cx);
+                    this.open_reading_search(window, cx);
+                    return;
                 }
                 this.editor
                     .update(cx, |editor, cx| editor.open_search(window, cx));
@@ -680,6 +721,7 @@ impl Render for Notes {
                     })
                     .child(
                         Button::new("file-menu")
+                            .cursor_default()
                             .ghost()
                             .small()
                             .label("File")
@@ -689,6 +731,7 @@ impl Render for Notes {
                     )
                     .child(
                         Button::new("view-menu")
+                            .cursor_default()
                             .ghost()
                             .small()
                             .label("View")
@@ -698,6 +741,7 @@ impl Render for Notes {
                     )
                     .child(
                         Button::new("notebooks-menu")
+                            .cursor_default()
                             .ghost()
                             .small()
                             .label("Notebooks")
@@ -780,6 +824,7 @@ fn main() {
             cx.bind_keys([
                 KeyBinding::new("ctrl-o", GoTo, Some("Notes")),
                 KeyBinding::new("ctrl-f", Search, Some("Notes")),
+                KeyBinding::new("escape", CloseReadingFind, Some("ReadingContent")),
                 KeyBinding::new("ctrl-shift-f", SearchAllFiles, Some("Notes")),
                 KeyBinding::new("ctrl-p", CommandPalette, Some("Notes")),
                 KeyBinding::new("ctrl-l", ToggleTasks, Some("DocumentEditor")),

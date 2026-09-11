@@ -5,13 +5,13 @@ use std::{
 };
 
 use gpui::{
-    point, px, quad, App, BorderStyle, Bounds, CursorStyle, Edges, Element, ElementId,
-    GlobalElementId, Half, HighlightStyle, Hitbox, HitboxBehavior, InspectorElementId, IntoElement,
-    LayoutId, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, StyledText, TextLayout,
-    Window,
+    App, BorderStyle, Bounds, CursorStyle, Edges, Element, ElementId, GlobalElementId, Half,
+    HighlightStyle, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, StyledText, TextLayout, Window,
+    point, px, quad,
 };
 
-use crate::{global_state::GlobalState, input::Selection, text::node::LinkMark, ActiveTheme};
+use crate::{ActiveTheme, global_state::GlobalState, input::Selection, text::node::LinkMark};
 
 /// A inline element used to render a inline text and support selectable.
 ///
@@ -22,6 +22,9 @@ pub(super) struct Inline {
     links: Rc<Vec<(Range<usize>, LinkMark)>>,
     highlights: Vec<(Range<usize>, HighlightStyle)>,
     styled_text: StyledText,
+    active_match: Option<Range<usize>>,
+    horizontal_scroll: Option<gpui::ScrollHandle>,
+    reveal: Option<super::source_highlights::RevealTarget>,
 
     state: Arc<Mutex<InlineState>>,
 }
@@ -56,8 +59,61 @@ impl Inline {
             highlights,
             text: text.clone(),
             styled_text: StyledText::new(text),
+            active_match: None,
+            horizontal_scroll: None,
+            reveal: None,
             state,
         }
+    }
+
+    pub(super) fn horizontal_scroll(mut self, scroll: Option<gpui::ScrollHandle>) -> Self {
+        self.horizontal_scroll = scroll;
+        self
+    }
+
+    pub(super) fn source_highlights(
+        mut self,
+        runs: &[super::source_map::SourceRun],
+        node_cx: &super::node::NodeContext,
+    ) -> Self {
+        if let Some(search) = &node_cx.highlights {
+            let mut matches = Vec::new();
+            let first = runs.first().map_or(0, |run| run.source.start);
+            let last = runs.last().map_or(0, |run| run.source.end);
+            let start = search.matches.partition_point(|range| range.end <= first);
+            for range in search.matches[start..]
+                .iter()
+                .take_while(|range| range.start < last)
+            {
+                for display in super::source_map::project(runs, range) {
+                    matches.push((
+                        display,
+                        HighlightStyle {
+                            background_color: Some(gpui::rgba(0xe5b84b66).into()),
+                            ..Default::default()
+                        },
+                    ));
+                }
+            }
+            matches.sort_by_key(|(range, _)| range.start);
+            self.highlights = gpui::combine_highlights(self.highlights, matches).collect();
+            if let Some(active) = &search.active {
+                let active_ranges = super::source_map::project(runs, active);
+                self.active_match = active_ranges.first().cloned();
+                let marks = active_ranges.into_iter().map(|range| {
+                    (
+                        range,
+                        HighlightStyle {
+                            background_color: Some(gpui::rgba(0xe5b84baa).into()),
+                            ..Default::default()
+                        },
+                    )
+                });
+                self.highlights = gpui::combine_highlights(self.highlights, marks).collect();
+            }
+            self.reveal = node_cx.reveal.clone();
+        }
+        self
     }
 
     /// Get link at given mouse position.
@@ -301,6 +357,53 @@ impl Element for Inline {
         self.styled_text
             .paint(global_id, None, bounds, &mut (), &mut (), window, cx);
 
+        if let (Some(active), Some(target)) = (&self.active_match, &self.reveal) {
+            if let Some(position) = text_layout.position_for_index(active.start) {
+                if let Some(view) = GlobalState::global(cx).text_view_state().cloned() {
+                    if let Some(block_bounds) =
+                        view.read(cx).list_state.bounds_for_item(target.item)
+                    {
+                        if !target
+                            .highlights
+                            .revealed
+                            .swap(true, std::sync::atomic::Ordering::Relaxed)
+                        {
+                            let offset = (position.y - block_bounds.top() - px(24.)).max(px(0.));
+                            let target = target.clone();
+                            let horizontal = self.horizontal_scroll.clone();
+                            window.on_next_frame(move |_, cx| {
+                                if view.read(cx).source_snapshot != target.highlights.source
+                                    || !view.read(cx).active_search.as_ref().is_some_and(|search| {
+                                        search.same_request(&target.highlights)
+                                    })
+                                {
+                                    return;
+                                }
+                                if let Some(scroll) = horizontal {
+                                    let viewport = scroll.bounds();
+                                    let delta = if position.x < viewport.left() {
+                                        viewport.left() - position.x + px(12.)
+                                    } else if position.x + px(24.) > viewport.right() {
+                                        viewport.right() - position.x - px(24.)
+                                    } else {
+                                        px(0.)
+                                    };
+                                    let mut offset = scroll.offset();
+                                    offset.x += delta;
+                                    scroll.set_offset(offset);
+                                }
+                                view.read(cx).list_state.scroll_to(gpui::ListOffset {
+                                    item_ix: target.item,
+                                    offset_in_item: offset,
+                                });
+                                cx.notify(current_view);
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // layout selections
         let (is_selectable, is_selection, selection) =
             self.layout_selections(&text_layout, window, cx);
@@ -402,7 +505,7 @@ fn point_in_text_selection(
 #[cfg(test)]
 mod tests {
     use super::point_in_text_selection;
-    use gpui::{point, px, size, Bounds};
+    use gpui::{Bounds, point, px, size};
 
     #[test]
     fn test_point_in_text_selection() {

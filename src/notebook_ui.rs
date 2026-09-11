@@ -609,6 +609,7 @@ impl Notes {
                         this.search = None;
                         this.reset_sidebar_resize(cx);
                         this.notebooks.index.register(book.root.clone());
+                        this.mode = book.settings.view_mode;
                         this.notebooks.active = Some(book);
                         this.apply_appearance(window, cx);
                         this.install_document(document, window, cx);
@@ -640,6 +641,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.reading_search = None;
         self.saves.timer = None;
         self.saves.identity += 1;
         self.saves.error = None;
@@ -723,7 +725,6 @@ impl Notes {
                         if let Some(destination) = this.search_destination.take() {
                             this.reveal_search_result(destination, window, cx);
                         }
-                        this.schedule_search(window, cx);
                     }
                     Err(error) => {
                         this.search_destination = None;

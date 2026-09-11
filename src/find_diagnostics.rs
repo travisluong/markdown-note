@@ -54,18 +54,25 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
                         this.set_mode(ViewMode::Reading, window, cx);
                     }
                     14 => {
-                        assert!(this.mode == ViewMode::Source, "Reading find opens Source");
-                        let query = status.unwrap().0;
+                        assert!(
+                            this.mode == ViewMode::Reading,
+                            "Reading find preserves mode"
+                        );
+                        let query = this.reading_search.as_ref().unwrap().query.clone();
                         assert!(query.focus_handle(cx).is_focused(window));
                         query.update(cx, |q, cx| q.set_value("missing", window, cx));
                     }
                     15 => {
-                        assert_eq!(status.unwrap().1, 0);
+                        assert_eq!(this.reading_search.as_ref().unwrap().matches.len(), 0);
                         this.editor
                             .update(cx, |e, cx| e.set_value("unsaved missing", window, cx));
                     }
                     16 => {
-                        assert_eq!(status.unwrap().1, 1, "find refreshes after edits");
+                        assert_eq!(
+                            this.reading_search.as_ref().unwrap().matches.len(),
+                            1,
+                            "find refreshes after edits"
+                        );
                         this.set_mode(ViewMode::LivePreview, window, cx);
                         this.editor.update(cx, |e, cx| {
                             e.set_value("# café\n\n| Name |\n| --- |\n| **café** |\n", window, cx)

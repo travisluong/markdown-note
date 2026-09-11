@@ -1251,6 +1251,8 @@ impl Render for PopupMenu {
 
         v_flex()
             .id("popup-menu")
+            .occlude()
+            .cursor_default()
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::select_up))

@@ -116,6 +116,7 @@ impl PartialEq for ImageNode {
 
 #[derive(Default, Clone, Debug)]
 pub(crate) struct InlineNode {
+    pub(crate) source_runs: Vec<super::source_map::SourceRun>,
     /// The text content.
     pub(crate) text: SharedString,
     pub(crate) image: Option<ImageNode>,
@@ -135,6 +136,7 @@ impl InlineNode {
     pub(crate) fn new(text: impl Into<SharedString>) -> Self {
         Self {
             text: text.into(),
+            source_runs: Vec::new(),
             image: None,
             marks: vec![],
             state: Arc::new(Mutex::new(InlineState::default())),
@@ -210,6 +212,7 @@ impl Paragraph {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Table {
+    pub source_start: usize,
     pub children: Vec<TableRow>,
     pub column_aligns: Vec<ColumnumnAlign>,
 }
@@ -308,6 +311,7 @@ impl Paragraph {
 
 #[derive(Debug, Clone)]
 pub struct CodeBlock {
+    pub(crate) source_runs: Vec<super::source_map::SourceRun>,
     lang: Option<SharedString>,
     styles: Vec<(Range<usize>, HighlightStyle)>,
     state: Arc<Mutex<InlineState>>,
@@ -348,6 +352,7 @@ impl CodeBlock {
 
         Self {
             lang,
+            source_runs: Vec::new(),
             styles,
             state,
         }
@@ -384,12 +389,10 @@ impl CodeBlock {
                     .text_size(cx.theme().mono_font_size)
                     .relative()
                     .refine_style(&style.code_block)
-                    .child(Inline::new(
-                        "code",
-                        self.state.clone(),
-                        vec![],
-                        self.styles.clone(),
-                    ))
+                    .child(
+                        Inline::new("code", self.state.clone(), vec![], self.styles.clone())
+                            .source_highlights(&self.source_runs, node_cx),
+                    )
                     .when_some(node_cx.code_block_actions.clone(), |this, actions| {
                         this.child(
                             div()
@@ -409,6 +412,9 @@ impl CodeBlock {
 /// A context for rendering nodes, contains link references.
 #[derive(Default, Clone)]
 pub(crate) struct NodeContext {
+    pub(crate) blocks: Vec<Range<usize>>,
+    pub(crate) highlights: Option<super::SourceHighlights>,
+    pub(crate) reveal: Option<super::source_highlights::RevealTarget>,
     pub(crate) task_toggle: Option<Arc<super::text_view::TaskToggleFn>>,
     pub(crate) source: SharedString,
     pub(crate) link_refs: HashMap<SharedString, LinkMark>,
@@ -471,6 +477,31 @@ pub(crate) enum Node {
 }
 
 impl Node {
+    pub(super) fn has_visible_source(&self, range: &Range<usize>) -> bool {
+        let paragraph = |p: &Paragraph| {
+            p.children
+                .iter()
+                .any(|child| !super::source_map::project(&child.source_runs, range).is_empty())
+        };
+        match self {
+            Self::Paragraph(p) | Self::Heading { children: p, .. } => paragraph(p),
+            Self::Root { children }
+            | Self::List { children, .. }
+            | Self::ListItem { children, .. }
+            | Self::Blockquote { children } => {
+                children.iter().any(|child| child.has_visible_source(range))
+            }
+            Self::CodeBlock(block) => {
+                !super::source_map::project(&block.source_runs, range).is_empty()
+            }
+            Self::Table(table) => table
+                .children
+                .iter()
+                .any(|row| row.children.iter().any(|cell| paragraph(&cell.children))),
+            _ => false,
+        }
+    }
+
     pub(super) fn is_list_item(&self) -> bool {
         matches!(self, Self::ListItem { .. })
     }
@@ -575,6 +606,7 @@ impl Paragraph {
         node_cx: &NodeContext,
         _window: &mut Window,
         cx: &mut App,
+        horizontal_scroll: Option<gpui::ScrollHandle>,
     ) -> impl IntoElement {
         let span = self.span;
         let children = &self.children;
@@ -584,11 +616,17 @@ impl Paragraph {
         let mut text = String::new();
         let mut highlights: Vec<(Range<usize>, HighlightStyle)> = vec![];
         let mut links: Vec<(Range<usize>, LinkMark)> = vec![];
+        let mut source_runs = Vec::new();
         let mut offset = 0;
 
         let mut ix = 0;
         for inline_node in children {
             let text_len = inline_node.text.len();
+            source_runs.extend(inline_node.source_runs.iter().cloned().map(|mut run| {
+                run.display.start += offset;
+                run.display.end += offset;
+                run
+            }));
             text.push_str(&inline_node.text);
 
             if let Some(image) = &inline_node.image {
@@ -605,6 +643,8 @@ impl Paragraph {
                             links.clone(),
                             highlights.clone(),
                         )
+                        .source_highlights(&source_runs, node_cx)
+                        .horizontal_scroll(horizontal_scroll.clone())
                         .into_any_element(),
                     );
                 }
@@ -628,6 +668,7 @@ impl Paragraph {
                         .into_any_element(),
                 );
 
+                source_runs.clear();
                 text.clear();
                 links.clear();
                 highlights.clear();
@@ -671,7 +712,11 @@ impl Paragraph {
                         links.push((inner_range.clone(), link_mark));
                     }
 
-                    node_highlights.push((inner_range, highlight));
+                    node_highlights = gpui::combine_highlights(
+                        node_highlights,
+                        std::iter::once((inner_range, highlight)),
+                    )
+                    .collect();
                 }
 
                 highlights = gpui::combine_highlights(highlights, node_highlights).collect();
@@ -683,8 +728,12 @@ impl Paragraph {
         // Add the last text node
         if text.len() > 0 {
             self.state.lock().unwrap().set_text(text.into());
-            child_nodes
-                .push(Inline::new(ix, self.state.clone(), links, highlights).into_any_element());
+            child_nodes.push(
+                Inline::new(ix, self.state.clone(), links, highlights)
+                    .source_highlights(&source_runs, node_cx)
+                    .horizontal_scroll(horizontal_scroll.clone())
+                    .into_any_element(),
+            );
         }
 
         div().id(span.unwrap_or_default()).children(child_nodes)
@@ -1025,6 +1074,17 @@ impl Node {
             .font_size
             .to_pixels(window.rem_size())
             .into();
+        let source_start = if let Node::Table(table) = item {
+            table.source_start
+        } else {
+            0
+        };
+        let table_scroll = window
+            .use_keyed_state(("reading-table-scroll", source_start), cx, |_, _| {
+                gpui::ScrollHandle::new()
+            })
+            .read(cx)
+            .clone();
         const DEFAULT_LENGTH: usize = 5;
         const MAX_LENGTH: usize = 150;
         let col_lens = match item {
@@ -1047,6 +1107,46 @@ impl Node {
             _ => vec![],
         };
 
+        // A far-right cell may be clipped before Inline::paint runs. Bring its
+        // column into the viewport once layout has established scroll limits.
+        if let (Node::Table(table), Some(search)) = (item, &node_cx.highlights) {
+            if let Some(active) = &search.active {
+                let column = table.children.iter().find_map(|row| {
+                    row.children.iter().position(|cell| {
+                        cell.children.children.iter().any(|child| {
+                            !super::source_map::project(&child.source_runs, active).is_empty()
+                        })
+                    })
+                });
+                if let Some(column) = column {
+                    if !search
+                        .horizontal_started
+                        .swap(true, std::sync::atomic::Ordering::Relaxed)
+                    {
+                        let left = col_lens
+                            .iter()
+                            .take(column)
+                            .map(|len| {
+                                crate::input::table::column_width((*len).min(MAX_LENGTH), font_size)
+                            })
+                            .sum::<f32>();
+                        let scroll = table_scroll.clone();
+                        let search = search.clone();
+                        let owner = window.current_view();
+                        window.on_next_frame(move |_, cx| {
+                            if !search.cancelled.load(std::sync::atomic::Ordering::Relaxed)
+                                && !search.revealed.load(std::sync::atomic::Ordering::Relaxed)
+                            {
+                                let mut offset = scroll.offset();
+                                offset.x = -px(left);
+                                scroll.set_offset(offset);
+                                cx.notify(owner);
+                            }
+                        });
+                    }
+                }
+            }
+        }
         match item {
             Node::Table(table) => div()
                 .pb(rems(1.))
@@ -1054,6 +1154,7 @@ impl Node {
                 .child(
                     div()
                         .id("table")
+                        .track_scroll(&table_scroll)
                         .overflow_x_scroll()
                         .w_full()
                         .border_1()
@@ -1066,7 +1167,10 @@ impl Node {
                                     div()
                                         .id(("table-row", row_ix))
                                         .min_w_full()
-                                        .min_h(window.line_height() * crate::input::table::MIN_ROW_LINES)
+                                        .min_h(
+                                            window.line_height()
+                                                * crate::input::table::MIN_ROW_LINES,
+                                        )
                                         .when(row_ix == 0, |this| {
                                             this.font_weight(gpui::FontWeight::SEMIBOLD)
                                         })
@@ -1109,10 +1213,12 @@ impl Node {
                                                             this.border_r_1()
                                                                 .border_color(cx.theme().border)
                                                         })
-                                                        .child(
-                                                            cell.children
-                                                                .render(node_cx, window, cx),
-                                                        ),
+                                                        .child(cell.children.render(
+                                                            node_cx,
+                                                            window,
+                                                            cx,
+                                                            Some(table_scroll.clone()),
+                                                        )),
                                                 )
                                             }
                                             cells
@@ -1157,7 +1263,39 @@ impl Node {
             list_state.reset(children.len());
         }
 
+        if let Some(highlights) = &node_cx.highlights {
+            if let Some(active) = &highlights.active {
+                if !highlights
+                    .started
+                    .swap(true, std::sync::atomic::Ordering::Relaxed)
+                {
+                    if let Some(item_ix) =
+                        super::source_map::containing_block(&node_cx.blocks, active)
+                    {
+                        list_state.scroll_to(gpui::ListOffset {
+                            item_ix,
+                            offset_in_item: px(0.),
+                        });
+                    }
+                }
+            }
+        }
+
         gpui::list(list_state, move |ix, window, cx| {
+            let mut node_cx = node_cx.clone();
+            if let Some(highlights) = &node_cx.highlights {
+                if highlights
+                    .active
+                    .as_ref()
+                    .and_then(|active| super::source_map::containing_block(&node_cx.blocks, active))
+                    == Some(ix)
+                {
+                    node_cx.reveal = Some(super::source_highlights::RevealTarget {
+                        highlights: highlights.clone(),
+                        item: ix,
+                    });
+                }
+            }
             let is_last = ix + 1 == children.len();
             children[ix]
                 .render_block(options.is_last(is_last), &node_cx, window, cx)
@@ -1192,7 +1330,7 @@ impl Node {
             Node::Paragraph(paragraph) => div()
                 .id("p")
                 .pb(mb)
-                .child(paragraph.render(node_cx, window, cx))
+                .child(paragraph.render(node_cx, window, cx, None))
                 .into_any_element(),
             Node::Heading { level, children } => {
                 let (text_size, font_weight) = match level {
@@ -1216,7 +1354,7 @@ impl Node {
                     .whitespace_normal()
                     .text_size(text_size)
                     .font_weight(font_weight)
-                    .child(children.render(node_cx, window, cx))
+                    .child(children.render(node_cx, window, cx, None))
                     .into_any_element()
             }
             Node::Blockquote { children } => div()

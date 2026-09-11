@@ -212,13 +212,19 @@ impl Notes {
         }
         let text = self.editor.read(cx).value();
         let Some(range) = search::revalidate(&text, &destination) else {
-            self.notebooks.notice =
-                Some("The search match no longer exists. Results have been refreshed.".into());
-            self.schedule_search(window, cx);
+            self.notebooks.notice = Some("The search match no longer exists in this file.".into());
+            cx.notify();
             return;
         };
         if self.mode == ViewMode::Reading {
-            self.set_mode(ViewMode::Source, window, cx);
+            self.reveal_reading_match(
+                destination.query,
+                destination.case_sensitive,
+                range,
+                window,
+                cx,
+            );
+            return;
         }
         self.editor.update(cx, |editor, cx| {
             editor.select_source_range(range, window, cx);
@@ -265,35 +271,22 @@ impl Notes {
             )
             .child(Input::new(&panel.query))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .child(
-                        Button::new("search-case")
-                            .small()
-                            .ghost()
-                            .label(if panel.case_sensitive {
-                                "Match case: on"
-                            } else {
-                                "Match case: off"
-                            })
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                if let Some(panel) = &mut this.search {
-                                    panel.case_sensitive = !panel.case_sensitive;
-                                }
-                                this.schedule_search(window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("search-refresh")
-                            .small()
-                            .ghost()
-                            .label("Refresh")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.schedule_search(window, cx)),
-                            ),
-                    ),
+                div().flex().flex_wrap().gap_1().child(
+                    Button::new("search-case")
+                        .small()
+                        .ghost()
+                        .label(if panel.case_sensitive {
+                            "Match case: on"
+                        } else {
+                            "Match case: off"
+                        })
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            if let Some(panel) = &mut this.search {
+                                panel.case_sensitive = !panel.case_sensitive;
+                            }
+                            this.schedule_search(window, cx);
+                        })),
+                ),
             )
             .when(!panel.status.is_empty(), |view| {
                 view.child(div().text_xs().child(panel.status.clone()))
@@ -358,6 +351,7 @@ impl Notes {
 
 #[cfg(feature = "editor-diagnostics")]
 pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
+    let mut navigation_snapshot: Option<(Arc<AtomicBool>, String)> = None;
     for step in 0..=18 {
         Timer::after(Duration::from_millis(400)).await;
         // Wait for file loads and debounced scans, with a bounded deadline.
@@ -387,6 +381,11 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                 if step == 7 {
                     window.dispatch_keystroke(Keystroke::parse("down").unwrap(), cx);
                 }
+                navigation_snapshot = notes.update(cx, |this, _| {
+                    this.search
+                        .as_ref()
+                        .map(|panel| (panel.cancelled.clone(), panel.status.clone()))
+                });
                 window.dispatch_keystroke(Keystroke::parse("enter").unwrap(), cx);
                 return;
             }
@@ -461,18 +460,26 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                     5 | 8 => {
                         let panel = this.search.as_ref().unwrap();
                         assert_eq!(panel.selected, if step == 5 { 0 } else { 1 });
-                        assert_eq!(
-                            this.editor.read(cx).cursor(),
-                            panel.hits[panel.selected].range.end
+                        let (scan, status) = navigation_snapshot.as_ref().unwrap();
+                        assert!(
+                            Arc::ptr_eq(scan, &panel.cancelled),
+                            "navigation must not schedule a scan"
                         );
-                        assert!(this.mode == ViewMode::Source);
-                        assert!(this.editor.focus_handle(cx).is_focused(window));
+                        assert_eq!(&panel.status, status);
+                        assert_eq!(this.mode, ViewMode::Reading);
+                        assert!(this.reading_search.is_some());
+                        assert_eq!(
+                            panel.hits.len(),
+                            3,
+                            "opening a result preserves the result list"
+                        );
                         if step == 5 {
                             this.toggle_sidebar(window, cx);
                             assert!(this.sidebar_collapsed);
                         }
                     }
                     9 => {
+                        this.set_mode(ViewMode::Source, window, cx);
                         this.editor
                             .update(cx, |e, cx| e.set_value("unsaved needle", window, cx));
                         this.search

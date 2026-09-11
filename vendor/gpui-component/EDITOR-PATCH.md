@@ -5,7 +5,7 @@ Upstream: gpui-component 0.5.1, commit
 The original Apache 2.0 license is retained. Cargo uses this copy via the root
 `[patch.crates-io]`; no registry files are modified.
 
-Changes are confined to input support and the `editor-diagnostics` feature:
+Changes cover input support, Reading-view source mappings, menu cursors, and the `editor-diagnostics` feature:
 
 - Opt-in `find_only()` configuration hides replacement controls, with a public
   `open_search()` entry point for app-level Ctrl+F. Non-searchable inputs propagate
@@ -100,3 +100,19 @@ Live preview renders nested bullets with lossless mappings. Parser tests and
 in-app diagnostics cover subtree edits, selection boundaries, Unicode, CRLF,
 undo/redo, disabled editing, Reading hierarchy, and nested checkbox hit geometry.
 `select_source_range()` validates UTF-8 byte boundaries, selects and reveals a source match without changing text or undo history, for notebook-wide search navigation.
+
+Reading search uses opt-in `TextView::source_highlights(Option<SourceHighlights>)` with
+UTF-8 ranges and an exact Markdown snapshot. Inline text, nested formatting,
+reference links, table cells, and code blocks retain source mappings. Highlights
+compose with existing text styles. A one-shot request reveals the virtualized
+block first, then the measured match, and rejects stale source/query requests.
+Source-only matches reveal the containing block and expose `hidden_match()` for
+an explanatory notice. Parsing stays on the background executor; UI scroll
+handles stay on the UI thread. `tests/reading_search.rs` exercises the mappings
+and the actual renderer parser without opening a window.
+
+Menu rows and popup surfaces explicitly use the arrow cursor, and popup hit
+areas occlude the editor underneath. Deferred input scrolling is normalized
+before painting: empty placeholders stay at their layout origin and single-line
+inputs retain horizontal scrolling without fractional vertical movement. The
+scroll tests cover both behaviors.
