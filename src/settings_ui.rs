@@ -14,6 +14,45 @@ pub(super) enum SettingsSection {
 }
 
 impl Notes {
+    fn show_file_extensions(&self) -> bool {
+        self.notebooks
+            .active
+            .as_ref()
+            .map_or(self.session_show_file_extensions, |book| {
+                book.settings.show_file_extensions
+            })
+    }
+
+    fn hidden_extensions(&self) -> &[String] {
+        self.notebooks
+            .active
+            .as_ref()
+            .map_or(&self.session_always_hide_extensions, |book| {
+                &book.settings.always_hide_extensions
+            })
+    }
+
+    fn update_sidebar_extensions(
+        &mut self,
+        show: bool,
+        extensions: Vec<String>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy {
+            return;
+        }
+        if let Some(book) = &mut self.notebooks.active {
+            book.settings.show_file_extensions = show;
+            book.settings.always_hide_extensions = extensions;
+            self.notebooks.rebuild_rows();
+            self.persist_notebooks(cx);
+        } else {
+            self.session_show_file_extensions = show;
+            self.session_always_hide_extensions = extensions;
+        }
+        cx.notify();
+    }
+
     pub(super) fn can_insert_date(&self) -> bool {
         self.document.is_some() && !self.busy && self.mode != ViewMode::Reading
     }
@@ -134,6 +173,21 @@ impl Notes {
             self.theme_pickers.push(picker);
         }
         self.initialize_font_pickers(window, cx);
+        self.hidden_extensions_validation = None;
+        let extensions = self.hidden_extensions().join(", ");
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(extensions));
+        self.hidden_extensions_subscription = Some(cx.subscribe(&input, |this, input, event, cx| {
+            if !matches!(event, InputEvent::Change) || this.busy || !this.show_file_extensions() { return; }
+            match notebook::parse_hidden_extensions(&input.read(cx).value()) {
+                Ok(extensions) => {
+                    this.hidden_extensions_validation = None;
+                    this.update_sidebar_extensions(this.show_file_extensions(), extensions, cx);
+                }
+                Err(error) => this.hidden_extensions_validation = Some(error),
+            }
+            cx.notify();
+        }));
+        self.hidden_extensions_input = Some(input);
         self.date_validation = None;
         let date = self.date_format().to_owned();
         let date_input = cx.new(|cx| InputState::new(window, cx).default_value(date));
@@ -289,6 +343,23 @@ impl Notes {
             })
             .when_some(self.autosave_validation.clone(), |view, message| {
                 view.child(div().text_sm().text_color(cx.theme().danger).child(message))
+            })
+            .child("Sidebar")
+            .child(Switch::new("show-file-extensions")
+                .label("Show file extensions")
+                .checked(self.show_file_extensions())
+                .disabled(self.busy)
+                .on_click(cx.listener(|this, enabled: &bool, _, cx| {
+                    this.update_sidebar_extensions(*enabled, this.hidden_extensions().to_vec(), cx);
+                })))
+            .child("Always hide these extensions")
+            .when_some(self.hidden_extensions_input.clone(), |view, input| {
+                view.child(Input::new(&input).disabled(!self.show_file_extensions() || self.busy))
+            })
+            .child(div().text_sm().text_color(cx.theme().muted_foreground)
+                .child("Hide these extensions even when Show file extensions is on. Example: md, txt."))
+            .when_some(self.hidden_extensions_validation.clone(), |view, error| {
+                view.child(div().text_sm().text_color(cx.theme().danger).child(error))
             })
             .when_some(self.notebooks.notice.clone(), |view, notice| {
                 view.child(div().text_sm().child(notice))

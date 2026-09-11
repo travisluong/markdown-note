@@ -19,6 +19,7 @@ struct Row {
     directory: bool,
     disabled: bool,
     label: String,
+    filename: Option<String>,
     retry: bool,
     draggable: bool,
 }
@@ -80,27 +81,22 @@ impl NotebookState {
         }
     }
 
-    fn rebuild_rows(&mut self) {
+    pub(super) fn rebuild_rows(&mut self) {
         let mut rows = Vec::new();
         if let Some(book) = &self.active {
-            self.append_rows(Path::new(""), 0, &book.settings, &mut rows);
+            Self::append_rows(&self.directories, Path::new(""), 0, &book.settings, &mut rows);
         }
-        let old_path = self
-            .cursor
-            .and_then(|i| self.rows.get(i))
-            .map(|r| r.path.clone());
-        self.rows = rows;
-        self.cursor = old_path.and_then(|path| self.rows.iter().position(|r| r.path == path));
+        replace_rows(&mut self.rows, &mut self.cursor, rows);
     }
 
     fn append_rows(
-        &self,
+        directories: &BTreeMap<PathBuf, DirectoryState>,
         path: &Path,
         depth: usize,
         settings: &notebook::Settings,
         rows: &mut Vec<Row>,
     ) {
-        match self.directories.get(path) {
+        match directories.get(path) {
             Some(DirectoryState::Ready(entries)) => {
                 if entries.is_empty() {
                     rows.push(Row {
@@ -109,6 +105,7 @@ impl NotebookState {
                         directory: false,
                         disabled: true,
                         label: "Empty folder".into(),
+                        filename: None,
                         retry: false,
                         draggable: false,
                     });
@@ -120,9 +117,14 @@ impl NotebookState {
                         directory: entry.directory,
                         disabled: entry.link
                             || (!entry.directory && !(notebook::markdown(&entry.relative) || images::supported(&entry.relative))),
+                        filename: (!entry.directory).then(|| notebook::name(&entry.relative)),
                         label: format!(
                             "{}{}",
-                            notebook::name(&entry.relative),
+                            if entry.directory {
+                                notebook::name(&entry.relative)
+                            } else {
+                                notebook::sidebar_file_name(&entry.relative, settings.show_file_extensions, &settings.always_hide_extensions)
+                            },
                             if entry.link { " (link)" } else { "" }
                         ),
                         retry: false,
@@ -130,7 +132,7 @@ impl NotebookState {
                     });
                     if entry.directory && !entry.link && settings.expanded.contains(&entry.relative)
                     {
-                        self.append_rows(&entry.relative, depth + 1, settings, rows);
+                        Self::append_rows(directories, &entry.relative, depth + 1, settings, rows);
                     }
                 }
             }
@@ -140,6 +142,7 @@ impl NotebookState {
                 directory: false,
                 disabled: false,
                 label: format!("Retry: {error}"),
+                filename: None,
                 retry: true,
                 draggable: false,
             }),
@@ -149,6 +152,7 @@ impl NotebookState {
                 directory: false,
                 disabled: true,
                 label: "Loading…".into(),
+                filename: None,
                 retry: false,
                 draggable: false,
             }),
@@ -1215,6 +1219,11 @@ impl Notes {
                                         )
                                     })
                                     .child(format!("{prefix}{}", row.label))
+                                    .when_some(row.filename.clone(), |view, filename| {
+                                        view.tooltip(move |window, cx| {
+                                            gpui_component::tooltip::Tooltip::new(filename.clone()).build(window, cx)
+                                        })
+                                    })
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.notebooks.tree_focus.focus(window);
                                         this.activate_row(index, window, cx);
@@ -1423,5 +1432,90 @@ impl Notes {
             });
         })
         .detach();
+    }
+}
+
+fn replace_rows(rows: &mut Vec<Row>, cursor: &mut Option<usize>, next: Vec<Row>) {
+    let old_path = cursor.and_then(|i| rows.get(i)).map(|row| row.path.clone());
+    *rows = next;
+    *cursor = old_path.and_then(|path| rows.iter().position(|row| row.path == path));
+}
+
+#[cfg(test)]
+mod extension_row_tests {
+    use super::{DirectoryState, NotebookState, notebook, replace_rows};
+    use std::{
+        collections::BTreeMap,
+        path::{Path, PathBuf},
+    };
+
+    #[test]
+    fn extension_changes_preserve_row_identity_and_status() {
+        let mut settings = notebook::Settings::default();
+        let entries = [
+            ("note.md", false, false),
+            ("note.png", false, false),
+            ("data.txt", false, false),
+            ("folder.md", true, false),
+            ("linked.md", false, true),
+            ("empty", true, false),
+            ("pending", true, false),
+            ("failed", true, false),
+        ];
+        let mut directories = BTreeMap::new();
+        directories.insert(
+            PathBuf::new(),
+            DirectoryState::Ready(
+                entries
+                    .iter()
+                    .map(|(path, directory, link)| notebook::Entry {
+                        relative: PathBuf::from(path),
+                        directory: *directory,
+                        link: *link,
+                        modified: None,
+                        created: None,
+                    })
+                    .collect(),
+            ),
+        );
+        directories.insert("empty".into(), DirectoryState::Ready(vec![]));
+        directories.insert("pending".into(), DirectoryState::Loading);
+        directories.insert(
+            "failed".into(),
+            DirectoryState::Failed("unavailable".into()),
+        );
+        settings
+            .expanded
+            .extend([PathBuf::from("empty"), "pending".into(), "failed".into()]);
+        let mut rows = Vec::new();
+        NotebookState::append_rows(&directories, Path::new(""), 0, &settings, &mut rows);
+        let before = rows.clone();
+        let mut cursor = Some(1);
+        settings.show_file_extensions = false;
+        let mut next = Vec::new();
+        NotebookState::append_rows(&directories, Path::new(""), 0, &settings, &mut next);
+        replace_rows(&mut rows, &mut cursor, next);
+        assert_eq!(cursor, Some(1));
+        assert_eq!(rows[1].path, Path::new("note.png"));
+        assert_eq!(rows[0].label, "note");
+        assert_eq!(rows[1].label, "note");
+        assert_eq!(rows[1].filename.as_deref(), Some("note.png"));
+        assert_eq!(rows[2].label, "data");
+        assert!(rows[2].disabled);
+        assert_eq!(rows[3].label, "folder.md");
+        assert_eq!(rows[4].label, "linked (link)");
+        for (old, new) in before.iter().zip(&rows) {
+            assert_eq!(old.path, new.path);
+            assert_eq!(old.directory, new.directory);
+            assert_eq!(old.draggable, new.draggable);
+            assert_eq!(old.disabled, new.disabled);
+            assert_eq!(old.retry, new.retry);
+            if old.filename.is_none() {
+                assert_eq!(old.label, new.label);
+            }
+        }
+        assert!(rows.iter().any(|row| row.label == "Empty folder"));
+        assert!(rows.iter().any(|row| row.label == "Loading…"));
+        assert!(rows.iter().any(|row| row.label == "Retry: unavailable"));
     }
 }

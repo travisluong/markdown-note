@@ -200,6 +200,10 @@ impl ThemePalette {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_show_file_extensions")]
+    pub show_file_extensions: bool,
+    #[serde(default = "default_always_hide_extensions")]
+    pub always_hide_extensions: Vec<String>,
     #[serde(default)]
     pub file_sort: FileSort,
     #[serde(default)]
@@ -221,6 +225,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             file_sort: FileSort::default(),
+            show_file_extensions: default_show_file_extensions(),
+            always_hide_extensions: default_always_hide_extensions(),
             view_mode: crate::ViewMode::default(),
             sidebar_width: default_sidebar_width(),
             version: VERSION,
@@ -235,6 +241,55 @@ impl Default for Settings {
 
 pub fn default_sidebar_width() -> f32 {
     280.
+}
+
+pub fn default_show_file_extensions() -> bool {
+    true
+}
+
+pub fn default_always_hide_extensions() -> Vec<String> {
+    vec!["md".into()]
+}
+
+pub fn parse_hidden_extensions(value: &str) -> Result<Vec<String>, String> {
+    let mut extensions = Vec::new();
+    for token in value
+        .split(',')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+    {
+        let extension = token.strip_prefix('.').unwrap_or(token);
+        if extension.is_empty()
+            || extension
+                .chars()
+                .any(|c| c.is_whitespace() || matches!(c, '.' | '/' | '\\' | '*' | '?' | '[' | ']'))
+        {
+            return Err("Enter extensions separated by commas, without paths, spaces, wildcards, or compound suffixes.".into());
+        }
+        let extension = extension.to_lowercase();
+        if !extensions.contains(&extension) {
+            extensions.push(extension);
+        }
+    }
+    Ok(extensions)
+}
+
+pub fn sidebar_file_name(path: &Path, show: bool, always_hide: &[String]) -> String {
+    let full_name = name(path);
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return full_name;
+    };
+    if extension.is_empty()
+        || (show
+            && !always_hide
+                .iter()
+                .any(|hidden| hidden.to_lowercase() == extension.to_lowercase()))
+    {
+        return full_name;
+    }
+    path.file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or(full_name)
 }
 
 pub fn normalize_sidebar_width(width: f32) -> f32 {
@@ -1301,5 +1356,84 @@ mod new_note_tests {
         for path in paths {
             assert_eq!(fs::metadata(path).unwrap().len(), 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod extension_tests {
+    use super::*;
+
+    #[test]
+    fn extension_list_normalization_and_validation() {
+        assert_eq!(
+            parse_hidden_extensions(" .MD, txt, md, , .PNG ").unwrap(),
+            vec!["md", "txt", "png"]
+        );
+        assert!(parse_hidden_extensions(" , , ").unwrap().is_empty());
+        for invalid in [
+            ".", "tar.gz", "m d", "md\ntxt", "a/b", "a\\b", "*", "?", "[md]",
+        ] {
+            assert!(parse_hidden_extensions(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn sidebar_extension_display() {
+        let hidden = default_always_hide_extensions();
+        for (name, show, expected) in [
+            ("notes.md", true, "notes"),
+            ("notes.MD", true, "notes"),
+            ("photo.png", true, "photo.png"),
+            ("photo.png", false, "photo"),
+            ("notes.markdown", true, "notes.markdown"),
+            ("archive.tar.gz", false, "archive.tar"),
+            (".gitignore", false, ".gitignore"),
+            ("README", false, "README"),
+            ("name.", false, "name."),
+            ("日本語.md", true, "日本語"),
+        ] {
+            assert_eq!(sidebar_file_name(Path::new(name), show, &hidden), expected);
+        }
+        assert_eq!(
+            sidebar_file_name(Path::new("notes.md"), true, &[]),
+            "notes.md"
+        );
+        assert_eq!(
+            sidebar_file_name(Path::new("archive.tar.gz"), true, &["gz".into()]),
+            "archive.tar"
+        );
+    }
+
+    #[test]
+    fn extension_settings_defaults_and_notebook_persistence() {
+        let old: Settings =
+            serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
+        assert!(old.show_file_extensions);
+        assert_eq!(old.always_hide_extensions, ["md"]);
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("first");
+        let second = fixture.path().join("second");
+        let mut book = Notebook::open(&first, true).unwrap();
+        assert!(book.settings.show_file_extensions);
+        assert_eq!(book.settings.always_hide_extensions, ["md"]);
+        book.settings.show_file_extensions = false;
+        book.settings.always_hide_extensions = parse_hidden_extensions(".md, TXT").unwrap();
+        write_json(&settings_path(&first), &book.settings).unwrap();
+        let mut reopened = Notebook::open(&first, false).unwrap();
+        assert!(!reopened.settings.show_file_extensions);
+        assert_eq!(reopened.settings.always_hide_extensions, ["md", "txt"]);
+        reopened.settings.show_file_extensions = true;
+        reopened.settings.always_hide_extensions.clear();
+        write_json(&settings_path(&first), &reopened.settings).unwrap();
+        assert!(
+            Notebook::open(&first, false)
+                .unwrap()
+                .settings
+                .always_hide_extensions
+                .is_empty()
+        );
+        let other = Notebook::open(&second, true).unwrap();
+        assert!(other.settings.show_file_extensions);
+        assert_eq!(other.settings.always_hide_extensions, ["md"]);
     }
 }
