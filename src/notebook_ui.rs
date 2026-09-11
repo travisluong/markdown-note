@@ -1131,7 +1131,7 @@ impl Notes {
                                     .border_color(gpui::transparent_black())
                                     .when(selected, |view| view.bg(cx.theme().accent))
                                     .when(this.notebooks.cursor == Some(index), |view| {
-                                        view.border_color(cx.theme().border)
+                                        view.border_color(cx.theme().foreground.opacity(0.55))
                                     })
                                     .when(row.disabled, |view| {
                                         view.text_color(cx.theme().muted_foreground)
