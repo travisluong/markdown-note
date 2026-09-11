@@ -458,18 +458,40 @@ mod tests {
 pub struct EditorWork {
     pub parsed_lines: u64,
     pub shaped_bytes: u64,
+    pub table_rows_visited: u64,
+    pub ui_copied_bytes: u64,
+    pub ui_parsed_bytes: u64,
+    pub cache_invalidations: u64,
 }
 static PARSED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static SHAPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static TABLE_ROWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static UI_COPIED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static UI_PARSED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static INVALIDATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub fn editor_work() -> EditorWork {
     use std::sync::atomic::Ordering::Relaxed;
     EditorWork {
         parsed_lines: PARSED.load(Relaxed),
         shaped_bytes: SHAPED.load(Relaxed),
+        table_rows_visited: TABLE_ROWS.load(Relaxed),
+        ui_copied_bytes: UI_COPIED.load(Relaxed),
+        ui_parsed_bytes: UI_PARSED.load(Relaxed),
+        cache_invalidations: INVALIDATIONS.load(Relaxed),
     }
 }
 pub(super) fn record_shaped(bytes: usize) {
     SHAPED.fetch_add(bytes as u64, std::sync::atomic::Ordering::Relaxed);
+}
+pub(super) fn record_table_row() {
+    TABLE_ROWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+pub(super) fn record_ui_work(copied: usize, parsed: usize) {
+    UI_COPIED.fetch_add(copied as u64, std::sync::atomic::Ordering::Relaxed);
+    UI_PARSED.fetch_add(parsed as u64, std::sync::atomic::Ordering::Relaxed);
+}
+pub(super) fn record_invalidation() {
+    INVALIDATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// A single buffer replacement and the mapped, forward selection range.
