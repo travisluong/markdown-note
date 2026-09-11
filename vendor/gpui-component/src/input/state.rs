@@ -294,6 +294,8 @@ pub struct InputState {
     pub(super) last_layout: Option<LastLayout>,
     pub(super) link_layout_text: Option<Rope>,
     pub(super) last_cursor: Option<usize>,
+    /// Source offset and painted screen Y to preserve for one image-line click.
+    pub(super) image_click_anchor: Option<(usize, Pixels)>,
     /// The input container bounds
     pub(super) input_bounds: Bounds<Pixels>,
     /// The text bounds
@@ -419,6 +421,7 @@ impl InputState {
             last_bounds: None,
             last_selected_range: None,
             last_cursor: None,
+            image_click_anchor: None,
             scroll_handle: ScrollHandle::new(),
             scroll_size: gpui::size(px(0.), px(0.)),
             deferred_scroll_offset: None,
@@ -1487,6 +1490,27 @@ impl InputState {
             return;
         }
 
+        self.image_click_anchor = None;
+        if self.live_preview && event.button == MouseButton::Left && !event.modifiers.shift {
+            let old_row = self.text.offset_to_point(self.cursor()).row;
+            let target = self.text.offset_to_point(offset);
+            if target.row != old_row {
+                if let (Some(layout), Some(bounds)) = (&self.last_layout, self.last_bounds) {
+                    if layout.line(old_row).is_some_and(|line| line.image.is_some()) {
+                        if let Some(line) = layout.line(target.row) {
+                            if let Some(local) =
+                                line.position_for_index(target.column, layout.line_height)
+                            {
+                                let y = bounds.origin.y
+                                    + self.text_wrapper.lines.prefix(target.row) * layout.line_height
+                                    + local.y;
+                                self.image_click_anchor = Some((offset, y));
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if event.modifiers.shift {
             self.select_to(offset, cx);
         } else {

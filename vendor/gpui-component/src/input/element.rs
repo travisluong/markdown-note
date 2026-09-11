@@ -1161,6 +1161,14 @@ impl Element for TextElement {
         let font = style.font();
         let text_size = style.font_size.to_pixels(window.rem_size());
 
+        // Capture the painted height index before reveal changes any row heights.
+        let state = self.state.read(cx);
+        let line_height = window.line_height();
+        let anchor = state
+            .text_wrapper
+            .lines
+            .row_at((-state.scroll_handle.offset().y / line_height).max(0.));
+        let before = state.text_wrapper.lines.prefix(anchor);
         self.state.update(cx, |state, cx| {
             // Establish wrapping before the first paint, including newly opened long lines.
             if state.live_preview && state.soft_wrap {
@@ -1184,11 +1192,6 @@ impl Element for TextElement {
 
         let (visible_range, _visible_top) =
             self.calculate_visible_range(&state, line_height, bounds.size.height);
-        let anchor = state
-            .text_wrapper
-            .lines
-            .row_at((-state.scroll_handle.offset().y / line_height).max(0.));
-        let before = state.text_wrapper.lines.prefix(anchor);
         self.state.update(cx, |state, cx| {
             state.text_wrapper.measure(visible_range.clone(), cx);
             state.text_wrapper.measure_images(visible_range.clone(), line_height, window, cx);
@@ -1432,6 +1435,26 @@ impl Element for TextElement {
 
         // Calculate the scroll offset to keep the cursor in view
 
+        // A one-frame deferred offset wins over ordinary caret reveal.
+        self.state.update(cx, |state, _| {
+            if let Some((offset, screen_y)) = state.image_click_anchor.take() {
+                if offset == state.cursor() {
+                    let p = state.text.offset_to_point(offset);
+                    if let Some(local) = last_layout
+                        .line(p.row)
+                        .and_then(|line| line.position_for_index(p.column, line_height))
+                    {
+                        let top = state.text_wrapper.lines.prefix(p.row) * line_height + local.y;
+                        let mut scroll = state.scroll_handle.offset();
+                        scroll.y = (screen_y - bounds.origin.y - top).clamp(
+                            (bounds.size.height - scroll_size.height).min(px(0.)),
+                            px(0.),
+                        );
+                        state.deferred_scroll_offset = Some(scroll);
+                    }
+                }
+            }
+        });
         let (cursor_bounds, cursor_scroll_offset, current_row) =
             self.layout_cursor(&last_layout, &mut bounds, window, cx);
         last_layout.cursor_bounds = cursor_bounds;

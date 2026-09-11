@@ -204,3 +204,11 @@ cell-input normalization while retaining normal history, change events and searc
 updates; previously selected text is not replaced by a drop. In-memory GPUI
 TestPlatform tests cover isolated undo/redo and stale snapshot rejection without
 creating native windows or sending OS input.
+
+Image-line caret changes retain measured image geometry while rewrapping source.
+Scroll anchors are captured before reveal changes the height index. A click away
+from an image preserves the clicked source position for the next paint, bounded
+by the document's scroll limits; Markdown source still collapses normally.
+Headless image-editor regressions cover loaded and unavailable assets, wrapped
+source, clicks above/below images, scrolled views and both scroll boundaries, and repeated frames
+and clicks without delayed movement.

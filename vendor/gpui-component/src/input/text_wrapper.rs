@@ -449,6 +449,8 @@ impl TextWrapper {
             .text_system()
             .line_wrapper(self.font.clone(), self.font_size);
         let task_size = self.task_size;
+        // Remeasuring unchanged source must not temporarily discard image height.
+        let image = self.lines.get(row).and_then(|line| line.image.clone());
         self._update(
             &text,
             &(offset..offset),
@@ -466,6 +468,14 @@ impl TextWrapper {
                 wrapper.wrap_line(&fragments, width).collect()
             },
         );
+        if let Some(mut image) = image {
+            image.reveal = row == self.reveal_row;
+            if let Some(mut line) = self.lines.get(row).cloned() {
+                line.image = Some(image);
+                self.lines.splice(row..=row, vec![line]);
+                self.soft_lines = self.lines.wraps();
+            }
+        }
     }
     fn _update<F>(
         &mut self,
