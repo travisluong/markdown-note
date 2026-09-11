@@ -9,6 +9,8 @@ mod input {
 mod line_index;
 #[path = "../vendor/gpui-component/src/input/live_preview.rs"]
 mod live_preview;
+#[path = "../vendor/gpui-component/src/input/markdown_links.rs"]
+mod markdown_links;
 #[path = "../vendor/gpui-component/src/input/scroll.rs"]
 mod scroll;
 #[path = "../vendor/gpui-component/src/input/text_wrapper.rs"]

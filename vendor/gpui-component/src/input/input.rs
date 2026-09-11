@@ -1,3 +1,4 @@
+use gpui::StatefulInteractiveElement;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, DefiniteLength, Edges, EdgesRefinement, Entity, InteractiveElement as _,
@@ -274,6 +275,18 @@ impl RenderOnce for Input {
         div()
             .id(("input", self.state.entity_id()))
             .flex()
+            .when_some(
+                state
+                    .live_preview
+                    .then(|| state.link_at_position(window.mouse_position()))
+                    .flatten(),
+                |view, target| {
+                    view.tooltip(move |window, cx| {
+                        crate::tooltip::Tooltip::new(format!("Ctrl+click to open: {target}"))
+                            .build(window, cx)
+                    })
+                },
+            )
             .key_context(crate::input::CONTEXT)
             .track_focus(&state.focus_handle.clone())
             .tab_index(self.tab_index)

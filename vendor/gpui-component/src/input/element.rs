@@ -713,7 +713,14 @@ impl TextElement {
                                                 color: Some(run.color),
                                             })
                                         }
-                                        5 => run.color = cx.theme().primary,
+                                        5 => {
+                                            run.color = cx.theme().link;
+                                            run.underline = Some(UnderlineStyle {
+                                                thickness: px(1.),
+                                                color: Some(run.color),
+                                                wavy: false,
+                                            });
+                                        }
                                         _ => {}
                                     }
                                 }
@@ -844,6 +851,14 @@ impl TextElement {
                             run.len = ch.len_utf8();
                             if p.quote_depth > 0 {
                                 run.color = cx.theme().muted_foreground;
+                            }
+                            if p.links.iter().any(|link| link.label.contains(&source)) {
+                                run.color = cx.theme().link;
+                                run.underline = Some(UnderlineStyle {
+                                    thickness: px(1.),
+                                    color: Some(run.color),
+                                    wavy: false,
+                                });
                             }
                             if p.heading > 0 {
                                 run.font.weight = if p.heading == 1 {
@@ -1693,6 +1708,7 @@ impl Element for TextElement {
 
         self.state.update(cx, |state, cx| {
             state.last_layout = Some(prepaint.last_layout.clone());
+            state.link_layout_text = Some(state.text.clone());
             state.last_bounds = Some(bounds);
             state.last_cursor = Some(state.cursor());
             state.set_input_bounds(input_bounds, cx);

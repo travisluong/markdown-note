@@ -93,6 +93,7 @@ actions!(
 pub enum InputEvent {
     Change,
     PressEnter { secondary: bool },
+    OpenLink { destination: String },
     Focus,
     Blur,
 }
@@ -283,6 +284,7 @@ pub struct InputState {
     /// The marked range is the temporary insert text on IME typing.
     pub(super) ime_marked_range: Option<Selection>,
     pub(super) last_layout: Option<LastLayout>,
+    pub(super) link_layout_text: Option<Rope>,
     pub(super) last_cursor: Option<usize>,
     /// The input container bounds
     pub(super) input_bounds: Bounds<Pixels>,
@@ -397,6 +399,7 @@ impl InputState {
             validate: None,
             mode: InputMode::default(),
             last_layout: None,
+            link_layout_text: None,
             last_bounds: None,
             last_selected_range: None,
             last_cursor: None,
@@ -1310,6 +1313,19 @@ impl InputState {
             }
         }
 
+        if self.live_preview
+            && event.button == MouseButton::Left
+            && event.click_count == 1
+            && event.modifiers.control
+            && !event.modifiers.shift
+            && !event.modifiers.alt
+        {
+            if let Some(destination) = self.link_at_position(event.position) {
+                cx.emit(InputEvent::OpenLink { destination });
+                cx.stop_propagation();
+                return;
+            }
+        }
         self.selecting = true;
         let offset = self.index_for_mouse_position(event.position);
         if self.live_preview
@@ -1386,6 +1402,33 @@ impl InputState {
         } else {
             self.move_to(offset, None, cx)
         }
+    }
+
+    pub(super) fn link_at_position(&self, position: Point<Pixels>) -> Option<String> {
+        if self.link_layout_text.as_ref() != Some(&self.text) {
+            return None;
+        }
+        let layout = self.last_layout.as_ref()?;
+        let bounds = self.last_bounds?;
+        let mut offset = layout.visible_range_offset.start;
+        let mut position_in_line =
+            position - bounds.origin - point(layout.line_number_width, layout.visible_top);
+        let mut exact = None;
+        for line in layout.lines.iter() {
+            if let Some(index) = line.index_for_position(position_in_line, layout.line_height) {
+                exact = Some(offset + index);
+                break;
+            }
+            offset += line.len() + 1;
+            position_in_line.y -= line.size(layout.line_height).height;
+        }
+        let offset = exact?;
+        let link = self
+            .text_wrapper
+            .links
+            .iter()
+            .find(|link| link.label.contains(&offset))?;
+        Some(link.destination.clone())
     }
 
     fn task_hit_bounds(&self, row: usize, _state: usize) -> Option<Bounds<Pixels>> {
@@ -1516,6 +1559,9 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.live_preview {
+            cx.notify();
+        }
         // Show diagnostic popover on mouse move
         let offset = self.index_for_mouse_position(event.position);
         self.handle_mouse_move(offset, event, window, cx);
@@ -1765,9 +1811,12 @@ impl InputState {
         self.history.ignore = false;
     }
 
-    /// Get byte offset of the cursor.
-    ///
-    /// The offset is the UTF-8 offset.
+    /// The current selection as a forward UTF-8 byte range.
+    pub fn source_selection(&self) -> std::ops::Range<usize> {
+        self.selected_range.start..self.selected_range.end
+    }
+
+    /// Get the UTF-8 byte offset of the cursor.
     pub fn cursor(&self) -> usize {
         if let Some(ime_marked_range) = &self.ime_marked_range {
             return ime_marked_range.end;

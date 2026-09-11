@@ -3,6 +3,7 @@ use std::ops::Range;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct Presentation {
+    pub links: Vec<super::markdown_links::MarkdownLink>,
     pub heading: usize,
     pub spans: Vec<(Range<usize>, bool)>,
     pub hidden: Vec<Range<usize>>,
@@ -199,6 +200,47 @@ impl Presentation {
         result.hidden.sort_by_key(|r| r.start);
         result.spans.sort_by_key(|(r, _)| r.start);
         result
+    }
+
+    pub fn with_links(
+        mut self,
+        links: &[super::markdown_links::MarkdownLink],
+        start: usize,
+        len: usize,
+    ) -> Self {
+        for link in links
+            .iter()
+            .filter(|link| link.source.start < start + len && link.source.end > start)
+        {
+            let local = |r: &Range<usize>| {
+                r.start.saturating_sub(start).min(len)..r.end.saturating_sub(start).min(len)
+            };
+            // Formatting markers inside a destination are literal URL characters.
+            self.hidden.retain(|r| {
+                !local(&link.source).contains(&r.start) || local(&link.label).contains(&r.start)
+            });
+            self.spans.retain(|(r, _)| {
+                !local(&link.source).contains(&r.start) || local(&link.label).contains(&r.start)
+            });
+            self.hidden
+                .push(local(&(link.source.start..link.label.start)));
+            self.hidden.push(local(&(link.label.end..link.source.end)));
+            let mut link = link.clone();
+            link.source = local(&link.source);
+            link.label = local(&link.label);
+            self.links.push(link);
+        }
+        self.hidden.sort_by_key(|r| r.start);
+        let mut merged: Vec<Range<usize>> = Vec::new();
+        for range in self.hidden.drain(..).filter(|r| !r.is_empty()) {
+            if let Some(last) = merged.last_mut().filter(|last| last.end >= range.start) {
+                last.end = last.end.max(range.end);
+            } else {
+                merged.push(range);
+            }
+        }
+        self.hidden = merged;
+        self
     }
 
     pub fn quote_indent(&self, font_size: f32) -> f32 {
@@ -804,6 +846,38 @@ mod nesting_tests {
                 let source_offset = mapped.display_to_source[offset];
                 assert!(source.is_char_boundary(source_offset));
                 assert_eq!(mapped.source_to_display[source_offset], offset);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+    #[test]
+    fn link_syntax_reveal_and_utf8_mappings() {
+        for (source, expected) in [
+            ("[café](https://example.com/a_b_c \"title\")", "café"),
+            ("> [**你好**](other.md)", "你好"),
+            (
+                "prefix <https://example.org> suffix",
+                "prefix https://example.org suffix",
+            ),
+            ("[one][id]\n\n[id]: note.md", "one"),
+        ] {
+            let line = source.lines().next().unwrap();
+            let p = Presentation::parse(line).with_links(
+                &super::super::markdown_links::parse(source),
+                0,
+                line.len(),
+            );
+            let mapped = p.display(line, false);
+            assert_eq!(mapped.text, expected);
+            assert_eq!(p.display(line, true).text, line);
+            for (i, _) in mapped.text.char_indices() {
+                let offset = mapped.display_to_source[i];
+                assert!(line.is_char_boundary(offset));
+                assert_eq!(mapped.source_to_display[offset], i);
             }
         }
     }

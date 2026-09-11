@@ -61,7 +61,7 @@ impl Palette {
             .iter()
             .filter_map(|entry| {
                 let name = if self.command {
-                    "Templates: Insert current date".into()
+                    entry.relative.to_string_lossy().to_string()
                 } else {
                     notebook::name(&entry.relative)
                 }
@@ -97,11 +97,18 @@ impl Notes {
             command: true,
             query: query.clone(),
             _subscription: subscription,
-            entries: vec![notebook::Entry {
-                relative: PathBuf::from("Templates: Insert current date"),
-                directory: false,
-                link: false,
-            }],
+            entries: vec![
+                notebook::Entry {
+                    relative: PathBuf::from("Templates: Insert current date"),
+                    directory: false,
+                    link: false,
+                },
+                notebook::Entry {
+                    relative: PathBuf::from("Text: Insert or edit link"),
+                    directory: false,
+                    link: false,
+                },
+            ],
             results: Vec::new(),
             selected: 0,
             scroll: UniformListScrollHandle::new(),
@@ -194,6 +201,14 @@ impl Notes {
     fn activate_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.palette.as_ref().is_some_and(|p| p.command) {
             if !self.can_insert_date() || self.palette.as_ref().unwrap().results.is_empty() {
+                return;
+            }
+            if self.palette.as_ref().is_some_and(|p| {
+                p.results[p.selected].relative == Path::new("Text: Insert or edit link")
+            }) {
+                window.close_dialog(cx);
+                self.close_palette(window, cx);
+                self.edit_link(window, cx);
                 return;
             }
             let Ok(date) = templates::current(self.date_format()) else {

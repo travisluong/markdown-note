@@ -203,3 +203,18 @@ New notebooks and older settings without a saved mode start in Live preview.
 Standalone sessions also start in Live preview. Search and Find never switch
 view modes automatically. Mode selections are saved through the View menu
 or the corresponding commands.
+
+Markdown links render in Live preview, including reference links and autolinks.
+Syntax reveals on the active line (or active table cell); Ctrl+click opens a
+link without moving the selection. Reading view uses ordinary clicks. Hover
+shows the destination. Code spans and code blocks do not activate links.
+`Ctrl+K` or **Text: Insert or edit link** in the command palette opens the link
+editor. Labels accept inline Markdown; edits preserve existing titles and form
+one undo step. Editing a reference link converts that occurrence to an inline
+link without changing its shared definition.
+
+HTTP, HTTPS, and mailto links open through the system handler. Relative `.md`
+and `.markdown` paths resolve against the current document and use the normal
+save-before-navigation flow. Notebook links stay inside the current notebook;
+filesystem symlinks/junctions are not traversed. Heading anchors, wiki links,
+and links to other local file types are not included.

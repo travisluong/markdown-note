@@ -78,6 +78,9 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    pub(super) links: Vec<super::markdown_links::MarkdownLink>,
+    links_text: Option<Rope>,
+    link_index: super::markdown_links::LinkIndex,
     pub(super) tables: super::table::TableIndex,
     active_offset: usize,
     table_rows: std::collections::HashSet<usize>,
@@ -106,6 +109,9 @@ pub(super) struct TextWrapper {
 impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
+            links: Vec::new(),
+            links_text: None,
+            link_index: Default::default(),
             tables: Default::default(),
             active_offset: usize::MAX,
             table_rows: Default::default(),
@@ -315,6 +321,74 @@ impl TextWrapper {
     ) where
         F: FnMut(&str, Pixels, Option<usize>) -> Vec<gpui::Boundary>,
     {
+        if self.live_preview && self.links_text.as_ref() != Some(changed_text) {
+            let source = changed_text.to_string();
+            if let Some(previous) = &self.links_text {
+                // A mode/width refresh uses a whole-buffer replacement as its range.
+                let old = previous.to_string();
+                if range.end <= old.len()
+                    && old.len() - range.len() + new_text.len() == source.len()
+                {
+                    self.link_index
+                        .update(&old, &source, range.clone(), &new_text.to_string());
+                } else {
+                    self.link_index = Default::default();
+                    self.link_index.update("", &source, 0..0, &source);
+                }
+            } else {
+                self.link_index.update("", &source, 0..0, &source);
+            }
+            let links = self.link_index.links.clone();
+            if links != self.links {
+                // Reference definitions can change labels far from the edited row.
+                // Discard measured presentation; viewport measurement remains lazy.
+                let mut rows = std::collections::BTreeSet::new();
+                for link in &self.links {
+                    let first = self
+                        .text
+                        .offset_to_point(link.source.start.min(self.text.len()))
+                        .row;
+                    let last = self
+                        .text
+                        .offset_to_point(link.source.end.min(self.text.len()))
+                        .row;
+                    rows.extend(first..=last);
+                }
+                let delta = new_text.len() as isize - range.len() as isize;
+                for link in &links {
+                    let old_offset = |offset: usize| {
+                        if offset <= range.start {
+                            offset
+                        } else if offset >= range.start + new_text.len() {
+                            offset.saturating_add_signed(-delta)
+                        } else {
+                            range.start
+                        }
+                    };
+                    let first = self
+                        .text
+                        .offset_to_point(old_offset(link.source.start).min(self.text.len()))
+                        .row;
+                    let last = self
+                        .text
+                        .offset_to_point(old_offset(link.source.end).min(self.text.len()))
+                        .row;
+                    rows.extend(first..=last);
+                }
+                for row in rows {
+                    let Some(old) = self.lines.get(row).filter(|item| item.measured) else {
+                        continue;
+                    };
+                    let mut item = old.clone();
+                    item.measured = false;
+                    item.table = None;
+                    item.cache.borrow_mut().clear();
+                    self.lines.splice(row..=row, vec![item]);
+                }
+            }
+            self.links = links;
+            self.links_text = Some(changed_text.clone());
+        }
         // Remove the old changed lines.
         let start_row = self.text.offset_to_point(range.start).row;
         let start_row = start_row.min(self.lines.len().saturating_sub(1));
@@ -367,9 +441,13 @@ impl TextWrapper {
                 continue;
             }
             let source = line.to_string();
-            let presentation = self
-                .live_preview
-                .then(|| super::live_preview::Presentation::parse(&source));
+            let presentation = self.live_preview.then(|| {
+                super::live_preview::Presentation::parse(&source).with_links(
+                    &self.links,
+                    changed_text.line_start_offset(new_start_row + ix),
+                    source.len(),
+                )
+            });
             let scale = presentation.as_ref().map_or(1., |p| p.scale());
             let mapped = presentation.as_ref().map(|p| {
                 std::rc::Rc::new(p.display(&source, new_start_row + ix == self.reveal_row))
@@ -509,11 +587,15 @@ impl TextWrapper {
                 let mut height = super::table::MIN_ROW_LINES;
                 for (c, range) in source_row.cells.iter().take(widths.len()).enumerate() {
                     let text = self.text.slice(range.clone()).to_string();
-                    let inline = super::table::inline(&text);
+                    let mut inline = super::table::inline(&text);
                     let presentation = super::live_preview::Presentation {
                         hidden: inline.hidden,
                         ..Default::default()
-                    };
+                    }
+                    .with_links(&self.links, range.start, text.len());
+                    for link in &presentation.links {
+                        inline.styles.push((link.label.clone(), 5));
+                    }
                     let mapped =
                         std::rc::Rc::new(presentation.display(&text, active_col == Some(c)));
                     let mut starts = vec![0];
@@ -925,8 +1007,22 @@ impl LineLayout {
         pos: Point<Pixels>,
         line_height: Pixels,
     ) -> Option<usize> {
-        if self.table.is_some() {
-            return self.closest_index_for_position(pos, line_height);
+        if let Some(table) = &self.table {
+            if pos.x < px(0.)
+                || pos.x >= table.viewport
+                || pos.y < px(0.)
+                || pos.y >= table.height * line_height
+            {
+                return None;
+            }
+            let pos = pos + point(table.scroll.get(), px(0.));
+            let (range, x, _, cell) = table
+                .cells
+                .iter()
+                .find(|(_, x, w, _)| pos.x >= *x && pos.x < *x + *w)?;
+            return cell
+                .index_for_position(point(pos.x - *x, pos.y), line_height)
+                .map(|i| range.start + i);
         }
         let mut offset = self
             .segment_ranges
@@ -937,6 +1033,9 @@ impl LineLayout {
         for line in self.wrapped_lines.iter() {
             let line_bottom = line_top + line_height;
             if pos.y >= line_top && pos.y < line_bottom {
+                if pos.x < self.indent {
+                    return None;
+                }
                 let ix = line.index_for_x(pos.x - self.indent)?;
                 return Some(self.source_index(offset + ix));
             }
@@ -1667,5 +1766,109 @@ mod table_layout_tests {
                 offset
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod link_layout_tests {
+    use super::*;
+    #[test]
+    fn reference_edits_invalidate_distant_presentation() {
+        let mut text = Rope::from("[one][id]\n\n[id]: note.md\n");
+        let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(14.), None);
+        wrapper.live_preview = true;
+        wrapper.reveal_row = usize::MAX;
+        wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
+        assert_eq!(wrapper.lines[0].mapped.as_ref().unwrap().text, "one");
+        let at = text.to_string().rfind("[id]").unwrap() + 1;
+        text.replace(at..at + 2, "missing");
+        wrapper._update(
+            &text,
+            &(at..at + 2),
+            &Rope::from("missing"),
+            &mut |_, _, _| vec![],
+        );
+        assert!(!wrapper.lines[0].measured);
+        wrapper._update(&text, &(0..0), &Rope::new(), &mut |_, _, _| vec![]);
+        assert_eq!(wrapper.lines[0].mapped.as_ref().unwrap().text, "[one][id]");
+        assert!(wrapper.links.is_empty());
+    }
+
+    #[test]
+    fn table_reference_links_use_document_definitions() {
+        let text = Rope::from("| link |\n| --- |\n| [你好][id] |\n\n[id]: note.md\n");
+        let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(14.), Some(px(300.)));
+        wrapper.live_preview = true;
+        wrapper.reveal_row = usize::MAX;
+        wrapper.tables.rebuild(&text);
+        wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
+        wrapper.layout_tables(&mut |_, _| vec![]);
+        let cell = &wrapper.lines[2].table.as_ref().unwrap().cells[0];
+        assert_eq!(cell.mapped.text, "你好");
+        assert!(cell.styles.iter().any(|(_, style)| *style == 5));
+    }
+}
+
+#[cfg(test)]
+mod link_hit_tests {
+    use super::*;
+    #[test]
+    fn strict_hits_respect_wraps_quote_gutters_and_table_scroll() {
+        let source = "[你好](note.md)";
+        let presentation = super::super::live_preview::Presentation::parse(source).with_links(
+            &super::super::markdown_links::parse(source),
+            0,
+            source.len(),
+        );
+        let mut shaped = ShapedLine::default();
+        *shaped = std::sync::Arc::new(gpui::LineLayout {
+            width: px(20.),
+            len: 3,
+            ..Default::default()
+        });
+        let mut line = LineLayout::new();
+        line.set_wrapped_lines(smallvec::smallvec![shaped.clone(), shaped]);
+        line.mapped = Some(std::rc::Rc::new(presentation.display(source, false)));
+        line.segment_ranges = Some(std::rc::Rc::new(vec![0..3, 3..6]));
+        line.indent = px(14.);
+        assert_eq!(
+            line.index_for_position(point(px(15.), px(5.)), px(20.)),
+            Some(1)
+        );
+        assert_eq!(
+            line.index_for_position(point(px(15.), px(25.)), px(20.)),
+            Some(4)
+        );
+        for position in [
+            point(px(13.), px(5.)),
+            point(px(34.), px(5.)),
+            point(px(15.), px(45.)),
+        ] {
+            assert_eq!(line.index_for_position(position, px(20.)), None);
+        }
+        let table = LineLayout::table_row(
+            source.len(),
+            vec![(0..source.len(), px(0.), px(120.), line)],
+            3,
+            false,
+            std::rc::Rc::new(std::cell::Cell::new(px(5.))),
+            px(100.),
+        );
+        assert_eq!(
+            table.index_for_position(point(px(10.), px(25.)), px(20.)),
+            Some(4)
+        );
+        assert_eq!(
+            table.index_for_position(point(px(10.), px(45.)), px(20.)),
+            None
+        );
+        assert_eq!(
+            table.index_for_position(point(px(-1.), px(5.)), px(20.)),
+            None
+        );
+        assert_eq!(
+            table.index_for_position(point(px(100.), px(5.)), px(20.)),
+            None
+        );
     }
 }

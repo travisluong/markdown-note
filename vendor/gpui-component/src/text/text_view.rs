@@ -26,6 +26,8 @@ use crate::{
     },
 };
 
+pub(crate) type LinkOpenFn = dyn Fn(&str, &str, &mut Window, &mut App) + Send + Sync;
+
 pub(crate) type TaskToggleFn = dyn Fn(usize, &str, &mut Window, &mut App) + Send + Sync;
 
 const CONTEXT: &'static str = "TextView";
@@ -41,6 +43,7 @@ pub(crate) fn init(cx: &mut App) {
 
 #[derive(IntoElement, Clone)]
 struct TextViewElement {
+    link_open: Option<Arc<LinkOpenFn>>,
     task_toggle: Option<Arc<TaskToggleFn>>,
     source_highlights: Option<super::SourceHighlights>,
     source_snapshot: SharedString,
@@ -52,6 +55,7 @@ impl RenderOnce for TextViewElement {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         self.state.update(cx, |state, cx| {
             if let Some(Ok(content)) = &mut state.parsed_result {
+                content.node_cx.link_open = self.link_open.clone();
                 content.node_cx.task_toggle = self.task_toggle.clone();
                 content.node_cx.highlights = self.source_highlights.clone().filter(|search| {
                     search.matches_snapshot(&content.node_cx.source)
@@ -114,6 +118,7 @@ pub(crate) type CodeBlockActionsFn =
 /// See also [`MarkdownElement`], [`HtmlElement`]
 #[derive(Clone)]
 pub struct TextView {
+    link_open: Option<Arc<LinkOpenFn>>,
     task_toggle: Option<Arc<TaskToggleFn>>,
     source_highlights: Option<super::SourceHighlights>,
     id: ElementId,
@@ -595,6 +600,15 @@ impl TextView {
         assert!(!search.matches_snapshot("another file"));
     }
 
+    /// Handle link activation with its destination and exact rendered source snapshot.
+    pub fn on_link_open(
+        mut self,
+        callback: impl Fn(&str, &str, &mut Window, &mut App) + Send + Sync + 'static,
+    ) -> Self {
+        self.link_open = Some(Arc::new(callback));
+        self
+    }
+
     /// Opt in to task checkbox clicks. Offset and source belong to the rendered parse.
     pub fn on_task_toggle(
         mut self,
@@ -657,6 +671,7 @@ impl TextView {
             selectable: false,
             scrollable: false,
             code_block_actions: None,
+            link_open: None,
             task_toggle: None,
             source_highlights: None,
         }
@@ -691,6 +706,7 @@ impl TextView {
             selectable: false,
             scrollable: false,
             code_block_actions: None,
+            link_open: None,
             task_toggle: None,
             source_highlights: None,
         }
@@ -906,6 +922,7 @@ impl Element for TextView {
                 }
             })
             .child(TextViewElement {
+                link_open: self.link_open.clone(),
                 task_toggle: self.task_toggle.clone(),
                 source_highlights: self.source_highlights.clone(),
                 source_snapshot: self.raw.clone(),

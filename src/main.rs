@@ -6,6 +6,7 @@ mod benchmark;
 #[cfg(feature = "editor-diagnostics")]
 mod find_diagnostics;
 mod goto;
+mod links;
 mod notebook;
 mod notebook_ui;
 mod reading_search;
@@ -38,6 +39,7 @@ actions!(
         CommandPalette,
         SearchAllFiles,
         ToggleTasks,
+        EditLink,
         Save,
         SourceMode,
         LivePreview,
@@ -256,6 +258,9 @@ impl Notes {
         cx: &mut Context<Self>,
     ) -> Subscription {
         cx.subscribe_in(editor, window, |this, _, event, window, cx| {
+            if let InputEvent::OpenLink { destination } = event {
+                this.open_link(destination, window, cx);
+            }
             if matches!(event, InputEvent::Change) {
                 this.check_dirty(window, cx);
                 this.schedule_autosave(window, cx);
@@ -596,6 +601,19 @@ impl Render for Notes {
                             .as_ref()
                             .map(|find| find.highlights.clone()),
                     )
+                    .on_link_open({
+                        let owner = cx.weak_entity();
+                        let identity = self.saves.identity;
+                        move |destination, source, window, cx| {
+                            let _ = owner.update(cx, |this, cx| {
+                                if this.saves.identity == identity
+                                    && this.editor.read(cx).value().as_ref() == source
+                                {
+                                    this.open_link(destination, window, cx);
+                                }
+                            });
+                        }
+                    })
                     .on_task_toggle({
                         let owner = cx.weak_entity();
                         let document_path = self.document.as_ref().map(|d| d.path.clone());
@@ -633,6 +651,7 @@ impl Render for Notes {
             .id("notes")
             .key_context("Notes")
             .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &EditLink, window, cx| this.edit_link(window, cx)))
             .on_action(cx.listener(|this, _: &Search, window, cx| {
                 if this.document.is_none() || this.busy || window.has_active_dialog(cx) {
                     return;
@@ -828,6 +847,7 @@ fn main() {
                 KeyBinding::new("ctrl-shift-f", SearchAllFiles, Some("Notes")),
                 KeyBinding::new("ctrl-p", CommandPalette, Some("Notes")),
                 KeyBinding::new("ctrl-l", ToggleTasks, Some("DocumentEditor")),
+                KeyBinding::new("ctrl-k", EditLink, Some("DocumentEditor")),
                 KeyBinding::new("ctrl-s", Save, Some("Notes")),
                 KeyBinding::new("alt-f", FileMenu, Some("Notes")),
                 KeyBinding::new("alt-v", ViewMenu, Some("Notes")),

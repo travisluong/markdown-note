@@ -415,6 +415,7 @@ pub(crate) struct NodeContext {
     pub(crate) blocks: Vec<Range<usize>>,
     pub(crate) highlights: Option<super::SourceHighlights>,
     pub(crate) reveal: Option<super::source_highlights::RevealTarget>,
+    pub(crate) link_open: Option<Arc<super::text_view::LinkOpenFn>>,
     pub(crate) task_toggle: Option<Arc<super::text_view::TaskToggleFn>>,
     pub(crate) source: SharedString,
     pub(crate) link_refs: HashMap<SharedString, LinkMark>,
@@ -645,6 +646,7 @@ impl Paragraph {
                         )
                         .source_highlights(&source_runs, node_cx)
                         .horizontal_scroll(horizontal_scroll.clone())
+                        .with_link_tooltip()
                         .into_any_element(),
                     );
                 }
@@ -656,13 +658,19 @@ impl Paragraph {
                         .when_some(image.width, |this, width| this.w(width))
                         .when_some(image.link.clone(), |this, link| {
                             let title = image.title();
+                            let callback = node_cx.link_open.clone();
+                            let source = node_cx.source.clone();
                             this.cursor_pointer()
                                 .tooltip(move |window, cx| {
                                     Tooltip::new(title.clone()).build(window, cx)
                                 })
-                                .on_click(move |_, _, cx| {
+                                .on_click(move |_, window, cx| {
                                     cx.stop_propagation();
-                                    cx.open_url(&link.url);
+                                    if let Some(callback) = &callback {
+                                        callback(&link.url, &source, window, cx);
+                                    } else {
+                                        cx.open_url(&link.url);
+                                    }
                                 })
                         })
                         .into_any_element(),
@@ -732,6 +740,7 @@ impl Paragraph {
                 Inline::new(ix, self.state.clone(), links, highlights)
                     .source_highlights(&source_runs, node_cx)
                     .horizontal_scroll(horizontal_scroll.clone())
+                    .with_link_tooltip()
                     .into_any_element(),
             );
         }

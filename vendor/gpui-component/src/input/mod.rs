@@ -6,6 +6,7 @@ mod element;
 mod indent;
 mod input;
 mod live_preview;
+pub mod markdown_links;
 mod lsp;
 mod mask_pattern;
 mod mode;

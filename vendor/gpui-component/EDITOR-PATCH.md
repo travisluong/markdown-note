@@ -116,3 +116,25 @@ areas occlude the editor underneath. Deferred input scrolling is normalized
 before painting: empty placeholders stay at their layout origin and single-line
 inputs retain horizontal scrolling without fractional vertical movement. The
 scroll tests cover both behaviors.
+Markdown links have a document-level GFM source index shared with app commands.
+Inline, reference and autolinks retain UTF-8 source/label ranges; fences and code
+spans stay outside the index. Live-preview labels use theme link styling,
+including tables, and syntax reveals with the existing active-line/cell policy.
+Ctrl+click emits InputEvent::OpenLink only for an exact painted text hit with a
+current source snapshot. Strict hit testing excludes quote/table gutters and
+unused row height. Hover shows the destination in both views.
+
+TextView::on_link_open receives the destination and rendered source snapshot;
+without a callback the upstream external-opening behavior remains available.
+The app validates the snapshot, handles external schemes and relative Markdown
+paths, and uses its existing save/navigation flow. The link dialog reuses
+select_source_range and replace_selection_isolated, validating document identity
+and snapshot before applying a single undo transaction.
+
+Link parsing is cached across viewport measurement and cursor movement. Ordinary
+alphanumeric/space edits in standalone paragraphs reparse that
+paragraph with the current reference definitions and verify its block type; structural/context edits
+conservatively reparse the document. Documents without link trigger characters
+skip GFM parsing. A 10,000-link regression checks bounded paragraph parse work;
+headless tests cover incremental/full-parser equivalence, definition changes,
+Unicode source mappings, table references, and wrapped/gutter hit testing.

@@ -1,3 +1,4 @@
+use gpui::{InteractiveElement, ParentElement, StatefulInteractiveElement, prelude::FluentBuilder};
 use std::{
     ops::Range,
     rc::Rc,
@@ -19,6 +20,8 @@ use crate::{ActiveTheme, global_state::GlobalState, input::Selection, text::node
 pub(super) struct Inline {
     id: ElementId,
     text: SharedString,
+    link_open: Option<Arc<super::text_view::LinkOpenFn>>,
+    source: SharedString,
     links: Rc<Vec<(Range<usize>, LinkMark)>>,
     highlights: Vec<(Range<usize>, HighlightStyle)>,
     styled_text: StyledText,
@@ -55,6 +58,8 @@ impl Inline {
         let text = state.lock().unwrap().text.clone();
         Self {
             id: id.into(),
+            link_open: None,
+            source: SharedString::default(),
             links: Rc::new(links),
             highlights,
             text: text.clone(),
@@ -64,6 +69,25 @@ impl Inline {
             reveal: None,
             state,
         }
+    }
+
+    pub(super) fn with_link_tooltip(self) -> gpui::AnyElement {
+        if self.links.is_empty() {
+            return self.into_any_element();
+        }
+        let hovered = self.state.lock().unwrap().hovered_index;
+        let target = hovered
+            .and_then(|i| self.links.iter().find(|(range, _)| range.contains(&i)))
+            .map(|(_, link)| link.url.clone());
+        gpui::div()
+            .id(self.id.clone())
+            .when_some(target, |view, target| {
+                view.tooltip(move |window, cx| {
+                    crate::tooltip::Tooltip::new(target.clone()).build(window, cx)
+                })
+            })
+            .child(self)
+            .into_any_element()
     }
 
     pub(super) fn horizontal_scroll(mut self, scroll: Option<gpui::ScrollHandle>) -> Self {
@@ -76,6 +100,8 @@ impl Inline {
         runs: &[super::source_map::SourceRun],
         node_cx: &super::node::NodeContext,
     ) -> Self {
+        self.link_open = node_cx.link_open.clone();
+        self.source = node_cx.source.clone();
         if let Some(search) = &node_cx.highlights {
             let mut matches = Vec::new();
             let first = runs.first().map_or(0, |run| run.source.start);
@@ -429,16 +455,21 @@ impl Element for Inline {
             let hitbox = hitbox.clone();
             let text_layout = text_layout.clone();
             let mut hovered_index = state.hovered_index;
+            let hover_state = self.state.clone();
             move |event: &MouseMoveEvent, phase, window, cx| {
-                if !phase.bubble() || !hitbox.is_hovered(window) {
+                if !phase.bubble() {
                     return;
                 }
 
                 let current = hovered_index;
-                let updated = text_layout.index_for_position(event.position).ok();
+                let updated = hitbox
+                    .is_hovered(window)
+                    .then(|| text_layout.index_for_position(event.position).ok())
+                    .flatten();
                 //  notify update when hovering over different links
                 if current != updated {
                     hovered_index = updated;
+                    hover_state.lock().unwrap().hovered_index = updated;
                     cx.notify(current_view);
                 }
             }
@@ -448,10 +479,15 @@ impl Element for Inline {
             // click to open link
             window.on_mouse_event({
                 let links = self.links.clone();
+                let callback = self.link_open.clone();
+                let source = self.source.clone();
                 let text_layout = text_layout.clone();
 
-                move |event: &MouseUpEvent, phase, _, cx| {
-                    if !bounds.contains(&event.position) || !phase.bubble() {
+                move |event: &MouseUpEvent, phase, window, cx| {
+                    if event.button != gpui::MouseButton::Left
+                        || !bounds.contains(&event.position)
+                        || !phase.bubble()
+                    {
                         return;
                     }
 
@@ -459,7 +495,11 @@ impl Element for Inline {
                         Self::link_for_position(&text_layout, &links, event.position)
                     {
                         cx.stop_propagation();
-                        cx.open_url(&link.url);
+                        if let Some(callback) = &callback {
+                            callback(&link.url, &source, window, cx);
+                        } else {
+                            cx.open_url(&link.url);
+                        }
                     }
                 }
             });
