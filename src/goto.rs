@@ -11,15 +11,17 @@ enum PaletteMode {
 enum Command {
     InsertDate,
     EditLink,
+    ToggleTheme,
 }
 
 impl Command {
-    const ALL: &[Self] = &[Self::InsertDate, Self::EditLink];
+    const ALL: &[Self] = &[Self::InsertDate, Self::EditLink, Self::ToggleTheme];
 
     fn label(self) -> &'static str {
         match self {
             Self::InsertDate => "Templates: Insert current date",
             Self::EditLink => "Text: Insert or edit link",
+            Self::ToggleTheme => "Appearance: Toggle light/dark mode",
         }
     }
 
@@ -27,6 +29,7 @@ impl Command {
         match self {
             Self::InsertDate => "Insert at the editor selection",
             Self::EditLink => "Insert a link or edit the selected link",
+            Self::ToggleTheme => "Switch between your Light and Dark themes",
         }
     }
 
@@ -324,6 +327,14 @@ impl Notes {
                 }
             }
             Command::EditLink => self.edit_link(window, cx),
+            Command::ToggleTheme => {
+                let mut appearance = self.appearance();
+                appearance.theme = Some(match appearance.theme_choice(self.startup_dark) {
+                    notebook::ThemeChoice::Light => notebook::ThemeChoice::Dark,
+                    _ => notebook::ThemeChoice::Light,
+                });
+                self.update_appearance(appearance, window, cx);
+            }
         }
     }
 
@@ -484,6 +495,24 @@ mod tests {
             assert!(command.unavailable(true, true, false, false).is_some());
             assert!(command.unavailable(true, false, true, false).is_some());
         }
+    }
+
+    #[test]
+    fn theme_command_works_without_an_editable_document() {
+        assert!(
+            Command::ToggleTheme
+                .unavailable(false, true, false, false)
+                .is_none()
+        );
+        assert!(
+            Command::ToggleTheme
+                .unavailable(true, false, true, true)
+                .is_some()
+        );
+        assert_eq!(
+            ranked_entries(&[PaletteEntry::Command(Command::ToggleTheme)], "light/dark").len(),
+            1
+        );
     }
 
     #[test]
