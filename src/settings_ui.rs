@@ -46,7 +46,7 @@ impl Notes {
             .active
             .as_ref()
             .map_or(self.session_appearance, |book| book.settings.appearance)
-            .normalized();
+            .resolved(self.startup_dark);
         appearance.dark_mode = Some(appearance.dark_mode.unwrap_or(self.startup_dark));
         appearance
     }
@@ -83,7 +83,7 @@ impl Notes {
         if self.busy {
             return;
         }
-        let appearance = appearance.normalized();
+        let appearance = appearance.resolved(self.startup_dark);
         if let Some(book) = &mut self.notebooks.active {
             book.settings.appearance = appearance;
             self.persist_notebooks(cx);
@@ -91,7 +91,11 @@ impl Notes {
             self.session_appearance = appearance;
         }
         self.apply_appearance(window, cx);
-        let colors = [cx.theme().background, cx.theme().foreground];
+        let colors = [
+            cx.theme().background,
+            cx.theme().foreground,
+            cx.theme().primary,
+        ];
         for (picker, color) in self.theme_pickers.iter().zip(colors) {
             picker.update(cx, |picker, cx| picker.set_value(color, window, cx));
         }
@@ -105,9 +109,13 @@ impl Notes {
         self.settings_section = SettingsSection::General;
         self.theme_pickers.clear();
         self.theme_subscriptions.clear();
-        for (index, color) in [cx.theme().background, cx.theme().foreground]
-            .into_iter()
-            .enumerate()
+        for (index, color) in [
+            cx.theme().background,
+            cx.theme().foreground,
+            cx.theme().primary,
+        ]
+        .into_iter()
+        .enumerate()
         {
             let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(color));
             self.theme_subscriptions.push(cx.subscribe_in(
@@ -118,11 +126,16 @@ impl Notes {
                     let value =
                         color.and_then(|color| u32::from_str_radix(&color.to_hex()[1..7], 16).ok());
                     let mut appearance = this.appearance();
-                    if index == 0 {
-                        appearance.background_color = value;
-                    } else {
-                        appearance.font_color = value;
+                    let Some(value) = value else {
+                        return;
+                    };
+                    let mut palette = appearance.palette(this.startup_dark);
+                    match index {
+                        0 => palette.background = value,
+                        1 => palette.font = value,
+                        _ => palette.primary = value,
                     }
+                    appearance.set_palette(this.startup_dark, palette);
                     this.update_appearance(appearance, window, cx);
                 },
             ));
@@ -314,7 +327,6 @@ impl Notes {
         for (index, choice, label) in [
             (0usize, notebook::ThemeChoice::Light, "Light"),
             (1, notebook::ThemeChoice::Dark, "Dark"),
-            (2, notebook::ThemeChoice::DarkGray, "Dark Gray"),
         ] {
             selector = selector.child(
                 Button::new(("theme-choice", index))
@@ -332,20 +344,20 @@ impl Notes {
             );
         }
         theme_body = theme_body.child(selector);
-        for (picker, label) in self
-            .theme_pickers
-            .iter()
-            .zip(["Default background color", "Default font color"])
+        for (picker, label) in
+            self.theme_pickers
+                .iter()
+                .zip(["Background color", "Font color", "Primary color"])
         {
             theme_body = theme_body.child(ColorPicker::new(picker).label(label));
         }
         theme_body = theme_body.child(
             Button::new("reset-theme-colors")
-                .label("Reset colors to theme defaults")
+                .label("Reset Light and Dark themes")
+                .disabled(self.busy)
                 .on_click(cx.listener(|this, _, window, cx| {
                     let mut settings = this.appearance();
-                    settings.background_color = None;
-                    settings.font_color = None;
+                    settings.reset_palettes();
                     this.update_appearance(settings, window, cx);
                 })),
         );
@@ -413,31 +425,36 @@ impl Notes {
 }
 
 fn apply_theme_colors(theme: &mut Theme, appearance: notebook::Appearance, startup_dark: bool) {
-    if appearance.theme_choice(startup_dark) == notebook::ThemeChoice::DarkGray {
-        theme.background = rgb(0x303030).into();
-        theme.foreground = rgb(0xe6e6e6).into();
-        theme.popover = rgb(0x383838).into();
-        theme.muted = rgb(0x404040).into();
-        theme.muted_foreground = rgb(0xb8b8b8).into();
-        theme.border = rgb(0x555555).into();
-        theme.accent = rgb(0x4b4b4b).into();
-        theme.secondary = rgb(0x414141).into();
-        theme.list_hover = theme.accent;
-        theme.list_active = theme.accent;
-        theme.tab = theme.background;
-        theme.tab_bar = theme.background;
-        theme.tab_active = theme.accent;
-        theme.table = theme.background;
-        theme.table_even = rgb(0x353535).into();
-        theme.table_head = theme.muted;
-        theme.selection = rgb(0x506680).into();
-    }
-    if let Some(color) = appearance.background_color {
-        theme.background = rgb(color).into();
-    }
-    if let Some(color) = appearance.font_color {
-        theme.foreground = rgb(color).into();
-    }
+    let palette = appearance.palette(startup_dark);
+    theme.background = rgb(palette.background).into();
+    theme.foreground = rgb(palette.font).into();
+    theme.primary = rgb(palette.primary).into();
+    theme.primary_hover = theme.primary;
+    theme.primary_active = theme.primary;
+    theme.link = theme.primary;
+    theme.link_hover = theme.primary;
+    theme.link_active = theme.primary;
+    // Choose the higher-contrast black or white checkmark/button label.
+    let linear = |channel: u32| {
+        let c = channel as f64 / 255.;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let luminance = 0.2126 * linear((palette.primary >> 16) & 255)
+        + 0.7152 * linear((palette.primary >> 8) & 255)
+        + 0.0722 * linear(palette.primary & 255);
+    theme.primary_foreground = rgb(if luminance > 0.179 {
+        0x000000
+    } else {
+        0xffffff
+    })
+    .into();
+    theme.tab = theme.background;
+    theme.tab_bar = theme.background;
+    theme.table = theme.background;
     theme.sidebar = theme.background;
     theme.list = theme.background;
     theme.accordion = theme.background;
@@ -508,5 +525,155 @@ mod theme_tests {
             .font_color,
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod palette_tests {
+    use super::{Theme, apply_theme_colors, notebook};
+    use gpui::rgb;
+    use notebook::{Appearance, ThemeChoice, ThemePalette};
+
+    #[test]
+    fn independent_palettes_reset_and_invalid_colors() {
+        let mut appearance = Appearance::default().resolved(false);
+        let palette = ThemePalette {
+            font: 0xabcdef,
+            ..ThemePalette::LIGHT
+        };
+        appearance.set_palette(false, palette);
+        assert_eq!(
+            appearance.palette(false).primary,
+            ThemePalette::LIGHT.primary
+        );
+        appearance.theme = Some(ThemeChoice::Dark);
+        assert_eq!(appearance.palette(false), ThemePalette::DARK);
+        appearance.set_palette(
+            false,
+            ThemePalette {
+                primary: 0xff0000,
+                ..ThemePalette::DARK
+            },
+        );
+        appearance.theme = Some(ThemeChoice::Light);
+        assert_eq!(appearance.palette(false), palette);
+        let encoded = serde_json::to_string(&appearance).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Appearance>(&encoded).unwrap(),
+            appearance
+        );
+        appearance.ui_font_size = 20;
+        appearance.reset_palettes();
+        assert_eq!(appearance.theme, Some(ThemeChoice::Light));
+        assert_eq!(appearance.ui_font_size, 20);
+        assert_eq!(appearance.light, Some(ThemePalette::LIGHT));
+        assert_eq!(appearance.dark, Some(ThemePalette::DARK));
+        appearance.light = Some(ThemePalette {
+            background: u32::MAX,
+            font: u32::MAX,
+            primary: u32::MAX,
+        });
+        assert_eq!(appearance.resolved(false).light, Some(ThemePalette::LIGHT));
+    }
+
+    #[test]
+    fn migrate_legacy_colors_once_using_active_mode() {
+        for (json, startup, choice, background, font) in [
+            (
+                r#"{"dark_mode":true}"#,
+                false,
+                ThemeChoice::Dark,
+                0x202020,
+                0xe6e6e6,
+            ),
+            (
+                r#"{"theme":"dark_gray"}"#,
+                false,
+                ThemeChoice::Dark,
+                0x303030,
+                0xe6e6e6,
+            ),
+            (
+                r#"{"theme":"light","background_color":1193046,"font_color":11259375}"#,
+                true,
+                ThemeChoice::Light,
+                0x123456,
+                0xabcdef,
+            ),
+            (
+                r#"{"font_color":11259375}"#,
+                true,
+                ThemeChoice::Dark,
+                0x202020,
+                0xabcdef,
+            ),
+        ] {
+            let appearance = serde_json::from_str::<Appearance>(json)
+                .unwrap()
+                .resolved(startup);
+            assert_eq!(appearance.theme_choice(startup), choice);
+            assert_eq!(
+                appearance.palette(startup),
+                ThemePalette {
+                    background,
+                    font,
+                    primary: font
+                }
+            );
+            let encoded = serde_json::to_string(&appearance).unwrap();
+            assert!(!encoded.contains("background_color"));
+            assert!(!encoded.contains("dark_gray"));
+            assert_eq!(appearance.resolved(startup), appearance);
+            assert_eq!(
+                serde_json::from_str::<Appearance>(&encoded).unwrap(),
+                appearance
+            );
+        }
+    }
+
+    #[test]
+    fn colors_reach_editor_checkboxes_and_links() {
+        let mut theme = Theme::default();
+        for (choice, palette, checkmark) in [
+            (ThemeChoice::Light, ThemePalette::LIGHT, 0xffffff),
+            (ThemeChoice::Dark, ThemePalette::DARK, 0x000000),
+            (
+                ThemeChoice::Light,
+                ThemePalette {
+                    background: 0x123456,
+                    font: 0xabcdef,
+                    primary: 0xff0000,
+                },
+                0x000000,
+            ),
+        ] {
+            let mut appearance = Appearance {
+                theme: Some(choice),
+                ..Default::default()
+            };
+            appearance.set_palette(false, palette);
+            apply_theme_colors(&mut theme, appearance, false);
+            assert_eq!(theme.background, rgb(palette.background).into());
+            assert_eq!(theme.foreground, rgb(palette.font).into());
+            for color in [
+                theme.primary,
+                theme.primary_hover,
+                theme.primary_active,
+                theme.link,
+                theme.link_hover,
+                theme.link_active,
+            ] {
+                assert_eq!(color, rgb(palette.primary).into());
+            }
+            assert_eq!(theme.primary_foreground, rgb(checkmark).into());
+            assert_eq!(
+                theme.highlight_theme.style.editor_background,
+                Some(theme.background)
+            );
+            assert_eq!(
+                theme.highlight_theme.style.editor_foreground,
+                Some(theme.foreground)
+            );
+        }
     }
 }

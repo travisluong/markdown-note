@@ -41,7 +41,13 @@ impl Autosave {
 #[serde(default)]
 pub struct Appearance {
     pub theme: Option<ThemeChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<ThemePalette>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dark: Option<ThemePalette>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub background_color: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub font_color: Option<u32>,
     pub content_font_size: u16,
     pub ui_font_size: u16,
@@ -52,6 +58,8 @@ impl Default for Appearance {
     fn default() -> Self {
         Self {
             theme: None,
+            light: None,
+            dark: None,
             background_color: None,
             font_color: None,
             content_font_size: 16,
@@ -62,12 +70,125 @@ impl Default for Appearance {
 }
 
 impl Appearance {
+    pub fn resolved(mut self, startup_dark: bool) -> Self {
+        self = self.normalized();
+        let choice = self.theme_choice(startup_dark);
+        let legacy = self.theme == Some(ThemeChoice::DarkGray)
+            || self.background_color.is_some()
+            || self.font_color.is_some();
+        if legacy {
+            let mut palette = if self.theme == Some(ThemeChoice::DarkGray) {
+                ThemePalette {
+                    background: 0x303030,
+                    ..ThemePalette::DARK
+                }
+            } else if choice == ThemeChoice::Light {
+                ThemePalette::LIGHT
+            } else {
+                ThemePalette::DARK
+            };
+            palette.background = self.background_color.unwrap_or(palette.background);
+            palette.font = self.font_color.unwrap_or(palette.font);
+            palette.primary = palette.font;
+            let target = if choice == ThemeChoice::Light {
+                &mut self.light
+            } else {
+                &mut self.dark
+            };
+            target.get_or_insert(palette);
+        }
+        self.light = Some(
+            self.light
+                .unwrap_or(ThemePalette::LIGHT)
+                .normalized(ThemePalette::LIGHT),
+        );
+        self.dark = Some(
+            self.dark
+                .unwrap_or(ThemePalette::DARK)
+                .normalized(ThemePalette::DARK),
+        );
+        if self.theme == Some(ThemeChoice::DarkGray) {
+            self.theme = Some(ThemeChoice::Dark);
+        }
+        self.background_color = None;
+        self.font_color = None;
+        self
+    }
+
+    pub fn palette(self, startup_dark: bool) -> ThemePalette {
+        let resolved = self.resolved(startup_dark);
+        if resolved.theme_choice(startup_dark) == ThemeChoice::Light {
+            resolved.light.unwrap()
+        } else {
+            resolved.dark.unwrap()
+        }
+    }
+
+    pub fn set_palette(&mut self, startup_dark: bool, palette: ThemePalette) {
+        *self = self.resolved(startup_dark);
+        if self.theme_choice(startup_dark) == ThemeChoice::Light {
+            self.light = Some(palette);
+        } else {
+            self.dark = Some(palette);
+        }
+    }
+
+    pub fn reset_palettes(&mut self) {
+        self.light = Some(ThemePalette::LIGHT);
+        self.dark = Some(ThemePalette::DARK);
+        self.background_color = None;
+        self.font_color = None;
+        if self.theme == Some(ThemeChoice::DarkGray) {
+            self.theme = Some(ThemeChoice::Dark);
+        }
+    }
+
     pub fn normalized(mut self) -> Self {
         self.background_color = self.background_color.filter(|c| *c <= 0xffffff);
         self.font_color = self.font_color.filter(|c| *c <= 0xffffff);
         self.content_font_size = self.content_font_size.clamp(10, 40);
         self.ui_font_size = self.ui_font_size.clamp(10, 24);
         self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemePalette {
+    pub background: u32,
+    pub font: u32,
+    pub primary: u32,
+}
+
+impl ThemePalette {
+    pub const LIGHT: Self = Self {
+        background: 0xffffff,
+        font: 0x202020,
+        primary: 0x202020,
+    };
+    pub const DARK: Self = Self {
+        background: 0x202020,
+        font: 0xe6e6e6,
+        primary: 0xe6e6e6,
+    };
+
+    fn normalized(self, defaults: Self) -> Self {
+        Self {
+            background: if self.background <= 0xffffff {
+                self.background
+            } else {
+                defaults.background
+            },
+            font: if self.font <= 0xffffff {
+                self.font
+            } else {
+                defaults.font
+            },
+            primary: if self.primary <= 0xffffff {
+                self.primary
+            } else {
+                defaults.primary
+            },
+        }
     }
 }
 
@@ -927,6 +1048,13 @@ pub enum ThemeChoice {
 impl Appearance {
     pub fn theme_choice(&self, startup_dark: bool) -> ThemeChoice {
         self.theme
+            .map(|choice| {
+                if choice == ThemeChoice::DarkGray {
+                    ThemeChoice::Dark
+                } else {
+                    choice
+                }
+            })
             .unwrap_or(if self.dark_mode.unwrap_or(startup_dark) {
                 ThemeChoice::Dark
             } else {

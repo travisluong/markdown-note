@@ -225,3 +225,5 @@ file row to place it before that file. Drop onto the notebook title, toolbar, or
 empty sidebar area to move to the notebook root. Sibling order is saved per
 notebook. Name collisions and moves into a folder's own descendants are rejected;
 open buffers keep their edits and follow the moved path.
+
+Settings > Theme offers independent Light and Dark palettes with Background color, Font color, and Primary color pickers. Primary controls task checkboxes and links and remains independent when the font color changes. Reset Light and Dark themes restores both palettes without changing the active mode or font sizes. Existing custom colors are preserved in the previously selected palette; Dark Gray becomes a customized Dark theme.
