@@ -1033,6 +1033,10 @@ impl Notes {
             .unwrap_or_default();
         div()
             .id("notebook-sidebar")
+            .on_drop(cx.listener(|this, drag: &EntryDrag, window, cx| {
+                cx.stop_propagation();
+                this.drop_entry(drag, PathBuf::new(), window, cx);
+            }))
             .key_context("NotebookTree")
             .track_focus(&self.notebooks.tree_focus)
             .on_action(
@@ -1062,14 +1066,21 @@ impl Notes {
             .flex()
             .flex_col()
             .child(
-                div().flex().items_center().p_2().min_h(px(40.)).child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_sm()
-                        .child(title),
-                ),
+                div()
+                    .id("notebook-root-drop")
+                    .drag_over::<EntryDrag>(|view, _, _, cx| view.bg(cx.theme().accent))
+                    .flex()
+                    .items_center()
+                    .p_2()
+                    .min_h(px(40.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_sm()
+                            .child(title),
+                    ),
             )
             .child(
                 uniform_list(
@@ -1126,6 +1137,10 @@ impl Notes {
                                         view.text_color(cx.theme().muted_foreground)
                                     })
                                     .relative()
+                                    // Rows consume drops so only unoccupied space falls back to root.
+                                    .when(!row.draggable || !directory || this.busy, |view| {
+                                        view.on_drop(|_: &EntryDrag, _, cx| cx.stop_propagation())
+                                    })
                                     .when(row.draggable && !this.busy, |view| {
                                         view.on_drag(drag, |drag, _, _, cx| {
                                             cx.stop_propagation();
