@@ -172,7 +172,6 @@ fn save_file(path: &Path, text: &str, bom: bool, newline: Newline) -> io::Result
 }
 
 struct Notes {
-    session_nested_list_letters: bool,
     sidebar_collapsed: bool,
     sidebar_resize: Entity<gpui_component::resizable::ResizableState>,
     session_date_format: String,
@@ -237,7 +236,6 @@ impl Notes {
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
             sidebar_collapsed: false,
-            session_nested_list_letters: false,
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),
             session_date_format: templates::default_format(),
             date_input: None,

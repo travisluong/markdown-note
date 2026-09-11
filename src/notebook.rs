@@ -203,8 +203,6 @@ pub struct Settings {
     #[serde(default)]
     pub file_sort: FileSort,
     #[serde(default)]
-    pub nested_list_letters: bool,
-    #[serde(default)]
     pub view_mode: crate::ViewMode,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: f32,
@@ -223,7 +221,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             file_sort: FileSort::default(),
-            nested_list_letters: false,
             view_mode: crate::ViewMode::default(),
             sidebar_width: default_sidebar_width(),
             version: VERSION,

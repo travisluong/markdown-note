@@ -14,14 +14,6 @@ pub(super) enum SettingsSection {
 }
 
 impl Notes {
-    pub(super) fn nested_list_letters(&self) -> bool {
-        self.notebooks
-            .active
-            .as_ref()
-            .map_or(self.session_nested_list_letters, |book| {
-                book.settings.nested_list_letters
-            })
-    }
     pub(super) fn can_insert_date(&self) -> bool {
         self.document.is_some() && !self.busy && self.mode != ViewMode::Reading
     }
@@ -54,9 +46,6 @@ impl Notes {
 
     pub(super) fn apply_appearance(&self, window: &mut Window, cx: &mut Context<Self>) {
         let appearance = self.appearance();
-        self.editor.update(cx, |editor, _| {
-            editor.set_nested_list_letters(self.nested_list_letters())
-        });
         Theme::change(
             if appearance.theme_choice(self.startup_dark) != notebook::ThemeChoice::Light {
                 ThemeMode::Dark
@@ -284,23 +273,6 @@ impl Notes {
             );
         }
         body = body
-            .child(
-                Switch::new("nested-list-letters")
-                    .label("Use letters for nested ordered lists (a., b., …)")
-                    .checked(self.nested_list_letters())
-                    .disabled(self.busy)
-                    .on_click(cx.listener(|this, letters: &bool, _, cx| {
-                        if let Some(book) = &mut this.notebooks.active {
-                            book.settings.nested_list_letters = *letters;
-                            this.persist_notebooks(cx);
-                        } else {
-                            this.session_nested_list_letters = *letters;
-                        }
-                        this.editor
-                            .update(cx, |editor, _| editor.set_nested_list_letters(*letters));
-                        cx.notify();
-                    })),
-            )
             .child(
                 Switch::new("autosave-enabled")
                     .label("Autosave")

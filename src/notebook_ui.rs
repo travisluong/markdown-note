@@ -722,7 +722,6 @@ impl Notes {
         self.dirty_cached = false;
         self.editor.update(cx, |editor, cx| {
             editor.set_image_document(self.document.as_ref().map(|d| d.path.clone()), cx);
-            editor.set_nested_list_letters(self.nested_list_letters());
             editor.set_live_preview(self.mode == ViewMode::LivePreview, cx)
         });
         if self.mode != ViewMode::Reading && self.document.is_some() {
