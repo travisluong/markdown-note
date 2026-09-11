@@ -49,6 +49,13 @@ impl Notes {
         let searching = self.search.as_ref().is_some_and(|panel| panel.visible);
         div()
             .id("sidebar-toolbar")
+            .drag_over::<notebook_ui::EntryDrag>(|view, _, _, cx| view.bg(cx.theme().accent))
+            .on_drop(
+                cx.listener(|this, drag: &notebook_ui::EntryDrag, window, cx| {
+                    cx.stop_propagation();
+                    this.drop_entry(drag, PathBuf::new(), None, window, cx);
+                }),
+            )
             .flex()
             .items_center()
             .flex_shrink_0()

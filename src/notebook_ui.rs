@@ -20,6 +20,7 @@ struct Row {
     disabled: bool,
     label: String,
     retry: bool,
+    draggable: bool,
 }
 
 pub(super) struct NotebookState {
@@ -105,6 +106,7 @@ impl NotebookState {
                         disabled: true,
                         label: "Empty folder".into(),
                         retry: false,
+                        draggable: false,
                     });
                 }
                 for entry in entries {
@@ -120,6 +122,7 @@ impl NotebookState {
                             if entry.link { " (link)" } else { "" }
                         ),
                         retry: false,
+                        draggable: !entry.link,
                     });
                     if entry.directory && !entry.link && settings.expanded.contains(&entry.relative)
                     {
@@ -134,6 +137,7 @@ impl NotebookState {
                 disabled: false,
                 label: format!("Retry: {error}"),
                 retry: true,
+                draggable: false,
             }),
             _ => rows.push(Row {
                 path: path.to_path_buf(),
@@ -142,6 +146,7 @@ impl NotebookState {
                 disabled: true,
                 label: "Loading…".into(),
                 retry: false,
+                draggable: false,
             }),
         }
     }
@@ -840,7 +845,12 @@ impl Notes {
                 this.notebooks.directories.insert(
                     relative,
                     match result {
-                        Ok(entries) => DirectoryState::Ready(entries),
+                        Ok(mut entries) => {
+                            if let Some(book) = &this.notebooks.active {
+                                book.settings.sort_entries(&mut entries);
+                            }
+                            DirectoryState::Ready(entries)
+                        }
                         Err(error) => DirectoryState::Failed(error.to_string()),
                     },
                 );
@@ -1020,6 +1030,10 @@ impl Notes {
             .unwrap_or_default();
         div()
             .id("notebook-sidebar")
+            .on_drop(cx.listener(|this, drag: &EntryDrag, window, cx| {
+                cx.stop_propagation();
+                this.drop_entry(drag, PathBuf::new(), None, window, cx);
+            }))
             .key_context("NotebookTree")
             .track_focus(&self.notebooks.tree_focus)
             .on_action(
@@ -1086,6 +1100,13 @@ impl Notes {
                                 } else {
                                     "  "
                                 };
+                                let path = row.path.clone();
+                                let before_path = path.clone();
+                                let directory = row.directory;
+                                let drag = EntryDrag {
+                                    root: this.notebooks.active.as_ref().unwrap().root.clone(),
+                                    path: path.clone(),
+                                };
                                 div()
                                     .id(index)
                                     .h(px(28. * this.appearance().ui_font_size as f32 / 16.))
@@ -1106,6 +1127,62 @@ impl Notes {
                                     .when(row.disabled, |view| {
                                         view.text_color(cx.theme().muted_foreground)
                                     })
+                                    .relative()
+                                    .when(row.draggable && !this.busy, |view| {
+                                        view.on_drag(drag, |drag, _, _, cx| {
+                                            cx.stop_propagation();
+                                            cx.new(|_| drag.clone())
+                                        })
+                                        .drag_over::<EntryDrag>(|view, _, _, cx| {
+                                            view.bg(cx.theme().accent)
+                                        })
+                                        .on_drop(cx.listener(
+                                            move |this, drag: &EntryDrag, window, cx| {
+                                                cx.stop_propagation();
+                                                let parent = if directory {
+                                                    path.clone()
+                                                } else {
+                                                    path.parent()
+                                                        .unwrap_or(Path::new(""))
+                                                        .to_path_buf()
+                                                };
+                                                this.drop_entry(
+                                                    drag,
+                                                    parent,
+                                                    (!directory).then(|| path.clone()),
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ))
+                                        .child(
+                                            div()
+                                                .id(("drop-before", index))
+                                                .absolute()
+                                                .top_0()
+                                                .left_0()
+                                                .w_full()
+                                                .h(px(6.))
+                                                .drag_over::<EntryDrag>(|view, _, _, cx| {
+                                                    view.bg(cx.theme().drag_border)
+                                                })
+                                                .on_drop(cx.listener(
+                                                    move |this, drag: &EntryDrag, window, cx| {
+                                                        cx.stop_propagation();
+                                                        this.drop_entry(
+                                                            drag,
+                                                            before_path
+                                                                .parent()
+                                                                .unwrap_or(Path::new(""))
+                                                                .to_path_buf(),
+                                                            Some(before_path.clone()),
+                                                            window,
+                                                            cx,
+                                                        );
+                                                    },
+                                                )),
+                                        )
+                                    })
                                     .child(format!("{prefix}{}", row.label))
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.notebooks.tree_focus.focus(window);
@@ -1119,5 +1196,100 @@ impl Notes {
                 .flex_1()
                 .min_h_0(),
             )
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct EntryDrag {
+    root: PathBuf,
+    path: PathBuf,
+}
+impl Render for EntryDrag {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_3()
+            .py_1()
+            .bg(cx.theme().accent)
+            .text_color(cx.theme().foreground)
+            .child(notebook::name(&self.path))
+    }
+}
+
+impl Notes {
+    pub(super) fn drop_entry(
+        &mut self,
+        drag: &EntryDrag,
+        parent: PathBuf,
+        before: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy || window.has_active_dialog(cx) {
+            return;
+        }
+        if self.saves.writing {
+            self.notebooks.notice =
+                Some("A save is finishing. Please drop the entry again in a moment.".into());
+            cx.notify();
+            return;
+        }
+        let Some(book) = &self.notebooks.active else {
+            return;
+        };
+        if book.root != drag.root || before.as_ref() == Some(&drag.path) {
+            return;
+        }
+        let root = book.root.clone();
+        let from = drag.path.clone();
+        let mut settings = book.settings.clone();
+        self.saves.timer = None;
+        self.busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let worker_root = root.clone();
+            let worker_from = from.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut entries = notebook::read_directory(&worker_root, &parent)?;
+                    settings.sort_entries(&mut entries);
+                    let to = notebook::move_entry(&worker_root, &worker_from, &parent)?;
+                    settings.reorder_entry(
+                        &worker_from,
+                        &to,
+                        before.as_deref(),
+                        entries.into_iter().map(|e| e.relative).collect(),
+                    );
+                    Ok::<_, io::Error>((to, settings))
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.busy = false;
+                match result {
+                    Ok((to, settings)) => {
+                        if let Some(document) = &mut this.document {
+                            document.path = notebook::remap_path(
+                                &document.path,
+                                &root.join(&from),
+                                &root.join(&to),
+                            );
+                        }
+                        if let Some(book) = &mut this.notebooks.active {
+                            book.settings = settings;
+                        }
+                        this.notebooks.notice = None;
+                        this.persist_notebooks(cx);
+                        this.refresh_tree(window, cx);
+                        this.schedule_search(window, cx);
+                    }
+                    Err(error) => {
+                        this.notebooks.notice = Some(format!("Could not move entry: {error}"))
+                    }
+                }
+                this.schedule_autosave(window, cx);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }

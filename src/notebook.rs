@@ -66,6 +66,8 @@ impl Appearance {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
+    pub entry_order: Vec<PathBuf>,
+    #[serde(default)]
     pub nested_list_letters: bool,
     #[serde(default)]
     pub view_mode: crate::ViewMode,
@@ -85,6 +87,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            entry_order: Vec::new(),
             nested_list_letters: false,
             view_mode: crate::ViewMode::default(),
             sidebar_width: default_sidebar_width(),
@@ -766,5 +769,140 @@ mod path_display_tests {
             assert_eq!(display_path(&path), expected);
             assert_eq!(path.to_string_lossy(), input);
         }
+    }
+}
+
+/// Move within the notebook without traversing links or replacing another entry.
+pub fn move_entry(root: &Path, source: &Path, parent: &Path) -> io::Result<PathBuf> {
+    if is_link(&fs::symlink_metadata(root)?) {
+        return Err(io::Error::other("Notebook root is a link."));
+    }
+    let from = resolve(root, source)?;
+    let directory = if parent.as_os_str().is_empty() {
+        root.to_path_buf()
+    } else {
+        resolve(root, parent)?
+    };
+    if !directory.is_dir() {
+        return Err(io::Error::other("Drop onto a folder."));
+    }
+    let canonical_from = fs::canonicalize(&from)?;
+    let canonical_parent = fs::canonicalize(&directory)?;
+    if canonical_parent.starts_with(&canonical_from) {
+        return Err(io::Error::other("A folder cannot be moved into itself."));
+    }
+    let destination = parent.join(
+        source
+            .file_name()
+            .ok_or_else(|| io::Error::other("Missing entry name."))?,
+    );
+    if destination == source {
+        return Ok(destination);
+    }
+    let to = directory.join(source.file_name().unwrap());
+    match fs::symlink_metadata(&to) {
+        Ok(_) => {
+            return Err(io::Error::other(
+                "An entry with this name already exists in the destination.",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    fs::rename(from, to)?;
+    Ok(destination)
+}
+
+pub fn remap_path(path: &Path, from: &Path, to: &Path) -> PathBuf {
+    path.strip_prefix(from)
+        .map_or_else(|_| path.to_path_buf(), |suffix| to.join(suffix))
+}
+
+impl Settings {
+    pub fn reorder_entry(
+        &mut self,
+        from: &Path,
+        to: &Path,
+        before: Option<&Path>,
+        siblings: Vec<PathBuf>,
+    ) {
+        self.expanded = self
+            .expanded
+            .iter()
+            .map(|p| remap_path(p, from, to))
+            .collect();
+        self.last_file = self.last_file.as_ref().map(|p| remap_path(p, from, to));
+        self.entry_order = self
+            .entry_order
+            .iter()
+            .map(|p| remap_path(p, from, to))
+            .collect();
+        self.entry_order
+            .retain(|p| p != to && p.parent() != to.parent());
+        let mut siblings: Vec<_> = siblings
+            .into_iter()
+            .filter(|p| p != from && p != to)
+            .collect();
+        let at = before
+            .and_then(|b| siblings.iter().position(|p| p == b))
+            .unwrap_or(siblings.len());
+        siblings.insert(at, to.to_path_buf());
+        self.entry_order.extend(siblings);
+        if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
+            self.expanded.insert(parent.to_path_buf());
+        }
+    }
+    pub fn sort_entries(&self, entries: &mut [Entry]) {
+        entries.sort_by_key(|entry| {
+            self.entry_order
+                .iter()
+                .position(|p| p == &entry.relative)
+                .unwrap_or(usize::MAX)
+        });
+    }
+}
+
+#[cfg(test)]
+mod move_tests {
+    use super::*;
+    #[test]
+    fn move_reorder_and_preserve_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir(root.join("folder")).unwrap();
+        fs::write(root.join("a.md"), "unsaved lives in the editor").unwrap();
+        let destination = move_entry(root, Path::new("a.md"), Path::new("folder")).unwrap();
+        assert_eq!(destination, Path::new("folder/a.md"));
+        assert!(!root.join("a.md").exists());
+        assert_eq!(
+            move_entry(root, &destination, Path::new("")).unwrap(),
+            Path::new("a.md")
+        );
+        assert!(move_entry(root, Path::new("folder"), Path::new("folder")).is_err());
+        fs::write(root.join("folder/a.md"), "collision").unwrap();
+        assert!(move_entry(root, Path::new("a.md"), Path::new("folder")).is_err());
+        assert_eq!(
+            fs::read_to_string(root.join("folder/a.md")).unwrap(),
+            "collision"
+        );
+        assert!(move_entry(root, Path::new("../outside"), Path::new("")).is_err());
+        let mut settings = Settings::default();
+        settings.last_file = Some(PathBuf::from("folder/a.md"));
+        settings.expanded.insert(PathBuf::from("folder/sub"));
+        settings.reorder_entry(
+            Path::new("folder"),
+            Path::new("new/folder"),
+            Some(Path::new("new/z.md")),
+            vec!["new/z.md".into()],
+        );
+        assert_eq!(
+            settings.last_file.unwrap(),
+            PathBuf::from("new/folder/a.md")
+        );
+        assert!(settings.expanded.contains(Path::new("new/folder/sub")));
+        assert_eq!(
+            settings.entry_order,
+            vec![PathBuf::from("new/folder"), PathBuf::from("new/z.md")]
+        );
     }
 }

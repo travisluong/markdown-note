@@ -218,3 +218,10 @@ and `.markdown` paths resolve against the current document and use the normal
 save-before-navigation flow. Notebook links stay inside the current notebook;
 filesystem symlinks/junctions are not traversed. Heading anchors, wiki links,
 and links to other local file types are not included.
+
+Explorer drag and drop: drop onto a folder to move an entry inside it. Drop onto
+an entry's top edge to place it before that entry (including folders), or onto a
+file row to place it before that file. Drop onto the notebook title, toolbar, or
+empty sidebar area to move to the notebook root. Sibling order is saved per
+notebook. Name collisions and moves into a folder's own descendants are rejected;
+open buffers keep their edits and follow the moved path.
