@@ -73,6 +73,7 @@ enum Next {
     Open,
     Close,
     File(PathBuf),
+    NewNote(PathBuf),
     TreeFile(PathBuf),
     SearchResult(search::Destination),
     RemoveNotebook(PathBuf),
@@ -413,6 +414,7 @@ impl Notes {
         match next {
             Next::Nothing => self.refresh(window, cx),
             Next::Open => self.open(window, cx),
+            Next::NewNote(root) => self.create_note(root, window, cx),
             Next::Close => self.finish_close(window, cx),
             Next::File(path) => self.open_path(path, false, window, cx),
             Next::TreeFile(path) => self.open_path(path, true, window, cx),

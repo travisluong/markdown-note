@@ -14,6 +14,7 @@ enum Command {
     EditLink,
     ToggleTheme,
     ChangeNotebook,
+    NewNote,
 }
 
 impl Command {
@@ -22,6 +23,7 @@ impl Command {
         Self::EditLink,
         Self::ToggleTheme,
         Self::ChangeNotebook,
+        Self::NewNote,
     ];
 
     fn label(self) -> &'static str {
@@ -30,6 +32,7 @@ impl Command {
             Self::EditLink => "Text: Insert or edit link",
             Self::ToggleTheme => "Appearance: Toggle light/dark mode",
             Self::ChangeNotebook => "Notebook: Change notebook",
+            Self::NewNote => "Notebook: Create new note",
         }
     }
 
@@ -39,6 +42,7 @@ impl Command {
             Self::EditLink => "Insert a link or edit the selected link",
             Self::ToggleTheme => "Switch between your Light and Dark themes",
             Self::ChangeNotebook => "Choose a registered notebook",
+            Self::NewNote => "Create an Untitled note in the notebook root",
         }
     }
 
@@ -47,12 +51,13 @@ impl Command {
         document: bool,
         reading: bool,
         busy: bool,
-        _notebook: bool,
+        notebook: bool,
     ) -> Option<&'static str> {
         if busy {
             return Some("Wait for the current operation to finish");
         }
         match self {
+            Self::NewNote if !notebook => Some("Open a notebook to create a note"),
             Self::InsertDate | Self::EditLink if !document || reading => {
                 Some("Open an editable document in Source or Live preview")
             }
@@ -362,6 +367,11 @@ impl Notes {
                 }
             }
             Command::EditLink => self.edit_link(window, cx),
+            Command::NewNote => {
+                if let Some(book) = &self.notebooks.active {
+                    self.request(Next::NewNote(book.root.clone()), window, cx);
+                }
+            }
             Command::ChangeNotebook => {
                 let entries = self
                     .notebooks
@@ -604,6 +614,25 @@ mod tests {
     }
 
     #[test]
+    fn new_note_requires_a_notebook_but_not_an_editable_document() {
+        assert!(
+            Command::NewNote
+                .unavailable(false, true, false, true)
+                .is_none()
+        );
+        assert!(
+            Command::NewNote
+                .unavailable(true, false, false, false)
+                .is_some()
+        );
+        assert!(
+            Command::NewNote
+                .unavailable(true, false, true, true)
+                .is_some()
+        );
+    }
+
+    #[test]
     fn ranking() {
         assert!(score("note", "note") < score("notebook", "note"));
         assert!(score("notebook", "note") < score("a note", "note"));
@@ -642,6 +671,24 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
         notes.update(cx, |this, cx| {
             this.set_mode(ViewMode::Source, window, cx);
             let before = this.editor.read(cx).value();
+            if let Some(book) = &this.notebooks.active {
+                let root = book.root.clone();
+                let count = fs::read_dir(&root).unwrap().count();
+                let previous_path = this.document.as_ref().map(|doc| doc.path.clone());
+                this.busy = true;
+                this.answer_request(None, Next::NewNote(root.clone()), window, cx);
+                assert!(!this.busy);
+                assert_eq!(
+                    fs::read_dir(root).unwrap().count(),
+                    count,
+                    "cancel creates no note"
+                );
+                assert_eq!(
+                    this.document.as_ref().map(|doc| doc.path.clone()),
+                    previous_path
+                );
+                assert_eq!(this.editor.read(cx).value(), before);
+            }
             this.command_palette(window, cx);
             assert_eq!(this.palette.as_ref().unwrap().mode, PaletteMode::Commands);
             this.palette

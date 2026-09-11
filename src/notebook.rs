@@ -1223,3 +1223,80 @@ mod sort_tests {
         assert!(move_entry(root, Path::new("folder"), Path::new("folder/child")).is_err());
     }
 }
+
+// Reserve a fresh name atomically; never truncate an existing file or follow a link.
+pub fn create_untitled(root: &Path) -> io::Result<PathBuf> {
+    let metadata = fs::symlink_metadata(root)?;
+    if is_link(&metadata) || !metadata.is_dir() {
+        return Err(io::Error::other(
+            "Choose a notebook directory that is not a link.",
+        ));
+    }
+    for number in 1u64.. {
+        let name = if number == 1 {
+            "Untitled.md".into()
+        } else {
+            format!("Untitled {number}.md")
+        };
+        let path = root.join(name);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                drop(file);
+                return Ok(path);
+            }
+            Err(error)
+                if error.kind() == io::ErrorKind::AlreadyExists
+                    || fs::symlink_metadata(&path).is_ok() =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::other(
+        "No unused Untitled filename is available.",
+    ))
+}
+
+#[cfg(test)]
+mod new_note_tests {
+    use super::*;
+
+    #[test]
+    fn creates_empty_notes_and_preserves_file_and_directory_collisions() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = create_untitled(dir.path()).unwrap();
+        assert_eq!(first.file_name().unwrap(), "Untitled.md");
+        assert_eq!(fs::read(&first).unwrap(), b"");
+        fs::write(&first, "keep me").unwrap();
+        fs::create_dir(dir.path().join("Untitled 2.md")).unwrap();
+        assert_eq!(
+            create_untitled(dir.path()).unwrap().file_name().unwrap(),
+            "Untitled 3.md"
+        );
+        assert_eq!(fs::read_to_string(first).unwrap(), "keep me");
+        assert!(create_untitled(&dir.path().join("missing")).is_err());
+        assert!(create_untitled(&dir.path().join("Untitled.md")).is_err());
+    }
+
+    #[test]
+    fn concurrent_creation_uses_distinct_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = std::thread::scope(|scope| {
+            let jobs: Vec<_> = (0..8)
+                .map(|_| scope.spawn(|| create_untitled(dir.path()).unwrap()))
+                .collect();
+            jobs.into_iter()
+                .map(|job| job.join().unwrap())
+                .collect::<BTreeSet<_>>()
+        });
+        assert_eq!(paths.len(), 8);
+        for path in paths {
+            assert_eq!(fs::metadata(path).unwrap().len(), 0);
+        }
+    }
+}

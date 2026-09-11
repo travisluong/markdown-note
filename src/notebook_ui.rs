@@ -644,6 +644,49 @@ impl Notes {
         cx.notify();
     }
 
+    pub(super) fn create_note(
+        &mut self,
+        root: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy
+            || !self
+                .notebooks
+                .active
+                .as_ref()
+                .is_some_and(|book| book.root == root)
+        {
+            return;
+        }
+        self.busy = true;
+        cx.spawn_in(window, async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { notebook::create_untitled(&root).and_then(Document::open) })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.busy = false;
+                match result {
+                    Ok(document) => {
+                        if this.mode == ViewMode::Reading {
+                            this.set_mode(ViewMode::Source, window, cx);
+                        }
+                        this.search_destination = None;
+                        this.install_document(Some(document), window, cx);
+                        this.remember_file(cx);
+                        this.reveal_sidebar(cx);
+                        this.refresh_tree(window, cx);
+                    }
+                    Err(error) => this.error("Could not create note", error, window, cx),
+                }
+                this.refresh(window, cx);
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
     pub(super) fn install_document(
         &mut self,
         document: Option<Document>,
