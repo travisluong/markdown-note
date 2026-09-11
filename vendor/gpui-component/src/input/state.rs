@@ -691,6 +691,26 @@ impl InputState {
         self.selected_range = (self.selected_range.end..self.selected_range.end).into();
     }
 
+    /// Resolve a content drop using the last painted layout, in UTF-8 source bytes.
+    pub fn drop_offset(&self, position: Point<Pixels>) -> Option<usize> {
+        if self.disabled || self.last_layout.is_none() { return None; }
+        Some(self.text.floor_char_boundary(self.index_for_mouse_position(position)))
+    }
+
+    /// Insert at a captured source position only while the snapshot is still current.
+    /// This does not replace the existing selection or normalize input as table-cell text.
+    pub fn insert_at_snapshot(&mut self, offset: usize, snapshot: &Rope, text: &str,
+        window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.disabled || &self.text != snapshot || offset > self.text.len()
+            || self.text.floor_char_boundary(offset) != offset { return false; }
+        let offset = self.offset_to_utf16(offset);
+        let table_editing = self.table_editing;
+        self.table_editing = true;
+        self.replace_range_isolated(Some(offset..offset), text, window, cx);
+        self.table_editing = table_editing;
+        true
+    }
+
     /// Replace the remembered selection as one edit isolated from adjacent typing.
     pub fn replace_selection_isolated(
         &mut self,
@@ -852,13 +872,13 @@ impl InputState {
         self.text.clone()
     }
 
-    /// Switch presentation without replacing the buffer or history.
     /// Set the document used to resolve relative Markdown image paths.
     pub fn set_image_document(&mut self, path: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
         self.text_wrapper.image_document = path;
         cx.notify();
     }
 
+    /// Switch presentation without replacing the buffer or history.
     pub fn set_live_preview(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self.live_preview != enabled {
             self.live_preview = enabled;

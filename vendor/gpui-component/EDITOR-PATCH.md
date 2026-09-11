@@ -197,3 +197,10 @@ in the line index, maps image hits to source boundaries, and retains an image
 while revealing its active source line. Failed assets paint a stable placeholder;
 images preserve aspect ratio and do not upscale. Source mode keeps Markdown text.
 Parser, path, height-index and hit-mapping regressions run in the headless tests.
+
+Image drops use public drop_offset (last painted UTF-8 hit testing) and
+insert_at_snapshot (snapshot-validated isolated insertion). The insertion bypasses
+cell-input normalization while retaining normal history, change events and search
+updates; previously selected text is not replaced by a drop. In-memory GPUI
+TestPlatform tests cover isolated undo/redo and stale snapshot rejection without
+creating native windows or sending OS input.

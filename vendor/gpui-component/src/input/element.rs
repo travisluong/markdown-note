@@ -241,6 +241,19 @@ impl TextElement {
         let mut line_corners = vec![];
 
         for line in lines.iter() {
+            if let Some(image) = line.image.as_ref().filter(|image| !image.reveal) {
+                if start_ix < prev_lines_offset + line.len() && end_ix > prev_lines_offset {
+                    line_corners.push(Corners {
+                        top_left: point(px(0.), offset_y),
+                        top_right: point(image.width, offset_y),
+                        bottom_left: point(px(0.), offset_y + image.height),
+                        bottom_right: point(image.width, offset_y + image.height),
+                    });
+                }
+                offset_y += line.size(line_height).height;
+                prev_lines_offset += line.len() + 1;
+                continue;
+            }
             if let Some(table) = &line.table {
                 for (cell_range, x, _, cell) in &table.cells {
                     let absolute =

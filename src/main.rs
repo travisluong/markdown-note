@@ -9,6 +9,7 @@ mod goto;
 mod help_ui;
 mod links;
 mod images;
+mod image_import;
 mod notebook;
 mod notebook_ui;
 mod reading_search;
@@ -813,7 +814,17 @@ impl Render for Notes {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_sidebar_layout(content.into_any_element(), window, cx)),
+                    .child(self.render_sidebar_layout(
+                        div().id("image-drop-content").size_full()
+                            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                                cx.stop_propagation();
+                                this.drop_images(paths.paths().to_vec(), window, cx);
+                            }))
+                            .on_drop(cx.listener(|this, drag: &notebook_ui::EntryDrag, window, cx| {
+                                cx.stop_propagation();
+                                this.drop_images(vec![drag.root.join(&drag.path)], window, cx);
+                            }))
+                            .child(content).into_any_element(), window, cx)),
             )
             .when_some(self.menu.clone(), |this, (kind, menu)| {
                 this.child(deferred(

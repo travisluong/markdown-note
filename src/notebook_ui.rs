@@ -1004,12 +1004,12 @@ impl Notes {
             .notebooks
             .active
             .as_ref()
-            .zip(self.document.as_ref())
-            .and_then(|(book, doc)| {
+            .zip(self.document.as_ref().map(|d| d.path.as_path()).or(self.image_path.as_deref()))
+            .and_then(|(book, path)| {
                 self.notebooks
                     .rows
                     .iter()
-                    .position(|row| !row.directory && book.root.join(&row.path) == doc.path)
+                    .position(|row| !row.directory && book.root.join(&row.path) == path)
             });
         if let Some(index) = self.notebooks.cursor {
             self.notebooks
@@ -1149,12 +1149,12 @@ impl Notes {
                                     .notebooks
                                     .active
                                     .as_ref()
-                                    .zip(this.document.as_ref())
-                                    .is_some_and(|(book, document)| {
+                                    .zip(this.document.as_ref().map(|d| d.path.as_path()).or(this.image_path.as_deref()))
+                                    .is_some_and(|(book, document_path)| {
                                         !row.directory
                                             && !row.disabled
                                             && !row.retry
-                                            && book.root.join(&row.path) == document.path
+                                            && book.root.join(&row.path) == document_path
                                     });
                                 let expanded =
                                     this.notebooks.active.as_ref().is_some_and(|book| {
@@ -1233,8 +1233,8 @@ impl Notes {
 
 #[derive(Clone)]
 pub(super) struct EntryDrag {
-    root: PathBuf,
-    path: PathBuf,
+    pub(super) root: PathBuf,
+    pub(super) path: PathBuf,
 }
 impl Render for EntryDrag {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1298,6 +1298,12 @@ impl Notes {
                                 &root.join(&to),
                             );
                         }
+                        if let Some(path) = &mut this.image_path {
+                            *path = notebook::remap_path(path, &root.join(&from), &root.join(&to));
+                        }
+                        this.editor.update(cx, |editor, cx| {
+                            editor.set_image_document(this.document.as_ref().map(|doc| doc.path.clone()), cx);
+                        });
                         if let Some(book) = &mut this.notebooks.active {
                             book.settings = settings;
                         }

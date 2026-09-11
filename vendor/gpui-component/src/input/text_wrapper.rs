@@ -331,11 +331,13 @@ impl TextWrapper {
         if !self.live_preview {
             return;
         }
-        if !self.images.is_empty() {
+        let safe = super::preview_syntax::context_independent(&self.text, range, inserted);
+        if safe {
+            crate::markdown_images::rebase(&mut self.images, range, inserted.len());
+        } else if !self.images.is_empty() {
             self.images.clear();
             self.syntax_revision += 1;
         }
-        let safe = super::preview_syntax::context_independent(&self.text, range, inserted);
         self.analysis.edit(range.clone(), inserted.len(), safe);
         self.analysis.request(changed);
         if safe {
@@ -374,10 +376,11 @@ impl TextWrapper {
             self.tables.retire_from(&mut parsed.tables);
             return false;
         };
-        if edits.is_empty() { self.images = parsed.images; }
         for edit in &edits {
             parsed.tables.rebase_preview(&edit.range, edit.inserted);
+            crate::markdown_images::rebase(&mut parsed.images, &edit.range, edit.inserted);
         }
+        self.images = parsed.images;
         self.retired_links.push(std::mem::replace(
             &mut self.links,
             super::preview_syntax::Links::with_edits(parsed.links, edits),
@@ -1007,7 +1010,7 @@ impl LineLayout {
         offset: usize,
         line_height: Pixels,
     ) -> Option<Point<Pixels>> {
-        if self.image.as_ref().is_some_and(|i| !i.reveal) { return Some(point(px(0.), px(0.))); }
+        if self.image.as_ref().is_some_and(|i| !i.reveal) { return (offset <= self.len()).then(|| point(px(0.), px(0.))); }
         if let Some(table) = &self.table {
             if offset > self.len {
                 return None;
@@ -2240,9 +2243,9 @@ impl TextWrapper {
             let Some(mut item) = self.lines.get(row).cloned() else { continue; };
             item.image = None;
             if let Some(url) = self.images.get(&self.text.line_start_offset(row)) {
-                let loaded = crate::markdown_images::resource(url, self.image_document.as_deref())
-                    .and_then(|resource| window.use_asset::<gpui::ImgResourceLoader>(&resource, cx));
-                let failed = loaded.as_ref().is_some_and(|r| r.is_err());
+                let resource = crate::markdown_images::resource(url, self.image_document.as_deref());
+                let loaded = resource.as_ref().and_then(|resource| window.use_asset::<gpui::ImgResourceLoader>(resource, cx));
+                let failed = resource.is_none() || loaded.as_ref().is_some_and(|r| r.is_err());
                 let data = loaded.and_then(Result::ok);
                 let (width, height) = data.as_ref().map_or((px(240.), px(80.)), |image| {
                     let dimensions = image.size(0);
@@ -2255,6 +2258,7 @@ impl TextWrapper {
             }
             self.lines.splice(row..=row, vec![item]);
         }
+        self.soft_lines = self.lines.wraps();
     }
 }
 
