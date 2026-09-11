@@ -1,5 +1,12 @@
 # Local editor patch
 
+Live-preview checkbox state replacements are recognized as context-independent
+edits by the shared syntax classifier, including undo and redo. Unchanged tables
+retain their rendered rows, dimensions, and horizontal scroll while background
+analysis is pending and after it completes. Headless regression tests cover
+repeated toggles, delayed analysis, nested tasks, Unicode, and CRLF; structural
+Markdown edits still invalidate syntax conservatively.
+
 Reading and Live-preview task checkbox squares explicitly use the standard arrow
 cursor. Live-preview cursor hitboxes share the checkbox click geometry.
 Checkbox presses consume mouse-down before text selection in both views. Live

@@ -2136,6 +2136,90 @@ mod sustained_edit_tests {
     }
 
     #[test]
+    fn checkbox_toggles_preserve_tables_through_pending_analysis() {
+        for (newline, rounds) in [("\n", 2), ("\r\n", 2), ("\n", 8), ("\r\n", 8)] {
+            let source = "- [ ] café\n\n| name | value |\n| --- | ---: |\n| 你好 | **one** |\n\n> > 1. [X] nested\n\n| other | value |\n| :--- | --- |\n| two | three |\n\n- [x] after\n".replace('\n', newline);
+            let mut wrapper = make(&source);
+            wrapper.wrap_width = Some(px(150.));
+            let count = wrapper.lines.len();
+            measure(&mut wrapper, 0..count);
+            assert_eq!(wrapper.tables.tables.len(), 2);
+            for scroll in wrapper.table_scroll.values() {
+                scroll.set(px(30.));
+            }
+            let cached = (0..count)
+                .filter_map(|row| wrapper.lines[row].table.clone().map(|table| (row, table)))
+                .collect::<Vec<_>>();
+            assert_eq!(cached.len(), 6, "headers, hidden separators, and body rows");
+            let height = wrapper.lines.total_height();
+            let widths = wrapper.tables.tables.iter()
+                .map(|table| wrapper.table_widths[&table.cache_key()].clone())
+                .collect::<Vec<_>>();
+            let assert_stable = |wrapper: &TextWrapper| {
+                assert_eq!(wrapper.tables.tables.len(), 2);
+                assert_eq!(wrapper.lines.total_height(), height);
+                for (row, cached) in &cached {
+                    let current = wrapper.lines[*row].table.as_ref()
+                        .expect("table must never show source");
+                    if cached.height > 0 {
+                        assert!(std::rc::Rc::ptr_eq(cached, current));
+                    }
+                    assert_eq!(current.height, cached.height);
+                    assert_eq!(current.widths, cached.widths);
+                    assert!(std::rc::Rc::ptr_eq(&cached.scroll, &current.scroll));
+                    assert_eq!(current.scroll.get(), px(30.));
+                }
+                for (table, expected) in wrapper.tables.tables.iter().zip(&widths) {
+                    assert_eq!(wrapper.table_widths[&table.cache_key()], *expected);
+                }
+            };
+            let offsets = source.match_indices('[')
+                .map(|(at, _)| at + 1)
+                .collect::<Vec<_>>();
+            wrapper.analysis.request(&wrapper.text.clone());
+            let delayed = wrapper.analysis.start().unwrap();
+            for _ in 0..rounds {
+                for &offset in &offsets {
+                    let original = wrapper.text.slice(offset..offset + 1).to_string();
+                    let next = if original == " " { "x" } else { " " };
+                    // The forward, undo, and redo replacements all use this edit path.
+                    for replacement in [next, original.as_str(), next] {
+                        edit(&mut wrapper, offset..offset + 1, replacement);
+                        assert_stable(&wrapper);
+                        measure(&mut wrapper, 0..count);
+                        assert_stable(&wrapper);
+                    }
+                }
+            }
+            // A long burst can exhaust the bounded rebase log; either completion
+            // outcome must leave the current table presentation intact.
+            assert_eq!(wrapper.apply_analysis(delayed.parse()), rounds == 2);
+            measure(&mut wrapper, 0..count);
+            assert_stable(&wrapper);
+            let latest = wrapper.analysis.start().unwrap();
+            assert!(wrapper.apply_analysis(latest.parse()));
+            measure(&mut wrapper, 0..count);
+            assert_stable(&wrapper);
+            let mut fresh = super::super::table::TableIndex::default();
+            fresh.rebuild(&wrapper.text);
+            assert_eq!(wrapper.tables.tables.len(), fresh.tables.len());
+            for (actual, expected) in wrapper.tables.tables.iter().zip(&fresh.tables) {
+                assert_eq!(actual.source, expected.source);
+                assert_eq!(actual.separator, expected.separator);
+                assert_eq!(actual.alignments, expected.alignments);
+                assert_eq!(actual.column_characters, expected.column_characters);
+                assert_eq!(actual.rows.len(), expected.rows.len());
+                for row in 0..actual.rows.len() {
+                    assert_eq!(actual.row_range(row), expected.row_range(row));
+                    for col in 0..actual.alignments.len() {
+                        assert_eq!(actual.cell_range(row, col), expected.cell_range(row, col));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn large_table_layout_visits_only_requested_rows_and_keeps_shifted_caches() {
         let source = format!(
             "paragraph\n\n\n| name | value |\n| --- | --- |\n{}",

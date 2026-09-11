@@ -234,6 +234,26 @@ pub(super) fn context_independent(old: &Rope, range: &Range<usize>, inserted: &R
     }
     let first = old.offset_to_point(range.start).row;
     let last = old.offset_to_point(range.end).row;
+    // Changing only a task's state cannot change surrounding block syntax.
+    // Read just its prefix and closing marker, even for a very long task line.
+    let line_start = old.line_start_offset(first);
+    if range.len() == 1
+        && inserted.len() == 1
+        && first == last
+        && range.end - line_start <= 8192
+        && matches!(old.slice(range.clone()).chars().next(), Some(' ' | 'x' | 'X'))
+        && matches!(inserted.chars().next(), Some(' ' | 'x' | 'X'))
+    {
+        let mut prefix = old.slice(line_start..range.end).to_string();
+        prefix.extend(
+            old.slice(range.end..old.line_end_offset(first))
+                .chars()
+                .take(2),
+        );
+        if super::live_preview::task_state(&prefix) == Some(range.start - line_start) {
+            return true;
+        }
+    }
     let touched = old.line_start_offset(first)..old.line_end_offset(last);
     if touched.len() <= 8192
         && inserted.len() <= 8192
@@ -260,6 +280,42 @@ pub(super) fn context_independent(old: &Rope, range: &Range<usize>, inserted: &R
 mod completion_tests {
     use super::*;
     use crate::input::RopeExt;
+    #[test]
+    fn task_state_edits_are_safe_but_marker_and_non_task_edits_are_not() {
+        for prefix in ["- [", "  > > - [", "1. [", "2) [", "* [", "+ ["] {
+            for before in [' ', 'x', 'X'] {
+                let source = format!("你好\r\n{prefix}{before}] café {}\r\n", "a".repeat(10_000));
+                let offset = "你好\r\n".len() + prefix.len();
+                for after in [" ", "x", "X"] {
+                    assert!(context_independent(
+                        &Rope::from(source.as_str()),
+                        &(offset..offset + 1),
+                        &Rope::from(after),
+                    ));
+                }
+            }
+        }
+        for (source, offset, replacement) in [
+            ("- [ ] task", 3, "y"),
+            ("- [ ] task", 3, "xx"),
+            ("- [ ] task", 2, "x"),
+            ("- [ ] task", 4, "x"),
+            ("- [ ]task", 3, "x"),
+            ("- [ ]你好", 3, "x"),
+            ("[ ] label", 1, "x"),
+            ("text [x]", 6, " "),
+            ("- [y] task", 3, "x"),
+        ] {
+            assert!(
+                !context_independent(
+                    &Rope::from(source),
+                    &(offset..offset + 1),
+                    &Rope::from(replacement),
+                ),
+                "{source:?} at {offset}",
+            );
+        }
+    }
     #[test]
     fn safe_results_rebase_while_latest_snapshot_is_pending() {
         let source = "before\n\n\n[label](note.md)\n";
