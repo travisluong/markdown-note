@@ -119,7 +119,7 @@ impl NotebookState {
                         depth,
                         directory: entry.directory,
                         disabled: entry.link
-                            || (!entry.directory && !notebook::markdown(&entry.relative)),
+                            || (!entry.directory && !(notebook::markdown(&entry.relative) || images::supported(&entry.relative))),
                         label: format!(
                             "{}{}",
                             notebook::name(&entry.relative),
@@ -693,6 +693,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.image_path = None;
         self.reading_search = None;
         self.saves.timer = None;
         self.saves.identity += 1;
@@ -738,6 +739,10 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if images::supported(&path) {
+            self.open_image(path, keep_tree_focus, window, cx);
+            return;
+        }
         self.busy = true;
         self.notebooks.tree_loading = keep_tree_focus;
         self.notebooks.tree_target = keep_tree_focus.then(|| path.clone());

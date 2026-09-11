@@ -53,7 +53,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.refresh_tree(window, cx);
                     }
                     4 => {
-                        assert!(this.notebooks.rows.iter().any(|r| r.label == "image.png" && r.disabled));
+                        assert!(this.notebooks.rows.iter().any(|r| r.label == "image.png" && !r.disabled));
                         assert!(!this.notebooks.rows.iter().any(|r| r.label == ".gpui-note"));
                         let folder = this.notebooks.rows.iter().position(|r| r.label == "folder").unwrap();
                         this.activate_row(folder, window, cx);

@@ -8,6 +8,7 @@ mod find_diagnostics;
 mod goto;
 mod help_ui;
 mod links;
+mod images;
 mod notebook;
 mod notebook_ui;
 mod reading_search;
@@ -190,6 +191,7 @@ struct Notes {
     palette: Option<goto::Palette>,
     search: Option<search_ui::SearchPanel>,
     search_destination: Option<search::Destination>,
+    image_path: Option<PathBuf>,
     document: Option<Document>,
     editor: Entity<InputState>,
     editor_subscription: Subscription,
@@ -253,6 +255,7 @@ impl Notes {
             palette: None,
             search: None,
             search_destination: None,
+            image_path: None,
             document: None,
             editor,
             editor_subscription,
@@ -332,7 +335,9 @@ impl Notes {
         let name = self
             .document
             .as_ref()
-            .and_then(|d| d.path.file_name())
+            .map(|d| d.path.as_path())
+            .or(self.image_path.as_deref())
+            .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "GPUI Note".into());
         window.set_window_title(&format!(
@@ -567,7 +572,9 @@ impl Notes {
 impl Render for Notes {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content_size = px(self.appearance().content_font_size as f32);
-        let content = if self.document.is_none() {
+        let content = if let Some(path) = &self.image_path {
+            images::viewer(path).into_any_element()
+        } else if self.document.is_none() {
             div()
                 .size_full()
                 .flex()
@@ -575,7 +582,7 @@ impl Render for Notes {
                 .justify_center()
                 .text_color(cx.theme().muted_foreground)
                 .child(if self.notebooks.active.is_some() {
-                    "Select a Markdown file from the notebook sidebar."
+                    "Select a Markdown file or image from the notebook sidebar."
                 } else {
                     "Open a Markdown file with File → Open… (Ctrl+O)"
                 })
