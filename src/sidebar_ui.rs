@@ -164,8 +164,7 @@ impl Notes {
             .size_full()
             .min_w_0()
             .overflow_hidden()
-            .border_r_1()
-            .border_color(cx.theme().border)
+            // The resize handle supplies the single-pixel divider.
             .child(self.render_sidebar_toolbar(cx))
             .child(div().flex_1().min_h_0().overflow_hidden().child(sidebar));
         h_resizable("sidebar-layout")
