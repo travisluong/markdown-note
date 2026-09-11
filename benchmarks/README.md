@@ -124,3 +124,59 @@ editor-diagnostics and set both GPUI_NOTE_BENCH to an output path and
 GPUI_NOTE_TABLE_PREVIEW=1 before launching. Autosave is disabled for this fixture.
 The normal benchmark exits automatically; preview mode stays open. The separate
 GPUI_NOTE_AUTOSAVE_CHECK harness includes cell edits followed by row insertion.
+
+## Sustained Enter/Backspace validation
+
+The preview now updates source rows synchronously and performs document-level
+link/table analysis on a background executor. Its queue is capped at one running
+job and one latest pending snapshot. Viewport measurement does not invoke that
+parser. Table rows and link offsets are queried through indexes, and unchanged
+row layouts survive source shifts and background completion.
+
+Run the automated, headless regression suite with:
+
+```powershell
+cargo test --locked --features editor-diagnostics
+```
+
+The suite covers 120 successive inserted lines followed by 120 removed lines at
+the beginning, middle and end of 100,000-line notes; alternating edits in notes
+with 10,000 links; and viewport/cache behavior in 10,000-row tables, including
+blank lines immediately before a table. It also checks safe partial completions,
+stale context/document/mode results, bounded queue size and copied bytes, and
+incremental table metadata against a fresh GFM parse after Unicode, escaped-pipe,
+reference-link, LF/CRLF and structural row edits. These checks do not open a window.
+
+An additional **user-run** release benchmark uses timer-driven input independent
+of frame completion. Set both variables before launching the diagnostic build:
+
+```powershell
+cargo build --release --locked --features editor-diagnostics
+$env:GPUI_NOTE_BENCH = Join-Path $pwd 'benchmarks/sustained-preview.csv'
+$env:GPUI_NOTE_BURST = '1'
+& ./target/release/gpui-note.exe
+Remove-Item Env:GPUI_NOTE_BENCH, Env:GPUI_NOTE_BURST
+```
+
+This benchmark opens its own diagnostic window and must be run manually; agents
+must not launch it under this repository's desktop-testing restriction. It uses
+30 and 60 key events/second, with two seconds of Enter followed by two seconds of
+Backspace per group. Fixtures cover 100,000 plain lines, 10,000 links, and a
+10,000-row table. For the table fixture, the middle group edits the blank line
+immediately before the table; the other groups edit surrounding prose.
+
+Warm-up waits for the actual parser and painted revision. Input does not wait for
+a frame or for formatting to finish. CSV output includes synchronous key-handler
+p95, scheduled-input-to-editor-paint p95, maximum paint gap, maximum analysis queue
+size, unpainted edits, and instrumented UI copy/parse, table-row and cache counters.
+The paint timestamp is captured inside the editor's paint method; it is not an
+OS keyboard timestamp or a GPU presentation timestamp. The input-to-paint metric
+includes missed timer deadlines so a growing event backlog cannot appear fast.
+
+Acceptance targets remain edit-handler p95 below 4 ms and input-to-paint p95 below
+16.7 ms, with no unpainted edits or growing backlog. **New display-timing results
+have not been recorded by the agent**, and earlier frame-spaced timings above do
+not establish these targets. Physical key-repeat behavior and visual stability
+remain manual validation. As before, exceptionally long individual source lines
+have line-proportional parsing/wrapping costs; document-size stress results are
+not a constant-time guarantee for arbitrary single-line input.

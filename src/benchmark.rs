@@ -1,5 +1,6 @@
 //! Opt-in, in-app release benchmark. No user files are opened or saved.
 use super::*;
+mod burst;
 use gpui_component::input::{Position, editor_work};
 use std::time::Instant;
 
@@ -10,6 +11,10 @@ struct Run {
 }
 
 pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window, cx: &mut App) {
+    if std::env::var_os("GPUI_NOTE_BURST").is_some() {
+        burst::start(notes, output, window, cx);
+        return;
+    }
     let _ = fs::write(
         output.with_extension("progress.txt"),
         "checking input behavior",
@@ -212,6 +217,10 @@ fn table_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &mut
     )
     .unwrap();
     window.on_next_frame(move |window, cx| {
+        if !notes.read(cx).editor.read(cx).diagnostic_preview_settled() {
+            table_round(notes, output, round, window);
+            return;
+        }
         notes.update(cx, |notes, cx| {
             notes.editor.update(cx, |editor, cx| {
                 editor.diagnostic_table_geometry(window, cx)
