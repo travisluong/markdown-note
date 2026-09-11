@@ -3,22 +3,23 @@ use rust_i18n::t;
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    actions, canvas, div, prelude::FluentBuilder as _, App, AppContext as _, Context, Empty,
-    Entity, FocusHandle, Focusable, Half, InteractiveElement as _, IntoElement, KeyBinding,
-    ParentElement as _, Pixels, Render, Styled, Subscription, Window,
+    App, AppContext as _, Context, Empty, Entity, FocusHandle, Focusable, Half,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Render, Styled,
+    Subscription, Window, actions, canvas, div, prelude::FluentBuilder as _,
 };
 use ropey::Rope;
 
 use crate::{
+    ActiveTheme, Disableable, IconName, Selectable, Sizable,
     actions::SelectUp,
     button::{Button, ButtonVariants},
     h_flex,
     input::{
-        movement::MoveDirection, Enter, Escape, IndentInline, Input, InputEvent, InputState,
-        RopeExt as _, Search,
+        Enter, Escape, IndentInline, Input, InputEvent, InputState, RopeExt as _, Search,
+        movement::MoveDirection,
     },
     label::Label,
-    v_flex, ActiveTheme, Disableable, IconName, Selectable, Sizable,
+    v_flex,
 };
 
 const CONTEXT: &'static str = "SearchPanel";
@@ -78,14 +79,18 @@ impl SearchMatcher {
             }
         }
         self.matched_ranges = Rc::new(new_ranges);
-        if !self.replacing {
-            self.current_match_ix = 0;
-            self.replacing = false;
-        }
+        self.current_match_ix = if self.replacing {
+            self.current_match_ix
+                .min(self.matched_ranges.len().saturating_sub(1))
+        } else {
+            0
+        };
+        self.replacing = false;
     }
 
     /// Update the search query and reset the current match index.
     pub fn update_query(&mut self, query: &str, case_insensitive: bool) {
+        self.replacing = false;
         if query.len() > 0 {
             self.query = Some(
                 AhoCorasick::builder()
@@ -104,10 +109,6 @@ impl SearchMatcher {
     #[inline]
     fn len(&self) -> usize {
         self.matched_ranges.len()
-    }
-
-    fn peek(&self) -> Option<Range<usize>> {
-        self.matched_ranges.get(self.current_match_ix + 1).cloned()
     }
 
     fn label(&self) -> String {
@@ -200,6 +201,24 @@ impl InputState {
         assert_eq!(matcher.next_back(), Some(0..3));
         matcher.update(&Rope::from(""));
         assert_eq!(matcher.label(), "0/0");
+
+        let source = Rope::from("你好 [.*] 😀 [.*] 尾");
+        matcher.update(&source);
+        matcher.update_query("[.*]", false);
+        assert_eq!(
+            replacement_text(&source, &matcher.matched_ranges, "é"),
+            "你好 é 😀 é 尾"
+        );
+        assert_eq!(
+            replacement_text(&source, &matcher.matched_ranges[..1], ""),
+            "你好  😀 [.*] 尾"
+        );
+        matcher.current_match_ix = 1;
+        matcher.replacing = true;
+        matcher.update(&Rope::from("你好 [.*] 😀 尾"));
+        assert_eq!(matcher.label(), "1/1");
+        matcher.update_query("absent", false);
+        assert_eq!(matcher.label(), "0/0");
     }
 
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
@@ -231,6 +250,58 @@ impl InputState {
         })
     }
 
+    #[cfg(feature = "editor-diagnostics")]
+    pub fn diagnostic_replace_step(
+        &mut self,
+        step: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        const ORIGINAL: &str = "你好 [.*] 😀 [.*] 尾";
+        const ONE: &str = "你好 é 😀 [.*] 尾";
+        const ALL: &str = "你好 é 😀 é 尾";
+        match step {
+            0 => {
+                self.set_value(ORIGINAL, window, cx);
+                self.selected_range = (7..11).into();
+                self.open_search_replace(window, cx);
+                let panel = self.search_panel.as_ref().unwrap().read(cx);
+                assert!(panel.open && panel.replace_mode);
+                assert_eq!(panel.search_input.read(cx).value().as_str(), "[.*]");
+                assert!(panel.search_input.read(cx).focus_handle.is_focused(window));
+            }
+            1 => {
+                self.search_panel.clone().unwrap().update(cx, |panel, cx| {
+                    assert_eq!(panel.matcher.len(), 2);
+                    panel
+                        .replace_input
+                        .update(cx, |input, cx| input.set_value("é", window, cx));
+                    panel.replace_next(window, cx);
+                });
+            }
+            2 => {
+                assert_eq!(self.value().as_str(), ONE);
+                self.undo(&super::Undo, window, cx);
+                assert_eq!(self.value().as_str(), ORIGINAL);
+                self.redo(&super::Redo, window, cx);
+                assert_eq!(self.value().as_str(), ONE);
+                self.search_panel
+                    .clone()
+                    .unwrap()
+                    .update(cx, |panel, cx| panel.replace_all(window, cx));
+            }
+            3 => {
+                assert_eq!(self.value().as_str(), ALL);
+                self.undo(&super::Undo, window, cx);
+                assert_eq!(self.value().as_str(), ONE);
+                self.redo(&super::Redo, window, cx);
+                assert_eq!(self.value().as_str(), ALL);
+                self.close_search(window, cx);
+            }
+            _ => unreachable!(),
+        }
+    }
+
     /// Update the search matcher when text changes.
     pub(super) fn update_search(&mut self, cx: &mut App) {
         let Some(search_panel) = self.search_panel.as_ref() else {
@@ -257,6 +328,21 @@ impl InputState {
         self.open_search(window, cx);
     }
 
+    /// Open find with replacement controls expanded, focusing the search query.
+    /// Find-only and disabled inputs cannot expose replacement controls.
+    pub fn open_search_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.searchable || !self.search_replaceable || self.disabled {
+            return;
+        }
+        self.open_search(window, cx);
+        if let Some(panel) = &self.search_panel {
+            panel.update(cx, |panel, cx| {
+                panel.replace_mode = true;
+                cx.notify();
+            });
+        }
+    }
+
     /// Open and focus find, using the current selection as the initial query.
     pub fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.searchable || self.disabled {
@@ -279,6 +365,14 @@ impl InputState {
         self.search_panel = Some(search_panel);
         cx.notify();
     }
+}
+
+fn replacement_text(source: &Rope, ranges: &[Range<usize>], replacement: &str) -> String {
+    let mut rope = source.clone();
+    for range in ranges.iter().rev() {
+        rope.replace(range.clone(), replacement);
+    }
+    rope.to_string()
 }
 
 impl SearchPanel {
@@ -406,7 +500,6 @@ impl SearchPanel {
 
     fn replace_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let new_text = self.replace_input.read(cx).value();
-        self.matcher.replacing = true;
         if let Some(range) = self
             .matcher
             .matched_ranges
@@ -415,13 +508,18 @@ impl SearchPanel {
         {
             let text_state = self.editor.clone();
 
-            let next_range = self.matcher.peek().unwrap_or(range.clone());
+            let snapshot = self.matcher.text.clone();
             cx.spawn_in(window, async move |_, cx| {
                 cx.update(|window, cx| {
                     text_state.update(cx, |state, cx| {
+                        if state.disabled || !state.search_replaceable || state.text != snapshot {
+                            return;
+                        }
+                        if let Some(panel) = &state.search_panel {
+                            panel.update(cx, |panel, _| panel.matcher.replacing = true);
+                        }
                         let range_utf16 = state.range_to_utf16(&range);
-                        state.scroll_to(next_range.end, Some(MoveDirection::Down), cx);
-                        state.replace_text_in_range_silent(
+                        state.replace_range_isolated(
                             Some(range_utf16),
                             new_text.as_str(),
                             window,
@@ -436,7 +534,7 @@ impl SearchPanel {
 
     fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let new_text = self.replace_input.read(cx).value();
-        self.matcher.replacing = true;
+        let snapshot = self.matcher.text.clone();
         let ranges = self.matcher.matched_ranges.clone();
         if ranges.is_empty() {
             return;
@@ -446,17 +544,12 @@ impl SearchPanel {
         cx.spawn_in(window, async move |_, cx| {
             cx.update(|window, cx| {
                 editor.update(cx, |state, cx| {
-                    // Replace from the end to avoid messing up the ranges.
-                    let mut rope = state.text.clone();
-                    for range in ranges.iter().rev() {
-                        rope.replace(range.clone(), new_text.as_str());
+                    if state.disabled || !state.search_replaceable || state.text != snapshot {
+                        return;
                     }
-                    state.replace_text_in_range_silent(
-                        Some(0..state.text.len()),
-                        &rope.to_string(),
-                        window,
-                        cx,
-                    );
+                    let text = replacement_text(&state.text, &ranges, new_text.as_str());
+                    let full_range = state.range_to_utf16(&(0..state.text.len()));
+                    state.replace_range_isolated(Some(full_range), &text, window, cx);
                     state.scroll_to(0, Some(MoveDirection::Down), cx);
                 });
             })

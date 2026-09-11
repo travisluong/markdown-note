@@ -202,7 +202,11 @@ struct Notes {
 
 impl Notes {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let editor = cx.new(|cx| InputState::new(window, cx).multi_line(true).find_only());
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .searchable(true)
+        });
         let editor_subscription = Self::subscribe_editor(&editor, window, cx);
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {

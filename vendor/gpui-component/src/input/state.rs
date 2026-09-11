@@ -684,13 +684,24 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.replace_range_isolated(None, text, window, cx);
+    }
+
+    /// Apply a UTF-16 range replacement as one undo step.
+    pub(super) fn replace_range_isolated(
+        &mut self,
+        range: Option<Range<usize>>,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.disabled {
             return;
         }
         let history = std::mem::replace(&mut self.history, History::new());
         self.history = history.group_interval(std::time::Duration::ZERO);
         self.list_enter_boundary = false;
-        self.replace_text_in_range_silent(None, text, window, cx);
+        self.replace_text_in_range_silent(range, text, window, cx);
         self.list_enter_boundary = true;
     }
 

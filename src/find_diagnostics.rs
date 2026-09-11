@@ -122,4 +122,22 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
         })
     })
     .unwrap();
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.set_mode(mode, window, cx)))
+            .unwrap();
+        for step in 0..=3 {
+            Timer::after(std::time::Duration::from_millis(150)).await;
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    this.editor.update(cx, |editor, cx| {
+                        editor.diagnostic_replace_step(step, window, cx)
+                    });
+                    if step >= 2 {
+                        assert!(this.dirty(cx), "replacement updates dirty state");
+                    }
+                })
+            })
+            .unwrap();
+        }
+    }
 }

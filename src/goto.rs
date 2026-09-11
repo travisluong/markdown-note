@@ -17,6 +17,7 @@ enum Command {
     NewNote,
     SearchFile,
     SearchAllFiles,
+    ReplaceFile,
 }
 
 impl Command {
@@ -28,6 +29,7 @@ impl Command {
         Self::NewNote,
         Self::SearchFile,
         Self::SearchAllFiles,
+        Self::ReplaceFile,
     ];
 
     fn label(self) -> &'static str {
@@ -39,6 +41,7 @@ impl Command {
             Self::NewNote => "Notebook: Create new note",
             Self::SearchFile => "Search: Search current file",
             Self::SearchAllFiles => "Search: Search in all files",
+            Self::ReplaceFile => "Search: Search and replace in current file",
         }
     }
 
@@ -51,6 +54,7 @@ impl Command {
             Self::NewNote => "Create an Untitled note in the notebook root",
             Self::SearchFile => "Find text in the current document",
             Self::SearchAllFiles => "Search Markdown files in the active notebook",
+            Self::ReplaceFile => "Find and replace text in the current document",
         }
     }
 
@@ -70,7 +74,7 @@ impl Command {
                 Some("Open a notebook to search all Markdown files")
             }
             Self::NewNote if !notebook => Some("Open a notebook to create a note"),
-            Self::InsertDate | Self::EditLink if !document || reading => {
+            Self::InsertDate | Self::EditLink | Self::ReplaceFile if !document || reading => {
                 Some("Open an editable document in Source or Live preview")
             }
             _ => None,
@@ -381,6 +385,9 @@ impl Notes {
             Command::EditLink => self.edit_link(window, cx),
             Command::SearchFile => self.search_current_file(window, cx),
             Command::SearchAllFiles => self.open_search_all(window, cx),
+            Command::ReplaceFile => self
+                .editor
+                .update(cx, |editor, cx| editor.open_search_replace(window, cx)),
             Command::NewNote => {
                 if let Some(book) = &self.notebooks.active {
                     self.request(Next::NewNote(book.root.clone()), window, cx);
@@ -670,6 +677,30 @@ mod tests {
         assert!(
             Command::SearchAllFiles
                 .unavailable(true, false, false, false)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn replacement_requires_an_editable_document() {
+        assert!(
+            Command::ReplaceFile
+                .unavailable(true, false, false, false)
+                .is_none()
+        );
+        assert!(
+            Command::ReplaceFile
+                .unavailable(true, true, false, true)
+                .is_some()
+        );
+        assert!(
+            Command::ReplaceFile
+                .unavailable(false, false, false, true)
+                .is_some()
+        );
+        assert!(
+            Command::ReplaceFile
+                .unavailable(true, false, true, true)
                 .is_some()
         );
     }

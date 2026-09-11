@@ -64,7 +64,10 @@ table text. Reading view highlights rendered text and scrolls to the active
 match while keeping the selected view mode. Matches in hidden Markdown syntax
 reveal their containing block and show a short explanation.
 Ctrl+F also works from the notebook sidebar. Find state resets when another
-document is loaded. Replacement is not included.
+document is loaded. In Source and Live preview, the find panel also offers
+Replace one and Replace all. The command palette can open these controls directly;
+replacement is unavailable in Reading view. Replacements use literal text and
+form separate undo steps.
 
 `Ctrl+Shift+F` or the **Search** toolbar button searches literal text across all
 `.md` and `.markdown` files in the active notebook, including unsaved changes in
@@ -159,7 +162,21 @@ The opt-in GPUI_NOTE_AUTOSAVE_CHECK diagnostic (editor-diagnostics build) exerci
 
 Live preview renders explicitly marked blockquotes with muted text, indentation, and one vertical bar per nesting level. Quote prefixes reappear on the cursor source line. Emphasis and clickable tasks work inside quotes; unmarked continuation lines remain literal under the line-local renderer.
 
-Ctrl+P opens the command palette. **Templates: Insert current date** replaces the
+Ctrl+P opens the searchable command palette. It includes:
+
+- **Appearance: Toggle light/dark mode**, preserving each theme's custom colors.
+- **Notebook: Change notebook**, opening a searchable list of registered notebooks
+  with their paths and an active marker. Escape returns to the command list.
+- **Notebook: Create new note**, creating an empty `Untitled.md` in the notebook
+  root, or `Untitled 2.md`, `Untitled 3.md`, and so on when names are taken.
+  Save/Discard/Cancel protection runs first. The new note opens for editing;
+  Reading view switches to Source.
+- **Search: Search current file**, available in all three view modes.
+- **Search: Search in all files**, searching Markdown files in the active notebook.
+- **Search: Search and replace in current file**, available in Source and Live preview.
+
+Unavailable commands remain visible with an explanation. Existing date and link
+commands are retained. **Templates: Insert current date** replaces the
 remembered editor selection as one undoable edit in Source or Live preview.
 Settings has General, Templates, and Theme sections; the date format is saved per
 notebook (or for the session without a notebook). Invalid edits show an inline

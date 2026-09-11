@@ -19,3 +19,9 @@ mod text_wrapper;
 mod table {
     pub use gpui_component::input::table::*;
 }
+
+#[cfg(feature = "editor-diagnostics")]
+#[test]
+fn find_and_replace_literal_unicode_and_match_navigation() {
+    gpui_component::input::InputState::diagnostic_find_matcher();
+}

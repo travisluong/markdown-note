@@ -147,3 +147,11 @@ headless tests cover incremental/full-parser equivalence, definition changes,
 Unicode source mappings, table references, and wrapped/gutter hit testing.
 
 - Ordered list nesting starts a fresh sibling count, with an app-configurable alphabetic marker option. Alphabetic markers support Enter continuation and outdent; they are a plain-text extension to standard Markdown.
+
+
+The command palette can call public `InputState::open_search_replace()` to open
+replacement controls with the find query focused. Find-only and disabled inputs
+remain protected. Search replacements use isolated undo edits, convert whole-file
+UTF-8 byte ranges to UTF-16 before editing, and reject deferred edits when the
+source changed. Match indices clamp and reset after replacements. The headless
+find diagnostic covers literal Unicode replacement and last-result removal.
