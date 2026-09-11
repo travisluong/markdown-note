@@ -195,7 +195,7 @@ impl ThemePalette {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
-    pub entry_order: Vec<PathBuf>,
+    pub file_sort: FileSort,
     #[serde(default)]
     pub nested_list_letters: bool,
     #[serde(default)]
@@ -216,7 +216,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            entry_order: Vec::new(),
+            file_sort: FileSort::default(),
             nested_list_letters: false,
             view_mode: crate::ViewMode::default(),
             sidebar_width: default_sidebar_width(),
@@ -467,6 +467,8 @@ impl Notebook {
 
 #[derive(Clone, Debug)]
 pub struct Entry {
+    pub modified: Option<std::time::SystemTime>,
+    pub created: Option<std::time::SystemTime>,
     pub relative: PathBuf,
     pub directory: bool,
     pub link: bool,
@@ -486,21 +488,14 @@ pub fn read_directory(root: &Path, relative: &Path) -> io::Result<Vec<Entry>> {
         }
         let metadata = fs::symlink_metadata(entry.path())?;
         entries.push(Entry {
+            modified: metadata.modified().ok(),
+            created: metadata.created().ok(),
             relative: relative.join(entry.file_name()),
             directory: metadata.is_dir(),
             link: is_link(&metadata),
         });
     }
-    entries.sort_by(|a, b| {
-        b.directory
-            .cmp(&a.directory)
-            .then_with(|| {
-                name(&a.relative)
-                    .to_lowercase()
-                    .cmp(&name(&b.relative).to_lowercase())
-            })
-            .then_with(|| a.relative.cmp(&b.relative))
-    });
+    FileSort::default().sort_entries(&mut entries);
     Ok(entries)
 }
 
@@ -950,54 +945,87 @@ pub fn remap_path(path: &Path, from: &Path, to: &Path) -> PathBuf {
 }
 
 impl Settings {
-    pub fn reorder_entry(
-        &mut self,
-        from: &Path,
-        to: &Path,
-        before: Option<&Path>,
-        siblings: Vec<PathBuf>,
-    ) {
+    pub fn remap_entry(&mut self, from: &Path, to: &Path) {
         self.expanded = self
             .expanded
             .iter()
             .map(|p| remap_path(p, from, to))
             .collect();
         self.last_file = self.last_file.as_ref().map(|p| remap_path(p, from, to));
-        self.entry_order = self
-            .entry_order
-            .iter()
-            .map(|p| remap_path(p, from, to))
-            .collect();
-        self.entry_order
-            .retain(|p| p != to && p.parent() != to.parent());
-        let mut siblings: Vec<_> = siblings
-            .into_iter()
-            .filter(|p| p != from && p != to)
-            .collect();
-        let at = before
-            .and_then(|b| siblings.iter().position(|p| p == b))
-            .unwrap_or(siblings.len());
-        siblings.insert(at, to.to_path_buf());
-        self.entry_order.extend(siblings);
         if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
             self.expanded.insert(parent.to_path_buf());
         }
     }
     pub fn sort_entries(&self, entries: &mut [Entry]) {
-        entries.sort_by_key(|entry| {
-            self.entry_order
-                .iter()
-                .position(|p| p == &entry.relative)
-                .unwrap_or(usize::MAX)
-        });
+        self.file_sort.sort_entries(entries);
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSort {
+    #[default]
+    NameAscending,
+    NameDescending,
+    ModifiedNewest,
+    ModifiedOldest,
+    CreatedNewest,
+    CreatedOldest,
+}
+
+impl FileSort {
+    pub const OPTIONS: [(Self, &'static str); 6] = [
+        (Self::NameAscending, "File name (A to Z)"),
+        (Self::NameDescending, "File name (Z to A)"),
+        (Self::ModifiedNewest, "Modified time (new to old)"),
+        (Self::ModifiedOldest, "Modified time (old to new)"),
+        (Self::CreatedNewest, "Created time (new to old)"),
+        (Self::CreatedOldest, "Created time (old to new)"),
+    ];
+
+    pub fn sort_entries(self, entries: &mut [Entry]) {
+        use std::cmp::Ordering;
+        let by_name = |a: &Entry, b: &Entry| {
+            name(&a.relative)
+                .to_lowercase()
+                .cmp(&name(&b.relative).to_lowercase())
+                .then_with(|| a.relative.cmp(&b.relative))
+        };
+        entries.sort_by(|a, b| {
+            b.directory.cmp(&a.directory).then_with(|| {
+                if a.directory {
+                    return by_name(a, b);
+                }
+                let (left, right, newest) = match self {
+                    Self::NameAscending => return by_name(a, b),
+                    Self::NameDescending => return by_name(b, a),
+                    Self::ModifiedNewest => (a.modified, b.modified, true),
+                    Self::ModifiedOldest => (a.modified, b.modified, false),
+                    Self::CreatedNewest => (a.created, b.created, true),
+                    Self::CreatedOldest => (a.created, b.created, false),
+                };
+                match (left, right) {
+                    (Some(left), Some(right)) => {
+                        if newest {
+                            right.cmp(&left)
+                        } else {
+                            left.cmp(&right)
+                        }
+                    }
+                    (Some(_), None) => Ordering::Less,
+                    (None, Some(_)) => Ordering::Greater,
+                    (None, None) => Ordering::Equal,
+                }
+                .then_with(|| by_name(a, b))
+            })
+        });
+    }
+}
 #[cfg(test)]
 mod move_tests {
     use super::*;
     #[test]
-    fn move_reorder_and_preserve_paths() {
+    fn move_and_preserve_paths() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir(root.join("folder")).unwrap();
@@ -1020,21 +1048,13 @@ mod move_tests {
         let mut settings = Settings::default();
         settings.last_file = Some(PathBuf::from("folder/a.md"));
         settings.expanded.insert(PathBuf::from("folder/sub"));
-        settings.reorder_entry(
-            Path::new("folder"),
-            Path::new("new/folder"),
-            Some(Path::new("new/z.md")),
-            vec!["new/z.md".into()],
-        );
+        settings.remap_entry(Path::new("folder"), Path::new("new/folder"));
         assert_eq!(
             settings.last_file.unwrap(),
             PathBuf::from("new/folder/a.md")
         );
         assert!(settings.expanded.contains(Path::new("new/folder/sub")));
-        assert_eq!(
-            settings.entry_order,
-            vec![PathBuf::from("new/folder"), PathBuf::from("new/z.md")]
-        );
+        assert!(settings.expanded.contains(Path::new("new")));
     }
 }
 
@@ -1060,5 +1080,146 @@ impl Appearance {
             } else {
                 ThemeChoice::Light
             })
+    }
+}
+
+#[cfg(test)]
+mod sort_tests {
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    fn entry(path: &str, directory: bool, modified: Option<u64>, created: Option<u64>) -> Entry {
+        Entry {
+            relative: path.into(),
+            directory,
+            link: false,
+            modified: modified.map(|seconds| UNIX_EPOCH + Duration::from_secs(seconds)),
+            created: created.map(|seconds| UNIX_EPOCH + Duration::from_secs(seconds)),
+        }
+    }
+
+    #[test]
+    fn six_orders_keep_folders_alphabetical_and_missing_times_last() {
+        let entries = vec![
+            entry("z-folder", true, Some(1), Some(1)),
+            entry("A-folder", true, Some(9), Some(9)),
+            entry("b.md", false, Some(3), Some(1)),
+            entry("a.md", false, Some(1), Some(3)),
+            entry("C.md", false, Some(2), Some(2)),
+            entry("unknown.md", false, None, None),
+        ];
+        for (sort, expected) in [
+            (
+                FileSort::NameAscending,
+                ["a.md", "b.md", "C.md", "unknown.md"],
+            ),
+            (
+                FileSort::NameDescending,
+                ["unknown.md", "C.md", "b.md", "a.md"],
+            ),
+            (
+                FileSort::ModifiedNewest,
+                ["b.md", "C.md", "a.md", "unknown.md"],
+            ),
+            (
+                FileSort::ModifiedOldest,
+                ["a.md", "C.md", "b.md", "unknown.md"],
+            ),
+            (
+                FileSort::CreatedNewest,
+                ["a.md", "C.md", "b.md", "unknown.md"],
+            ),
+            (
+                FileSort::CreatedOldest,
+                ["b.md", "C.md", "a.md", "unknown.md"],
+            ),
+        ] {
+            let mut sorted = entries.clone();
+            sort.sort_entries(&mut sorted);
+            let names: Vec<_> = sorted.iter().map(|e| name(&e.relative)).collect();
+            assert_eq!(&names[..2], &["A-folder", "z-folder"]);
+            assert_eq!(&names[2..], &expected, "{sort:?}");
+        }
+        for (sort, _) in FileSort::OPTIONS {
+            let mut entries = vec![
+                entry("b.md", false, Some(1), Some(1)),
+                entry("a.md", false, Some(1), Some(1)),
+                entry("A.md", false, Some(1), Some(1)),
+            ];
+            sort.sort_entries(&mut entries);
+            let names: Vec<_> = entries.iter().map(|e| name(&e.relative)).collect();
+            assert_eq!(
+                names,
+                if sort == FileSort::NameDescending {
+                    vec!["b.md", "a.md", "A.md"]
+                } else {
+                    vec!["A.md", "a.md", "b.md"]
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_order_is_ignored_and_selection_persists() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        json.as_object_mut().unwrap().remove("file_sort");
+        json["entry_order"] = serde_json::json!(["z.md", "a.md"]);
+        let mut settings: Settings = serde_json::from_value(json).unwrap();
+        assert_eq!(settings.file_sort, FileSort::NameAscending);
+        assert!(
+            !serde_json::to_string(&settings)
+                .unwrap()
+                .contains("entry_order")
+        );
+        for (sort, _) in FileSort::OPTIONS {
+            settings.file_sort = sort;
+            let encoded = serde_json::to_string(&settings).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Settings>(&encoded)
+                    .unwrap()
+                    .file_sort,
+                sort
+            );
+        }
+    }
+
+    #[test]
+    fn metadata_refresh_changes_modified_order_and_same_parent_move_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("a.md"), "a").unwrap();
+        fs::write(root.join("b.md"), "b").unwrap();
+        let set_time = |path: &str, seconds| {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(root.join(path))
+                .unwrap()
+                .set_times(
+                    fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(seconds)),
+                )
+                .unwrap();
+        };
+        set_time("a.md", 100);
+        set_time("b.md", 200);
+        let mut entries = read_directory(root, Path::new("")).unwrap();
+        FileSort::ModifiedNewest.sort_entries(&mut entries);
+        assert_eq!(name(&entries[0].relative), "b.md");
+        set_time("a.md", 300);
+        entries = read_directory(root, Path::new("")).unwrap();
+        FileSort::ModifiedNewest.sort_entries(&mut entries);
+        assert_eq!(name(&entries[0].relative), "a.md");
+        let metadata = fs::metadata(root.join("a.md")).unwrap();
+        assert_eq!(entries[0].created, metadata.created().ok());
+        assert_eq!(
+            move_entry(root, Path::new("a.md"), Path::new("")).unwrap(),
+            Path::new("a.md")
+        );
+        assert_eq!(
+            fs::metadata(root.join("a.md")).unwrap().modified().unwrap(),
+            metadata.modified().unwrap()
+        );
+        assert_eq!(fs::read_to_string(root.join("a.md")).unwrap(), "a");
+        fs::create_dir_all(root.join("folder/child")).unwrap();
+        assert!(move_entry(root, Path::new("folder"), Path::new("folder/child")).is_err());
     }
 }

@@ -1,6 +1,9 @@
 use super::*;
 use gpui_component::resizable::{ResizableState, h_resizable, resizable_panel};
-use gpui_component::{IconName, PixelsExt, Selectable};
+use gpui_component::{
+    Disableable, IconName, PixelsExt, Selectable,
+    menu::{DropdownMenu, PopupMenuItem},
+};
 
 impl Notes {
     pub(super) fn reveal_sidebar(&mut self, cx: &mut Context<Self>) {
@@ -47,13 +50,14 @@ impl Notes {
 
     fn render_sidebar_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let searching = self.search.as_ref().is_some_and(|panel| panel.visible);
+        let owner = cx.weak_entity();
         div()
             .id("sidebar-toolbar")
             .drag_over::<notebook_ui::EntryDrag>(|view, _, _, cx| view.bg(cx.theme().accent))
             .on_drop(
                 cx.listener(|this, drag: &notebook_ui::EntryDrag, window, cx| {
                     cx.stop_propagation();
-                    this.drop_entry(drag, PathBuf::new(), None, window, cx);
+                    this.drop_entry(drag, PathBuf::new(), window, cx);
                 }),
             )
             .flex()
@@ -78,6 +82,40 @@ impl Notes {
                     .tooltip("Search all files (Ctrl+Shift+F)")
                     .selected(searching)
                     .on_click(cx.listener(|this, _, window, cx| this.open_search_all(window, cx))),
+            )
+            .child(
+                Button::new("sidebar-sort")
+                    .small()
+                    .ghost()
+                    .icon(IconName::SortAscending)
+                    .tooltip("Sort files")
+                    .disabled(self.busy)
+                    .dropdown_menu(move |mut menu, _, cx| {
+                        let selected = owner
+                            .upgrade()
+                            .and_then(|entity| {
+                                entity
+                                    .read(cx)
+                                    .notebooks
+                                    .active
+                                    .as_ref()
+                                    .map(|book| book.settings.file_sort)
+                            })
+                            .unwrap_or_default();
+                        for (sort, label) in notebook::FileSort::OPTIONS {
+                            let owner = owner.clone();
+                            menu = menu.item(
+                                PopupMenuItem::new(label)
+                                    .checked(sort == selected)
+                                    .on_click(move |_, window, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            this.set_file_sort(sort, window, cx)
+                                        });
+                                    }),
+                            );
+                        }
+                        menu
+                    }),
             )
     }
     pub(super) fn reset_sidebar_resize(&mut self, cx: &mut Context<Self>) {

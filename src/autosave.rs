@@ -117,6 +117,9 @@ impl Notes {
                                 }
                             }
                             this.check_dirty(window, cx);
+                            if this.notebooks.active.as_ref().is_some_and(|book| path.starts_with(&book.root)) {
+                                this.refresh_sorted_tree(window, cx);
+                            }
                         }
                         Err(error) => this.saves.error = Some(format!("Could not save file: {error}. Your changes are still in the editor. Edit again or use Save to retry.")),
                     }

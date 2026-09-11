@@ -1033,10 +1033,6 @@ impl Notes {
             .unwrap_or_default();
         div()
             .id("notebook-sidebar")
-            .on_drop(cx.listener(|this, drag: &EntryDrag, window, cx| {
-                cx.stop_propagation();
-                this.drop_entry(drag, PathBuf::new(), None, window, cx);
-            }))
             .key_context("NotebookTree")
             .track_focus(&self.notebooks.tree_focus)
             .on_action(
@@ -1104,7 +1100,6 @@ impl Notes {
                                     "  "
                                 };
                                 let path = row.path.clone();
-                                let before_path = path.clone();
                                 let directory = row.directory;
                                 let drag = EntryDrag {
                                     root: this.notebooks.active.as_ref().unwrap().root.clone(),
@@ -1136,54 +1131,18 @@ impl Notes {
                                             cx.stop_propagation();
                                             cx.new(|_| drag.clone())
                                         })
-                                        .drag_over::<EntryDrag>(|view, _, _, cx| {
+                                    })
+                                    .when(row.draggable && directory && !this.busy, |view| {
+                                        view.drag_over::<EntryDrag>(|view, _, _, cx| {
                                             view.bg(cx.theme().accent)
                                         })
-                                        .on_drop(cx.listener(
-                                            move |this, drag: &EntryDrag, window, cx| {
-                                                cx.stop_propagation();
-                                                let parent = if directory {
-                                                    path.clone()
-                                                } else {
-                                                    path.parent()
-                                                        .unwrap_or(Path::new(""))
-                                                        .to_path_buf()
-                                                };
-                                                this.drop_entry(
-                                                    drag,
-                                                    parent,
-                                                    (!directory).then(|| path.clone()),
-                                                    window,
-                                                    cx,
-                                                );
-                                            },
-                                        ))
-                                        .child(
-                                            div()
-                                                .id(("drop-before", index))
-                                                .absolute()
-                                                .top_0()
-                                                .left_0()
-                                                .w_full()
-                                                .h(px(6.))
-                                                .drag_over::<EntryDrag>(|view, _, _, cx| {
-                                                    view.bg(cx.theme().drag_border)
-                                                })
-                                                .on_drop(cx.listener(
-                                                    move |this, drag: &EntryDrag, window, cx| {
-                                                        cx.stop_propagation();
-                                                        this.drop_entry(
-                                                            drag,
-                                                            before_path
-                                                                .parent()
-                                                                .unwrap_or(Path::new(""))
-                                                                .to_path_buf(),
-                                                            Some(before_path.clone()),
-                                                            window,
-                                                            cx,
-                                                        );
-                                                    },
-                                                )),
+                                        .on_drop(
+                                            cx.listener(
+                                                move |this, drag: &EntryDrag, window, cx| {
+                                                    cx.stop_propagation();
+                                                    this.drop_entry(drag, path.clone(), window, cx);
+                                                },
+                                            ),
                                         )
                                     })
                                     .child(format!("{prefix}{}", row.label))
@@ -1223,7 +1182,6 @@ impl Notes {
         &mut self,
         drag: &EntryDrag,
         parent: PathBuf,
-        before: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -1239,7 +1197,7 @@ impl Notes {
         let Some(book) = &self.notebooks.active else {
             return;
         };
-        if book.root != drag.root || before.as_ref() == Some(&drag.path) {
+        if book.root != drag.root || drag.path.parent() == Some(parent.as_path()) {
             return;
         }
         let root = book.root.clone();
@@ -1254,15 +1212,8 @@ impl Notes {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let mut entries = notebook::read_directory(&worker_root, &parent)?;
-                    settings.sort_entries(&mut entries);
                     let to = notebook::move_entry(&worker_root, &worker_from, &parent)?;
-                    settings.reorder_entry(
-                        &worker_from,
-                        &to,
-                        before.as_deref(),
-                        entries.into_iter().map(|e| e.relative).collect(),
-                    );
+                    settings.remap_entry(&worker_from, &to);
                     Ok::<_, io::Error>((to, settings))
                 })
                 .await;
@@ -1282,7 +1233,10 @@ impl Notes {
                         }
                         this.notebooks.notice = None;
                         this.persist_notebooks(cx);
-                        this.refresh_tree(window, cx);
+                        for row in &mut this.notebooks.rows {
+                            row.path = notebook::remap_path(&row.path, &from, &to);
+                        }
+                        this.refresh_sorted_tree(window, cx);
                         this.schedule_search(window, cx);
                     }
                     Err(error) => {
@@ -1290,6 +1244,106 @@ impl Notes {
                     }
                 }
                 this.schedule_autosave(window, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}
+
+impl Notes {
+    pub(super) fn set_file_sort(
+        &mut self,
+        sort: notebook::FileSort,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy || window.has_active_dialog(cx) {
+            return;
+        }
+        let Some(book) = &mut self.notebooks.active else {
+            return;
+        };
+        if book.settings.file_sort == sort {
+            return;
+        }
+        book.settings.file_sort = sort;
+        for state in self.notebooks.directories.values_mut() {
+            if let DirectoryState::Ready(entries) = state {
+                sort.sort_entries(entries);
+            }
+        }
+        self.notebooks.rebuild_rows();
+        self.persist_notebooks(cx);
+        cx.notify();
+    }
+
+    // Keep current rows visible until fresh metadata arrives, so keyboard selection
+    // survives reordering. Generation checks discard reads from older saves/notebooks.
+    pub(super) fn refresh_sorted_tree(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(book) = &self.notebooks.active else {
+            return;
+        };
+        let root = book.root.clone();
+        let mut paths = book.settings.expanded.clone();
+        paths.insert(PathBuf::new());
+        self.notebooks.generation += 1;
+        let generation = self.notebooks.generation;
+        cx.spawn_in(window, async move |this, cx| {
+            let directories = cx
+                .background_executor()
+                .spawn(async move {
+                    paths
+                        .into_iter()
+                        .map(|path| {
+                            let result = notebook::read_directory(&root, &path);
+                            (path, result)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.notebooks.generation != generation {
+                    return;
+                }
+                let Some(book) = &this.notebooks.active else {
+                    return;
+                };
+                let mut refreshed: BTreeMap<_, _> = directories
+                    .into_iter()
+                    .map(|(path, result)| {
+                        let state = match result {
+                            Ok(mut entries) => {
+                                book.settings.sort_entries(&mut entries);
+                                DirectoryState::Ready(entries)
+                            }
+                            Err(error) => DirectoryState::Failed(error.to_string()),
+                        };
+                        (path, state)
+                    })
+                    .collect();
+                // Preserve directories loaded after this refresh started, including
+                // their selected rows, rather than replacing them with loading rows.
+                for path in &book.settings.expanded {
+                    if !refreshed.contains_key(path)
+                        && let Some(state) = this.notebooks.directories.remove(path)
+                    {
+                        refreshed.insert(path.clone(), state);
+                    }
+                }
+                this.notebooks.directories = refreshed;
+                // A user may have expanded another folder while metadata was read.
+                let missing: Vec<_> = book
+                    .settings
+                    .expanded
+                    .iter()
+                    .filter(|path| !this.notebooks.directories.contains_key(*path))
+                    .cloned()
+                    .collect();
+                this.notebooks.rebuild_rows();
+                for path in missing {
+                    this.load_directory(path, window, cx);
+                }
                 cx.notify();
             });
         })

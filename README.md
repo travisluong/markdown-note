@@ -14,7 +14,7 @@ cargo run --locked
 ## Use
 
 - **File → Open…** (`Ctrl+O`): open a UTF-8 `.md` or `.markdown` file.
-- **File → Settings**: adjust content font size (10–40 px), UI font size (10–24 px), and themes. The Theme section offers Light, Dark, and Dark Gray, default background and font color pickers, and a reset to theme colors. Changes apply immediately and are saved per notebook. Without an active notebook, settings apply for the session only.
+- **File → Settings**: adjust content font size (10–40 px), UI font size (10–24 px), and themes. The Theme section offers independently customizable Light and Dark palettes, background/font/primary color pickers, and a button to reset both palettes. Changes apply immediately and are saved per notebook. Without an active notebook, settings apply for the session only.
 - **File → Save** (`Ctrl+S`): save back to the opened file.
 - **Notebooks → Manage notebooks**: create a notebook or open an existing folder.
 - **Notebooks → notebook name**: switch notebooks and restore its last selected note.
@@ -219,11 +219,8 @@ save-before-navigation flow. Notebook links stay inside the current notebook;
 filesystem symlinks/junctions are not traversed. Heading anchors, wiki links,
 and links to other local file types are not included.
 
-Explorer drag and drop: drop onto a folder to move an entry inside it. Drop onto
-an entry's top edge to place it before that entry (including folders), or onto a
-file row to place it before that file. Drop onto the notebook title, toolbar, or
-empty sidebar area to move to the notebook root. Sibling order is saved per
-notebook. Name collisions and moves into a folder's own descendants are rejected;
-open buffers keep their edits and follow the moved path.
+Explorer drag and drop moves files and folders into a destination folder or, when dropped onto the sidebar toolbar, into the notebook root. Name collisions and moves into a folder’s own descendants are rejected; open buffers keep their edits and follow the moved path.
 
 Settings > Theme offers independent Light and Dark palettes with Background color, Font color, and Primary color pickers. Primary controls task checkboxes and links and remains independent when the font color changes. Reset Light and Dark themes restores both palettes without changing the active mode or font sizes. Existing custom colors are preserved in the previously selected palette; Dark Gray becomes a customized Dark theme.
+
+The sidebar Sort files icon offers filename A–Z/Z–A, modified newest/oldest, and created newest/oldest ordering, saved per notebook. Folders always remain first in alphabetical order; sorting applies only to files within each folder. Unavailable timestamps sort last. Drag files or folders onto a folder to move them, or onto the sidebar toolbar to move them to the notebook root. Manual ordering and insertion targets are no longer supported; old custom ordering is ignored. Successful saves refresh timestamp ordering.

@@ -99,11 +99,15 @@ impl Notes {
             _subscription: subscription,
             entries: vec![
                 notebook::Entry {
+                    modified: None,
+                    created: None,
                     relative: PathBuf::from("Templates: Insert current date"),
                     directory: false,
                     link: false,
                 },
                 notebook::Entry {
+                    modified: None,
+                    created: None,
                     relative: PathBuf::from("Text: Insert or edit link"),
                     directory: false,
                     link: false,
