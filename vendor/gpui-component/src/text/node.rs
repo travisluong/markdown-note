@@ -1011,6 +1011,9 @@ impl Node {
                                                 div()
                                                     .id(("task", task_offset.unwrap_or(ix)))
                                                     .cursor_default()
+                                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                                        cx.stop_propagation();
+                                                    })
                                                     .when_some(
                                                         node_cx
                                                             .task_toggle

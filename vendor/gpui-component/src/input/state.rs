@@ -1326,14 +1326,9 @@ impl InputState {
                 return;
             }
         }
-        self.selecting = true;
         let offset = self.index_for_mouse_position(event.position);
-        if self.live_preview
-            && !self.disabled
-            && event.button == MouseButton::Left
-            && event.click_count == 1
-            && !event.modifiers.shift
-        {
+        // Checkbox presses must never enter text selection, including multi-clicks.
+        if self.live_preview && event.button == MouseButton::Left {
             let row = self.text.offset_to_point(offset).row;
             let start = self.text.line_start_offset(row);
             let line = self.text.slice_line(row).to_string();
@@ -1342,8 +1337,10 @@ impl InputState {
                     .task_hit_bounds(row, state)
                     .is_some_and(|bounds| bounds.contains(&event.position))
                 {
-                    let snapshot = self.text.to_string();
-                    self.toggle_markdown_task(start + state, &snapshot, window, cx);
+                    if !self.disabled {
+                        let snapshot = self.text.to_string();
+                        self.toggle_markdown_task(start + state, &snapshot, window, cx);
+                    }
                     self.selecting = false;
                     cx.stop_propagation();
                     return;
@@ -1351,6 +1348,7 @@ impl InputState {
             }
         }
 
+        self.selecting = true;
         if self.live_preview
             && !self.disabled
             && event.button == MouseButton::Left
@@ -2780,22 +2778,31 @@ impl InputState {
             "checked state does not change painted bounds"
         );
         let original = self.text.to_string();
-        self.on_mouse_down(
-            &MouseDownEvent {
-                button: MouseButton::Left,
-                click_count: 1,
-                position: hit.center(),
-                ..Default::default()
-            },
-            window,
-            cx,
-        );
-        assert_ne!(
-            self.text.to_string(),
-            original,
-            "click toggles nested quote checkbox"
-        );
-        self.undo(&Undo, window, cx);
-        assert_eq!(self.text.to_string(), original);
+        let selection = self.selected_range.clone();
+        let reversed = self.selection_reversed;
+        for click_count in [1, 2, 3, 4] {
+            for shift in [false, true] {
+                self.on_mouse_down(
+                    &MouseDownEvent {
+                        button: MouseButton::Left,
+                        click_count,
+                        position: hit.center(),
+                        modifiers: gpui::Modifiers {
+                            shift,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
+                assert_ne!(self.text.to_string(), original, "checkbox press toggles");
+                assert_eq!(self.selected_range, selection, "checkbox press preserves selection");
+                assert_eq!(self.selection_reversed, reversed);
+                assert!(!self.selecting, "checkbox press must not start drag selection");
+                self.undo(&Undo, window, cx);
+                assert_eq!(self.text.to_string(), original);
+            }
+        }
     }
 }

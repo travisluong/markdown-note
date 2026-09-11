@@ -2,6 +2,10 @@
 
 Reading and Live-preview task checkbox squares explicitly use the standard arrow
 cursor. Live-preview cursor hitboxes share the checkbox click geometry.
+Checkbox presses consume mouse-down before text selection in both views. Live
+preview handles every click count (including rapid double/triple clicks) and
+Shift-clicks as checkbox interactions, preserving the existing text selection;
+disabled checkboxes consume the press without editing.
 
 Upstream: gpui-component 0.5.1, commit
 `0f0ab35233212f8f3277028995caf0c41e13ee6c`, `crates/ui`.
