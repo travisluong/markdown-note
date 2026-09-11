@@ -6,6 +6,7 @@ mod benchmark;
 #[cfg(feature = "editor-diagnostics")]
 mod find_diagnostics;
 mod goto;
+mod help_ui;
 mod links;
 mod notebook;
 mod notebook_ui;
@@ -48,6 +49,9 @@ actions!(
         FileMenu,
         ViewMenu,
         NotebooksMenu,
+        HelpMenu,
+        KeyboardShortcuts,
+        About,
         ManageNotebooks,
         OpenSettings,
         TreeUp,
@@ -85,6 +89,7 @@ enum MenuKind {
     File,
     View,
     Notebooks,
+    Help,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -197,6 +202,7 @@ struct Notes {
     dirty_revision: u64,
     dirty_task: Option<Task<()>>,
     menu: Option<(MenuKind, Entity<PopupMenu>)>,
+    menu_previous_focus: Option<FocusHandle>,
     menu_subscription: Option<Subscription>,
     notebooks: notebook_ui::NotebookState,
     session_appearance: notebook::Appearance,
@@ -259,6 +265,7 @@ impl Notes {
             dirty_revision: 0,
             dirty_task: None,
             menu: None,
+            menu_previous_focus: None,
             menu_subscription: None,
             notebooks,
             session_appearance: notebook::Appearance {
@@ -510,6 +517,7 @@ impl Notes {
         if window.has_active_dialog(cx) {
             return;
         }
+        self.menu_previous_focus = window.focused(cx);
         let busy = self.busy;
         let can_save = self.document.is_some() && !busy;
         let mode = self.mode;
@@ -537,6 +545,8 @@ impl Notes {
                     mode == ViewMode::Reading,
                     Box::new(ReadingView),
                 )
+            } else if kind == MenuKind::Help {
+                menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts)).menu("About", Box::new(About))
             } else {
                 self.notebook_menu(menu, cx)
             }
@@ -699,6 +709,9 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &ReadingView, window, cx| {
                 this.set_mode(ViewMode::Reading, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &HelpMenu, window, cx| this.show_menu(MenuKind::Help, window, cx)))
+            .on_action(cx.listener(|this, _: &KeyboardShortcuts, window, cx| this.open_help(true, window, cx)))
+            .on_action(cx.listener(|this, _: &About, window, cx| this.open_help(false, window, cx)))
             .on_action(cx.listener(|this, _: &FileMenu, window, cx| {
                 this.show_menu(MenuKind::File, window, cx)
             }))
@@ -777,7 +790,8 @@ impl Render for Notes {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.show_menu(MenuKind::Notebooks, window, cx)
                             })),
-                    ),
+                    )
+                    .child(Button::new("help-menu").cursor_default().ghost().small().label("Help").on_click(cx.listener(|this, _, window, cx| this.show_menu(MenuKind::Help, window, cx)))),
             )
             .when_some(self.saves.error.clone(), |view, error| {
                 view.child(div().p_2().text_sm().child(error))
@@ -803,6 +817,7 @@ impl Render for Notes {
                                 MenuKind::File => 0.25,
                                 MenuKind::View => 3.375,
                                 MenuKind::Notebooks => 6.75,
+                                MenuKind::Help => 12.5,
                             } + if self.notebooks.active.is_some() {
                                 2.
                             } else {
@@ -851,24 +866,7 @@ fn main() {
         .with_assets(gpui_component_assets::Assets)
         .run(|cx: &mut App| {
             gpui_component::init(cx);
-            cx.bind_keys([
-                KeyBinding::new("ctrl-o", GoTo, Some("Notes")),
-                KeyBinding::new("ctrl-f", Search, Some("Notes")),
-                KeyBinding::new("escape", CloseReadingFind, Some("ReadingContent")),
-                KeyBinding::new("ctrl-shift-f", SearchAllFiles, Some("Notes")),
-                KeyBinding::new("ctrl-p", CommandPalette, Some("Notes")),
-                KeyBinding::new("ctrl-l", ToggleTasks, Some("DocumentEditor")),
-                KeyBinding::new("ctrl-k", EditLink, Some("DocumentEditor")),
-                KeyBinding::new("ctrl-s", Save, Some("Notes")),
-                KeyBinding::new("alt-f", FileMenu, Some("Notes")),
-                KeyBinding::new("alt-v", ViewMenu, Some("Notes")),
-                KeyBinding::new("alt-n", NotebooksMenu, Some("Notes")),
-                KeyBinding::new("up", TreeUp, Some("NotebookTree")),
-                KeyBinding::new("down", TreeDown, Some("NotebookTree")),
-                KeyBinding::new("left", TreeLeft, Some("NotebookTree")),
-                KeyBinding::new("right", TreeRight, Some("NotebookTree")),
-                KeyBinding::new("enter", TreeOpen, Some("NotebookTree")),
-            ]);
+            cx.bind_keys(help_ui::app_shortcuts().into_iter().map(|shortcut| shortcut.binding));
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {
                     cx.quit();
