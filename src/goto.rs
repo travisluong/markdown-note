@@ -5,6 +5,7 @@ use gpui_component::dialog::Dialog;
 enum PaletteMode {
     Commands,
     Files,
+    Notebooks,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,16 +13,23 @@ enum Command {
     InsertDate,
     EditLink,
     ToggleTheme,
+    ChangeNotebook,
 }
 
 impl Command {
-    const ALL: &[Self] = &[Self::InsertDate, Self::EditLink, Self::ToggleTheme];
+    const ALL: &[Self] = &[
+        Self::InsertDate,
+        Self::EditLink,
+        Self::ToggleTheme,
+        Self::ChangeNotebook,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Self::InsertDate => "Templates: Insert current date",
             Self::EditLink => "Text: Insert or edit link",
             Self::ToggleTheme => "Appearance: Toggle light/dark mode",
+            Self::ChangeNotebook => "Notebook: Change notebook",
         }
     }
 
@@ -30,6 +38,7 @@ impl Command {
             Self::InsertDate => "Insert at the editor selection",
             Self::EditLink => "Insert a link or edit the selected link",
             Self::ToggleTheme => "Switch between your Light and Dark themes",
+            Self::ChangeNotebook => "Choose a registered notebook",
         }
     }
 
@@ -56,12 +65,18 @@ impl Command {
 enum PaletteEntry {
     Command(Command),
     File(notebook::Entry),
+    Notebook { path: PathBuf, active: bool },
 }
 
 impl PaletteEntry {
     fn label(&self) -> String {
         match self {
             Self::Command(command) => command.label().into(),
+            Self::Notebook { path, active } => format!(
+                "{}{}",
+                notebook::name(path),
+                if *active { " (active)" } else { "" }
+            ),
             Self::File(entry) => format!(
                 "{}{}",
                 if entry.directory { "▸ " } else { "" },
@@ -73,6 +88,7 @@ impl PaletteEntry {
     fn search_name(&self) -> String {
         match self {
             Self::Command(command) => command.label().into(),
+            Self::Notebook { path, .. } => notebook::name(path),
             Self::File(entry) => notebook::name(&entry.relative),
         }
     }
@@ -80,13 +96,16 @@ impl PaletteEntry {
     fn detail(&self) -> String {
         match self {
             Self::Command(command) => command.description().into(),
+            Self::Notebook { path, .. } => path.display().to_string(),
             Self::File(entry) => entry.relative.display().to_string(),
         }
     }
 
     fn rank(&self, query: &str) -> Option<(u8, usize)> {
         score(&self.search_name().to_lowercase(), query).or_else(|| match self {
-            Self::File(_) => score(&self.detail().to_lowercase(), query).map(|(_, cost)| (4, cost)),
+            Self::File(_) | Self::Notebook { .. } => {
+                score(&self.detail().to_lowercase(), query).map(|(_, cost)| (4, cost))
+            }
             _ => None,
         })
     }
@@ -195,6 +214,7 @@ impl Notes {
         let placeholder = match mode {
             PaletteMode::Commands => "Search commands",
             PaletteMode::Files => "Search files and folders",
+            PaletteMode::Notebooks => "Search notebooks",
         };
         let query = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
         let subscription = cx.subscribe(&query, |this, _, event: &InputEvent, cx| {
@@ -280,6 +300,9 @@ impl Notes {
     }
 
     fn activate_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
         let entry = self
             .palette
             .as_ref()
@@ -297,6 +320,18 @@ impl Notes {
         self.close_palette(window, cx);
         match entry {
             PaletteEntry::Command(command) => self.run_command(command, window, cx),
+            PaletteEntry::Notebook { path, active } => {
+                if !active {
+                    self.request(
+                        Next::Notebook {
+                            path,
+                            create: false,
+                        },
+                        window,
+                        cx,
+                    );
+                }
+            }
             PaletteEntry::File(entry) if entry.directory => {
                 self.focus_folder(entry.relative, window, cx)
             }
@@ -327,6 +362,25 @@ impl Notes {
                 }
             }
             Command::EditLink => self.edit_link(window, cx),
+            Command::ChangeNotebook => {
+                let entries = self
+                    .notebooks
+                    .registered_paths()
+                    .iter()
+                    .map(|path| PaletteEntry::Notebook {
+                        path: path.clone(),
+                        active: self
+                            .notebooks
+                            .active
+                            .as_ref()
+                            .is_some_and(|book| book.root == *path),
+                    })
+                    .collect::<Vec<_>>();
+                let status = entries
+                    .is_empty()
+                    .then(|| "No registered notebooks. Add one from Manage notebooks.".into());
+                self.open_palette(PaletteMode::Notebooks, entries, status, window, cx);
+            }
             Command::ToggleTheme => {
                 let mut appearance = self.appearance();
                 appearance.theme = Some(match appearance.theme_choice(self.startup_dark) {
@@ -386,8 +440,15 @@ impl Notes {
             )
             .capture_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
+                    let back = this
+                        .palette
+                        .as_ref()
+                        .is_some_and(|p| p.mode == PaletteMode::Notebooks);
                     window.close_dialog(cx);
                     this.close_palette(window, cx);
+                    if back {
+                        this.command_palette(window, cx);
+                    }
                     cx.stop_propagation();
                 }),
             )
@@ -399,6 +460,7 @@ impl Notes {
                     .child(match palette.mode {
                         PaletteMode::Commands => "No matching commands",
                         PaletteMode::Files => "No matching files or folders",
+                        PaletteMode::Notebooks => "No matching notebooks",
                     })
                     .into_any_element()
             } else {
@@ -462,6 +524,7 @@ impl Notes {
             .title(match palette.mode {
                 PaletteMode::Commands => "Command palette",
                 PaletteMode::Files => "Go to",
+                PaletteMode::Notebooks => "Change notebook",
             })
             .w(px(560.).min(window.viewport_size().width - px(32.)))
             .on_close(move |_, window, cx| {
@@ -512,6 +575,31 @@ mod tests {
         assert_eq!(
             ranked_entries(&[PaletteEntry::Command(Command::ToggleTheme)], "light/dark").len(),
             1
+        );
+    }
+
+    #[test]
+    fn notebook_results_distinguish_duplicate_names_and_search_paths() {
+        let entries = vec![
+            PaletteEntry::Notebook {
+                path: "one/Notes".into(),
+                active: false,
+            },
+            PaletteEntry::Notebook {
+                path: "two/Notes".into(),
+                active: true,
+            },
+        ];
+        assert_eq!(ranked_entries(&entries, "notes").len(), 2);
+        let results = ranked_entries(&entries, "two/notes");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].label().contains("(active)"));
+        assert_eq!(results[0].detail(), "two/Notes");
+        assert_ne!(entries[0].detail(), entries[1].detail());
+        assert!(
+            Command::ChangeNotebook
+                .unavailable(false, true, false, false)
+                .is_none()
         );
     }
 

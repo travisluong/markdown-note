@@ -48,6 +48,10 @@ pub(super) struct NotebookState {
 }
 
 impl NotebookState {
+    pub(super) fn registered_paths(&self) -> &[PathBuf] {
+        &self.index.notebooks
+    }
+
     pub fn new(window: &mut Window, cx: &mut Context<Notes>) -> Self {
         let name = cx.new(|cx| InputState::new(window, cx).placeholder("Notebook name"));
         let subscription = cx.subscribe(&name, |_, _, _: &InputEvent, cx| cx.notify());
