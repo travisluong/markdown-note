@@ -175,6 +175,9 @@ struct Notes {
     settings_section: settings_ui::SettingsSection,
     theme_pickers: Vec<Entity<gpui_component::color_picker::ColorPickerState>>,
     theme_subscriptions: Vec<Subscription>,
+    font_pickers: Vec<Entity<gpui_component::select::SelectState<gpui_component::select::SearchableVec<String>>>>,
+    font_subscriptions: Vec<Subscription>,
+    installed_fonts: Vec<String>,
     saves: autosave::SaveState,
     autosave_delay: Option<Entity<InputState>>,
     autosave_subscription: Option<Subscription>,
@@ -234,6 +237,9 @@ impl Notes {
             settings_section: settings_ui::SettingsSection::General,
             theme_pickers: Vec::new(),
             theme_subscriptions: Vec::new(),
+            font_pickers: Vec::new(),
+            font_subscriptions: Vec::new(),
+            installed_fonts: cx.text_system().all_font_names(),
             saves: autosave::SaveState::default(),
             autosave_delay: None,
             autosave_subscription: None,
@@ -574,9 +580,7 @@ impl Render for Notes {
                     }
                 }))
                 .size_full()
-                .when(self.mode == ViewMode::Source, |view| {
-                    view.font_family("Consolas")
-                })
+                .font_family(self.content_font(cx))
                 .child(
                     Input::new(&self.editor)
                         .h_full()
@@ -593,6 +597,7 @@ impl Render for Notes {
                 .flex()
                 .flex_col()
                 .gap_2()
+                .font_family(self.content_font(cx))
                 .key_context("ReadingContent")
                 .on_action(cx.listener(|this, _: &CloseReadingFind, window, cx| {
                     this.reading_search = None;
@@ -824,6 +829,7 @@ impl Render for NotesWindow {
             .child(self.notes.clone())
             .children(Root::render_dialog_layer(window, cx))
             .text_size(cx.theme().font_size)
+            .font_family(cx.theme().font_family.clone())
     }
 }
 

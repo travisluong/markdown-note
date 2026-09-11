@@ -37,7 +37,7 @@ impl Autosave {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
     pub theme: Option<ThemeChoice>,
@@ -49,6 +49,9 @@ pub struct Appearance {
     pub background_color: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_color: Option<u32>,
+    pub interface_font: Option<String>,
+    pub text_font: Option<String>,
+    pub monospace_font: Option<String>,
     pub content_font_size: u16,
     pub ui_font_size: u16,
     pub dark_mode: Option<bool>,
@@ -62,6 +65,9 @@ impl Default for Appearance {
             dark: None,
             background_color: None,
             font_color: None,
+            interface_font: None,
+            text_font: None,
+            monospace_font: None,
             content_font_size: 16,
             ui_font_size: 16,
             dark_mode: None,
@@ -115,8 +121,8 @@ impl Appearance {
         self
     }
 
-    pub fn palette(self, startup_dark: bool) -> ThemePalette {
-        let resolved = self.resolved(startup_dark);
+    pub fn palette(&self, startup_dark: bool) -> ThemePalette {
+        let resolved = self.clone().resolved(startup_dark);
         if resolved.theme_choice(startup_dark) == ThemeChoice::Light {
             resolved.light.unwrap()
         } else {
@@ -125,7 +131,7 @@ impl Appearance {
     }
 
     pub fn set_palette(&mut self, startup_dark: bool, palette: ThemePalette) {
-        *self = self.resolved(startup_dark);
+        *self = self.clone().resolved(startup_dark);
         if self.theme_choice(startup_dark) == ThemeChoice::Light {
             self.light = Some(palette);
         } else {

@@ -8,6 +8,7 @@ use gpui_component::{Disableable, Theme, ThemeMode, dialog::Dialog, switch::Swit
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsSection {
     General,
+    Font,
     Templates,
     Theme,
 }
@@ -45,7 +46,7 @@ impl Notes {
             .notebooks
             .active
             .as_ref()
-            .map_or(self.session_appearance, |book| book.settings.appearance)
+            .map_or_else(|| self.session_appearance.clone(), |book| book.settings.appearance.clone())
             .resolved(self.startup_dark);
         appearance.dark_mode = Some(appearance.dark_mode.unwrap_or(self.startup_dark));
         appearance
@@ -66,7 +67,9 @@ impl Notes {
             cx,
         );
         let theme = Theme::global_mut(cx);
-        apply_theme_colors(theme, appearance, self.startup_dark);
+        apply_theme_colors(theme, appearance.clone(), self.startup_dark);
+        theme.font_family = resolve_font(appearance.interface_font.as_deref(), &self.installed_fonts, ".SystemUIFont");
+        theme.mono_font_family = resolve_font(appearance.monospace_font.as_deref(), &self.installed_fonts, "Consolas");
         theme.font_size = px(appearance.ui_font_size as f32);
         theme.mono_font_size = px(appearance.content_font_size as f32);
         window.set_rem_size(px(appearance.ui_font_size as f32));
@@ -141,6 +144,7 @@ impl Notes {
             ));
             self.theme_pickers.push(picker);
         }
+        self.initialize_font_pickers(window, cx);
         self.date_validation = None;
         let date = self.date_format().to_owned();
         let date_input = cx.new(|cx| InputState::new(window, cx).default_value(date));
@@ -214,6 +218,12 @@ impl Notes {
                 .text_color(cx.theme().muted_foreground)
                 .child(subtitle),
         );
+        let mut font_body = div().flex().flex_col().gap_3();
+        for (index, label) in ["Interface font", "Text font", "Monospace font"].into_iter().enumerate() {
+            if let Some(picker) = self.font_pickers.get(index) {
+                font_body = font_body.child(label).child(gpui_component::select::Select::new(picker));
+            }
+        }
         for (index, label, value, maximum) in [
             (
                 0usize,
@@ -223,7 +233,7 @@ impl Notes {
             ),
             (1usize, "UI font size", appearance.ui_font_size, 24),
         ] {
-            body = body.child(
+            font_body = font_body.child(
                 div()
                     .flex()
                     .flex_wrap()
@@ -389,6 +399,7 @@ impl Notes {
                         cx.notify();
                     })),
             );
+        let sidebar = sidebar.child(Button::new("settings-font").label("Font").when(self.settings_section == SettingsSection::Font, |b| b.primary()).on_click(cx.listener(|this, _, _, cx| { this.settings_section = SettingsSection::Font; cx.notify(); })));
         let sidebar = sidebar.child(
             Button::new("settings-theme")
                 .label("Theme")
@@ -414,6 +425,8 @@ impl Notes {
                     .child(div().flex_1().min_w_0().child(
                         if self.settings_section == SettingsSection::Theme {
                             theme_body.into_any_element()
+                        } else if self.settings_section == SettingsSection::Font {
+                            font_body.into_any_element()
                         } else if self.settings_section == SettingsSection::Templates {
                             templates_body.into_any_element()
                         } else {
@@ -490,13 +503,13 @@ mod theme_tests {
             ..legacy
         };
         let mut theme = Theme::default();
-        apply_theme_colors(&mut theme, appearance, false);
+        apply_theme_colors(&mut theme, appearance.clone(), false);
         assert_eq!(theme.background, rgb(0x303030).into());
         assert_eq!(theme.foreground, rgb(0xe6e6e6).into());
         let custom = Appearance {
             background_color: Some(0x123456),
             font_color: Some(0xabcdef),
-            ..appearance
+            ..appearance.clone()
         };
         let encoded = serde_json::to_string(&custom).unwrap();
         assert_eq!(
@@ -514,12 +527,12 @@ mod theme_tests {
             theme.highlight_theme.style.editor_foreground,
             Some(theme.foreground)
         );
-        apply_theme_colors(&mut theme, appearance, false);
+        apply_theme_colors(&mut theme, appearance.clone(), false);
         assert_eq!(theme.background, rgb(0x303030).into());
         assert_eq!(
             Appearance {
                 font_color: Some(u32::MAX),
-                ..appearance
+                ..appearance.clone()
             }
             .normalized()
             .font_color,
@@ -623,7 +636,7 @@ mod palette_tests {
             let encoded = serde_json::to_string(&appearance).unwrap();
             assert!(!encoded.contains("background_color"));
             assert!(!encoded.contains("dark_gray"));
-            assert_eq!(appearance.resolved(startup), appearance);
+            assert_eq!(appearance.clone().resolved(startup), appearance);
             assert_eq!(
                 serde_json::from_str::<Appearance>(&encoded).unwrap(),
                 appearance
@@ -652,7 +665,7 @@ mod palette_tests {
                 ..Default::default()
             };
             appearance.set_palette(false, palette);
-            apply_theme_colors(&mut theme, appearance, false);
+            apply_theme_colors(&mut theme, appearance.clone(), false);
             assert_eq!(theme.background, rgb(palette.background).into());
             assert_eq!(theme.foreground, rgb(palette.font).into());
             for color in [
@@ -675,5 +688,70 @@ mod palette_tests {
                 Some(theme.foreground)
             );
         }
+    }
+}
+
+fn resolve_font(saved: Option<&str>, installed: &[String], fallback: &str) -> SharedString {
+    saved.and_then(|name| installed.iter().find(|font| font.eq_ignore_ascii_case(name)))
+        .map_or_else(|| SharedString::from(fallback.to_owned()), |font| font.clone().into())
+}
+
+impl Notes {
+    pub(super) fn content_font(&self, _cx: &App) -> SharedString {
+        let appearance = self.appearance();
+        if self.mode == ViewMode::Source {
+            resolve_font(appearance.monospace_font.as_deref(), &self.installed_fonts, "Consolas")
+        } else {
+            resolve_font(appearance.text_font.as_deref(), &self.installed_fonts, ".SystemUIFont")
+        }
+    }
+
+    fn initialize_font_pickers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use gpui_component::{IndexPath, select::{SearchableVec, SelectEvent, SelectState}};
+        self.font_pickers.clear();
+        self.font_subscriptions.clear();
+        let appearance = self.appearance();
+        for (index, selected) in [appearance.interface_font, appearance.text_font, appearance.monospace_font].into_iter().enumerate() {
+            let mut fonts = self.installed_fonts.clone();
+            fonts.sort_by_key(|font| font.to_lowercase());
+            fonts.dedup();
+            if let Some(name) = &selected {
+                if !fonts.contains(name) { fonts.push(name.clone()); }
+            }
+            fonts.insert(0, "Default".to_owned());
+            let row = selected.as_ref().and_then(|name| fonts.iter().position(|font| font == name)).unwrap_or(0);
+            let picker = cx.new(|cx| SelectState::new(SearchableVec::new(fonts), Some(IndexPath::default().row(row)), window, cx).searchable(true));
+            self.font_subscriptions.push(cx.subscribe_in(&picker, window, move |this, _, event: &SelectEvent<SearchableVec<String>>, window, cx| {
+                let SelectEvent::Confirm(value) = event;
+                let value = value.clone().filter(|name| name != "Default");
+                let mut appearance = this.appearance();
+                match index {
+                    0 => appearance.interface_font = value,
+                    1 => appearance.text_font = value,
+                    _ => appearance.monospace_font = value,
+                }
+                this.update_appearance(appearance, window, cx);
+            }));
+            self.font_pickers.push(picker);
+        }
+    }
+}
+
+#[cfg(test)]
+mod font_tests {
+    use super::{notebook, resolve_font};
+    #[test]
+    fn font_preferences_round_trip_and_fall_back() {
+        let mut appearance: notebook::Appearance = serde_json::from_str("{}").unwrap();
+        assert_eq!(appearance.text_font, None);
+        appearance.interface_font = Some("Interface".into());
+        appearance.text_font = Some("Text".into());
+        appearance.monospace_font = Some("Code".into());
+        let encoded = serde_json::to_string(&appearance).unwrap();
+        assert_eq!(serde_json::from_str::<notebook::Appearance>(&encoded).unwrap(), appearance);
+        let installed = vec!["Text".into()];
+        assert_eq!(resolve_font(Some("text"), &installed, "Default").as_ref(), "Text");
+        assert_eq!(resolve_font(Some("Missing"), &installed, "Default").as_ref(), "Default");
+        assert_eq!(appearance.monospace_font.as_deref(), Some("Code"));
     }
 }

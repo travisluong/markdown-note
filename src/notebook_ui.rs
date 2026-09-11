@@ -816,7 +816,7 @@ impl Notes {
 
     pub(super) fn persist_notebooks(&mut self, cx: &mut Context<Self>) {
         if let Some(book) = &mut self.notebooks.active {
-            book.settings.appearance = book.settings.appearance.resolved(self.startup_dark);
+            book.settings.appearance = book.settings.appearance.clone().resolved(self.startup_dark);
         }
         if !self.notebooks.index_writable {
             return;
