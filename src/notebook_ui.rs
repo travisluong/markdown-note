@@ -777,10 +777,12 @@ impl Notes {
                         }
                         if let Some(destination) = this.search_destination.take() {
                             this.reveal_search_result(destination, window, cx);
+                            this.finish_search_navigation(true, window, cx);
                         }
                     }
                     Err(error) => {
                         this.search_destination = None;
+                        this.finish_search_navigation(false, window, cx);
                         if keep_tree_focus {
                             this.restore_tree_cursor(window, cx);
                         }

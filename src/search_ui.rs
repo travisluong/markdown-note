@@ -15,6 +15,7 @@ pub(super) struct SearchPanel {
     case_sensitive: bool,
     hits: Vec<search::Hit>,
     selected: usize,
+    navigation: Option<usize>,
     status: String,
     scroll: UniformListScrollHandle,
     cancelled: Arc<AtomicBool>,
@@ -67,6 +68,7 @@ impl Notes {
                 case_sensitive: false,
                 hits: Vec::new(),
                 selected: 0,
+                navigation: None,
                 status: String::new(),
                 scroll: UniformListScrollHandle::new(),
                 cancelled: Arc::new(AtomicBool::new(false)),
@@ -165,20 +167,30 @@ impl Notes {
         cx.notify();
     }
 
-    fn move_search_result(&mut self, down: bool, cx: &mut Context<Self>) {
+    fn move_search_result(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || window.has_active_dialog(cx) { return; }
         if let Some(panel) = &mut self.search {
             if panel.hits.is_empty() {
                 return;
             }
-            panel.selected = if down {
-                (panel.selected + 1).min(panel.hits.len() - 1)
-            } else {
-                panel.selected.saturating_sub(1)
-            };
+            panel.navigation = Some(panel.selected);
+            panel.selected = adjacent_result(panel.selected, panel.hits.len(), down);
             panel
                 .scroll
                 .scroll_to_item(panel.selected, ScrollStrategy::Top);
             cx.notify();
+        }
+        self.activate_search_result(window, cx);
+    }
+
+    pub(super) fn finish_search_navigation(&mut self, success: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(panel) = &mut self.search {
+            if let Some(previous) = panel.navigation.take() {
+                if !success { panel.selected = previous.min(panel.hits.len().saturating_sub(1)); }
+                panel.scroll.scroll_to_item(panel.selected, ScrollStrategy::Top);
+                if panel.visible { panel.query.update(cx, |query, cx| query.focus(window, cx)); }
+                cx.notify();
+            }
         }
     }
 
@@ -204,6 +216,7 @@ impl Notes {
             .is_some_and(|doc| doc.path == destination.path)
         {
             self.reveal_search_result(destination, window, cx);
+            self.finish_search_navigation(true, window, cx);
         } else {
             self.request(Next::SearchResult(destination), window, cx);
         }
@@ -257,14 +270,14 @@ impl Notes {
             .gap_2()
             .p_2()
             .capture_action(
-                cx.listener(|this, _: &gpui_component::input::MoveDown, _, cx| {
-                    this.move_search_result(true, cx);
+                cx.listener(|this, _: &gpui_component::input::MoveDown, window, cx| {
+                    this.move_search_result(true, window, cx);
                     cx.stop_propagation();
                 }),
             )
             .capture_action(
-                cx.listener(|this, _: &gpui_component::input::MoveUp, _, cx| {
-                    this.move_search_result(false, cx);
+                cx.listener(|this, _: &gpui_component::input::MoveUp, window, cx| {
+                    this.move_search_result(false, window, cx);
                     cx.stop_propagation();
                 }),
             )
@@ -344,6 +357,7 @@ impl Notes {
                                             .child(div().child(hit.after.clone())),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
+                                        if this.busy || window.has_active_dialog(cx) { return; }
                                         if let Some(panel) = &mut this.search {
                                             panel.selected = i;
                                         }
@@ -358,6 +372,26 @@ impl Notes {
                 .min_h_0()
                 .w_full(),
             )
+    }
+}
+
+fn adjacent_result(selected: usize, count: usize, down: bool) -> usize {
+    if down { selected.saturating_add(1).min(count.saturating_sub(1)) }
+    else { selected.saturating_sub(1) }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::adjacent_result;
+    #[test]
+    fn arrows_clamp_and_repeat() {
+        assert_eq!(adjacent_result(0, 0, true), 0);
+        assert_eq!(adjacent_result(0, 3, false), 0);
+        let next = adjacent_result(0, 3, true);
+        assert_eq!(next, 1);
+        assert_eq!(adjacent_result(next, 3, true), 2);
+        assert_eq!(adjacent_result(2, 3, true), 2);
+        assert_eq!(adjacent_result(2, 3, false), 1);
     }
 }
 

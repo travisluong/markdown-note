@@ -131,6 +131,8 @@ impl Notes {
                     } else if success {
                         if let Some(next) = next { this.continue_with(next, window, cx); }
                         if this.dirty(cx) { this.schedule_autosave(window, cx); }
+                    } else {
+                        this.finish_search_navigation(false, window, cx);
                     }
                 }
                 this.refresh(window, cx);

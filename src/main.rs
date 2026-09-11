@@ -405,6 +405,7 @@ impl Notes {
             Some(0) => self.save(next, window, cx),
             Some(1) => self.continue_with(next, window, cx),
             _ => {
+                self.finish_search_navigation(false, window, cx);
                 if matches!(next, Next::TreeFile(_)) {
                     self.restore_tree_cursor(window, cx);
                 }
