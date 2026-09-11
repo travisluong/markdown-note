@@ -1026,6 +1026,7 @@ pub(super) struct PrepaintState {
     search_match_paths: Vec<(Path<Pixels>, bool)>,
     document_color_paths: Vec<(Path<Pixels>, Hsla)>,
     hover_definition_hitbox: Option<Hitbox>,
+    task_hitboxes: Vec<Hitbox>,
     indent_guides_path: Option<Path<Pixels>>,
     bounds: Bounds<Pixels>,
     // Inline completion rendering data
@@ -1469,6 +1470,21 @@ impl Element for TextElement {
         };
 
         let hover_definition_hitbox = self.layout_hover_definition_hitbox(state, window, cx);
+        let task_hitboxes = last_layout
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, line)| {
+                let mut task_bounds = line.task_bounds(last_layout.line_height)?;
+                let row = last_layout.visible_range.start + ix;
+                task_bounds.origin += bounds.origin
+                    + point(
+                        last_layout.line_number_width,
+                        state.text_wrapper.lines.prefix(row) * last_layout.line_height,
+                    );
+                Some(window.insert_hitbox(task_bounds, gpui::HitboxBehavior::Normal))
+            })
+            .collect();
         let indent_guides_path =
             self.layout_indent_guides(state, &bounds, &last_layout, &text_style, window);
 
@@ -1484,6 +1500,7 @@ impl Element for TextElement {
             search_match_paths,
             hover_highlight_path,
             hover_definition_hitbox,
+            task_hitboxes,
             document_color_paths,
             indent_guides_path,
             ghost_first_line,
@@ -1722,6 +1739,9 @@ impl Element for TextElement {
 
         if let Some(hitbox) = prepaint.hover_definition_hitbox.as_ref() {
             window.set_cursor_style(gpui::CursorStyle::PointingHand, &hitbox);
+        }
+        for hitbox in &prepaint.task_hitboxes {
+            window.set_cursor_style(gpui::CursorStyle::Arrow, hitbox);
         }
 
         // Paint inline completion first line suffix (after cursor on same line)

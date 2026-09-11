@@ -1,5 +1,8 @@
 # Local editor patch
 
+Reading and Live-preview task checkbox squares explicitly use the standard arrow
+cursor. Live-preview cursor hitboxes share the checkbox click geometry.
+
 Upstream: gpui-component 0.5.1, commit
 `0f0ab35233212f8f3277028995caf0c41e13ee6c`, `crates/ui`.
 The original Apache 2.0 license is retained. Cargo uses this copy via the root

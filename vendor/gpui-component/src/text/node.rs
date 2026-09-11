@@ -1010,6 +1010,7 @@ impl Node {
                                             this.child(
                                                 div()
                                                     .id(("task", task_offset.unwrap_or(ix)))
+                                                    .cursor_default()
                                                     .when_some(
                                                         node_cx
                                                             .task_toggle
@@ -1017,7 +1018,7 @@ impl Node {
                                                             .zip(*task_offset),
                                                         |view, (toggle, offset)| {
                                                             let source = node_cx.source.clone();
-                                                            view.cursor_pointer().on_click(
+                                                            view.on_click(
                                                                 move |_, window, cx| {
                                                                     toggle(
                                                                         offset, &source, window, cx,
