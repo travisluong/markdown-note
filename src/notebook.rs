@@ -40,6 +40,9 @@ impl Autosave {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
+    pub theme: Option<ThemeChoice>,
+    pub background_color: Option<u32>,
+    pub font_color: Option<u32>,
     pub content_font_size: u16,
     pub ui_font_size: u16,
     pub dark_mode: Option<bool>,
@@ -48,6 +51,9 @@ pub struct Appearance {
 impl Default for Appearance {
     fn default() -> Self {
         Self {
+            theme: None,
+            background_color: None,
+            font_color: None,
             content_font_size: 16,
             ui_font_size: 16,
             dark_mode: None,
@@ -57,6 +63,8 @@ impl Default for Appearance {
 
 impl Appearance {
     pub fn normalized(mut self) -> Self {
+        self.background_color = self.background_color.filter(|c| *c <= 0xffffff);
+        self.font_color = self.font_color.filter(|c| *c <= 0xffffff);
         self.content_font_size = self.content_font_size.clamp(10, 40);
         self.ui_font_size = self.ui_font_size.clamp(10, 24);
         self
@@ -535,6 +543,7 @@ mod tests {
             content_font_size: 0,
             ui_font_size: 500,
             dark_mode: Some(false),
+            ..Default::default()
         }
         .normalized();
         assert_eq!((bounds.content_font_size, bounds.ui_font_size), (10, 24));
@@ -544,6 +553,7 @@ mod tests {
             content_font_size: 40,
             ui_font_size: 24,
             dark_mode: Some(true),
+            ..Default::default()
         };
         write_json(&settings_path(temp.path()), &book.settings).unwrap();
         assert_eq!(
@@ -904,5 +914,23 @@ mod move_tests {
             settings.entry_order,
             vec![PathBuf::from("new/folder"), PathBuf::from("new/z.md")]
         );
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeChoice {
+    Light,
+    Dark,
+    DarkGray,
+}
+impl Appearance {
+    pub fn theme_choice(&self, startup_dark: bool) -> ThemeChoice {
+        self.theme
+            .unwrap_or(if self.dark_mode.unwrap_or(startup_dark) {
+                ThemeChoice::Dark
+            } else {
+                ThemeChoice::Light
+            })
     }
 }

@@ -14,7 +14,7 @@ cargo run --locked
 ## Use
 
 - **File → Open…** (`Ctrl+O`): open a UTF-8 `.md` or `.markdown` file.
-- **File → Settings**: adjust content font size (10–40 px), UI font size (10–24 px), and dark mode. Changes apply immediately and are saved per notebook. Without an active notebook, settings apply for the session only.
+- **File → Settings**: adjust content font size (10–40 px), UI font size (10–24 px), and themes. The Theme section offers Light, Dark, and Dark Gray, default background and font color pickers, and a reset to theme colors. Changes apply immediately and are saved per notebook. Without an active notebook, settings apply for the session only.
 - **File → Save** (`Ctrl+S`): save back to the opened file.
 - **Notebooks → Manage notebooks**: create a notebook or open an existing folder.
 - **Notebooks → notebook name**: switch notebooks and restore its last selected note.
@@ -161,7 +161,7 @@ Live preview renders explicitly marked blockquotes with muted text, indentation,
 
 Ctrl+P opens the command palette. **Templates: Insert current date** replaces the
 remembered editor selection as one undoable edit in Source or Live preview.
-Settings has General and Templates sections; the date format is saved per
+Settings has General, Templates, and Theme sections; the date format is saved per
 notebook (or for the session without a notebook). Invalid edits show an inline
 error and keep the last valid format. The default is `YYYY-MM-DD`.
 

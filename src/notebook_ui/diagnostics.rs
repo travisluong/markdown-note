@@ -176,7 +176,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     20 => this.open_settings(window, cx),
                     21 => {
                         assert!(window.has_active_dialog(cx));
-                        this.update_appearance(notebook::Appearance { content_font_size: 40, ui_font_size: 24, dark_mode: Some(true) }, window, cx);
+                        this.update_appearance(notebook::Appearance { content_font_size: 40, ui_font_size: 24, dark_mode: Some(true), ..Default::default() }, window, cx);
                         this.save_sidebar_width(375., cx);
                     }
                     22 => {
@@ -191,7 +191,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.save_sidebar_width(210., cx);
                         assert_eq!(this.appearance().content_font_size, 16);
                         assert_eq!(this.appearance().dark_mode, Some(this.startup_dark));
-                        this.update_appearance(notebook::Appearance { content_font_size: 10, ui_font_size: 10, dark_mode: Some(false) }, window, cx);
+                        this.update_appearance(notebook::Appearance { content_font_size: 10, ui_font_size: 10, dark_mode: Some(false), ..Default::default() }, window, cx);
                         this.open_settings(window, cx);
                     }
                     24 => {
@@ -228,7 +228,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(window.has_active_dialog(cx));
                         assert_eq!(this.appearance().content_font_size, 16);
                         assert_eq!(fs::read_to_string(first.join("root.md")).unwrap(), "# Root");
-                        this.update_appearance(notebook::Appearance { content_font_size: 20, ui_font_size: 18, dark_mode: Some(false) }, window, cx);
+                        this.update_appearance(notebook::Appearance { content_font_size: 20, ui_font_size: 18, dark_mode: Some(false), ..Default::default() }, window, cx);
                         window.close_dialog(cx);
                         this.open_settings(window, cx);
                     }
