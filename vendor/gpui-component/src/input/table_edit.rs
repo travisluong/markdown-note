@@ -16,7 +16,7 @@ impl InputState {
         let Some((t, r, c)) = self.text_wrapper.tables.at(self.cursor()) else {
             return Some(input.into());
         };
-        let cell = &t.rows[r].cells[c];
+        let cell = &t.cell_range(r, c);
         if range.start < cell.start || range.end > cell.end {
             if self.selected_range.is_empty() && input.is_empty() {
                 return None;
@@ -103,7 +103,7 @@ impl InputState {
                 self.apply_table_edit(edit, window, cx);
             }
         } else {
-            self.move_to(table.rows[row].cells[col].start, None, cx);
+            self.move_to(table.cell_range(row, col).start, None, cx);
         }
     }
 
@@ -137,7 +137,7 @@ impl InputState {
                 if self.table_command(Command::RowBelow, self.cursor(), revision, window, cx) {
                     if let Some((t, r, _)) = self.active_table() {
                         self.move_to(
-                            t.rows[r].cells[if vertical { col } else { 0 }].start,
+                            t.cell_range(r, if vertical { col } else { 0 }).start,
                             None,
                             cx,
                         );
@@ -196,7 +196,7 @@ impl InputState {
         let Some((t, r, c)) = self.active_table() else {
             return false;
         };
-        let cell = &t.rows[r].cells[c];
+        let cell = &t.cell_range(r, c);
         if (right && self.cursor() >= cell.end) || (!right && self.cursor() <= cell.start) {
             if right && r + 1 == t.rows.len() && c + 1 == t.alignments.len() {
                 self.table_exit(&t, false, window, cx);
@@ -204,7 +204,7 @@ impl InputState {
                 self.table_tab(!right, false, window, cx);
                 if !right {
                     if let Some((table, row, col)) = self.active_table() {
-                        self.move_to(table.rows[row].cells[col].end, None, cx);
+                        self.move_to(table.cell_range(row, col).end, None, cx);
                     }
                 }
             }
@@ -253,8 +253,8 @@ impl InputState {
             r.checked_sub(1)
         };
         if let Some(next) = next {
-            let within = self.cursor().saturating_sub(t.rows[r].cells[c].start);
-            let cell = &t.rows[next].cells[c];
+            let within = self.cursor().saturating_sub(t.cell_range(r, c).start);
+            let cell = &t.cell_range(next, c);
             self.move_to(
                 self.text
                     .floor_char_boundary(cell.start + within.min(cell.len())),
@@ -277,6 +277,7 @@ impl InputState {
         use gpui::EntityInputHandler as _;
         let original = "before\n\n| café | 你好 |\n| :---: | ---: |\n| x | y |\n\nafter";
         self.set_live_preview(true, cx);
+        self.diagnostic_settle_preview();
         for command in [
             Command::RowAbove,
             Command::RowBelow,
@@ -296,6 +297,7 @@ impl InputState {
                 );
             }
             self.set_value(original, window, cx);
+            self.diagnostic_settle_preview();
             self.history.clear();
             let at = self.text_wrapper.tables.tables[0].rows[1].cells[1].start;
             let rev = self.text_wrapper.tables.revision;
@@ -312,6 +314,7 @@ impl InputState {
             assert_eq!(self.value(), edited);
         }
         self.set_value(original, window, cx);
+        self.diagnostic_settle_preview();
         self.history.clear();
         let at = self.text_wrapper.tables.tables[0].rows[1].cells[0].start;
         self.move_to(at, None, cx);
@@ -324,6 +327,7 @@ impl InputState {
         self.replace_text_in_range(None, "你好", window, cx);
         assert!(self.value().contains("你好x"));
         self.set_value(original, window, cx);
+        self.diagnostic_settle_preview();
         self.history.clear();
         self.move_to(at, None, cx);
         self.indent_inline(&super::IndentInline, window, cx);
@@ -340,6 +344,7 @@ impl InputState {
         let selection = self.selected_range;
         self.set_live_preview(false, cx);
         self.set_live_preview(true, cx);
+        self.diagnostic_settle_preview();
         assert_eq!(self.selected_range, selection);
         self.disabled = true;
         let rev = self.text_wrapper.tables.revision;
@@ -422,6 +427,7 @@ impl InputState {
     pub fn diagnostic_table_autosave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_value("| a | b |\n| --- | --- |\n| x | y |\n", window, cx);
         self.set_live_preview(true, cx);
+        self.diagnostic_settle_preview();
         let at = self.text_wrapper.tables.tables[0].rows[1].cells[0].start;
         self.move_to(at, None, cx);
         self.insert("edited ", window, cx);

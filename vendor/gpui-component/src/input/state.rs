@@ -261,6 +261,10 @@ impl LastLayout {
 /// InputState to keep editing state of the [`super::Input`].
 pub struct InputState {
     pub(super) live_preview: bool,
+    #[cfg(feature = "editor-diagnostics")]
+    pub(super) preview_painted_revision: u64,
+    #[cfg(feature = "editor-diagnostics")]
+    pub(super) preview_painted_at: Option<std::time::Instant>,
     nested_list_letters: bool,
     pub(super) table_editing: bool,
     list_enter_boundary: bool,
@@ -268,6 +272,7 @@ pub struct InputState {
     pub(super) mode: InputMode,
     pub(super) text: Rope,
     pub(super) text_wrapper: TextWrapper,
+    preview_task: Option<Task<()>>,
     pub(super) history: History<Change>,
     pub(super) blink_cursor: Entity<BlinkCursor>,
     pub(super) loading: bool,
@@ -377,6 +382,11 @@ impl InputState {
             focus_handle: focus_handle.clone(),
             text: Default::default(),
             live_preview: false,
+            preview_task: None,
+            #[cfg(feature = "editor-diagnostics")]
+            preview_painted_revision: 0,
+            #[cfg(feature = "editor-diagnostics")]
+            preview_painted_at: None,
             nested_list_letters: false,
             table_editing: false,
             list_enter_boundary: false,
@@ -843,9 +853,34 @@ impl InputState {
         if self.live_preview != enabled {
             self.live_preview = enabled;
             self.text_wrapper.set_live_preview(enabled, cx);
+            self.schedule_preview(cx);
             self.last_selected_range = None;
             cx.notify();
         }
+    }
+
+    fn schedule_preview(&mut self, cx: &mut Context<Self>) {
+        let Some(mut request) = self.text_wrapper.analysis.start() else {
+            return;
+        };
+        self.preview_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                let parsed = cx
+                    .background_executor()
+                    .spawn(async move { request.parse() })
+                    .await;
+                let next = this.update(cx, |state, cx| {
+                    if state.text_wrapper.apply_analysis(parsed) {
+                        cx.notify();
+                    }
+                    state.text_wrapper.analysis.start()
+                });
+                match next {
+                    Ok(Some(next)) => request = next,
+                    _ => break,
+                }
+            }
+        }));
     }
 
     pub fn value(&self) -> SharedString {
@@ -1437,7 +1472,8 @@ impl InputState {
         let link = self
             .text_wrapper
             .links
-            .iter()
+            .in_range(offset..offset + 1)
+            .into_iter()
             .find(|link| link.label.contains(&offset))?;
         Some(link.destination.clone())
     }
@@ -2344,6 +2380,7 @@ impl EntityInputHandler for InputState {
         }
         self.text_wrapper
             .update(&self.text, &range, &Rope::from(new_text), cx);
+        self.schedule_preview(cx);
         self.mode
             .update_highlighter(&range, &self.text, &new_text, true, cx);
         self.lsp.update(&self.text, window, cx);
@@ -2415,6 +2452,7 @@ impl EntityInputHandler for InputState {
         }
         self.text_wrapper
             .update(&self.text, &range, &Rope::from(new_text), cx);
+        self.schedule_preview(cx);
         self.mode
             .update_highlighter(&range, &self.text, &new_text, true, cx);
         self.lsp.update(&self.text, window, cx);
@@ -2524,6 +2562,7 @@ impl Focusable for InputState {
 
 impl Render for InputState {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.schedule_preview(cx);
         if self._pending_update {
             self.mode
                 .update_highlighter(&(0..0), &self.text, "", false, cx);
@@ -2816,12 +2855,49 @@ impl InputState {
                     cx,
                 );
                 assert_ne!(self.text.to_string(), original, "checkbox press toggles");
-                assert_eq!(self.selected_range, selection, "checkbox press preserves selection");
+                assert_eq!(
+                    self.selected_range, selection,
+                    "checkbox press preserves selection"
+                );
                 assert_eq!(self.selection_reversed, reversed);
-                assert!(!self.selecting, "checkbox press must not start drag selection");
+                assert!(
+                    !self.selecting,
+                    "checkbox press must not start drag selection"
+                );
                 self.undo(&Undo, window, cx);
                 assert_eq!(self.text.to_string(), original);
             }
         }
+    }
+}
+
+#[cfg(feature = "editor-diagnostics")]
+impl InputState {
+    #[doc(hidden)]
+    pub fn diagnostic_preview_status(&self) -> (u64, u64, Option<std::time::Instant>, usize) {
+        (
+            self.text_wrapper.analysis.revision,
+            self.preview_painted_revision,
+            self.preview_painted_at,
+            self.text_wrapper.analysis.jobs(),
+        )
+    }
+    #[doc(hidden)]
+    pub fn diagnostic_repeat_key(
+        &mut self,
+        enter: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if enter {
+            self.enter(&Enter { secondary: false }, window, cx);
+        } else {
+            self.backspace(&Backspace, window, cx);
+        }
+    }
+    /// Only for synchronous behavior fixtures. Timing diagnostics must await the real worker.
+    #[doc(hidden)]
+    pub fn diagnostic_settle_preview(&mut self) {
+        self.text_wrapper.diagnostic_settle();
     }
 }

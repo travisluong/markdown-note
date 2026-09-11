@@ -1,7 +1,7 @@
 //! Deliberately line-local Markdown presentation. All offsets are UTF-8 bytes.
 use std::ops::Range;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Presentation {
     pub links: Vec<super::markdown_links::MarkdownLink>,
     pub heading: usize,
@@ -352,7 +352,7 @@ impl Presentation {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct MappedText {
     pub text: String,
     pub source_to_display: Vec<usize>,

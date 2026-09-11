@@ -1009,6 +1009,8 @@ impl TextElement {
 }
 
 pub(super) struct PrepaintState {
+    #[cfg(feature = "editor-diagnostics")]
+    revision: u64,
     /// The lines of entire lines.
     last_layout: LastLayout,
     /// The lines only contains the visible lines in the viewport, based on `visible_range`.
@@ -1489,6 +1491,8 @@ impl Element for TextElement {
             self.layout_indent_guides(state, &bounds, &last_layout, &text_style, window);
 
         PrepaintState {
+            #[cfg(feature = "editor-diagnostics")]
+            revision: state.text_wrapper.analysis.revision,
             bounds,
             last_layout,
             scroll_size,
@@ -1724,6 +1728,11 @@ impl Element for TextElement {
         }
 
         self.state.update(cx, |state, cx| {
+            #[cfg(feature = "editor-diagnostics")]
+            {
+                state.preview_painted_revision = prepaint.revision;
+                state.preview_painted_at = Some(std::time::Instant::now());
+            }
             state.last_layout = Some(prepaint.last_layout.clone());
             state.link_layout_text = Some(state.text.clone());
             state.last_bounds = Some(bounds);

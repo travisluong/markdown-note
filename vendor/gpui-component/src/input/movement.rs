@@ -230,7 +230,7 @@ impl InputState {
         self.pause_blink_cursor(cx);
         let offset = self.active_table().map_or_else(
             || self.start_of_line(),
-            |(t, r, c)| t.rows[r].cells[c].start,
+            |(t, r, c)| t.cell_range(r, c).start,
         );
         self.move_to(offset, Some(MoveDirection::Up), cx);
     }
@@ -239,7 +239,7 @@ impl InputState {
         self.pause_blink_cursor(cx);
         let offset = self
             .active_table()
-            .map_or_else(|| self.end_of_line(), |(t, r, c)| t.rows[r].cells[c].end);
+            .map_or_else(|| self.end_of_line(), |(t, r, c)| t.cell_range(r, c).end);
         self.move_to(offset, Some(MoveDirection::Down), cx);
     }
 

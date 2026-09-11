@@ -31,7 +31,7 @@ fn gfm_ranges_and_context() {
         assert_eq!(table.alignments, [Alignment::Left, Alignment::Right]);
         assert_eq!(table.rows.len(), 3);
         assert_eq!(&text[table.rows[1].cells[0].clone()], "a\\|b");
-        for row in &table.rows {
+        for row in table.rows.iter() {
             for cell in &row.cells {
                 assert!(text.is_char_boundary(cell.start));
                 assert!(text.is_char_boundary(cell.end));
@@ -71,7 +71,7 @@ fn structural_commands_preserve_document_and_alignment() {
         let (mut rope, parsed) = index(original);
         let table = &parsed.tables[0];
         let edit = table.edit(&rope, 1, 1, command).unwrap();
-        assert_eq!(edit.range, table.source);
+        assert!(table.source.start <= edit.range.start && edit.range.end <= table.source.end);
         rope.replace(edit.range.clone(), &edit.text);
         let output = rope.to_string();
         assert!(output.starts_with("before\r\n\r\n"));

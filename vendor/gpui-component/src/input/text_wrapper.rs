@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::input::RopeExt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct TableCellLayout {
     pub source: Range<usize>,
     pub x: Pixels,
@@ -18,6 +18,7 @@ pub(super) struct TableCellLayout {
 }
 #[derive(Debug, Clone)]
 pub(super) struct TableRowLayout {
+    revision: std::cell::Cell<u64>,
     pub scroll: std::rc::Rc<std::cell::Cell<Pixels>>,
     pub viewport: Pixels,
     pub cells: Vec<TableCellLayout>,
@@ -34,6 +35,7 @@ pub(super) struct LineItem {
     /// The original line text, without end `\n`.
     pub(super) line: Rope,
     measured: bool,
+    syntax_revision: u64,
     pub(super) cache:
         std::cell::RefCell<std::collections::HashMap<usize, (Vec<gpui::TextRun>, ShapedLine)>>,
     pub(super) presentation: Option<super::live_preview::Presentation>,
@@ -78,12 +80,13 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
-    pub(super) links: Vec<super::markdown_links::MarkdownLink>,
-    links_text: Option<Rope>,
-    link_index: super::markdown_links::LinkIndex,
+    pub(super) links: super::preview_syntax::Links,
+    pub(super) analysis: super::preview_syntax::Queue,
+    syntax_revision: u64,
+    copied_bytes: usize,
+    visited_table_rows: usize,
     pub(super) tables: super::table::TableIndex,
     active_offset: usize,
-    table_rows: std::collections::HashSet<usize>,
     table_scroll: std::collections::HashMap<usize, std::rc::Rc<std::cell::Cell<Pixels>>>,
     table_widths: std::collections::HashMap<usize, Vec<Pixels>>,
     text: Rope,
@@ -109,12 +112,13 @@ pub(super) struct TextWrapper {
 impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
-            links: Vec::new(),
-            links_text: None,
-            link_index: Default::default(),
+            links: Default::default(),
+            analysis: Default::default(),
+            syntax_revision: 0,
+            copied_bytes: 0,
+            visited_table_rows: 0,
             tables: Default::default(),
             active_offset: usize::MAX,
-            table_rows: Default::default(),
             table_scroll: Default::default(),
             table_widths: Default::default(),
             text: Rope::new(),
@@ -134,8 +138,12 @@ impl TextWrapper {
 
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
         self.live_preview = enabled;
+        self.analysis.reset();
+        self.links = Default::default();
+        self.tables = Default::default();
+        self.syntax_revision += 1;
         if enabled {
-            self.tables.rebuild(&self.text);
+            self.analysis.request(&self.text);
         }
         self.table_widths.clear();
         self.update_all(&self.text.clone(), cx);
@@ -143,11 +151,26 @@ impl TextWrapper {
 
     pub(super) fn measure(&mut self, rows: Range<usize>, cx: &mut App) {
         let text = self.text.clone();
-        for row in rows {
-            if self.lines.get(row).is_some_and(|l| !l.measured) {
+        for row in rows.clone() {
+            if self
+                .lines
+                .get(row)
+                .is_some_and(|l| !l.measured || l.syntax_revision != self.syntax_revision)
+            {
                 let offset = text.line_start_offset(row);
-                self.update(&text, &(offset..offset), &Rope::new(), cx);
+                self.measure_line(row, cx);
             }
+        }
+        if self.live_preview {
+            let mut wrapper = cx
+                .text_system()
+                .line_wrapper(self.font.clone(), self.font_size);
+            self.layout_tables_in(rows, &mut |text, width| {
+                wrapper
+                    .wrap_line(&[LineFragment::text(text)], width)
+                    .map(|b| b.ix)
+                    .collect()
+            });
         }
     }
 
@@ -161,7 +184,7 @@ impl TextWrapper {
         for row in [old, row] {
             if row < text.lines_len() {
                 let offset = text.line_start_offset(row);
-                self.update(&text, &(offset..offset), &Rope::new(), cx);
+                self.measure_line(row, cx);
             }
         }
     }
@@ -178,12 +201,15 @@ impl TextWrapper {
         self.active_offset = offset;
         if self.live_preview && previous != next {
             let text = self.text.clone();
-            self.update(&text, &(offset..offset), &Rope::new(), cx);
+            self.measure_line(text.offset_to_point(offset).row, cx);
         }
     }
 
     #[inline]
     pub(super) fn set_default_text(&mut self, text: &Rope) {
+        self.analysis.reset();
+        self.links = Default::default();
+        self.tables = Default::default();
         self.text = text.clone();
     }
 
@@ -251,40 +277,14 @@ impl TextWrapper {
         new_text: &Rope,
         cx: &mut App,
     ) {
-        if self.live_preview {
-            if self.active_offset != usize::MAX && (!range.is_empty() || new_text.len() > 0) {
-                self.active_offset = if self.active_offset < range.start {
-                    self.active_offset
-                } else if self.active_offset <= range.end {
-                    range.start + new_text.len()
-                } else {
-                    self.active_offset
-                        .saturating_add_signed(new_text.len() as isize - range.len() as isize)
-                };
-            }
-            let first = self.text.offset_to_point(range.start).row;
-            let last = self.text.offset_to_point(range.end).row;
-            let delta = new_text.lines_len() as isize - 1 - (last - first) as isize;
-            self.table_rows = self
-                .table_rows
-                .iter()
-                .filter_map(|r| {
-                    if *r < first {
-                        Some(*r)
-                    } else if *r > last {
-                        Some(r.saturating_add_signed(delta))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            self.tables
-                .update(&self.text, changed_text, range, new_text);
+        if !range.is_empty() || new_text.len() > 0 {
+            self.edit_syntax(changed_text, range, new_text);
         }
         let mut line_wrapper = cx
             .text_system()
             .line_wrapper(self.font.clone(), self.font_size);
         let task_size = self.task_size;
+        self.estimating = new_text.lines_len() > 256;
         self._update(
             changed_text,
             range,
@@ -302,16 +302,126 @@ impl TextWrapper {
                 line_wrapper.wrap_line(&fragments, wrap_width).collect()
             },
         );
-        if self.live_preview {
-            self.layout_tables(&mut |text, width| {
-                line_wrapper
-                    .wrap_line(&[LineFragment::text(text)], width)
-                    .map(|b| b.ix)
-                    .collect()
-            });
+        self.estimating = false;
+    }
+
+    /// Document changes never run a GFM parser on the input thread.
+    fn edit_syntax(&mut self, changed: &Rope, range: &Range<usize>, inserted: &Rope) {
+        if !self.live_preview {
+            return;
+        }
+        let replacement = range.start == 0 && range.end == self.text.len();
+        let first = self.text.offset_to_point(range.start).row;
+        let last = self.text.offset_to_point(range.end).row;
+        let from = self.text.line_start_offset(first.saturating_sub(1));
+        let to = self
+            .text
+            .line_end_offset((last + 1).min(self.text.lines_len() - 1));
+        let plain = |c: char| {
+            c.is_alphanumeric() || c.is_whitespace() || matches!(c, '.' | ',' | '!' | '?')
+        };
+        let safe = !replacement
+            && to - from <= 8192
+            && self
+                .text
+                .slice(from..to)
+                .chars()
+                .chain(inserted.chars())
+                .all(plain);
+        self.analysis.edit(range.clone(), inserted.len(), safe);
+        self.analysis.request(changed);
+        if safe {
+            self.links.edit(range.clone(), inserted.len());
+        } else {
+            self.links = Default::default();
+            self.syntax_revision += 1;
+        }
+        self.tables
+            .update_preview(&self.text, changed, range, inserted);
+        if self.active_offset != usize::MAX {
+            self.active_offset = if self.active_offset < range.start {
+                self.active_offset
+            } else if self.active_offset <= range.end {
+                range.start + inserted.len()
+            } else {
+                self.active_offset
+                    .saturating_add_signed(inserted.len() as isize - range.len() as isize)
+            };
         }
     }
 
+    pub(super) fn apply_analysis(&mut self, mut parsed: super::preview_syntax::Parsed) -> bool {
+        let edits = self.analysis.rebasing(parsed.revision);
+        self.analysis.finish(parsed.revision);
+        let Some(edits) = edits.filter(|_| self.live_preview) else {
+            return false;
+        };
+        for edit in &edits {
+            parsed.tables.rebase_preview(&edit.range, edit.inserted);
+        }
+        self.links = super::preview_syntax::Links::with_edits(parsed.links, edits);
+        let old_by_start = self
+            .tables
+            .tables
+            .iter()
+            .map(|t| (t.source.start, t))
+            .collect::<std::collections::HashMap<_, _>>();
+        let mut widths = std::collections::HashMap::new();
+        let mut scrolls = std::collections::HashMap::new();
+        for table in &parsed.tables.tables {
+            if let Some(old) = old_by_start.get(&table.source.start) {
+                if old.column_characters == table.column_characters
+                    || table.cell_at(self.active_offset).is_some()
+                {
+                    if let Some(value) = self
+                        .table_widths
+                        .remove(&old.cache_key())
+                        .filter(|w| w.len() == table.alignments.len())
+                    {
+                        widths.insert(table.cache_key(), value);
+                    }
+                }
+                if let Some(value) = self.table_scroll.remove(&old.cache_key()) {
+                    scrolls.insert(table.cache_key(), value);
+                }
+            }
+        }
+        parsed.tables.revision = self.tables.revision + 1;
+        self.tables = parsed.tables;
+        self.table_widths = widths;
+        self.table_scroll = scrolls;
+        self.syntax_revision += 1;
+        true
+    }
+
+    fn measure_line(&mut self, row: usize, cx: &mut App) {
+        let text = self.text.clone();
+        if row >= text.lines_len() {
+            return;
+        }
+        let offset = text.line_start_offset(row);
+        let mut wrapper = cx
+            .text_system()
+            .line_wrapper(self.font.clone(), self.font_size);
+        let task_size = self.task_size;
+        self._update(
+            &text,
+            &(offset..offset),
+            &Rope::new(),
+            &mut |line, width, task| {
+                let fragments = if let Some(offset) = task {
+                    vec![
+                        LineFragment::text(&line[..offset]),
+                        LineFragment::element(task_size, 3),
+                        LineFragment::text(&line[offset + 3..]),
+                    ]
+                } else {
+                    vec![LineFragment::text(line)]
+                };
+                wrapper.wrap_line(&fragments, width).collect()
+            },
+        );
+    }
     fn _update<F>(
         &mut self,
         changed_text: &Rope,
@@ -321,74 +431,6 @@ impl TextWrapper {
     ) where
         F: FnMut(&str, Pixels, Option<usize>) -> Vec<gpui::Boundary>,
     {
-        if self.live_preview && self.links_text.as_ref() != Some(changed_text) {
-            let source = changed_text.to_string();
-            if let Some(previous) = &self.links_text {
-                // A mode/width refresh uses a whole-buffer replacement as its range.
-                let old = previous.to_string();
-                if range.end <= old.len()
-                    && old.len() - range.len() + new_text.len() == source.len()
-                {
-                    self.link_index
-                        .update(&old, &source, range.clone(), &new_text.to_string());
-                } else {
-                    self.link_index = Default::default();
-                    self.link_index.update("", &source, 0..0, &source);
-                }
-            } else {
-                self.link_index.update("", &source, 0..0, &source);
-            }
-            let links = self.link_index.links.clone();
-            if links != self.links {
-                // Reference definitions can change labels far from the edited row.
-                // Discard measured presentation; viewport measurement remains lazy.
-                let mut rows = std::collections::BTreeSet::new();
-                for link in &self.links {
-                    let first = self
-                        .text
-                        .offset_to_point(link.source.start.min(self.text.len()))
-                        .row;
-                    let last = self
-                        .text
-                        .offset_to_point(link.source.end.min(self.text.len()))
-                        .row;
-                    rows.extend(first..=last);
-                }
-                let delta = new_text.len() as isize - range.len() as isize;
-                for link in &links {
-                    let old_offset = |offset: usize| {
-                        if offset <= range.start {
-                            offset
-                        } else if offset >= range.start + new_text.len() {
-                            offset.saturating_add_signed(-delta)
-                        } else {
-                            range.start
-                        }
-                    };
-                    let first = self
-                        .text
-                        .offset_to_point(old_offset(link.source.start).min(self.text.len()))
-                        .row;
-                    let last = self
-                        .text
-                        .offset_to_point(old_offset(link.source.end).min(self.text.len()))
-                        .row;
-                    rows.extend(first..=last);
-                }
-                for row in rows {
-                    let Some(old) = self.lines.get(row).filter(|item| item.measured) else {
-                        continue;
-                    };
-                    let mut item = old.clone();
-                    item.measured = false;
-                    item.table = None;
-                    item.cache.borrow_mut().clear();
-                    self.lines.splice(row..=row, vec![item]);
-                }
-            }
-            self.links = links;
-            self.links_text = Some(changed_text.clone());
-        }
         // Remove the old changed lines.
         let start_row = self.text.offset_to_point(range.start).row;
         let start_row = start_row.min(self.lines.len().saturating_sub(1));
@@ -432,6 +474,7 @@ impl TextWrapper {
                     table: None,
                     line: Rope::from(line),
                     measured: false,
+                    syntax_revision: self.syntax_revision,
                     presentation: None,
                     mapped: None,
                     scale: 1.,
@@ -441,9 +484,14 @@ impl TextWrapper {
                 continue;
             }
             let source = line.to_string();
+            self.copied_bytes += source.len();
+            super::live_preview::record_ui_work(source.len(), source.len());
             let presentation = self.live_preview.then(|| {
                 super::live_preview::Presentation::parse(&source).with_links(
-                    &self.links,
+                    &self.links.in_range(
+                        changed_text.line_start_offset(new_start_row + ix)
+                            ..changed_text.line_start_offset(new_start_row + ix) + source.len(),
+                    ),
                     changed_text.line_start_offset(new_start_row + ix),
                     source.len(),
                 )
@@ -491,6 +539,7 @@ impl TextWrapper {
                 table: None,
                 line: Rope::from(line),
                 measured: true,
+                syntax_revision: self.syntax_revision,
                 cache: Default::default(),
                 presentation,
                 mapped,
@@ -502,6 +551,23 @@ impl TextWrapper {
         if self.lines.len() == 0 {
             self.lines = new_lines.into();
         } else {
+            if range.is_empty() && new_text.len() == 0 && new_lines.len() == 1 {
+                if let Some(old) = self.lines.get(start_row) {
+                    let new = &mut new_lines[0];
+                    let offset = changed_text.line_start_offset(start_row);
+                    if old.line == new.line && self.tables.at(offset).is_some() {
+                        new.table = old.table.clone();
+                        new.cache = old.cache.clone();
+                    }
+                    if old.scale == new.scale
+                        && old.mapped == new.mapped
+                        && old.presentation == new.presentation
+                        && old.wrapped_lines == new.wrapped_lines
+                    {
+                        new.cache = old.cache.clone();
+                    }
+                }
+            }
             self.lines.splice(rows_range, new_lines);
         }
 
@@ -518,32 +584,45 @@ impl TextWrapper {
     /// If the `text` is the same as the current text, do nothing.
     fn update_all(&mut self, text: &Rope, cx: &mut App) {
         self.estimating = self.wrap_width.is_some() || self.live_preview;
-        self.update(text, &(0..text.len()), &text, cx);
+        self._update(text, &(0..self.text.len()), text, &mut |_, _, _| vec![]);
         self.estimating = false;
     }
 
+    #[cfg(test)]
     fn layout_tables(&mut self, wrap: &mut impl FnMut(&str, Pixels) -> Vec<usize>) {
+        self.layout_tables_in(0..self.lines.len(), wrap);
+    }
+
+    fn layout_tables_in(
+        &mut self,
+        rows: Range<usize>,
+        wrap: &mut impl FnMut(&str, Pixels) -> Vec<usize>,
+    ) {
         use super::table::{CELL_PADDING, MIN_COLUMN};
-        let mut valid_rows = std::collections::HashSet::new();
-        for table in &self.tables.tables {
+        if rows.is_empty() || self.text.len() == 0 {
+            return;
+        }
+        let start = self
+            .text
+            .line_start_offset(rows.start.min(self.text.lines_len() - 1));
+        let end = self
+            .text
+            .line_end_offset(rows.end.saturating_sub(1).min(self.text.lines_len() - 1));
+        let first = self.tables.tables.partition_point(|t| t.source.end < start);
+        for table in self.tables.tables[first..]
+            .iter()
+            .take_while(|t| t.source.start <= end)
+        {
             let active = table.cell_at(self.active_offset);
-            let widths = if active.is_some() {
-                // Keep widths stable while typing, but rebuild them after column edits.
-                self.table_widths
-                    .get(&table.source.start)
-                    .filter(|widths| widths.len() == table.alignments.len())
-                    .cloned()
-            } else {
-                None
-            };
+            let widths = self
+                .table_widths
+                .get(&table.cache_key())
+                .filter(|widths| widths.len() == table.alignments.len())
+                .cloned();
             let widths = widths.unwrap_or_else(|| {
                 let mut widths = vec![px(MIN_COLUMN); table.alignments.len()];
-                for row in &table.rows {
-                    for (i, c) in row.cells.iter().take(widths.len()).enumerate() {
-                        let chars = self.text.slice(c.clone()).chars().count();
-                        widths[i] = widths[i]
-                            .max(px(super::table::column_width(chars, self.font_size.into())));
-                    }
+                for (i, chars) in table.column_characters.iter().enumerate() {
+                    widths[i] = px(super::table::column_width(*chars, self.font_size.into()));
                 }
                 let available = self.wrap_width.unwrap_or(px(800.));
                 let sum: Pixels = widths.iter().copied().fold(px(0.), |a, b| a + b);
@@ -554,24 +633,35 @@ impl TextWrapper {
                 }
                 widths
             });
-            self.table_widths.insert(table.source.start, widths.clone());
+            self.table_widths.insert(table.cache_key(), widths.clone());
             let scroll = self
                 .table_scroll
-                .entry(table.source.start)
+                .entry(table.cache_key())
                 .or_default()
                 .clone();
             let viewport = self.wrap_width.unwrap_or(px(800.));
             let total = widths.iter().copied().fold(px(0.), |a, b| a + b);
             scroll.set(scroll.get().clamp(px(0.), (total - viewport).max(px(0.))));
-            for (r, source_row) in table.rows.iter().enumerate() {
-                let row = self.text.offset_to_point(source_row.source.start).row;
-                valid_rows.insert(row);
+            let first_row = table
+                .rows
+                .partition_point(|r| table.absolute(&r.source).end < start);
+            for (r, source_row) in table
+                .rows
+                .iter()
+                .enumerate()
+                .skip(first_row)
+                .take_while(|(_, r)| table.absolute(&r.source).start <= end)
+            {
+                self.visited_table_rows += 1;
+                super::live_preview::record_table_row();
+                let row = self.text.offset_to_point(table.row_range(r).start).row;
                 let Some(old) = self.lines.get(row) else {
                     continue;
                 };
                 let active_col = active.filter(|(ar, _)| *ar == r).map(|(_, c)| c);
                 if old.table.as_ref().is_some_and(|t| {
-                    t.widths == widths
+                    t.revision.get() == self.syntax_revision
+                        && t.widths == widths
                         && t.active == active_col
                         && t.header == (r == 0)
                         && t.cells
@@ -586,13 +676,20 @@ impl TextWrapper {
                 let mut x = px(0.);
                 let mut height = super::table::MIN_ROW_LINES;
                 for (c, range) in source_row.cells.iter().take(widths.len()).enumerate() {
+                    let range = table.absolute(range);
                     let text = self.text.slice(range.clone()).to_string();
+                    self.copied_bytes += text.len();
+                    super::live_preview::record_ui_work(text.len(), text.len());
                     let mut inline = super::table::inline(&text);
                     let presentation = super::live_preview::Presentation {
                         hidden: inline.hidden,
                         ..Default::default()
                     }
-                    .with_links(&self.links, range.start, text.len());
+                    .with_links(
+                        &self.links.in_range(range.clone()),
+                        range.start,
+                        text.len(),
+                    );
                     for link in &presentation.links {
                         inline.styles.push((link.label.clone(), 5));
                     }
@@ -614,8 +711,20 @@ impl TextWrapper {
                     });
                     x += widths[c];
                 }
+                if let Some(previous) = old.table.as_ref() {
+                    if previous.cells == cells
+                        && previous.widths == widths
+                        && previous.height == height
+                        && previous.active == active_col
+                        && previous.header == (r == 0)
+                    {
+                        previous.revision.set(self.syntax_revision);
+                        continue;
+                    }
+                }
                 let mut item = old.clone();
                 item.table = Some(std::rc::Rc::new(TableRowLayout {
+                    revision: std::cell::Cell::new(self.syntax_revision),
                     scroll: scroll.clone(),
                     viewport,
                     cells,
@@ -630,54 +739,33 @@ impl TextWrapper {
                 item.presentation = None;
                 item.wrapped_lines = std::rc::Rc::new(vec![0..item.line.len(); height]);
                 item.cache.borrow_mut().clear();
+                super::live_preview::record_invalidation();
                 self.lines.splice(row..=row, vec![item]);
             }
             let row = self.text.offset_to_point(table.separator.start).row;
-            valid_rows.insert(row);
-            if let Some(old) = self.lines.get(row) {
-                let mut item = old.clone();
-                item.table = Some(std::rc::Rc::new(TableRowLayout {
-                    scroll: scroll.clone(),
-                    viewport,
-                    cells: vec![],
-                    height: 0,
-                    header: false,
-                    active: None,
-                    widths,
-                }));
-                item.scale = 0.;
-                item.measured = true;
-                item.mapped = None;
-                item.presentation = None;
-                item.wrapped_lines = std::rc::Rc::new(vec![0..item.line.len()]);
-                self.lines.splice(row..=row, vec![item]);
+            if rows.contains(&row) {
+                if let Some(old) = self.lines.get(row) {
+                    let mut item = old.clone();
+                    item.table = Some(std::rc::Rc::new(TableRowLayout {
+                        revision: std::cell::Cell::new(self.syntax_revision),
+                        scroll: scroll.clone(),
+                        viewport,
+                        cells: vec![],
+                        height: 0,
+                        header: false,
+                        active: None,
+                        widths,
+                    }));
+                    item.scale = 0.;
+                    item.measured = true;
+                    item.mapped = None;
+                    item.presentation = None;
+                    item.wrapped_lines = std::rc::Rc::new(vec![0..item.line.len()]);
+                    self.lines.splice(row..=row, vec![item]);
+                }
             }
         }
-        // Restore rows of tables that an edit made invalid.
-        let stale = self
-            .table_rows
-            .difference(&valid_rows)
-            .copied()
-            .collect::<Vec<_>>();
-        self.table_rows = valid_rows;
-        for row in stale {
-            let Some(mut item) = self.lines.get(row).cloned() else {
-                continue;
-            };
-            item.table = None;
-            item.measured = false;
-            item.scale = 1.;
-            self.lines.splice(row..=row, vec![item]);
-        }
         self.soft_lines = self.lines.wraps();
-        let starts = self
-            .tables
-            .tables
-            .iter()
-            .map(|t| t.source.start)
-            .collect::<std::collections::HashSet<_>>();
-        self.table_widths.retain(|start, _| starts.contains(start));
-        self.table_scroll.retain(|start, _| starts.contains(start));
     }
 
     /// Return display point (with soft wrap) from the given byte offset in the text.
@@ -1449,6 +1537,7 @@ mod tests {
                 scale: 1.,
                 cache: Default::default(),
                 measured: true,
+                syntax_revision: 0,
             },
             // range: 16..36
             LineItem {
@@ -1460,6 +1549,7 @@ mod tests {
                 scale: 1.,
                 cache: Default::default(),
                 measured: true,
+                syntax_revision: 0,
             },
             // range: 37..56
             LineItem {
@@ -1471,6 +1561,7 @@ mod tests {
                 scale: 1.,
                 cache: Default::default(),
                 measured: true,
+                syntax_revision: 0,
             },
             // range: 57..79
             LineItem {
@@ -1482,6 +1573,7 @@ mod tests {
                 scale: 1.,
                 cache: Default::default(),
                 measured: true,
+                syntax_revision: 0,
             },
         ]
         .into();
@@ -1558,6 +1650,7 @@ impl LineItem {
             table: None,
             line: Rope::from("x".repeat(n)),
             measured: true,
+            syntax_revision: 0,
             presentation: None,
             mapped: None,
             scale: 1.,
@@ -1679,7 +1772,7 @@ mod table_layout_tests {
                         }
                     };
                     let table = &wrapper.tables.tables[0];
-                    for row in &table.rows {
+                    for row in table.rows.iter() {
                         let layout = wrapper.lines[next.offset_to_point(row.source.start).row]
                             .table
                             .as_ref()
@@ -1771,6 +1864,11 @@ mod table_layout_tests {
 
 #[cfg(test)]
 mod link_layout_tests {
+    fn settle(wrapper: &mut super::TextWrapper, text: &ropey::Rope) {
+        wrapper.analysis.request(text);
+        let parsed = wrapper.analysis.start().unwrap().parse();
+        assert!(wrapper.apply_analysis(parsed));
+    }
     use super::*;
     #[test]
     fn reference_edits_invalidate_distant_presentation() {
@@ -1778,6 +1876,7 @@ mod link_layout_tests {
         let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(14.), None);
         wrapper.live_preview = true;
         wrapper.reveal_row = usize::MAX;
+        settle(&mut wrapper, &text);
         wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
         assert_eq!(wrapper.lines[0].mapped.as_ref().unwrap().text, "one");
         let at = text.to_string().rfind("[id]").unwrap() + 1;
@@ -1788,10 +1887,11 @@ mod link_layout_tests {
             &Rope::from("missing"),
             &mut |_, _, _| vec![],
         );
-        assert!(!wrapper.lines[0].measured);
+        settle(&mut wrapper, &text);
+        assert_ne!(wrapper.lines[0].syntax_revision, wrapper.syntax_revision);
         wrapper._update(&text, &(0..0), &Rope::new(), &mut |_, _, _| vec![]);
         assert_eq!(wrapper.lines[0].mapped.as_ref().unwrap().text, "[one][id]");
-        assert!(wrapper.links.is_empty());
+        assert!(wrapper.links.in_range(0..text.len()).is_empty());
     }
 
     #[test]
@@ -1801,6 +1901,7 @@ mod link_layout_tests {
         wrapper.live_preview = true;
         wrapper.reveal_row = usize::MAX;
         wrapper.tables.rebuild(&text);
+        settle(&mut wrapper, &text);
         wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
         wrapper.layout_tables(&mut |_, _| vec![]);
         let cell = &wrapper.lines[2].table.as_ref().unwrap().cells[0];
@@ -1870,5 +1971,165 @@ mod link_hit_tests {
             table.index_for_position(point(px(100.), px(5.)), px(20.)),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod sustained_edit_tests {
+    use super::*;
+
+    fn make(source: &str) -> TextWrapper {
+        let text = Rope::from(source);
+        let mut wrapper = TextWrapper::new(gpui::font("Arial"), px(16.), Some(px(800.)));
+        wrapper.live_preview = true;
+        wrapper.estimating = true;
+        wrapper._update(&text, &(0..0), &text, &mut |_, _, _| vec![]);
+        wrapper.estimating = false;
+        settle(&mut wrapper);
+        wrapper
+    }
+    fn settle(wrapper: &mut TextWrapper) {
+        wrapper.analysis.request(&wrapper.text.clone());
+        let request = wrapper.analysis.start().unwrap();
+        assert!(wrapper.apply_analysis(request.parse()));
+    }
+    fn edit(wrapper: &mut TextWrapper, range: Range<usize>, inserted: &str) {
+        let mut text = wrapper.text.clone();
+        text.replace(range.clone(), inserted);
+        let inserted = Rope::from(inserted);
+        wrapper.edit_syntax(&text, &range, &inserted);
+        wrapper._update(&text, &range, &inserted, &mut |_, _, _| vec![]);
+        assert_eq!(wrapper.lines.len(), text.lines_len());
+        assert!(wrapper.analysis.jobs() <= 2);
+    }
+    fn measure(wrapper: &mut TextWrapper, rows: Range<usize>) {
+        let text = wrapper.text.clone();
+        for row in rows.clone() {
+            let at = text.line_start_offset(row);
+            if wrapper.lines[row].syntax_revision != wrapper.syntax_revision
+                || !wrapper.lines[row].measured
+            {
+                wrapper._update(&text, &(at..at), &Rope::new(), &mut |_, _, _| vec![]);
+            }
+        }
+        wrapper.layout_tables_in(rows, &mut |_, _| vec![]);
+    }
+
+    #[test]
+    fn enter_and_backspace_update_lines_before_analysis_finishes() {
+        for count in [20, 100_000] {
+            let mut wrapper = make(&"ordinary café 你好 text\n".repeat(count));
+            for row in [0, count / 2, count - 1] {
+                let at = wrapper.text.line_start_offset(row);
+                let original_rows = wrapper.lines.len();
+                let original = wrapper.text.clone();
+                wrapper.analysis.request(&original);
+                let running = wrapper.analysis.start().unwrap();
+                let copied = wrapper.copied_bytes;
+                for i in 0..120 {
+                    edit(&mut wrapper, at + i..at + i, "\n");
+                    assert_eq!(wrapper.lines.len(), original_rows + i + 1);
+                }
+                for i in (0..120).rev() {
+                    edit(&mut wrapper, at + i..at + i + 1, "");
+                    assert_eq!(wrapper.lines.len(), original_rows + i);
+                }
+                assert_eq!(wrapper.text, original);
+                assert!(
+                    wrapper.copied_bytes - copied < 20_000,
+                    "copy work is independent of document size"
+                );
+                // Long bursts exhaust the bounded mapping log; the latest job still starts immediately.
+                assert!(!wrapper.apply_analysis(running.parse()));
+                let latest = wrapper.analysis.start().unwrap();
+                assert!(wrapper.apply_analysis(latest.parse()));
+                assert_eq!(wrapper.analysis.jobs(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn large_table_layout_visits_only_requested_rows_and_keeps_shifted_caches() {
+        let source = format!(
+            "paragraph\n\n\n| name | value |\n| --- | --- |\n{}",
+            "| café | 你好 |\n".repeat(10_000)
+        );
+        let mut wrapper = make(&source);
+        measure(&mut wrapper, 5000..5020);
+        let copied = wrapper.copied_bytes;
+        let visited = wrapper.visited_table_rows;
+        let cached = wrapper.lines[5005].table.clone().unwrap();
+        let identity = wrapper.tables.tables[0].cache_key();
+        for _ in 0..60 {
+            edit(&mut wrapper, 0..0, "\n");
+            edit(&mut wrapper, 0..1, "");
+        }
+        assert_eq!(wrapper.tables.tables[0].cache_key(), identity);
+        measure(&mut wrapper, 5000..5020);
+        assert_eq!(wrapper.visited_table_rows - visited, 20);
+        assert!(wrapper.copied_bytes - copied < 10_000);
+        assert!(std::rc::Rc::ptr_eq(
+            &cached,
+            wrapper.lines[5005].table.as_ref().unwrap()
+        ));
+        let current = wrapper.text.clone();
+        let offset = wrapper.tables.tables[0].cell_range(5000, 0).start;
+        assert_eq!(
+            current.slice(offset..offset + "café".len()).to_string(),
+            "café"
+        );
+    }
+
+    #[test]
+    fn link_heavy_edits_do_not_copy_or_parse_the_document_on_the_input_thread() {
+        let mut wrapper = make(&"[café](note.md)\n\n".repeat(10_000));
+        let copied = wrapper.copied_bytes;
+        for row in [0, 5000, 19_998] {
+            let at = wrapper.text.line_start_offset(row);
+            for _ in 0..60 {
+                edit(&mut wrapper, at..at, "\n");
+                edit(&mut wrapper, at..at + 1, "");
+            }
+        }
+        assert!(wrapper.copied_bytes - copied < 20_000);
+        settle(&mut wrapper);
+        assert_eq!(wrapper.links.in_range(0..wrapper.text.len()).len(), 10_000);
+    }
+
+    #[test]
+    fn context_changes_reject_delayed_analysis_and_settle_to_full_parser() {
+        for source in [
+            "[one][id]\r\n\r\n[id]: note.md\r\n",
+            "```\n[code](note.md)\n```\n",
+            "| name |\n| --- |\n| [one](note.md) |\n",
+        ] {
+            let mut wrapper = make(source);
+            wrapper.analysis.request(&wrapper.text.clone());
+            let old = wrapper.analysis.start().unwrap();
+            edit(&mut wrapper, 0..0, "> ");
+            assert!(!wrapper.apply_analysis(old.parse()));
+            let next = wrapper.analysis.start().unwrap();
+            assert!(wrapper.apply_analysis(next.parse()));
+            let source = wrapper.text.to_string();
+            assert_eq!(
+                wrapper.links.in_range(0..source.len()),
+                super::super::markdown_links::parse(&source)
+            );
+        }
+    }
+}
+#[cfg(feature = "editor-diagnostics")]
+impl TextWrapper {
+    pub(super) fn diagnostic_settle(&mut self) {
+        let parsed = super::preview_syntax::Request {
+            revision: self.analysis.revision,
+            text: self.text.clone(),
+        }
+        .parse();
+        self.links = super::preview_syntax::Links::with_edits(parsed.links, Vec::new());
+        let revision = self.tables.revision + 1;
+        self.tables = parsed.tables;
+        self.tables.revision = revision;
+        self.syntax_revision += 1;
     }
 }
