@@ -16,6 +16,7 @@ enum Command {
     ChangeNotebook,
     NewNote,
     SearchFile,
+    SearchAllFiles,
 }
 
 impl Command {
@@ -26,6 +27,7 @@ impl Command {
         Self::ChangeNotebook,
         Self::NewNote,
         Self::SearchFile,
+        Self::SearchAllFiles,
     ];
 
     fn label(self) -> &'static str {
@@ -36,6 +38,7 @@ impl Command {
             Self::ChangeNotebook => "Notebook: Change notebook",
             Self::NewNote => "Notebook: Create new note",
             Self::SearchFile => "Search: Search current file",
+            Self::SearchAllFiles => "Search: Search in all files",
         }
     }
 
@@ -47,6 +50,7 @@ impl Command {
             Self::ChangeNotebook => "Choose a registered notebook",
             Self::NewNote => "Create an Untitled note in the notebook root",
             Self::SearchFile => "Find text in the current document",
+            Self::SearchAllFiles => "Search Markdown files in the active notebook",
         }
     }
 
@@ -62,6 +66,9 @@ impl Command {
         }
         match self {
             Self::SearchFile if !document => Some("Open a document to search"),
+            Self::SearchAllFiles if !notebook => {
+                Some("Open a notebook to search all Markdown files")
+            }
             Self::NewNote if !notebook => Some("Open a notebook to create a note"),
             Self::InsertDate | Self::EditLink if !document || reading => {
                 Some("Open an editable document in Source or Live preview")
@@ -373,6 +380,7 @@ impl Notes {
             }
             Command::EditLink => self.edit_link(window, cx),
             Command::SearchFile => self.search_current_file(window, cx),
+            Command::SearchAllFiles => self.open_search_all(window, cx),
             Command::NewNote => {
                 if let Some(book) = &self.notebooks.active {
                     self.request(Next::NewNote(book.root.clone()), window, cx);
@@ -648,6 +656,20 @@ mod tests {
         assert!(
             Command::SearchFile
                 .unavailable(false, false, false, true)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn all_files_search_requires_only_an_active_notebook() {
+        assert!(
+            Command::SearchAllFiles
+                .unavailable(false, true, false, true)
+                .is_none()
+        );
+        assert!(
+            Command::SearchAllFiles
+                .unavailable(true, false, false, false)
                 .is_some()
         );
     }
