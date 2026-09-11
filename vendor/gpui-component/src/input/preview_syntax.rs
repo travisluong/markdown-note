@@ -3,6 +3,18 @@ use super::{markdown_links::MarkdownLink, table::TableIndex};
 use ropey::Rope;
 use std::{ops::Range, sync::Arc};
 
+/// Large immutable indexes are released on the background executor as well.
+pub(super) struct Retired {
+    pub links: Links,
+    pub tables: Vec<super::table::Table>,
+}
+impl Retired {
+    pub fn dispose(self) {
+        drop(self.links);
+        drop(self.tables);
+    }
+}
+
 pub(super) struct Request {
     pub revision: u64,
     pub text: Rope,
@@ -104,6 +116,9 @@ pub(super) struct Links {
     edits: Vec<Delta>,
 }
 impl Links {
+    pub fn has_items(&self) -> bool {
+        !self.items.is_empty()
+    }
     #[cfg(test)]
     pub fn new(items: Vec<MarkdownLink>) -> Self {
         Self {
@@ -205,5 +220,67 @@ mod tests {
         assert_eq!(found[0].label, 11..16);
         links.edit(12..14, 1);
         assert!(links.in_range(10..source.len() + 1).is_empty());
+    }
+}
+
+/// Context-independent edits may reuse syntax outside their changed source range.
+/// Inspect at most a small line neighborhood, never the whole document.
+pub(super) fn context_independent(old: &Rope, range: &Range<usize>, inserted: &Rope) -> bool {
+    use crate::input::RopeExt;
+    if range.start == 0 && range.end == old.len() {
+        return false;
+    }
+    let first = old.offset_to_point(range.start).row;
+    let last = old.offset_to_point(range.end).row;
+    let touched = old.line_start_offset(first)..old.line_end_offset(last);
+    if touched.len() <= 8192
+        && inserted.len() <= 8192
+        && old
+            .slice(touched)
+            .chars()
+            .chain(inserted.chars())
+            .all(char::is_whitespace)
+    {
+        return true;
+    }
+    let from = old.line_start_offset(first.saturating_sub(1));
+    let to = old.line_end_offset((last + 1).min(old.lines_len() - 1));
+    to - from <= 8192
+        && inserted.len() <= 8192
+        && old
+            .slice(from..to)
+            .chars()
+            .chain(inserted.chars())
+            .all(|c| c.is_alphanumeric() || c.is_whitespace() || matches!(c, '.' | ',' | '!' | '?'))
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+    use crate::input::RopeExt;
+    #[test]
+    fn safe_results_rebase_while_latest_snapshot_is_pending() {
+        let source = "before\n\n\n[label](note.md)\n";
+        let mut queue = Queue::default();
+        queue.request(&Rope::from(source));
+        let request = queue.start().unwrap();
+        let mut current = Rope::from(source);
+        for _ in 0..8 {
+            queue.edit(0..0, 1, true);
+            current.replace(0..0, "\n");
+            queue.request(&current);
+        }
+        let parsed = request.parse();
+        let edits = queue.rebasing(parsed.revision).unwrap();
+        assert!(!queue.finish(parsed.revision));
+        let links = Links::with_edits(parsed.links, edits);
+        assert_eq!(
+            links.in_range(8..current.len()),
+            super::super::markdown_links::parse(&current.to_string())
+        );
+        assert!(
+            queue.start().is_some(),
+            "pending analysis starts without a quiet-period timer"
+        );
     }
 }

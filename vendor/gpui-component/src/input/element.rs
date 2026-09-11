@@ -805,6 +805,7 @@ impl TextElement {
                 mapped.text.as_str()
             } else {
                 source = line_item.line.to_string();
+                super::live_preview::record_ui_work(source.len(), 0);
                 source.as_str()
             };
             let mut wrapped_lines = SmallVec::with_capacity(1);
@@ -1011,6 +1012,8 @@ impl TextElement {
 pub(super) struct PrepaintState {
     #[cfg(feature = "editor-diagnostics")]
     revision: u64,
+    #[cfg(feature = "editor-diagnostics")]
+    syntax_revision: u64,
     /// The lines of entire lines.
     last_layout: LastLayout,
     /// The lines only contains the visible lines in the viewport, based on `visible_range`.
@@ -1493,6 +1496,8 @@ impl Element for TextElement {
         PrepaintState {
             #[cfg(feature = "editor-diagnostics")]
             revision: state.text_wrapper.analysis.revision,
+            #[cfg(feature = "editor-diagnostics")]
+            syntax_revision: state.text_wrapper.syntax_revision,
             bounds,
             last_layout,
             scroll_size,
@@ -1731,6 +1736,7 @@ impl Element for TextElement {
             #[cfg(feature = "editor-diagnostics")]
             {
                 state.preview_painted_revision = prepaint.revision;
+                state.preview_painted_syntax = prepaint.syntax_revision;
                 state.preview_painted_at = Some(std::time::Instant::now());
             }
             state.last_layout = Some(prepaint.last_layout.clone());

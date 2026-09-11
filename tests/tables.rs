@@ -193,3 +193,93 @@ fn typing_in_large_table_does_not_reparse_it() {
         format!("{:?}", fresh.tables)
     );
 }
+
+#[test]
+fn preview_cell_edits_and_shifted_row_commands_match_fresh_tables() {
+    for newline in ["\n", "\r\n"] {
+        let initial = [
+            "before",
+            "",
+            "",
+            "| a | b |",
+            "| --- | --- |",
+            "| café | 你好 |",
+            "| last | value |",
+            "",
+        ]
+        .join(newline);
+        let (mut text, mut preview) = index(&initial);
+        for inserted in [newline, newline, " "] {
+            let old = text.clone();
+            text.replace(0..0, inserted);
+            preview.update_preview(&old, &text, &(0..0), &Rope::from(inserted));
+        }
+        for i in 0..60 {
+            let row = i % 3;
+            let col = i % 2;
+            let cell = preview.tables[0].cell_range(row, col);
+            let inserted = ["x", "你好", "**bold**", "[label](note.md)", r"\|"][i % 5];
+            let range = if i % 2 == 0 {
+                cell.start..cell.start
+            } else {
+                cell
+            };
+            let old = text.clone();
+            text.replace(range.clone(), inserted);
+            preview.update_preview(&old, &text, &range, &Rope::from(inserted));
+            let mut fresh = TableIndex::default();
+            fresh.rebuild(&text);
+            assert_eq!(
+                format!("{:?}", preview.tables),
+                format!("{:?}", fresh.tables),
+                "{newline:?}, edit {i}"
+            );
+        }
+        for command in [Command::RowAbove, Command::RowBelow] {
+            let edit = preview.tables[0].edit(&text, 1, 1, command).unwrap();
+            assert!(
+                edit.text.len() < 32,
+                "row insertion must not rewrite the whole table"
+            );
+            let old = text.clone();
+            text.replace(edit.range.clone(), &edit.text);
+            preview.update_preview(&old, &text, &edit.range, &Rope::from(edit.text));
+            let mut fresh = TableIndex::default();
+            fresh.rebuild(&text);
+            assert_eq!(
+                format!("{:?}", preview.tables),
+                format!("{:?}", fresh.tables)
+            );
+            assert!(preview.at(edit.caret).is_some());
+        }
+    }
+}
+
+#[test]
+fn generated_column_commands_keep_navigation_metadata_without_parsing() {
+    for command in [
+        Command::ColumnLeft,
+        Command::ColumnRight,
+        Command::DeleteColumn,
+        Command::Align(Alignment::Center),
+        Command::PadRow,
+        Command::DeleteTable,
+    ] {
+        let (mut text, mut preview) =
+            index("before\n\n| a | b |\n| --- | --- |\n| café | 你好 |\n\nafter");
+        let edit = preview.tables[0].edit(&text, 1, 1, command).unwrap();
+        let parsed = preview.parsed_bytes;
+        text.replace(edit.range.clone(), &edit.text);
+        assert!(preview.replace_generated(&edit.range, &Rope::from(edit.text)));
+        assert_eq!(preview.parsed_bytes, parsed);
+        let mut fresh = TableIndex::default();
+        fresh.rebuild(&text);
+        assert_eq!(
+            format!("{:?}", preview.tables),
+            format!("{:?}", fresh.tables)
+        );
+        if command != Command::DeleteTable {
+            assert!(preview.at(edit.caret).is_some());
+        }
+    }
+}

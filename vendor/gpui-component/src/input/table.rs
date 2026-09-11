@@ -25,6 +25,7 @@ pub struct Row {
 #[derive(Clone)]
 pub struct Table {
     row_offset: isize,
+    row_shifts: std::sync::Arc<Vec<isize>>,
     cache_origin: usize,
     pub column_characters: Vec<usize>,
     pub source: Range<usize>,
@@ -145,6 +146,7 @@ fn parse(text: &str, base: usize) -> (Vec<Range<usize>>, Vec<Table>) {
         tables.push(Table {
             column_characters,
             row_offset: 0,
+            row_shifts: std::sync::Arc::new(vec![0; rows.len() + 1]),
             cache_origin: base + range.start,
             source: base + range.start..base + range.end,
             separator,
@@ -160,10 +162,11 @@ impl std::fmt::Debug for Table {
         let rows = self
             .rows
             .iter()
-            .map(|r| Row {
-                source: self.absolute(&r.source),
+            .enumerate()
+            .map(|(i, r)| Row {
+                source: self.row_range(i),
                 present_cells: r.present_cells,
-                cells: r.cells.iter().map(|c| self.absolute(c)).collect(),
+                cells: r.cells.iter().map(|c| self.absolute_row(i, c)).collect(),
             })
             .collect::<Vec<_>>();
         f.debug_struct("Table")
@@ -175,15 +178,44 @@ impl std::fmt::Debug for Table {
     }
 }
 impl Table {
-    pub fn absolute(&self, range: &Range<usize>) -> Range<usize> {
-        range.start.saturating_add_signed(self.row_offset)
-            ..range.end.saturating_add_signed(self.row_offset)
+    fn row_delta(&self, row: usize) -> isize {
+        let mut ix = row + 1;
+        let mut delta = self.row_offset;
+        while ix > 0 {
+            delta += self.row_shifts[ix];
+            ix &= ix - 1;
+        }
+        delta
+    }
+    fn shift_rows_after(&mut self, row: usize, delta: isize) {
+        let shifts = std::sync::Arc::make_mut(&mut self.row_shifts);
+        let mut ix = row + 2;
+        while ix < shifts.len() {
+            shifts[ix] += delta;
+            ix += ix & ix.wrapping_neg();
+        }
+    }
+    pub fn absolute_row(&self, row: usize, range: &Range<usize>) -> Range<usize> {
+        let delta = self.row_delta(row);
+        range.start.saturating_add_signed(delta)..range.end.saturating_add_signed(delta)
     }
     pub fn cell_range(&self, row: usize, col: usize) -> Range<usize> {
-        self.absolute(&self.rows[row].cells[col])
+        self.absolute_row(row, &self.rows[row].cells[col])
     }
     pub fn row_range(&self, row: usize) -> Range<usize> {
-        self.absolute(&self.rows[row].source)
+        self.absolute_row(row, &self.rows[row].source)
+    }
+    pub fn row_at_or_after(&self, offset: usize) -> usize {
+        let (mut low, mut high) = (0, self.rows.len());
+        while low < high {
+            let mid = (low + high) / 2;
+            if self.row_range(mid).end < offset {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        low
     }
     pub fn cache_key(&self) -> usize {
         self.cache_origin
@@ -196,26 +228,33 @@ impl Table {
         self.row_offset += delta;
     }
     fn materialize(&mut self) {
-        let delta = std::mem::take(&mut self.row_offset);
-        if delta == 0 {
+        if self.row_offset == 0 && self.row_shifts.iter().all(|d| *d == 0) {
             return;
         }
-        for row in std::sync::Arc::make_mut(&mut self.rows) {
+        let deltas = (0..self.rows.len())
+            .map(|i| self.row_delta(i))
+            .collect::<Vec<_>>();
+        for (row, delta) in std::sync::Arc::make_mut(&mut self.rows)
+            .iter_mut()
+            .zip(deltas)
+        {
             for range in std::iter::once(&mut row.source).chain(row.cells.iter_mut()) {
                 *range = range.start.saturating_add_signed(delta)
                     ..range.end.saturating_add_signed(delta);
             }
         }
+        self.row_offset = 0;
+        self.row_shifts = std::sync::Arc::new(vec![0; self.rows.len() + 1]);
     }
     pub fn cell_at(&self, offset: usize) -> Option<(usize, usize)> {
-        let offset = offset.checked_add_signed(-self.row_offset)?;
-        let row = self.rows.partition_point(|r| r.source.end < offset);
-        if self.rows.get(row)?.source.start > offset {
+        let row = self.row_at_or_after(offset);
+        if row == self.rows.len() || self.row_range(row).start > offset {
             return None;
         }
+        let local = offset.checked_add_signed(-self.row_delta(row))?;
         let cells = &self.rows[row].cells[..self.alignments.len()];
         let col = cells
-            .partition_point(|c| c.end < offset)
+            .partition_point(|c| c.end < local)
             .min(cells.len() - 1);
         Some((row, col))
     }
@@ -264,10 +303,11 @@ impl Table {
         let mut data = self
             .rows
             .iter()
-            .map(|r| {
+            .enumerate()
+            .map(|(i, r)| {
                 r.cells
                     .iter()
-                    .map(|c| source.slice(self.absolute(c)).to_string())
+                    .map(|c| source.slice(self.absolute_row(i, c)).to_string())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
@@ -368,6 +408,7 @@ impl Table {
 
 #[derive(Default)]
 pub struct TableIndex {
+    pub(crate) retired: Vec<Table>,
     pub tables: Vec<Table>,
     blocks: Vec<Range<usize>>,
     pub revision: u64,
@@ -375,19 +416,110 @@ pub struct TableIndex {
     initialized: bool,
 }
 impl TableIndex {
+    /// Only accepts a whole-table replacement produced by Table::edit.
+    /// Commands already know the structure, so rebuilding their metadata needs no GFM parse.
+    #[doc(hidden)]
+    pub fn replace_generated(&mut self, range: &Range<usize>, inserted: &Rope) -> bool {
+        let Some(owner) = self.tables.iter().position(|t| t.source == *range) else {
+            return false;
+        };
+        let delta = inserted.len() as isize - range.len() as isize;
+        if inserted.len() == 0 {
+            self.retired.push(self.tables.remove(owner));
+            for table in &mut self.tables[owner..] {
+                table.shift_preview(delta);
+            }
+            self.revision += 1;
+            return true;
+        }
+        let source = inserted.to_string();
+        let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+        if lines.len() < 2 {
+            return false;
+        }
+        let alignments = cells(lines[1], 0)
+            .into_iter()
+            .map(|cell| match lines[1][cell].trim() {
+                "---" => Some(Alignment::Left),
+                ":---:" => Some(Alignment::Center),
+                "---:" => Some(Alignment::Right),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(alignments) = alignments.filter(|a| !a.is_empty()) else {
+            return false;
+        };
+        let mut rows = Vec::new();
+        let mut separator = 0..0;
+        let mut start = range.start;
+        let mut column_characters = vec![0; alignments.len()];
+        for (i, line) in lines.iter().enumerate() {
+            let raw = line.trim_end_matches(['\r', '\n']);
+            let end = start + raw.len();
+            if i == 1 {
+                separator = start..end;
+            } else {
+                let mut cells = cells(raw, start);
+                let present_cells = cells.len();
+                if i == 0 && present_cells != alignments.len() {
+                    return false;
+                }
+                for (column, cell) in cells.iter().take(alignments.len()).enumerate() {
+                    column_characters[column] = column_characters[column]
+                        .max(raw[cell.start - start..cell.end - start].chars().count());
+                }
+                cells.resize_with(alignments.len().max(present_cells), || end..end);
+                rows.push(Row {
+                    source: start..end,
+                    cells,
+                    present_cells,
+                });
+            }
+            start += line.len();
+        }
+        let table = Table {
+            row_offset: 0,
+            row_shifts: std::sync::Arc::new(vec![0; rows.len() + 1]),
+            cache_origin: self.tables[owner].cache_origin,
+            column_characters,
+            source: range.start..range.start + source.len(),
+            separator,
+            rows: std::sync::Arc::new(rows),
+            alignments,
+        };
+        self.retired
+            .push(std::mem::replace(&mut self.tables[owner], table));
+        for table in &mut self.tables[owner + 1..] {
+            table.shift_preview(delta);
+        }
+        self.revision += 1;
+        super::live_preview::record_ui_work(source.len(), 0);
+        true
+    }
+    #[doc(hidden)]
+    pub fn retire_from(&mut self, previous: &mut Self) {
+        self.retired.append(&mut previous.tables);
+        self.retired.append(&mut previous.retired);
+    }
+    #[doc(hidden)]
+    pub fn take_retired(&mut self) -> Vec<Table> {
+        std::mem::take(&mut self.retired)
+    }
     /// Rebase a completed snapshot only across context-independent edits.
     pub fn rebase_preview(&mut self, range: &Range<usize>, inserted: usize) {
         let delta = inserted as isize - range.len() as isize;
-        self.tables.retain_mut(|table| {
+        let mut valid = Vec::with_capacity(self.tables.len());
+        for mut table in std::mem::take(&mut self.tables) {
             if table.source.end < range.start {
-                true
+                valid.push(table);
             } else if table.source.start >= range.end {
                 table.shift_preview(delta);
-                true
+                valid.push(table);
             } else {
-                false
+                self.retired.push(table);
             }
-        });
+        }
+        self.tables = valid;
     }
     /// Update trusted editing metadata without invoking the document parser.
     pub fn update_preview(
@@ -405,15 +537,11 @@ impl TableIndex {
                 .position(|t| t.source.start < range.start && range.start <= t.source.end);
             if let Some(owner) = owner {
                 let t = &mut self.tables[owner];
+                let at_row = t.row_at_or_after(range.start);
                 let after = t.separator.end == range.start
-                    || t.rows
-                        .iter()
-                        .any(|r| t.absolute(&r.source).end == range.start);
-                let before = t
-                    .rows
-                    .iter()
-                    .skip(1)
-                    .any(|r| t.absolute(&r.source).start == range.start);
+                    || (at_row < t.rows.len() && t.row_range(at_row).end == range.start);
+                let before =
+                    at_row > 0 && at_row < t.rows.len() && t.row_range(at_row).start == range.start;
                 let raw = inserted.to_string();
                 let body = raw.trim_matches(['\r', '\n']);
                 if (after && raw.starts_with(['\r', '\n']) || before && raw.ends_with('\n'))
@@ -429,10 +557,14 @@ impl TableIndex {
                         } else {
                             0
                         };
+                    let mut new_cells = cells(body, start);
+                    let present_cells = new_cells.len();
+                    let end = start + body.len();
+                    new_cells.resize_with(t.alignments.len().max(present_cells), || end..end);
                     let row = Row {
-                        source: start..start + body.len(),
-                        cells: cells(body, start),
-                        present_cells: t.alignments.len(),
+                        source: start..end,
+                        cells: new_cells,
+                        present_cells,
                     };
                     let at = t.rows.partition_point(|r| r.source.start < range.start);
                     let rows = std::sync::Arc::make_mut(&mut t.rows);
@@ -442,6 +574,7 @@ impl TableIndex {
                         }
                     }
                     rows.insert(at, row);
+                    t.row_shifts = std::sync::Arc::new(vec![0; t.rows.len() + 1]);
                     t.source.end += raw.len();
                     for t in &mut self.tables[owner + 1..] {
                         t.shift_preview(raw.len() as isize);
@@ -450,55 +583,53 @@ impl TableIndex {
                 }
             }
         }
-        let ordinary = |c: char| c.is_alphanumeric() || c == ' ';
-        let simple = old
-            .slice(range.clone())
-            .chars()
-            .chain(inserted.chars())
-            .all(ordinary);
-        if simple {
+        if inserted.len() < 8192 && !inserted.chars().any(|c| matches!(c, '\r' | '\n')) {
             if let Some((table, row, col)) = self.at(range.start) {
                 let cell = table.cell_range(row, col);
-                if cell.start <= range.start && range.end <= cell.end {
-                    // The existing exact cell updater preserves commands and selection.
-                    for table in &mut self.tables {
-                        table.materialize();
+                let old_row = table.row_range(row);
+                if cell.start <= range.start && range.end <= cell.end && old_row.len() < 8192 {
+                    let owner = self
+                        .tables
+                        .partition_point(|t| t.source.start < table.source.start);
+                    let delta = inserted.len() as isize - range.len() as isize;
+                    let end = old_row.end.saturating_add_signed(delta);
+                    let raw = text.slice(old_row.start..end).to_string();
+                    super::live_preview::record_ui_work(raw.len(), 0);
+                    let mut next_cells = cells(&raw, old_row.start);
+                    let t = &mut self.tables[owner];
+                    // A header's column count is structural; let background GFM validate it.
+                    if row != 0 || next_cells.len() == t.alignments.len() {
+                        let present_cells = next_cells.len();
+                        next_cells.resize_with(t.alignments.len().max(present_cells), || end..end);
+                        let base_delta = t.row_delta(row);
+                        let relative = |r: Range<usize>| {
+                            r.start.saturating_add_signed(-base_delta)
+                                ..r.end.saturating_add_signed(-base_delta)
+                        };
+                        std::sync::Arc::make_mut(&mut t.rows)[row] = Row {
+                            source: relative(old_row.start..end),
+                            present_cells,
+                            cells: next_cells.into_iter().map(relative).collect(),
+                        };
+                        t.shift_rows_after(row, delta);
+                        t.source.end = t.source.end.saturating_add_signed(delta);
+                        if row == 0 {
+                            t.separator = t.separator.start.saturating_add_signed(delta)
+                                ..t.separator.end.saturating_add_signed(delta);
+                        }
+                        for t in &mut self.tables[owner + 1..] {
+                            t.shift_preview(delta);
+                        }
+                        return;
                     }
-                    self.blocks.clear();
-                    self.update(old, text, range, inserted);
-                    return;
                 }
             }
         }
-        let first = old.offset_to_point(range.start).row;
-        let last = old.offset_to_point(range.end).row;
-        let from = old.line_start_offset(first.saturating_sub(1));
-        let to = old.line_end_offset((last + 1).min(old.lines_len() - 1));
-        // Only plain paragraph/blank-line edits can be mapped past existing tables.
-        // Fences, definitions, containers and table boundaries await fresh analysis.
-        let safe = to - from <= 8192
-            && old
-                .slice(from..to)
-                .chars()
-                .chain(inserted.chars())
-                .all(|c| {
-                    c.is_alphanumeric() || c.is_whitespace() || matches!(c, '.' | ',' | '!' | '?')
-                });
-        if !safe || (range.start == 0 && range.end == old.len()) {
-            self.tables.clear();
-            return;
+        if super::preview_syntax::context_independent(old, range, inserted) {
+            self.rebase_preview(range, inserted.len());
+        } else {
+            self.retired.append(&mut self.tables);
         }
-        let delta = inserted.len() as isize - range.len() as isize;
-        self.tables.retain_mut(|table| {
-            if table.source.end < from {
-                return true;
-            }
-            if table.source.start > to {
-                table.shift_preview(delta);
-                return true;
-            }
-            false
-        });
     }
     pub fn at(&self, offset: usize) -> Option<(&Table, usize, usize)> {
         let ix = self.tables.partition_point(|t| t.source.end < offset);
@@ -517,6 +648,9 @@ impl TableIndex {
         self.initialized = true;
     }
     pub fn update(&mut self, old: &Rope, text: &Rope, range: &Range<usize>, inserted: &Rope) {
+        for table in &mut self.tables {
+            table.materialize();
+        }
         if !self.initialized {
             self.rebuild(text);
             return;

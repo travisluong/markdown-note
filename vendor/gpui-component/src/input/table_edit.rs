@@ -85,8 +85,10 @@ impl InputState {
     ) {
         self.selected_range = edit.range.into();
         self.table_editing = true;
+        self.text_wrapper.trusted_table_edit = true;
         self.replace_selection_isolated(&edit.text, window, cx);
         self.table_editing = false;
+        self.text_wrapper.trusted_table_edit = false;
         self.move_to(edit.caret, None, cx);
     }
 
@@ -168,6 +170,7 @@ impl InputState {
         } else if !self.disabled {
             self.selected_range = (at..at).into();
             self.table_editing = true;
+            self.text_wrapper.trusted_table_edit = true;
             let newline = if self
                 .text
                 .slice(table.source.clone())
@@ -180,6 +183,7 @@ impl InputState {
             };
             self.replace_selection_isolated(newline, window, cx);
             self.table_editing = false;
+            self.text_wrapper.trusted_table_edit = false;
             self.move_to(if before { at } else { at + newline.len() }, None, cx);
         }
     }

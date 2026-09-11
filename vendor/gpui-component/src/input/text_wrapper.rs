@@ -81,11 +81,13 @@ pub(super) struct LongestRow {
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
     pub(super) links: super::preview_syntax::Links,
+    retired_links: Vec<super::preview_syntax::Links>,
     pub(super) analysis: super::preview_syntax::Queue,
-    syntax_revision: u64,
+    pub(super) syntax_revision: u64,
     copied_bytes: usize,
     visited_table_rows: usize,
     pub(super) tables: super::table::TableIndex,
+    pub(super) trusted_table_edit: bool,
     active_offset: usize,
     table_scroll: std::collections::HashMap<usize, std::rc::Rc<std::cell::Cell<Pixels>>>,
     table_widths: std::collections::HashMap<usize, Vec<Pixels>>,
@@ -113,11 +115,13 @@ impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
             links: Default::default(),
+            retired_links: Vec::new(),
             analysis: Default::default(),
             syntax_revision: 0,
             copied_bytes: 0,
             visited_table_rows: 0,
             tables: Default::default(),
+            trusted_table_edit: false,
             active_offset: usize::MAX,
             table_scroll: Default::default(),
             table_widths: Default::default(),
@@ -190,6 +194,16 @@ impl TextWrapper {
     }
 
     pub(super) fn reveal_cell(&mut self, offset: usize, cx: &mut App) {
+        let previous_table = self
+            .tables
+            .at(self.active_offset)
+            .map(|(t, _, _)| t.cache_key());
+        let next_table = self.tables.at(offset).map(|(t, _, _)| t.cache_key());
+        if previous_table != next_table {
+            if let Some(key) = previous_table {
+                self.table_widths.remove(&key);
+            }
+        }
         let previous = self
             .tables
             .at(self.active_offset)
@@ -310,34 +324,21 @@ impl TextWrapper {
         if !self.live_preview {
             return;
         }
-        let replacement = range.start == 0 && range.end == self.text.len();
-        let first = self.text.offset_to_point(range.start).row;
-        let last = self.text.offset_to_point(range.end).row;
-        let from = self.text.line_start_offset(first.saturating_sub(1));
-        let to = self
-            .text
-            .line_end_offset((last + 1).min(self.text.lines_len() - 1));
-        let plain = |c: char| {
-            c.is_alphanumeric() || c.is_whitespace() || matches!(c, '.' | ',' | '!' | '?')
-        };
-        let safe = !replacement
-            && to - from <= 8192
-            && self
-                .text
-                .slice(from..to)
-                .chars()
-                .chain(inserted.chars())
-                .all(plain);
+        let safe = super::preview_syntax::context_independent(&self.text, range, inserted);
         self.analysis.edit(range.clone(), inserted.len(), safe);
         self.analysis.request(changed);
         if safe {
             self.links.edit(range.clone(), inserted.len());
         } else {
-            self.links = Default::default();
+            if self.links.has_items() {
+                self.retired_links.push(std::mem::take(&mut self.links));
+            }
             self.syntax_revision += 1;
         }
-        self.tables
-            .update_preview(&self.text, changed, range, inserted);
+        if !self.trusted_table_edit || !self.tables.replace_generated(range, inserted) {
+            self.tables
+                .update_preview(&self.text, changed, range, inserted);
+        }
         if self.active_offset != usize::MAX {
             self.active_offset = if self.active_offset < range.start {
                 self.active_offset
@@ -354,12 +355,21 @@ impl TextWrapper {
         let edits = self.analysis.rebasing(parsed.revision);
         self.analysis.finish(parsed.revision);
         let Some(edits) = edits.filter(|_| self.live_preview) else {
+            self.retired_links
+                .push(super::preview_syntax::Links::with_edits(
+                    parsed.links,
+                    Vec::new(),
+                ));
+            self.tables.retire_from(&mut parsed.tables);
             return false;
         };
         for edit in &edits {
             parsed.tables.rebase_preview(&edit.range, edit.inserted);
         }
-        self.links = super::preview_syntax::Links::with_edits(parsed.links, edits);
+        self.retired_links.push(std::mem::replace(
+            &mut self.links,
+            super::preview_syntax::Links::with_edits(parsed.links, edits),
+        ));
         let old_by_start = self
             .tables
             .tables
@@ -387,11 +397,31 @@ impl TextWrapper {
             }
         }
         parsed.tables.revision = self.tables.revision + 1;
+        parsed.tables.retire_from(&mut self.tables);
         self.tables = parsed.tables;
         self.table_widths = widths;
         self.table_scroll = scrolls;
         self.syntax_revision += 1;
         true
+    }
+
+    pub(super) fn take_retired(&mut self) -> Vec<super::preview_syntax::Retired> {
+        let mut retired = self
+            .retired_links
+            .drain(..)
+            .map(|links| super::preview_syntax::Retired {
+                links,
+                tables: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let tables = self.tables.take_retired();
+        if !tables.is_empty() {
+            retired.push(super::preview_syntax::Retired {
+                links: Default::default(),
+                tables,
+            });
+        }
+        retired
     }
 
     fn measure_line(&mut self, row: usize, cx: &mut App) {
@@ -642,15 +672,13 @@ impl TextWrapper {
             let viewport = self.wrap_width.unwrap_or(px(800.));
             let total = widths.iter().copied().fold(px(0.), |a, b| a + b);
             scroll.set(scroll.get().clamp(px(0.), (total - viewport).max(px(0.))));
-            let first_row = table
-                .rows
-                .partition_point(|r| table.absolute(&r.source).end < start);
+            let first_row = table.row_at_or_after(start);
             for (r, source_row) in table
                 .rows
                 .iter()
                 .enumerate()
                 .skip(first_row)
-                .take_while(|(_, r)| table.absolute(&r.source).start <= end)
+                .take_while(|(r, _)| table.row_range(*r).start <= end)
             {
                 self.visited_table_rows += 1;
                 super::live_preview::record_table_row();
@@ -676,7 +704,7 @@ impl TextWrapper {
                 let mut x = px(0.);
                 let mut height = super::table::MIN_ROW_LINES;
                 for (c, range) in source_row.cells.iter().take(widths.len()).enumerate() {
-                    let range = table.absolute(range);
+                    let range = table.absolute_row(r, range);
                     let text = self.text.slice(range.clone()).to_string();
                     self.copied_bytes += text.len();
                     super::live_preview::record_ui_work(text.len(), text.len());
@@ -2001,6 +2029,7 @@ mod sustained_edit_tests {
         wrapper._update(&text, &range, &inserted, &mut |_, _, _| vec![]);
         assert_eq!(wrapper.lines.len(), text.lines_len());
         assert!(wrapper.analysis.jobs() <= 2);
+        drop(wrapper.take_retired());
     }
     fn measure(wrapper: &mut TextWrapper, rows: Range<usize>) {
         let text = wrapper.text.clone();
@@ -2064,6 +2093,12 @@ mod sustained_edit_tests {
             edit(&mut wrapper, 0..0, "\n");
             edit(&mut wrapper, 0..1, "");
         }
+        // Blank line changes immediately above a table keep its stable identity too.
+        let before_table = wrapper.text.line_start_offset(2);
+        for _ in 0..60 {
+            edit(&mut wrapper, before_table..before_table, "\n");
+            edit(&mut wrapper, before_table..before_table + 1, "");
+        }
         assert_eq!(wrapper.tables.tables[0].cache_key(), identity);
         measure(&mut wrapper, 5000..5020);
         assert_eq!(wrapper.visited_table_rows - visited, 20);
@@ -2072,6 +2107,12 @@ mod sustained_edit_tests {
             &cached,
             wrapper.lines[5005].table.as_ref().unwrap()
         ));
+        settle(&mut wrapper);
+        measure(&mut wrapper, 5000..5020);
+        assert!(
+            std::rc::Rc::ptr_eq(&cached, wrapper.lines[5005].table.as_ref().unwrap()),
+            "unchanged rows survive background completion"
+        );
         let current = wrapper.text.clone();
         let offset = wrapper.tables.tables[0].cell_range(5000, 0).start;
         assert_eq!(
@@ -2121,13 +2162,14 @@ mod sustained_edit_tests {
 #[cfg(feature = "editor-diagnostics")]
 impl TextWrapper {
     pub(super) fn diagnostic_settle(&mut self) {
-        let parsed = super::preview_syntax::Request {
+        let mut parsed = super::preview_syntax::Request {
             revision: self.analysis.revision,
             text: self.text.clone(),
         }
         .parse();
         self.links = super::preview_syntax::Links::with_edits(parsed.links, Vec::new());
         let revision = self.tables.revision + 1;
+        parsed.tables.retire_from(&mut self.tables);
         self.tables = parsed.tables;
         self.tables.revision = revision;
         self.syntax_revision += 1;

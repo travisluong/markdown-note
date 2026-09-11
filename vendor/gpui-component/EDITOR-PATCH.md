@@ -155,3 +155,37 @@ remain protected. Search replacements use isolated undo edits, convert whole-fil
 UTF-8 byte ranges to UTF-16 before editing, and reject deferred edits when the
 source changed. Match indices clamp and reset after replacements. The headless
 find diagnostic covers literal Unicode replacement and last-result removal.
+
+Sustained Live-preview editing separates rope/line updates from document analysis.
+The InputState-owned queue has one running parse and one latest pending rope
+snapshot, starts without an idle timer, and never cancels the running parse on
+another keypress. Safe edits translate snapshot link ranges; context changes,
+document replacement, mode changes, and exhausted edit logs reject stale results.
+GFM parsing and full-document string conversion run on the background executor.
+Line measurement and cursor reveal cannot invoke document parsers. Presentation
+invalidations are revision-based and measured lazily in the existing viewport
+plus overscan, preserving the scroll anchor and unchanged shaped rows.
+
+Table column hints are computed with the background parse. Width and horizontal
+scroll caches survive offset-only edits through stable table keys. Table layout
+queries only requested rows; a per-table prefix-sum index translates subsequent
+row offsets after cell edits without visiting every row. Cell ranges remain
+exact for input normalization, keyboard navigation, Unicode, and IME. The
+internal/doc-hidden table test interface exposes row_range/cell_range for current
+source coordinates; the stored rows are snapshot-relative. Adding a table row
+uses a small source insertion and local metadata update rather than rewriting
+and reparsing the whole table. Structural/context changes display current source
+while awaiting valid analysis. Large retired link/table indexes are freed on the
+background executor.
+
+Headless regression tests cover sustained Enter/Backspace-style replacements in
+100,000-line, 10,000-link, and 10,000-row-table fixtures; bounded copied bytes,
+viewport row visits and parser queues; delayed and superseded completions; cache
+identity; reference/fence changes; shifted table commands; Unicode and CRLF.
+Existing synchronous behavior diagnostics explicitly settle synthetic fixtures;
+the cadence benchmark awaits the real parser and records painted revisions.
+No desktop interaction or visible app launch is required for the automated tests.
+Known whole-table commands rebuild their generated row/column metadata directly,
+without GFM parsing, so Tab/arrow navigation remains available immediately after
+column, alignment and missing-cell commands. Cached widths resume content-based
+sizing when the caret leaves the active table.

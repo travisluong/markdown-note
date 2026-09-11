@@ -264,6 +264,8 @@ pub struct InputState {
     #[cfg(feature = "editor-diagnostics")]
     pub(super) preview_painted_revision: u64,
     #[cfg(feature = "editor-diagnostics")]
+    pub(super) preview_painted_syntax: u64,
+    #[cfg(feature = "editor-diagnostics")]
     pub(super) preview_painted_at: Option<std::time::Instant>,
     nested_list_letters: bool,
     pub(super) table_editing: bool,
@@ -385,6 +387,8 @@ impl InputState {
             preview_task: None,
             #[cfg(feature = "editor-diagnostics")]
             preview_painted_revision: 0,
+            #[cfg(feature = "editor-diagnostics")]
+            preview_painted_syntax: 0,
             #[cfg(feature = "editor-diagnostics")]
             preview_painted_at: None,
             nested_list_letters: false,
@@ -859,7 +863,20 @@ impl InputState {
         }
     }
 
+    fn release_preview_indexes(&mut self, cx: &mut Context<Self>) {
+        let retired = self.text_wrapper.take_retired();
+        if !retired.is_empty() {
+            cx.background_executor()
+                .spawn(async move {
+                    for item in retired {
+                        item.dispose();
+                    }
+                })
+                .detach();
+        }
+    }
     fn schedule_preview(&mut self, cx: &mut Context<Self>) {
+        self.release_preview_indexes(cx);
         let Some(mut request) = self.text_wrapper.analysis.start() else {
             return;
         };
@@ -873,6 +890,7 @@ impl InputState {
                     if state.text_wrapper.apply_analysis(parsed) {
                         cx.notify();
                     }
+                    state.release_preview_indexes(cx);
                     state.text_wrapper.analysis.start()
                 });
                 match next {
@@ -2873,6 +2891,12 @@ impl InputState {
 
 #[cfg(feature = "editor-diagnostics")]
 impl InputState {
+    #[doc(hidden)]
+    pub fn diagnostic_preview_settled(&self) -> bool {
+        self.text_wrapper.analysis.jobs() == 0
+            && self.preview_painted_revision >= self.text_wrapper.analysis.revision
+            && self.preview_painted_syntax == self.text_wrapper.syntax_revision
+    }
     #[doc(hidden)]
     pub fn diagnostic_preview_status(&self) -> (u64, u64, Option<std::time::Instant>, usize) {
         (
