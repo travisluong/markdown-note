@@ -189,3 +189,11 @@ Known whole-table commands rebuild their generated row/column metadata directly,
 without GFM parsing, so Tab/arrow navigation remains available immediately after
 column, alignment and missing-cell commands. Cached widths resume content-based
 sizing when the caret leaves the active table.
+
+Standalone Markdown image paragraphs use background GFM recognition. InputState's
+opt-in image document context resolves relative paths through the same resolver as
+Reading TextView. Live preview loads assets asynchronously, reserves image height
+in the line index, maps image hits to source boundaries, and retains an image
+while revealing its active source line. Failed assets paint a stable placeholder;
+images preserve aspect ratio and do not upscale. Source mode keeps Markdown text.
+Parser, path, height-index and hit-mapping regressions run in the headless tests.

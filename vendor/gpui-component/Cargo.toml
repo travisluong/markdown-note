@@ -329,3 +329,6 @@ type_complexity = "allow"
 [lints.clippy.style]
 level = "allow"
 priority = -1
+
+[dependencies.url]
+version = "=2.5.8"

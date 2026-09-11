@@ -412,6 +412,7 @@ impl CodeBlock {
 /// A context for rendering nodes, contains link references.
 #[derive(Default, Clone)]
 pub(crate) struct NodeContext {
+    pub(crate) image_document: Option<std::path::PathBuf>,
     pub(crate) blocks: Vec<Range<usize>>,
     pub(crate) highlights: Option<super::SourceHighlights>,
     pub(crate) reveal: Option<super::source_highlights::RevealTarget>,
@@ -651,7 +652,10 @@ impl Paragraph {
                     );
                 }
                 child_nodes.push(
-                    img(image.url.clone())
+                    img(crate::markdown_images::resource(&image.url, node_cx.image_document.as_deref())
+                        .map(gpui::ImageSource::Resource).unwrap_or_else(|| gpui::ImageSource::from(image.url.clone())))
+                        .with_loading(|| div().h(gpui::px(80.)).child("Loading image…").into_any_element())
+                        .with_fallback(|| div().h(gpui::px(80.)).child("Image unavailable").into_any_element())
                         .id(ix)
                         .object_fit(ObjectFit::Contain)
                         .max_w(relative(1.))

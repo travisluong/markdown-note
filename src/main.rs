@@ -631,6 +631,7 @@ impl Render for Notes {
                         window,
                         cx,
                     )
+                    .image_document(self.document.as_ref().unwrap().path.clone())
                     .source_highlights(
                         self.reading_search
                             .as_ref()

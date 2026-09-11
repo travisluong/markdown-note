@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 // Exercise the vendored editor modules without enabling unrelated component test dependencies.
 extern crate gpui_component as ropey;
-pub use gpui_component::ActiveTheme;
+pub use gpui_component::{ActiveTheme, markdown_images};
 mod input {
     pub use gpui_component::input::RopeExt;
 }

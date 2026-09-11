@@ -43,6 +43,7 @@ pub(crate) fn init(cx: &mut App) {
 
 #[derive(IntoElement, Clone)]
 struct TextViewElement {
+    image_document: Option<std::path::PathBuf>,
     link_open: Option<Arc<LinkOpenFn>>,
     task_toggle: Option<Arc<TaskToggleFn>>,
     source_highlights: Option<super::SourceHighlights>,
@@ -55,6 +56,7 @@ impl RenderOnce for TextViewElement {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         self.state.update(cx, |state, cx| {
             if let Some(Ok(content)) = &mut state.parsed_result {
+                content.node_cx.image_document = self.image_document.clone();
                 content.node_cx.link_open = self.link_open.clone();
                 content.node_cx.task_toggle = self.task_toggle.clone();
                 content.node_cx.highlights = self.source_highlights.clone().filter(|search| {
@@ -118,6 +120,7 @@ pub(crate) type CodeBlockActionsFn =
 /// See also [`MarkdownElement`], [`HtmlElement`]
 #[derive(Clone)]
 pub struct TextView {
+    image_document: Option<std::path::PathBuf>,
     link_open: Option<Arc<LinkOpenFn>>,
     task_toggle: Option<Arc<TaskToggleFn>>,
     source_highlights: Option<super::SourceHighlights>,
@@ -600,6 +603,12 @@ impl TextView {
         assert!(!search.matches_snapshot("another file"));
     }
 
+    /// Resolve local images relative to this Markdown document.
+    pub fn image_document(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.image_document = Some(path.into());
+        self
+    }
+
     /// Handle link activation with its destination and exact rendered source snapshot.
     pub fn on_link_open(
         mut self,
@@ -671,6 +680,7 @@ impl TextView {
             selectable: false,
             scrollable: false,
             code_block_actions: None,
+            image_document: None,
             link_open: None,
             task_toggle: None,
             source_highlights: None,
@@ -706,6 +716,7 @@ impl TextView {
             selectable: false,
             scrollable: false,
             code_block_actions: None,
+            image_document: None,
             link_open: None,
             task_toggle: None,
             source_highlights: None,
@@ -922,6 +933,7 @@ impl Element for TextView {
                 }
             })
             .child(TextViewElement {
+                image_document: self.image_document.clone(),
                 link_open: self.link_open.clone(),
                 task_toggle: self.task_toggle.clone(),
                 source_highlights: self.source_highlights.clone(),

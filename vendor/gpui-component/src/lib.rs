@@ -172,3 +172,6 @@ impl Measure {
         tracing::trace!("{} in {:?}", self.name, duration);
     }
 }
+
+#[doc(hidden)]
+pub mod markdown_images;

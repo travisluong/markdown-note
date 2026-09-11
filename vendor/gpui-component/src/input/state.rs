@@ -853,6 +853,12 @@ impl InputState {
     }
 
     /// Switch presentation without replacing the buffer or history.
+    /// Set the document used to resolve relative Markdown image paths.
+    pub fn set_image_document(&mut self, path: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+        self.text_wrapper.image_document = path;
+        cx.notify();
+    }
+
     pub fn set_live_preview(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self.live_preview != enabled {
             self.live_preview = enabled;

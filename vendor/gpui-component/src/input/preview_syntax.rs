@@ -20,6 +20,7 @@ pub(super) struct Request {
     pub text: Rope,
 }
 pub(super) struct Parsed {
+    pub images: std::collections::BTreeMap<usize, String>,
     pub revision: u64,
     pub links: Vec<MarkdownLink>,
     pub tables: TableIndex,
@@ -31,6 +32,7 @@ impl Request {
         let mut tables = TableIndex::default();
         tables.rebuild_source(&source);
         Parsed {
+            images: crate::markdown_images::paragraphs(&source),
             revision: self.revision,
             links,
             tables,

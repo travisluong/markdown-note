@@ -787,6 +787,7 @@ impl TextElement {
                 continue;
             }
             let mut line_layout = LineLayout::new();
+            line_layout.image = line_item.image.clone();
             line_layout.scale = line_item.scale;
             if let Some(p) = &line_item.presentation {
                 line_layout.indent = px(p.quote_indent(font_size.into()));
@@ -1177,6 +1178,7 @@ impl Element for TextElement {
         let before = state.text_wrapper.lines.prefix(anchor);
         self.state.update(cx, |state, cx| {
             state.text_wrapper.measure(visible_range.clone(), cx);
+            state.text_wrapper.measure_images(visible_range.clone(), line_height, window, cx);
             let delta = (state.text_wrapper.lines.prefix(anchor) - before) * line_height;
             if delta != px(0.) {
                 let mut offset = state

@@ -31,6 +31,7 @@ pub(super) struct TableRowLayout {
 /// A line with soft wrapped lines info.
 #[derive(Debug, Clone)]
 pub(super) struct LineItem {
+    pub(super) image: Option<ImageLayout>,
     pub(super) table: Option<std::rc::Rc<TableRowLayout>>,
     /// The original line text, without end `\n`.
     pub(super) line: Rope,
@@ -57,6 +58,7 @@ impl LineItem {
     /// Get number of soft wrapped lines of this line (include the first line).
     #[inline]
     pub(super) fn lines_len(&self) -> usize {
+        if let Some(image) = &self.image { return image.rows + if image.reveal { self.wrapped_lines.len() } else { 0 }; }
         self.table
             .as_ref()
             .map_or(self.wrapped_lines.len(), |t| t.height)
@@ -80,6 +82,8 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    pub(super) image_document: Option<std::path::PathBuf>,
+    pub(super) images: std::collections::BTreeMap<usize, String>,
     pub(super) links: super::preview_syntax::Links,
     retired_links: Vec<super::preview_syntax::Links>,
     pub(super) analysis: super::preview_syntax::Queue,
@@ -114,6 +118,8 @@ pub(super) struct TextWrapper {
 impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
+            image_document: None,
+            images: Default::default(),
             links: Default::default(),
             retired_links: Vec::new(),
             analysis: Default::default(),
@@ -141,6 +147,7 @@ impl TextWrapper {
     }
 
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
+        self.images.clear();
         self.live_preview = enabled;
         self.analysis.reset();
         self.links = Default::default();
@@ -324,6 +331,10 @@ impl TextWrapper {
         if !self.live_preview {
             return;
         }
+        if !self.images.is_empty() {
+            self.images.clear();
+            self.syntax_revision += 1;
+        }
         let safe = super::preview_syntax::context_independent(&self.text, range, inserted);
         self.analysis.edit(range.clone(), inserted.len(), safe);
         self.analysis.request(changed);
@@ -363,6 +374,7 @@ impl TextWrapper {
             self.tables.retire_from(&mut parsed.tables);
             return false;
         };
+        if edits.is_empty() { self.images = parsed.images; }
         for edit in &edits {
             parsed.tables.rebase_preview(&edit.range, edit.inserted);
         }
@@ -501,6 +513,7 @@ impl TextWrapper {
                     .map(|i| (i * columns).min(line.len())..((i + 1) * columns).min(line.len()))
                     .collect();
                 new_lines.push(LineItem {
+                    image: None,
                     table: None,
                     line: Rope::from(line),
                     measured: false,
@@ -566,6 +579,7 @@ impl TextWrapper {
             }
 
             new_lines.push(LineItem {
+                image: None,
                 table: None,
                 line: Rope::from(line),
                 measured: true,
@@ -839,7 +853,7 @@ impl TextWrapper {
 
         // Otherwise return the eof of the line.
         let last_range = line.wrapped_lines.last().unwrap_or(&(0..0));
-        let ix = line.lines_len().saturating_sub(1);
+        let ix = line.wrapped_lines.len().saturating_sub(1);
         return DisplayPoint::new(wrapped_row + ix, ix, last_range.len());
     }
 
@@ -858,7 +872,7 @@ impl TextWrapper {
             );
         }
         let local_row = point.row - self.lines.prefix_wraps(row);
-        let range = &line.wrapped_lines[local_row];
+        let range = &line.wrapped_lines[local_row.min(line.wrapped_lines.len().saturating_sub(1))];
         let display = (range.start + point.column).min(range.end);
         let source = line
             .mapped
@@ -910,6 +924,7 @@ impl DisplayPoint {
 
 /// The layout info of a line with soft wrapped lines.
 pub(crate) struct LineLayout {
+    pub(super) image: Option<ImageLayout>,
     pub(super) table: Option<TablePaintLayout>,
     pub(super) task: Option<(usize, bool, Pixels)>,
     /// Total bytes length of this line.
@@ -942,6 +957,7 @@ impl LineLayout {
     pub(crate) fn new() -> Self {
         Self {
             table: None,
+            image: None,
             task: None,
             len: 0,
             mapped: None,
@@ -991,6 +1007,7 @@ impl LineLayout {
         offset: usize,
         line_height: Pixels,
     ) -> Option<Point<Pixels>> {
+        if self.image.as_ref().is_some_and(|i| !i.reveal) { return Some(point(px(0.), px(0.))); }
         if let Some(table) = &self.table {
             if offset > self.len {
                 return None;
@@ -1074,6 +1091,10 @@ impl LineLayout {
         pos: Point<Pixels>,
         line_height: Pixels,
     ) -> Option<usize> {
+        if let Some(image) = &self.image {
+            let text_height = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) as f32 * line_height } else { px(0.) };
+            if pos.y >= text_height && pos.y < text_height + image.rows as f32 * line_height { return Some(if pos.y < text_height + image.rows as f32 * line_height / 2. { 0 } else { self.len() }); }
+        }
         if let Some(table) = &self.table {
             if pos.y < px(0.) || pos.y >= table.height * line_height {
                 return None;
@@ -1170,6 +1191,10 @@ impl LineLayout {
     }
 
     pub(super) fn size(&self, line_height: Pixels) -> Size<Pixels> {
+        if let Some(image) = &self.image {
+            let text_rows = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) } else { 0 };
+            return size(self.longest_width.max(image.width), (text_rows + image.rows) as f32 * line_height);
+        }
         if let Some(table) = &self.table {
             return size(self.longest_width, table.height * line_height);
         }
@@ -1190,6 +1215,21 @@ impl LineLayout {
         window: &mut Window,
         cx: &mut App,
     ) {
+        if let Some(image) = &self.image {
+            use crate::ActiveTheme as _;
+            let text_rows = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) } else { 0 };
+            let origin = pos + point(px(0.), text_rows as f32 * line_height);
+            if let Some(data) = &image.data {
+                let _ = window.paint_image(gpui::Bounds::new(origin, size(image.width, image.height)), gpui::Corners::default(), data.clone(), 0, false);
+            } else {
+                window.paint_quad(gpui::fill(gpui::Bounds::new(origin, size(image.width, image.height)), cx.theme().accent));
+                let label = if image.failed { "Image unavailable" } else { "Loading image…" };
+                let style = window.text_style();
+                let text = window.text_system().shape_line(label.into(), style.font_size.to_pixels(window.rem_size()), &[gpui::TextRun { len: label.len(), font: style.font(), color: cx.theme().muted_foreground, background_color: None, underline: None, strikethrough: None }], None);
+                let _ = text.paint(origin + point(px(8.), px(8.)), line_height, window, cx);
+            }
+            if !image.reveal { return; }
+        }
         if let Some(table) = &self.table {
             use crate::ActiveTheme as _;
             window.with_content_mask(
@@ -1557,6 +1597,7 @@ mod tests {
         wrapper.lines = vec![
             // range: 0..15
             LineItem {
+                image: None,
                 table: None,
                 line: Rope::from("Hello, 世界!\r"),
                 wrapped_lines: std::rc::Rc::new(vec![0..15]),
@@ -1569,6 +1610,7 @@ mod tests {
             },
             // range: 16..36
             LineItem {
+                image: None,
                 table: None,
                 line: Rope::from("This is second line."),
                 wrapped_lines: std::rc::Rc::new(vec![0..10, 10..20]),
@@ -1581,6 +1623,7 @@ mod tests {
             },
             // range: 37..56
             LineItem {
+                image: None,
                 table: None,
                 line: Rope::from("This is third line."),
                 wrapped_lines: std::rc::Rc::new(vec![0..9, 9..15, 15..20]),
@@ -1593,6 +1636,7 @@ mod tests {
             },
             // range: 57..79
             LineItem {
+                image: None,
                 table: None,
                 line: Rope::from("这里是第 4 行。"),
                 wrapped_lines: std::rc::Rc::new(vec![0..22]),
@@ -1675,6 +1719,7 @@ mod tests {
 impl LineItem {
     pub(super) fn diagnostic_line(n: usize) -> Self {
         Self {
+            image: None,
             table: None,
             line: Rope::from("x".repeat(n)),
             measured: true,
@@ -2173,5 +2218,66 @@ impl TextWrapper {
         self.tables = parsed.tables;
         self.tables.revision = revision;
         self.syntax_revision += 1;
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct ImageLayout {
+    pub data: Option<std::sync::Arc<gpui::RenderImage>>,
+    pub width: Pixels,
+    pub height: Pixels,
+    pub rows: usize,
+    pub reveal: bool,
+    pub failed: bool,
+}
+impl std::fmt::Debug for ImageLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("ImageLayout").field("rows", &self.rows).finish() }
+}
+impl TextWrapper {
+    pub(super) fn measure_images(&mut self, rows: Range<usize>, line_height: Pixels, window: &mut Window, cx: &mut App) {
+        if !self.live_preview || self.image_document.is_none() { return; }
+        for row in rows {
+            let Some(mut item) = self.lines.get(row).cloned() else { continue; };
+            item.image = None;
+            if let Some(url) = self.images.get(&self.text.line_start_offset(row)) {
+                let loaded = crate::markdown_images::resource(url, self.image_document.as_deref())
+                    .and_then(|resource| window.use_asset::<gpui::ImgResourceLoader>(&resource, cx));
+                let failed = loaded.as_ref().is_some_and(|r| r.is_err());
+                let data = loaded.and_then(Result::ok);
+                let (width, height) = data.as_ref().map_or((px(240.), px(80.)), |image| {
+                    let dimensions = image.size(0);
+                    let w = px(u32::from(dimensions.width) as f32).max(px(1.));
+                    let h = px(u32::from(dimensions.height) as f32).max(px(1.));
+                    let ratio = (self.wrap_width.unwrap_or(w) / w).min(1.);
+                    (w * ratio, h * ratio)
+                });
+                item.image = Some(ImageLayout { data, width, height, rows: (height / line_height).ceil() as usize + 1, reveal: row == self.reveal_row, failed });
+            }
+            self.lines.splice(row..=row, vec![item]);
+        }
+    }
+}
+
+#[cfg(test)]
+mod image_layout_tests {
+    use super::*;
+    #[test]
+    fn image_height_and_hit_mapping() {
+        let mut line = LineLayout::new();
+        line.len = 12;
+        line.image = Some(ImageLayout { data: None, width: px(200.), height: px(90.), rows: 6, reveal: false, failed: true });
+        assert_eq!(line.size(px(20.)).height, px(120.));
+        assert_eq!(line.closest_index_for_position(point(px(70.), px(10.)), px(20.)), Some(0));
+        assert_eq!(line.closest_index_for_position(point(px(70.), px(110.)), px(20.)), Some(12));
+        assert_eq!(line.closest_index_for_position(point(px(70.), px(121.)), px(20.)), None);
+        assert_eq!(line.position_for_index(6, px(20.)), Some(point(px(0.), px(0.))));
+        let mut item = LineItem::diagnostic_line(1);
+        item.image = line.image.clone();
+        let mut lines = super::super::line_index::Lines::default();
+        lines.splice(0..=0, vec![item.clone(), LineItem::diagnostic_line(1)]);
+        assert_eq!(lines.prefix(1), 6.);
+        item.image.as_mut().unwrap().reveal = true;
+        lines.splice(0..=0, vec![item]);
+        assert_eq!(lines.prefix(1), 7.);
     }
 }
