@@ -15,6 +15,7 @@ enum Command {
     ToggleTheme,
     ChangeNotebook,
     NewNote,
+    SearchFile,
 }
 
 impl Command {
@@ -24,6 +25,7 @@ impl Command {
         Self::ToggleTheme,
         Self::ChangeNotebook,
         Self::NewNote,
+        Self::SearchFile,
     ];
 
     fn label(self) -> &'static str {
@@ -33,6 +35,7 @@ impl Command {
             Self::ToggleTheme => "Appearance: Toggle light/dark mode",
             Self::ChangeNotebook => "Notebook: Change notebook",
             Self::NewNote => "Notebook: Create new note",
+            Self::SearchFile => "Search: Search current file",
         }
     }
 
@@ -43,6 +46,7 @@ impl Command {
             Self::ToggleTheme => "Switch between your Light and Dark themes",
             Self::ChangeNotebook => "Choose a registered notebook",
             Self::NewNote => "Create an Untitled note in the notebook root",
+            Self::SearchFile => "Find text in the current document",
         }
     }
 
@@ -57,6 +61,7 @@ impl Command {
             return Some("Wait for the current operation to finish");
         }
         match self {
+            Self::SearchFile if !document => Some("Open a document to search"),
             Self::NewNote if !notebook => Some("Open a notebook to create a note"),
             Self::InsertDate | Self::EditLink if !document || reading => {
                 Some("Open an editable document in Source or Live preview")
@@ -367,6 +372,7 @@ impl Notes {
                 }
             }
             Command::EditLink => self.edit_link(window, cx),
+            Command::SearchFile => self.search_current_file(window, cx),
             Command::NewNote => {
                 if let Some(book) = &self.notebooks.active {
                     self.request(Next::NewNote(book.root.clone()), window, cx);
@@ -628,6 +634,20 @@ mod tests {
         assert!(
             Command::NewNote
                 .unavailable(true, false, true, true)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn current_file_search_supports_reading_and_standalone_documents() {
+        assert!(
+            Command::SearchFile
+                .unavailable(true, true, false, false)
+                .is_none()
+        );
+        assert!(
+            Command::SearchFile
+                .unavailable(false, false, false, true)
                 .is_some()
         );
     }

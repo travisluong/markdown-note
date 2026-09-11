@@ -28,6 +28,18 @@ impl Drop for SearchPanel {
 }
 
 impl Notes {
+    pub(super) fn search_current_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.document.is_none() || self.busy || window.has_active_dialog(cx) {
+            return;
+        }
+        if self.mode == ViewMode::Reading {
+            self.open_reading_search(window, cx);
+        } else {
+            self.editor
+                .update(cx, |editor, cx| editor.open_search(window, cx));
+        }
+    }
+
     pub(super) fn open_search_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy || window.has_active_dialog(cx) {
             return;

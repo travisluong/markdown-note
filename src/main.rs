@@ -661,15 +661,7 @@ impl Render for Notes {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &EditLink, window, cx| this.edit_link(window, cx)))
             .on_action(cx.listener(|this, _: &Search, window, cx| {
-                if this.document.is_none() || this.busy || window.has_active_dialog(cx) {
-                    return;
-                }
-                if this.mode == ViewMode::Reading {
-                    this.open_reading_search(window, cx);
-                    return;
-                }
-                this.editor
-                    .update(cx, |editor, cx| editor.open_search(window, cx));
+                this.search_current_file(window, cx);
             }))
             .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
             .on_action(
