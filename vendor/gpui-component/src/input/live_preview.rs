@@ -48,7 +48,7 @@ fn list_content_start(line: &str, start: usize) -> Option<usize> {
     let marker = if body.starts_with(['-', '*', '+']) {
         1
     } else {
-        let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+        let digits = ordered_marker(body)?.0;
         if digits == 0 || !body[digits..].starts_with(['.', ')']) {
             return None;
         }
@@ -59,6 +59,48 @@ fn list_content_start(line: &str, start: usize) -> Option<usize> {
         .take_while(|b| matches!(b, b' ' | b'\t'))
         .count();
     (spaces > 0).then_some(start + marker + spaces)
+}
+
+fn ordered_marker(body: &str) -> Option<(usize, usize, bool)> {
+    let letters = body.as_bytes().first()?.is_ascii_lowercase();
+    let len = body
+        .bytes()
+        .take_while(|b| {
+            if letters {
+                b.is_ascii_lowercase()
+            } else {
+                b.is_ascii_digit()
+            }
+        })
+        .count();
+    if len == 0 || !body[len..].starts_with(['.', ')']) {
+        return None;
+    }
+    let mut value = 0usize;
+    for byte in body[..len].bytes() {
+        value = value
+            .checked_mul(if letters { 26 } else { 10 })?
+            .checked_add(if letters {
+                (byte - b'a' + 1) as usize
+            } else {
+                (byte - b'0') as usize
+            })?;
+    }
+    Some((len, value, letters))
+}
+
+fn ordinal(mut value: usize, letters: bool) -> String {
+    if !letters {
+        return value.to_string();
+    }
+    let mut result = Vec::new();
+    while value > 0 {
+        value -= 1;
+        result.push(b'a' + (value % 26) as u8);
+        value /= 26;
+    }
+    result.reverse();
+    String::from_utf8(result).unwrap()
 }
 
 // Byte offset of the state character, including any explicit quote prefixes.
@@ -103,6 +145,12 @@ pub(super) fn marker(line: &str) -> Option<(usize, String)> {
         let next = String::from_utf8(next).ok()?;
         let next = next.trim_start_matches('0');
         format!("{next}{}", &body[digits..end - start])
+    } else if let Some((len, value, true)) = ordered_marker(body) {
+        format!(
+            "{}{}",
+            ordinal(value.saturating_add(1), true),
+            &body[len..end - start]
+        )
     } else {
         line[start..end].to_owned()
     };
@@ -443,11 +491,22 @@ fn columns(text: &str) -> usize {
     })
 }
 
+#[cfg(test)]
 pub(super) fn nest_lines(
     source: &str,
     selection: Range<usize>,
     outdent: bool,
     step: usize,
+) -> Option<TaskEdit> {
+    nest_lines_with_style(source, selection, outdent, step, false)
+}
+
+pub(super) fn nest_lines_with_style(
+    source: &str,
+    selection: Range<usize>,
+    outdent: bool,
+    step: usize,
+    letters: bool,
 ) -> Option<TaskEdit> {
     struct Line<'a> {
         text: &'a str,
@@ -509,6 +568,7 @@ pub(super) fn nest_lines(
     let mut replacements = Vec::new();
     let mut handled = false;
     let mut targets = vec![None; lines.len()];
+    let mut ordinals = vec![None; lines.len()];
     let mut row = first;
     while row <= last {
         let root = &lines[row];
@@ -565,6 +625,31 @@ pub(super) fn nest_lines(
             end = next + 1;
         }
         if target != root.indent {
+            let marker = ordered_marker(&root.text[root.start..]).map(|(len, _, _)| {
+                let mut value = 1;
+                for (i, previous) in lines[..row].iter().enumerate().rev() {
+                    if previous.depth != root.depth {
+                        break;
+                    }
+                    if previous.text.trim().is_empty() {
+                        continue;
+                    }
+                    let indent = targets[i].unwrap_or(previous.indent);
+                    if indent < target {
+                        break;
+                    }
+                    if indent == target {
+                        if let Some(n) = ordinals[i].or_else(|| {
+                            ordered_marker(&previous.text[previous.start..]).map(|m| m.1)
+                        }) {
+                            value = n.saturating_add(1);
+                        }
+                        break;
+                    }
+                }
+                ordinals[row] = Some(value);
+                (len, ordinal(value, letters && target > 0))
+            });
             for line in &lines[row..end] {
                 if line.text[line.prefix..].trim().is_empty() {
                     continue;
@@ -578,6 +663,14 @@ pub(super) fn nest_lines(
                     line.offset + line.prefix..line.offset + line.start,
                     " ".repeat(new_indent),
                 ));
+                if line.offset == root.offset {
+                    if let Some((len, ref marker)) = marker {
+                        replacements.push((
+                            line.offset + line.start..line.offset + line.start + len,
+                            marker.clone(),
+                        ));
+                    }
+                }
             }
         }
         row = end;
@@ -732,6 +825,36 @@ mod nesting_tests {
     }
 
     #[test]
+    fn ordered_levels_restart_and_continue() {
+        for (source, expected) in [
+            ("7. parent\n8. child", "7. parent\n   1. child"),
+            (
+                "7. parent\n   1. child\n8. next",
+                "7. parent\n   1. child\n   2. next",
+            ),
+            ("7. parent\n   2. child", "7. parent\n   2. child"),
+        ] {
+            let at = source.len();
+            if source.ends_with("2. child") {
+                continue;
+            }
+            assert_eq!(nest(source, at..at, false).0, expected);
+        }
+        let source = "9. parent\n10. café\n11. next";
+        let start = source.find("café").unwrap();
+        let edit = nest_lines_with_style(source, start..source.len(), false, 2, true).unwrap();
+        let mut result = source.to_owned();
+        result.replace_range(edit.range, &edit.text);
+        assert_eq!(result, "9. parent\n   a. café\n   b. next");
+        assert_eq!(&result[edit.selection], "café\n   b. next");
+        assert_eq!(list_enter("   z. end", 9), Some((9..9, "\n   aa. ".into())));
+        let at = result.find("café").unwrap();
+        assert_eq!(
+            nest(&result, at..at, true).0,
+            "9. parent\n10. café\n   b. next"
+        );
+    }
+    #[test]
     fn marker_width_and_subtrees() {
         for parent in [
             "- parent",
@@ -775,7 +898,7 @@ mod nesting_tests {
         let source = "10. first\n11. second\n    - child";
         assert_eq!(
             nest(source, 0..source.len(), false).0,
-            "  10. first\n  11. second\n      - child"
+            "  1. first\n  2. second\n      - child"
         );
         let source = "- parent\n- one\n  - child\n- two\n- untouched";
         let start = source.find("one").unwrap();

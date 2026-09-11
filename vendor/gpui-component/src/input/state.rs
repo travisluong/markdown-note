@@ -261,6 +261,7 @@ impl LastLayout {
 /// InputState to keep editing state of the [`super::Input`].
 pub struct InputState {
     pub(super) live_preview: bool,
+    nested_list_letters: bool,
     pub(super) table_editing: bool,
     list_enter_boundary: bool,
     pub(super) focus_handle: FocusHandle,
@@ -376,6 +377,7 @@ impl InputState {
             focus_handle: focus_handle.clone(),
             text: Default::default(),
             live_preview: false,
+            nested_list_letters: false,
             table_editing: false,
             list_enter_boundary: false,
             text_wrapper: TextWrapper::new(text_style.font(), window.rem_size(), None),
@@ -1447,6 +1449,11 @@ impl InputState {
         ))
     }
 
+    /// Choose alphabetic markers for newly nested ordered list levels.
+    pub fn set_nested_list_letters(&mut self, letters: bool) {
+        self.nested_list_letters = letters;
+    }
+
     /// Move selected list subtrees as one isolated edit.
     pub(super) fn nest_list(
         &mut self,
@@ -1454,11 +1461,12 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(edit) = super::live_preview::nest_lines(
+        let Some(edit) = super::live_preview::nest_lines_with_style(
             &self.text.to_string(),
             self.selected_range.into(),
             outdent,
             self.mode.tab_size().tab_size,
+            self.nested_list_letters,
         ) else {
             return false;
         };

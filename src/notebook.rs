@@ -66,6 +66,8 @@ impl Appearance {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
+    pub nested_list_letters: bool,
+    #[serde(default)]
     pub view_mode: crate::ViewMode,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: f32,
@@ -83,6 +85,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            nested_list_letters: false,
             view_mode: crate::ViewMode::default(),
             sidebar_width: default_sidebar_width(),
             version: VERSION,

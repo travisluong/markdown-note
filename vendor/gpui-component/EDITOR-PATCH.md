@@ -145,3 +145,5 @@ conservatively reparse the document. Documents without link trigger characters
 skip GFM parsing. A 10,000-link regression checks bounded paragraph parse work;
 headless tests cover incremental/full-parser equivalence, definition changes,
 Unicode source mappings, table references, and wrapped/gutter hit testing.
+
+- Ordered list nesting starts a fresh sibling count, with an app-configurable alphabetic marker option. Alphabetic markers support Enter continuation and outdent; they are a plain-text extension to standard Markdown.

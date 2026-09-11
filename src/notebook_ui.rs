@@ -668,6 +668,7 @@ impl Notes {
         self.dirty_revision += 1;
         self.dirty_cached = false;
         self.editor.update(cx, |editor, cx| {
+            editor.set_nested_list_letters(self.nested_list_letters());
             editor.set_live_preview(self.mode == ViewMode::LivePreview, cx)
         });
         if self.mode != ViewMode::Reading && self.document.is_some() {
