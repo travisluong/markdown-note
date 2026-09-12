@@ -860,6 +860,10 @@ impl TextElement {
                             .iter()
                             .filter(|(span, _)| span.end > source_start)
                             .collect::<Vec<_>>();
+                        let code_styles = p.code.as_ref().map(|tokens| {
+                            tokens.styles(source_start..source_end, &cx.theme().highlight_theme)
+                        }).unwrap_or_default();
+                        let mut code_index = 0;
                         for (ix, ch) in line[range.clone()].char_indices() {
                             let source = m.display_to_source[range.start + ix];
                             let mut run = base.clone();
@@ -892,6 +896,16 @@ impl TextElement {
                                         run.font.style = gpui::FontStyle::Italic;
                                     }
                                 }
+                            }
+                            while code_styles.get(code_index).is_some_and(|(r, _)| r.end <= source) {
+                                code_index += 1;
+                            }
+                            if let Some((_, style)) = code_styles.get(code_index).filter(|(r, _)| r.contains(&source)) {
+                                if let Some(color) = style.color { run.color = color; }
+                                if let Some(weight) = style.font_weight { run.font.weight = weight; }
+                                if let Some(style) = style.font_style { run.font.style = style; }
+                                if let Some(underline) = style.underline { run.underline = Some(underline); }
+                                if let Some(strike) = style.strikethrough { run.strikethrough = Some(strike); }
                             }
                             if state.ime_marked_range.is_some_and(|r| {
                                 (r.start..r.end)

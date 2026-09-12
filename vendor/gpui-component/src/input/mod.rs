@@ -1,3 +1,4 @@
+mod fenced_code;
 mod blink_cursor;
 mod change;
 mod clear_button;

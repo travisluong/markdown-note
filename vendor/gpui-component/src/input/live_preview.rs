@@ -3,6 +3,7 @@ use std::ops::Range;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Presentation {
+    pub code: Option<crate::highlighter::code::CodeTokens>,
     pub links: Vec<super::markdown_links::MarkdownLink>,
     pub heading: usize,
     pub spans: Vec<(Range<usize>, bool)>,
@@ -180,6 +181,25 @@ pub(super) fn list_enter(line: &str, cursor: usize) -> Option<(Range<usize>, Str
 }
 
 impl Presentation {
+    pub fn literal(
+        source: &str,
+        prefix: usize,
+        tokens: crate::highlighter::code::CodeTokens,
+    ) -> Self {
+        let prefix = prefix.min(source.len());
+        let quotes = quote_prefixes(&source[..prefix]);
+        Self {
+            code: Some(tokens),
+            hidden: if prefix > 0 {
+                vec![0..prefix]
+            } else {
+                Vec::new()
+            },
+            quote_depth: quotes.len(),
+            quote_prefixes: quotes,
+            ..Default::default()
+        }
+    }
     pub fn parse(line: &str) -> Self {
         PARSED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let quote_prefixes = quote_prefixes(line);

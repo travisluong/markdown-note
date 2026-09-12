@@ -229,3 +229,24 @@ highlight theme, preserving syntax colors under search backgrounds. Headless
 reading-search diagnostics exercise the language bundle, aliases, multiline and
 Unicode tokens, plain fallbacks, and light/dark recoloring. The lockfile selects
 cc 1.2.67 to satisfy the bundled SQL grammar's ~1.2.1 build dependency.
+
+## Live-preview fenced-code highlighting
+
+Fenced-code analysis runs in the existing bounded preview queue. GFM code nodes
+provide block boundaries, including unfinished fences and nested containers;
+literal line mappings preserve UTF-8, CRLF, escapes, entities and partial tabs.
+The same mappings also keep reading-search results aligned with literal code.
+Only language/content entries present in the latest document are retained in the
+background token cache. Token results require an exact document revision, unlike
+rebasable link results. Edits clear old colors while retaining bounded literal
+source presentation; retired indexes are released on the background executor.
+Documents without fence markers skip code parsing.
+
+Live-preview shaped runs resolve cached captures against the current theme and
+preserve source/display coordinates, search painting, selection and IME decoration.
+Code contents do not receive Markdown heading, emphasis, link or task styling.
+The code helpers are exposed only with editor-diagnostics so root integration tests
+can exercise the vendored implementation; production has no new public API.
+Tests cover cache reuse/pruning, delayed results, nested/unfinished fences,
+Unicode/CRLF/tab mappings, literal presentation, and actual TestPlatform shaped
+runs across themes, wrapping, mode changes and undo/redo. No native UI is used.

@@ -5,21 +5,25 @@ use std::{ops::Range, sync::Arc};
 
 /// Large immutable indexes are released on the background executor as well.
 pub(super) struct Retired {
+    pub code: Vec<super::fenced_code::Index>,
     pub links: Links,
     pub tables: Vec<super::table::Table>,
 }
 impl Retired {
     pub fn dispose(self) {
+        drop(self.code);
         drop(self.links);
         drop(self.tables);
     }
 }
 
 pub(super) struct Request {
+    pub code_cache: Arc<super::fenced_code::Cache>,
     pub revision: u64,
     pub text: Rope,
 }
 pub(super) struct Parsed {
+    pub code: Arc<super::fenced_code::Snapshot>,
     pub images: std::collections::BTreeMap<usize, String>,
     pub revision: u64,
     pub links: Vec<MarkdownLink>,
@@ -32,6 +36,10 @@ impl Request {
         let mut tables = TableIndex::default();
         tables.rebuild_source(&source);
         Parsed {
+            code: Arc::new(super::fenced_code::Snapshot::parse(
+                &source,
+                &self.code_cache,
+            )),
             images: crate::markdown_images::paragraphs(&source),
             revision: self.revision,
             links,
@@ -42,6 +50,7 @@ impl Request {
 
 #[derive(Default)]
 pub(super) struct Queue {
+    pub code_cache: Arc<super::fenced_code::Cache>,
     pub revision: u64,
     running: Option<u64>,
     pending: Option<Request>,
@@ -52,6 +61,7 @@ impl Queue {
     pub fn request(&mut self, text: &Rope) {
         self.revision += 1;
         self.pending = Some(Request {
+            code_cache: Arc::default(),
             revision: self.revision,
             text: text.clone(),
         });
@@ -68,6 +78,7 @@ impl Queue {
         }
     }
     pub fn reset(&mut self) {
+        self.code_cache = Arc::default();
         self.rebasable = false;
         self.edits.clear();
         self.revision += 1;
@@ -78,7 +89,8 @@ impl Queue {
         if self.running.is_some() {
             return None;
         }
-        let request = self.pending.take()?;
+        let mut request = self.pending.take()?;
+        request.code_cache = self.code_cache.clone();
         self.running = Some(request.revision);
         self.rebasable = true;
         self.edits.clear();
@@ -241,7 +253,10 @@ pub(super) fn context_independent(old: &Rope, range: &Range<usize>, inserted: &R
         && inserted.len() == 1
         && first == last
         && range.end - line_start <= 8192
-        && matches!(old.slice(range.clone()).chars().next(), Some(' ' | 'x' | 'X'))
+        && matches!(
+            old.slice(range.clone()).chars().next(),
+            Some(' ' | 'x' | 'X')
+        )
         && matches!(inserted.chars().next(), Some(' ' | 'x' | 'X'))
     {
         let mut prefix = old.slice(line_start..range.end).to_string();
@@ -340,5 +355,26 @@ mod completion_tests {
             queue.start().is_some(),
             "pending analysis starts without a quiet-period timer"
         );
+    }
+}
+
+#[cfg(test)]
+mod code_queue_tests {
+    use super::*;
+    #[test]
+    fn requests_use_current_cache_and_reset_drops_document_cache() {
+        let source = Rope::from("```rs\nfn main() {}\n```");
+        let mut queue = Queue::default();
+        queue.request(&source);
+        let first = queue.start().unwrap();
+        queue.request(&source);
+        let parsed = first.parse();
+        assert!(!queue.finish(parsed.revision));
+        queue.code_cache = parsed.code.cache.clone();
+        let next = queue.start().unwrap();
+        assert!(Arc::ptr_eq(&next.code_cache, &parsed.code.cache));
+        queue.reset();
+        assert!(queue.code_cache.is_empty());
+        assert!(!queue.finish(next.revision));
     }
 }

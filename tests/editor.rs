@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 // Exercise the vendored editor modules without enabling unrelated component test dependencies.
 extern crate gpui_component as ropey;
-pub use gpui_component::{ActiveTheme, markdown_images};
+pub use gpui_component::{ActiveTheme, highlighter, markdown_images};
 mod input {
     pub use gpui_component::input::RopeExt;
 }
@@ -27,3 +27,6 @@ mod table {
 fn find_and_replace_literal_unicode_and_match_navigation() {
     gpui_component::input::InputState::diagnostic_find_matcher();
 }
+
+#[path = "../vendor/gpui-component/src/input/fenced_code.rs"]
+mod fenced_code;

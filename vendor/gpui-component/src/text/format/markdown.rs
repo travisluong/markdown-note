@@ -329,13 +329,26 @@ fn ast_to_node(
                 highlight_theme,
             );
             if let Some(position) = raw.position {
-                let mut range = position.start.offset..position.end.offset;
+                let range = position.start.offset..position.end.offset;
                 let source = &cx.source[range.clone()];
                 if source.starts_with("```") || source.starts_with("~~~") {
-                    range.start += source.find('\n').map_or(source.len(), |i| i + 1);
+                    for line in crate::highlighter::code::code_lines(&cx.source, range, &raw.value) {
+                        let source_end = line.source.end;
+                        let display_end = line.display.end;
+                        block.source_runs.push(super::super::source_map::SourceRun {
+                            source: line.source, display: line.display,
+                        });
+                        if raw.value.as_bytes().get(display_end) == Some(&b'\n')
+                            && cx.source.as_bytes().get(source_end) == Some(&b'\n') {
+                            block.source_runs.push(super::super::source_map::SourceRun {
+                                source: source_end..source_end + 1,
+                                display: display_end..display_end + 1,
+                            });
+                        }
+                    }
+                } else {
+                    block.source_runs = super::super::source_map::map_leaf(&cx.source, range, &raw.value);
                 }
-                block.source_runs =
-                    super::super::source_map::map_leaf(&cx.source, range, &raw.value);
             }
             node::Node::CodeBlock(block)
         }

@@ -2975,3 +2975,25 @@ impl InputState {
         self.text_wrapper.diagnostic_settle();
     }
 }
+
+#[cfg(feature = "editor-diagnostics")]
+impl InputState {
+    /// Read actual shaped runs from the headless renderer, in line-local source bytes.
+    #[doc(hidden)]
+    pub fn diagnostic_code_runs(&self, row: usize) -> Vec<(Range<usize>, gpui::Hsla)> {
+        let Some(line) = self.text_wrapper.lines.get(row) else { return Vec::new() };
+        let Some(mapped) = &line.mapped else { return Vec::new() };
+        if !line.presentation.as_ref().is_some_and(|p| p.code.is_some()) { return Vec::new(); }
+        let mut result = Vec::new();
+        for (segment, (runs, _)) in line.cache.borrow().iter() {
+            let mut at = line.wrapped_lines[*segment].start;
+            for run in runs {
+                let end = at + run.len;
+                result.push((mapped.display_to_source[at]..mapped.display_to_source[end], run.color));
+                at = end;
+            }
+        }
+        result.sort_by_key(|(r, _)| r.start);
+        result
+    }
+}

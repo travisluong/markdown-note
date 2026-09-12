@@ -82,6 +82,8 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    pub(super) code: super::fenced_code::Index,
+    retired_code: Vec<super::fenced_code::Index>,
     pub(super) image_document: Option<std::path::PathBuf>,
     pub(super) images: std::collections::BTreeMap<usize, String>,
     pub(super) links: super::preview_syntax::Links,
@@ -118,6 +120,8 @@ pub(super) struct TextWrapper {
 impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
+            code: Default::default(),
+            retired_code: Vec::new(),
             image_document: None,
             images: Default::default(),
             links: Default::default(),
@@ -149,6 +153,7 @@ impl TextWrapper {
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
         self.images.clear();
         self.live_preview = enabled;
+        self.retired_code.push(std::mem::take(&mut self.code));
         self.analysis.reset();
         self.links = Default::default();
         self.tables = Default::default();
@@ -228,6 +233,7 @@ impl TextWrapper {
 
     #[inline]
     pub(super) fn set_default_text(&mut self, text: &Rope) {
+        self.retired_code.push(std::mem::take(&mut self.code));
         self.analysis.reset();
         self.links = Default::default();
         self.tables = Default::default();
@@ -338,6 +344,10 @@ impl TextWrapper {
             self.images.clear();
             self.syntax_revision += 1;
         }
+        if !self.code.snapshot.blocks.is_empty() {
+            self.code.edit(range.clone(), inserted.len());
+            self.syntax_revision += 1;
+        }
         self.analysis.edit(range.clone(), inserted.len(), safe);
         self.analysis.request(changed);
         if safe {
@@ -365,6 +375,14 @@ impl TextWrapper {
     }
 
     pub(super) fn apply_analysis(&mut self, mut parsed: super::preview_syntax::Parsed) -> bool {
+        let current = parsed.revision == self.analysis.revision && self.live_preview;
+        let code = super::fenced_code::Index::new(parsed.code);
+        if current {
+            self.analysis.code_cache = code.snapshot.cache.clone();
+            self.retired_code.push(std::mem::replace(&mut self.code, code));
+        } else {
+            self.retired_code.push(code);
+        }
         let edits = self.analysis.rebasing(parsed.revision);
         self.analysis.finish(parsed.revision);
         let Some(edits) = edits.filter(|_| self.live_preview) else {
@@ -427,15 +445,18 @@ impl TextWrapper {
             .map(|links| super::preview_syntax::Retired {
                 links,
                 tables: Vec::new(),
+                code: Vec::new(),
             })
             .collect::<Vec<_>>();
         let tables = self.tables.take_retired();
         if !tables.is_empty() {
             retired.push(super::preview_syntax::Retired {
                 links: Default::default(),
+                code: Vec::new(),
                 tables,
             });
         }
+        if !self.retired_code.is_empty() { retired.push(super::preview_syntax::Retired { links: Default::default(), tables: Vec::new(), code: std::mem::take(&mut self.retired_code) }); }
         retired
     }
 
@@ -543,14 +564,14 @@ impl TextWrapper {
             self.copied_bytes += source.len();
             super::live_preview::record_ui_work(source.len(), source.len());
             let presentation = self.live_preview.then(|| {
-                super::live_preview::Presentation::parse(&source).with_links(
-                    &self.links.in_range(
-                        changed_text.line_start_offset(new_start_row + ix)
-                            ..changed_text.line_start_offset(new_start_row + ix) + source.len(),
-                    ),
-                    changed_text.line_start_offset(new_start_row + ix),
-                    source.len(),
-                )
+                let start = changed_text.line_start_offset(new_start_row + ix);
+                if let Some(code) = self.code.line(start) {
+                    super::live_preview::Presentation::literal(&source, code.prefix, code.tokens)
+                } else {
+                    super::live_preview::Presentation::parse(&source).with_links(
+                        &self.links.in_range(start..start + source.len()), start, source.len(),
+                    )
+                }
             });
             let scale = presentation.as_ref().map_or(1., |p| p.scale());
             let mapped = presentation.as_ref().map(|p| {
@@ -2103,6 +2124,39 @@ mod sustained_edit_tests {
     }
 
     #[test]
+    fn code_analysis_rejects_stale_tokens_and_restores_literal_mappings() {
+        let source = "prefix\ntext\n\n```rs\nfn main() { let café = \"**literal**\"; }\n```\n";
+        let mut wrapper = make(source);
+        measure(&mut wrapper, 0..7);
+        let cached = wrapper.analysis.code_cache.values().next().unwrap().clone();
+        wrapper.analysis.request(&wrapper.text.clone());
+        let stale = wrapper.analysis.start().unwrap();
+        edit(&mut wrapper, 1..1, "x");
+        let row = wrapper.text.to_string().find("fn").unwrap();
+        assert!(wrapper.code.line(row).unwrap().tokens.spans.is_empty());
+        // Links can rebase this result; code must still await its exact revision.
+        wrapper.apply_analysis(stale.parse());
+        assert!(wrapper.code.line(row).unwrap().tokens.spans.is_empty());
+        let current = wrapper.analysis.start().unwrap();
+        assert!(wrapper.apply_analysis(current.parse()));
+        assert!(std::sync::Arc::ptr_eq(&cached, wrapper.analysis.code_cache.values().next().unwrap()));
+        measure(&mut wrapper, 0..7);
+        let line = &wrapper.lines[4];
+        assert_eq!(line.mapped.as_ref().unwrap().text, "fn main() { let café = \"**literal**\"; }");
+        assert!(!line.presentation.as_ref().unwrap().code.as_ref().unwrap().spans.is_empty());
+        for offset in [row, row + 3, row + "fn main() { let café".len()] {
+            assert_eq!(wrapper.display_point_to_offset(wrapper.offset_to_display_point(offset)), offset);
+        }
+        let tag = wrapper.text.to_string().find("rs").unwrap();
+        edit(&mut wrapper, tag..tag + 2, "unknown");
+        let current = wrapper.analysis.start().unwrap();
+        assert!(wrapper.apply_analysis(current.parse()));
+        let row = wrapper.text.to_string().find("fn").unwrap();
+        assert!(wrapper.code.line(row).unwrap().tokens.spans.is_empty());
+        assert!(wrapper.analysis.code_cache.is_empty());
+    }
+
+    #[test]
     fn enter_and_backspace_update_lines_before_analysis_finishes() {
         for count in [20, 100_000] {
             let mut wrapper = make(&"ordinary café 你好 text\n".repeat(count));
@@ -2305,10 +2359,13 @@ mod sustained_edit_tests {
 impl TextWrapper {
     pub(super) fn diagnostic_settle(&mut self) {
         let mut parsed = super::preview_syntax::Request {
+            code_cache: self.analysis.code_cache.clone(),
             revision: self.analysis.revision,
             text: self.text.clone(),
         }
         .parse();
+        self.analysis.code_cache = parsed.code.cache.clone();
+        self.code = super::fenced_code::Index::new(parsed.code);
         self.links = super::preview_syntax::Links::with_edits(parsed.links, Vec::new());
         let revision = self.tables.revision + 1;
         parsed.tables.retire_from(&mut self.tables);
