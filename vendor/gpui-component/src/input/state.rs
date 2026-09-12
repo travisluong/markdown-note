@@ -1411,7 +1411,7 @@ impl InputState {
         if self.live_preview
             && event.button == MouseButton::Left
             && event.click_count == 1
-            && event.modifiers.control
+            && event.modifiers.secondary()
             && !event.modifiers.shift
             && !event.modifiers.alt
         {

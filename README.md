@@ -259,7 +259,7 @@ view modes automatically. Mode selections are saved through the View menu
 or the corresponding commands.
 
 Markdown links render in Live preview, including reference links and autolinks.
-Syntax reveals on the active line (or active table cell); Ctrl+click opens a
+Syntax reveals on the active line (or active table cell); Ctrl+click (Command+click on macOS) opens a
 link without moving the selection. Reading view uses ordinary clicks. Hover
 shows the destination. Code spans and code blocks do not activate links.
 `Ctrl+K` or **Text: Insert or edit link** in the command palette opens the link

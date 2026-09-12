@@ -1,5 +1,8 @@
 # Local editor patch
 
+Live-preview links use GPUI's secondary modifier: Command-click on macOS and
+Control-click on Windows/Linux, matching each platform's editing conventions.
+
 Live-preview checkbox state replacements are recognized as context-independent
 edits by the shared syntax classifier, including undo and redo. Unchanged tables
 retain their rendered rows, dimensions, and horizontal scroll while background
