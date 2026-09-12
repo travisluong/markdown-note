@@ -15,8 +15,10 @@ cargo run --locked
 
 The **Build desktop binaries** workflow builds release executables for Windows
 x86-64, Linux x86-64, and macOS (separate Apple Silicon and Intel builds).
-It runs on pushes to `main` or `dev`, version tags starting with `v`, pull
-requests, and manual runs. Push the workflow to GitHub before using it; manual
+It runs when a GitHub release is published (including pre-releases), or manually
+from **Actions**. Ordinary pushes, tag pushes, and pull requests do not generate
+builds. Publish a release whose tag includes this workflow to start a release
+build. Push the workflow to GitHub before using it; manual
 **Run workflow** becomes available once the workflow is on the default branch.
 
 Open the repository's **Actions** tab, select **Build desktop binaries**, and

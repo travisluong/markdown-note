@@ -1,17 +1,15 @@
 name: Build desktop binaries
 
 on:
-  push:
-    branches: [main, dev]
-    tags: ['v*']
-  pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
