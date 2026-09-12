@@ -1,11 +1,12 @@
-//! Application data and storage contracts, independent of the GPUI window.
+//! Application contracts and explicit feature owners.
 //!
-//! UI coordination lives in the executable. These modules can be exercised by
-//! integration tests and extended without importing the application root.
+//! Data, storage, and policy modules do not import the window; `editor` is the
+//! thin GPUI adapter. UI coordination lives in the executable.
 
 pub mod capabilities;
 pub mod commands;
 pub mod document;
+pub mod editor;
 pub mod explorer;
 pub mod notebook;
 pub mod search;

@@ -55,8 +55,9 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
             window,
             cx,
         );
-        notes.editor_subscription = Notes::subscribe_editor(&diagnostic, window, cx);
-        notes.editor = diagnostic;
+        let editor = Editor::diagnostic_from_input(diagnostic);
+        notes.editor_subscription = Notes::subscribe_editor(&editor, window, cx);
+        notes.editor = editor;
         notes.set_mode(ViewMode::LivePreview, window, cx);
     });
     geometry_round(notes.clone(), output, 0, window);
@@ -70,8 +71,7 @@ fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &
     window.on_next_frame(move |window, cx| {
         notes.update(cx, |notes, cx| {
             notes
-                .editor
-                .update(cx, |editor, cx| editor.diagnostic_geometry(window, cx));
+                .editor.diagnostic_input().update(cx, |editor, cx| editor.diagnostic_geometry(window, cx));
         });
         if round < 2 {
             notes.update(cx, |notes, cx| {
@@ -79,7 +79,7 @@ fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &
                 appearance.content_font_size = if round == 0 { 20 } else { 16 };
                 appearance.dark_mode = Some(round == 0);
                 notes.update_appearance(appearance, window, cx);
-                notes.editor.update(cx, |editor, cx| {
+                notes.editor.diagnostic_input().update(cx, |editor, cx| {
                     editor.set_cursor_position(Position::new(4, 0), window, cx);
                     editor.diagnostic_scroll(-24., cx);
                 });
@@ -91,7 +91,7 @@ fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &
             let fixture = format!("before\n\n| Name | Details | {} |\n| --- | :---: | {} |\n| café | **你好** words words words words words words | {} |\n| second | other | {} |\n\nafter",
                 (0..10).map(|i| format!("C{i}")).collect::<Vec<_>>().join(" | "),
                 ["---:";10].join(" | "), ["value";10].join(" | "),["";10].join(" | "));
-            notes.editor.update(cx,|editor,cx| { editor.set_value(fixture,window,cx); editor.set_cursor_position(Position::new(0,0),window,cx); });
+            notes.editor.diagnostic_input().update(cx,|editor,cx| { editor.set_value(fixture,window,cx); editor.set_cursor_position(Position::new(0,0),window,cx); });
         });
         table_round(notes,output,0,window);
     });
@@ -119,6 +119,7 @@ fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<
             .multi_line(true)
             .default_value(text.clone())
     });
+    let editor = Editor::diagnostic_from_input(editor);
     notes.install_document(Some(document_fixture("benchmark.md", &text)), window, cx);
     notes.editor_subscription = Notes::subscribe_editor(&editor, window, cx);
     notes.editor = editor;
@@ -163,7 +164,7 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
                 install(notes, true, window, cx);
             }
             if group == 8 {
-                notes.editor.update(cx, |editor, cx| {
+                notes.editor.diagnostic_input().update(cx, |editor, cx| {
                     editor.set_value(
                         format!(
                             "| Name | Details |\n| --- | --- |\n{}",
@@ -174,7 +175,7 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
                     )
                 });
             }
-            notes.editor.update(cx, |editor, cx| {
+            notes.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.set_cursor_position(
                     Position::new(
                         [0, 0, 50_000, 50_000, 99_950, 99_950, 0, 0, 5000, 5000][group],
@@ -195,7 +196,7 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
     let before = editor_work();
     let started = Instant::now();
     notes.update(cx, |notes, cx| {
-        notes.editor.update(cx, |editor, cx| {
+        notes.editor.diagnostic_input().update(cx, |editor, cx| {
             if group.is_multiple_of(2) {
                 editor.insert("x", window, cx);
             } else {
@@ -225,12 +226,18 @@ fn table_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &mut
     )
     .unwrap();
     window.on_next_frame(move |window, cx| {
-        if !notes.read(cx).editor.read(cx).diagnostic_preview_settled() {
+        if !notes
+            .read(cx)
+            .editor
+            .diagnostic_input()
+            .read(cx)
+            .diagnostic_preview_settled()
+        {
             table_round(notes, output, round, window);
             return;
         }
         notes.update(cx, |notes, cx| {
-            notes.editor.update(cx, |editor, cx| {
+            notes.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.diagnostic_table_geometry(window, cx)
             });
         });
@@ -240,7 +247,7 @@ fn table_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &mut
                 appearance.content_font_size = if round == 0 { 20 } else { 16 };
                 appearance.dark_mode = Some(round == 0);
                 notes.update_appearance(appearance, window, cx);
-                notes.editor.update(cx, |editor, cx| {
+                notes.editor.diagnostic_input().update(cx, |editor, cx| {
                     editor.set_cursor_position(Position::new(4, 3), window, cx)
                 });
             });

@@ -101,7 +101,7 @@ impl Notes {
             document.format,
             document.version.clone(),
         );
-        let snapshot = self.editor.read(cx).snapshot();
+        let snapshot = self.editor.snapshot(cx);
         self.saves.error = None;
         self.saves.timer = None;
         cx.spawn_in(window, async move |this, cx| {
@@ -116,7 +116,7 @@ impl Notes {
             let _ = this.update_in(cx, |this, window, cx| {
                 let effects = match result {
                     Ok((text, snapshot, receipt)) => {
-                        let current = this.editor.read(cx).snapshot();
+                        let current = this.editor.snapshot(cx);
                         this.session.write_succeeded(ticket, |document| {
                             document.saved = text;
                             document.saved_rope = snapshot;

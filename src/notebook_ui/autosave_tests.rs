@@ -60,7 +60,7 @@ fn retained_document_autosaves_after_discarded_navigation(
 
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated("retained A", window, cx);
             });
@@ -107,7 +107,7 @@ fn retained_document_autosaves_after_discarded_navigation(
         notes.update(cx, |this, cx| {
             assert!(this.is_busy());
             assert_eq!(this.document_id(), identity);
-            assert_eq!(this.editor.read(cx).value().as_ref(), "retained A");
+            assert_eq!(this.editor.text(cx).as_ref(), "retained A");
             if select_folder {
                 let selection = this
                     .notebooks
@@ -170,7 +170,7 @@ fn delayed_notebook_load_failure_rearms_the_retained_document_once(cx: &mut Test
     let (notes, cx) = fixture(cx, &root);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated("retained A", window, cx);
             });

@@ -18,11 +18,12 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
                 return;
             }
             notes.update(cx, |this, cx| {
-                let status = this.editor.read(cx).diagnostic_find(cx);
+                let status = this.editor.diagnostic_input().read(cx).diagnostic_find(cx);
                 match step {
                     0 => {
                         this.set_mode(ViewMode::Source, window, cx);
                         this.editor
+                            .diagnostic_input()
                             .update(cx, |e, cx| e.set_value("café [.*] CAFÉ café", window, cx));
                     }
                     2 => {
@@ -37,7 +38,7 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
                     7 => {
                         let (_, count, index, selection) = status.unwrap();
                         assert_eq!((count, index, selection.as_str()), (2, 1, "café"));
-                        assert_eq!(this.editor.read(cx).value().as_str(), "café [.*] CAFÉ café");
+                        assert_eq!(this.editor.text(cx).as_str(), "café [.*] CAFÉ café");
                     }
                     10 => {
                         let query = status.unwrap().0;
@@ -65,6 +66,7 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
                     15 => {
                         assert_eq!(this.reading_search.as_ref().unwrap().matches.len(), 0);
                         this.editor
+                            .diagnostic_input()
                             .update(cx, |e, cx| e.set_value("unsaved missing", window, cx));
                     }
                     16 => {
@@ -74,7 +76,7 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
                             "find refreshes after edits"
                         );
                         this.set_mode(ViewMode::LivePreview, window, cx);
-                        this.editor.update(cx, |e, cx| {
+                        this.editor.diagnostic_input().update(cx, |e, cx| {
                             e.set_value("# café\n\n| Name |\n| --- |\n| **café** |\n", window, cx)
                         });
                     }
@@ -111,14 +113,24 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
     }
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            assert!(this.editor.read(cx).diagnostic_find(cx).is_none());
+            assert!(
+                this.editor
+                    .diagnostic_input()
+                    .read(cx)
+                    .diagnostic_find(cx)
+                    .is_none()
+            );
             assert!(this.editor.focus_handle(cx).is_focused(window));
             let document = this
                 .document()
                 .map(|document| Document::open(document.path.clone()).unwrap());
             this.install_document(document, window, cx);
             assert!(
-                this.editor.read(cx).diagnostic_find(cx).is_none(),
+                this.editor
+                    .diagnostic_input()
+                    .read(cx)
+                    .diagnostic_find(cx)
+                    .is_none(),
                 "new document has fresh find state"
             );
         })
@@ -131,7 +143,7 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
             Timer::after(std::time::Duration::from_millis(150)).await;
             cx.update(|window, cx| {
                 notes.update(cx, |this, cx| {
-                    this.editor.update(cx, |editor, cx| {
+                    this.editor.diagnostic_input().update(cx, |editor, cx| {
                         editor.diagnostic_replace_step(step, window, cx)
                     });
                     if step >= 2 {

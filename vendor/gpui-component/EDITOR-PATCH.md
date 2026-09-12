@@ -169,7 +169,11 @@ without a callback the upstream external-opening behavior remains available.
 The app validates the snapshot, handles external schemes and relative Markdown
 paths, and uses its existing save/navigation flow. The link dialog reuses
 select_source_range and replace_selection_isolated, validating document identity
-and snapshot before applying a single undo transaction.
+and snapshot before applying a single undo transaction. A read-only
+InputState::is_disabled accessor lets the application reject guarded range edits
+before selection changes when the rendered input is still disabled. The editor
+adapter's TestPlatform regression verifies unchanged text, selection, and history
+for that rejected transaction.
 
 Link parsing is cached across viewport measurement and cursor movement. Ordinary
 alphanumeric/space edits in standalone paragraphs reparse that

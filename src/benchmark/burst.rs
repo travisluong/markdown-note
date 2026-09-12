@@ -15,7 +15,12 @@ struct Samples {
 }
 fn observe(notes: Entity<Notes>, samples: Rc<RefCell<Samples>>, window: &mut Window) {
     window.on_next_frame(move |window, cx| {
-        let (_, revision, painted, _) = notes.read(cx).editor.read(cx).diagnostic_preview_status();
+        let (_, revision, painted, _) = notes
+            .read(cx)
+            .editor
+            .diagnostic_input()
+            .read(cx)
+            .diagnostic_preview_status();
         let mut s = samples.borrow_mut();
         if s.done {
             return;
@@ -67,7 +72,7 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
                     };
                     cx.update(|window, cx| notes.update(cx, |notes, cx| {
                         notes.saves.session.enabled = false;
-                        notes.editor.update(cx, |editor, cx| editor.set_value(source.clone(), window, cx));
+                        notes.editor.diagnostic_input().update(cx, |editor, cx| editor.set_value(source.clone(), window, cx));
                         notes.set_mode(ViewMode::LivePreview, window, cx);
                         let row = match (fixture, position) {
                             (_, 0) => 0,
@@ -75,14 +80,14 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
                             (1, 1) => 10_000, (1, _) => 19_998,
                             (_, 1) => 2, _ => 10_007,
                         };
-                        notes.editor.update(cx, |editor, cx| editor.set_cursor_position(Position::new(row, 0), window, cx));
+                        notes.editor.diagnostic_input().update(cx, |editor, cx| editor.set_cursor_position(Position::new(row, 0), window, cx));
                     })).unwrap();
                     // Warm-up waits for actual background analysis, not a synchronous substitute.
                     let deadline = Instant::now() + Duration::from_secs(60);
                     loop {
                         Timer::after(Duration::from_millis(20)).await;
                         let ready = notes.read_with(cx, |notes, cx| {
-                            notes.editor.read(cx).diagnostic_preview_settled()
+                            notes.editor.diagnostic_input().read(cx).diagnostic_preview_settled()
                         }).unwrap();
                         if ready { break; }
                         assert!(Instant::now() < deadline, "preview warm-up timed out");
@@ -93,7 +98,7 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
                     for step in 0..hz * 4 {
                         let scheduled = started + Duration::from_secs_f64(step as f64 / hz as f64);
                         Timer::after(scheduled.saturating_duration_since(Instant::now())).await;
-                        cx.update(|window, cx| notes.update(cx, |notes, cx| notes.editor.update(cx, |editor, cx| {
+                        cx.update(|window, cx| notes.update(cx, |notes, cx| notes.editor.diagnostic_input().update(cx, |editor, cx| {
                             let before_revision = editor.diagnostic_preview_status().0;
                             let start = Instant::now();
                             editor.diagnostic_repeat_key(step < hz * 2, window, cx);

@@ -29,8 +29,7 @@ impl Notes {
             if self.mode == ViewMode::Reading || self.document().is_none() {
                 self.focus.focus(window);
             } else {
-                self.editor
-                    .update(cx, |editor, cx| editor.focus(window, cx));
+                self.editor.focus(window, cx);
             }
         }
         cx.notify();

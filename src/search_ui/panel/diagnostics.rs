@@ -147,6 +147,7 @@ pub(crate) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                     9 => {
                         this.set_mode(ViewMode::Source, window, cx);
                         this.editor
+                            .diagnostic_input()
                             .update(cx, |e, cx| e.set_value("unsaved needle", window, cx));
                         this.search
                             .as_ref()
@@ -182,7 +183,7 @@ pub(crate) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                             cx,
                         );
                         assert_eq!(this.document().unwrap().path, a);
-                        assert_eq!(this.editor.read(cx).value().as_str(), "unsaved needle");
+                        assert_eq!(this.editor.text(cx).as_str(), "unsaved needle");
                         this.diagnostic_answer_request(
                             Some(0),
                             Next::SearchResult(destination),
@@ -192,9 +193,10 @@ pub(crate) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                     }
                     12 => {
                         assert_eq!(this.document().unwrap().path, b);
-                        assert_eq!(this.editor.read(cx).cursor(), 13);
+                        assert_eq!(this.editor.diagnostic_input().read(cx).cursor(), 13);
                         assert_eq!(fs::read_to_string(a).unwrap(), "unsaved needle");
                         this.editor
+                            .diagnostic_input()
                             .update(cx, |e, cx| e.set_value("discard me", window, cx));
                     }
                     13 => {
@@ -213,10 +215,10 @@ pub(crate) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                     }
                     14 => {
                         assert_eq!(this.document().unwrap().path, a);
-                        assert_eq!(this.editor.read(cx).cursor(), 14);
+                        assert_eq!(this.editor.diagnostic_input().read(cx).cursor(), 14);
                         assert_eq!(fs::read_to_string(b).unwrap(), "prefix needle");
                         this.set_mode(ViewMode::LivePreview, window, cx);
-                        this.editor.update(cx, |e, cx| {
+                        this.editor.diagnostic_input().update(cx, |e, cx| {
                             assert!(e.select_source_range(8..14, window, cx));
                             assert!(!e.select_source_range(0..999, window, cx));
                             assert_eq!(e.value().as_str(), "unsaved needle");

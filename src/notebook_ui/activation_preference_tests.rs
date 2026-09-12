@@ -156,7 +156,7 @@ fn preferences_changed_on_a_do_not_replace_b_or_its_external_file(cx: &mut TestA
                 .sidebar_width,
             280.
         );
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "external B");
+        assert_eq!(notes.editor.text(cx).as_ref(), "external B");
     });
     let first = notebook::Notebook::open(&fixture.root, false)
         .unwrap()
@@ -217,7 +217,7 @@ fn standalone_document_autosave_choices_remain_session_scoped_during_reload(
             notes.notebooks.active.as_ref().unwrap().settings.autosave,
             original
         );
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "original A");
+        assert_eq!(notes.editor.text(cx).as_ref(), "original A");
     });
     assert_eq!(
         notebook::Notebook::open(&fixture.root, false)

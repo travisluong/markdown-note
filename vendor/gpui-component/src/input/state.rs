@@ -763,6 +763,11 @@ impl InputState {
         self
     }
 
+    /// Whether editing is currently disabled by the rendered input.
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+
     /// Set with password masked state.
     ///
     /// Only for [`InputMode::SingleLine`] mode.

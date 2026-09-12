@@ -114,8 +114,9 @@ impl Notes {
         if !self.can_edit_document() || window.has_active_dialog(cx) {
             return;
         }
-        let snapshot = self.editor.read(cx).value().to_string();
-        let selection = self.editor.read(cx).source_selection();
+        let expected = self.editor.snapshot(cx);
+        let snapshot = expected.to_string();
+        let selection = self.editor.selection(cx);
         let links = markdown_links::parse(&snapshot);
         let existing = links.iter().find(|link| {
             link.source.contains(&selection.start) && selection.end <= link.source.end
@@ -140,7 +141,7 @@ impl Notes {
             let owner = owner.clone();
             let label = label.clone();
             let target = target.clone();
-            let snapshot = snapshot.clone();
+            let expected = expected.clone();
             let range = range.clone();
             let title = title.clone();
             let error = error.clone();
@@ -163,7 +164,7 @@ impl Notes {
                 )
                 .on_close(move |_, window, cx| {
                     let _ = close_owner.update(cx, |this, cx| {
-                        this.editor.update(cx, |e, cx| e.focus(window, cx))
+                        this.editor.focus(window, cx)
                     });
                 })
                 .on_ok(move |_, window, cx| {
@@ -175,7 +176,7 @@ impl Notes {
                                 title.as_deref(),
                             );
                             if this.document_id() != identity
-                                || this.editor.read(cx).value().as_ref() != snapshot
+                                || this.editor.snapshot(cx) != expected
                                 || !this.can_edit_document()
                             {
                                 *error.borrow_mut() =
@@ -185,11 +186,16 @@ impl Notes {
                             }
                             match result {
                                 Ok(text) => {
-                                    this.editor.update(cx, |editor, cx| {
-                                        editor.select_source_range(range.clone(), window, cx);
-                                        editor.replace_selection_isolated(&text, window, cx);
-                                    });
-                                    true
+                                    if this.editor.replace_range_if_current(
+                                        range.clone(), &expected, &text, window, cx,
+                                    ) {
+                                        true
+                                    } else {
+                                        *error.borrow_mut() =
+                                            "The document changed. Close this dialog and try again.".into();
+                                        cx.notify();
+                                        false
+                                    }
                                 }
                                 Err(message) => {
                                     *error.borrow_mut() = message;

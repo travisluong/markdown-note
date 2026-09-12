@@ -103,7 +103,7 @@ impl Notes {
         if !self.can_drop_images() || window.has_active_dialog(cx) {
             return;
         }
-        let Some(offset) = self.editor.read(cx).drop_offset(window.mouse_position()) else {
+        let Some(offset) = self.editor.drop_offset(window.mouse_position(), cx) else {
             return;
         };
         let root = self.notebooks.active.as_ref().unwrap().root.clone();
@@ -111,7 +111,7 @@ impl Notes {
         let expected_note = note.clone();
         let identity = self.document_id();
         let revision = self.dirty_revision;
-        let snapshot = self.editor.read(cx).snapshot();
+        let snapshot = self.editor.snapshot(cx);
         let worker_snapshot = snapshot.clone();
         cx.spawn_in(window, async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
@@ -132,11 +132,7 @@ impl Notes {
                             cx.notify();
                             return;
                         }
-                        let inserted = this.editor.update(cx, |editor, cx| {
-                            let inserted = editor.insert_at_snapshot(offset, &snapshot, &text, window, cx);
-                            if inserted { editor.focus(window, cx); }
-                            inserted
-                        });
+                        let inserted = this.editor.insert_at_snapshot(offset, &snapshot, &text, window, cx);
                         if inserted {
                             imported.commit();
                             this.notebooks.notice = None;

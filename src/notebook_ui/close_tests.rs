@@ -30,7 +30,7 @@ fn clean_close_blocks_input_and_includes_preferences_changed_while_waiting(
         notes.update(cx, |this, cx| {
             assert!(this.is_busy());
             assert!(!this.dirty(cx));
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 // Exercise ordinary input, including its rendered disabled check.
                 editor.replace_text_in_range(Some(10..10), "unexpected", window, cx);
             });
@@ -38,7 +38,7 @@ fn clean_close_blocks_input_and_includes_preferences_changed_while_waiting(
         });
     });
     cx.run_until_parked();
-    let text_during_close = cx.update(|_, cx| notes.read(cx).editor.read(cx).value().to_string());
+    let text_during_close = cx.update(|_, cx| notes.read(cx).editor.text(cx).to_string());
     cx.executor().advance_clock(Duration::from_secs(10));
     cx.run_until_parked();
     assert!(cx.windows().is_empty());
@@ -96,7 +96,7 @@ fn cancelling_preferences_failure_after_discard_retains_and_autosaves_the_note(
                 window,
                 cx,
             );
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated("retained A", window, cx);
             });
@@ -116,7 +116,7 @@ fn cancelling_preferences_failure_after_discard_retains_and_autosaves_the_note(
         assert!(!notes.is_busy());
         assert!(notes.dirty(cx));
         assert!(notes.saves.timer.is_some());
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "retained A");
+        assert_eq!(notes.editor.text(cx).as_ref(), "retained A");
     });
     cx.executor().advance_clock(Duration::from_millis(150));
     cx.run_until_parked();

@@ -177,6 +177,7 @@ fn valid_delay_input_reschedules_the_actual_document_autosave(cx: &mut TestAppCo
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             this.editor
+                .diagnostic_input()
                 .update(cx, |input, cx| input.set_value("edited", window, cx));
         })
     });

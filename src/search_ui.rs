@@ -21,15 +21,14 @@ impl Notes {
         if self.mode == ViewMode::Reading {
             self.open_reading_search(window, cx);
         } else {
-            self.editor
-                .update(cx, |editor, cx| editor.open_search(window, cx));
+            self.editor.find(window, cx);
         }
     }
 
     fn search_overlay(&self, cx: &App) -> Option<Overlay> {
         self.document().map(|document| Overlay {
             path: document.path.clone(),
-            source: self.editor.read(cx).snapshot(),
+            source: self.editor.snapshot(cx),
         })
     }
 
@@ -86,8 +85,7 @@ impl Notes {
                             }
                         }
                         SearchIntent::FocusEditor => {
-                            this.editor
-                                .update(cx, |editor, cx| editor.focus(window, cx));
+                            this.editor.focus(window, cx);
                         }
                     }
                 },
@@ -149,7 +147,7 @@ impl Notes {
         {
             return;
         }
-        let text = self.editor.read(cx).value();
+        let text = self.editor.text(cx);
         let Some(range) = search::revalidate(&text, &destination) else {
             self.notebooks.notice = Some("The search match no longer exists in this file.".into());
             cx.notify();
@@ -165,9 +163,7 @@ impl Notes {
             );
             return;
         }
-        self.editor.update(cx, |editor, cx| {
-            editor.select_source_range(range, window, cx);
-        });
+        self.editor.select(range, window, cx);
         cx.notify();
     }
 

@@ -19,7 +19,7 @@ fn removing_inactive_notebook_keeps_dirty_document_and_its_autosave(cx: &mut Tes
                 window,
                 cx,
             );
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated("retained A", window, cx);
             });
@@ -39,7 +39,7 @@ fn removing_inactive_notebook_keeps_dirty_document_and_its_autosave(cx: &mut Tes
             assert!(this.session.write().is_none());
             assert!(!this.is_busy());
             assert!(this.dirty(cx));
-            assert_eq!(this.editor.read(cx).value().as_ref(), "retained A");
+            assert_eq!(this.editor.text(cx).as_ref(), "retained A");
         })
     });
     cx.run_until_parked();

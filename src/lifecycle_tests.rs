@@ -38,7 +38,7 @@ fn fixture<'a>(
 fn edit(notes: &Entity<Notes>, text: &str, cx: &mut VisualTestContext) {
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated(text, window, cx);
             });
@@ -267,7 +267,7 @@ fn queued_manual_save_writes_the_newest_snapshot(cx: &mut TestAppContext) {
         notes.update(cx, |this, cx| {
             this.saves.timer = None;
             this.start_write(None, window, cx);
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated("newest snapshot", window, cx);
             });
@@ -317,7 +317,7 @@ fn queued_navigation_releases_its_wait_owner_before_loading(cx: &mut TestAppCont
             state.document().unwrap().path,
             fs::canonicalize(target).unwrap()
         );
-        assert_eq!(state.editor.read(cx).value().as_ref(), "target document");
+        assert_eq!(state.editor.text(cx).as_ref(), "target document");
         assert!(!state.is_busy());
         assert!(state.session.foreground().is_none());
     });
@@ -455,7 +455,7 @@ fn disk_conflict_retains_text_and_pauses_autosave_until_explicit_save(cx: &mut T
         assert!(notes.saves.error.is_some());
         assert!(notes.dirty(cx));
         assert_eq!(notes.document().unwrap().saved, "original");
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "retained edit");
+        assert_eq!(notes.editor.text(cx).as_ref(), "retained edit");
     });
     // Restoring the matching disk bytes does not silently resume a paused save.
     fs::write(&path, "original").unwrap();
@@ -490,7 +490,7 @@ fn manual_save_checks_disk_version_even_when_editor_is_clean(cx: &mut TestAppCon
         let notes = notes.read(cx);
         assert!(notes.session.save_conflicted());
         assert!(!notes.dirty(cx));
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "original");
+        assert_eq!(notes.editor.text(cx).as_ref(), "original");
     });
 }
 
@@ -594,7 +594,7 @@ fn move_retains_unsaved_history_and_revalidates_the_saved_file_version(cx: &mut 
             assert_eq!(this.document_id(), identity);
             assert_eq!(this.document().unwrap().path, moved);
             assert!(this.dirty(cx));
-            assert_eq!(this.editor.read(cx).value().as_ref(), "retained edit");
+            assert_eq!(this.editor.text(cx).as_ref(), "retained edit");
             this.save(Next::Nothing, window, cx);
         })
     });
@@ -605,7 +605,7 @@ fn move_retains_unsaved_history_and_revalidates_the_saved_file_version(cx: &mut 
     cx.run_until_parked();
     cx.update(|_, cx| {
         let notes = notes.read(cx);
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "original");
+        assert_eq!(notes.editor.text(cx).as_ref(), "original");
         assert!(notes.dirty(cx));
         assert_eq!(notes.document_id(), identity);
         assert!(!notes.session.save_conflicted());

@@ -65,7 +65,7 @@ fn filtered_command_rechecks_capability_and_keeps_one_undo_step(cx: &mut TestApp
                 this.palette.is_some(),
                 "a now-unavailable command stays in the palette"
             );
-            assert_eq!(this.editor.read(cx).value().as_ref(), "original");
+            assert_eq!(this.editor.text(cx).as_ref(), "original");
             assert!(!this.dirty(cx));
             this.set_mode(ViewMode::Source, window, cx);
         })
@@ -78,18 +78,18 @@ fn filtered_command_rechecks_capability_and_keeps_one_undo_step(cx: &mut TestApp
         let this = notes.read(cx);
         assert!(this.palette.is_none());
         assert!(this.dirty(cx));
-        this.editor.read(cx).value().to_string()
+        this.editor.text(cx).to_string()
     });
     assert_ne!(changed, "original");
     cx.dispatch_action(Undo);
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert_eq!(notes.read(cx).editor.read(cx).value().as_ref(), "original");
+        assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "original");
         assert!(!notes.read(cx).dirty(cx));
     });
     cx.dispatch_action(Redo);
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.read(cx).value().as_ref(), changed));
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), changed));
 }
 
 #[gpui::test]

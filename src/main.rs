@@ -34,6 +34,7 @@ use gpui_component::{
     menu::PopupMenu,
     text::TextView,
 };
+use gpui_note::editor::{Editor, Event as EditorEvent};
 use gpui_note::{ViewMode, document, notebook, search, templates};
 
 actions!(
@@ -127,7 +128,7 @@ struct Notes {
     search_subscription: Option<Subscription>,
     search_destination: Option<search::Destination>,
     session: Session<Document, PathBuf, Next>,
-    editor: Entity<InputState>,
+    editor: Editor,
     editor_subscription: Subscription,
     mode: ViewMode,
     reading_text: SharedString,
@@ -146,11 +147,7 @@ struct Notes {
 
 impl Notes {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let editor = cx.new(|cx| {
-            InputState::new(window, cx)
-                .multi_line(true)
-                .searchable(true)
-        });
+        let editor = Editor::new(SharedString::default(), window, cx);
         let editor_subscription = Self::subscribe_editor(&editor, window, cx);
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
@@ -202,16 +199,10 @@ impl Notes {
         }
     }
 
-    fn subscribe_editor(
-        editor: &Entity<InputState>,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> Subscription {
-        cx.subscribe_in(editor, window, |this, _, event, window, cx| {
-            if let InputEvent::OpenLink { destination } = event {
-                this.open_link(destination, window, cx);
-            }
-            if matches!(event, InputEvent::Change) {
+    fn subscribe_editor(editor: &Editor, window: &Window, cx: &mut Context<Self>) -> Subscription {
+        editor.subscribe(window, cx, |this, event, window, cx| match event {
+            EditorEvent::OpenLink(destination) => this.open_link(destination, window, cx),
+            EditorEvent::Changed => {
                 this.check_dirty(window, cx);
                 if let Some(document) = this.document_id() {
                     let effects = this.session.edit_notice(document);
@@ -219,7 +210,7 @@ impl Notes {
                 }
                 this.schedule_search(window, cx);
                 if this.mode == ViewMode::Reading {
-                    this.reading_text = this.editor.read(cx).value();
+                    this.reading_text = this.editor.text(cx);
                     this.update_reading_search(cx);
                 }
             }
@@ -228,7 +219,7 @@ impl Notes {
 
     fn dirty(&self, cx: &App) -> bool {
         self.document()
-            .is_some_and(|d| d.saved_rope != self.editor.read(cx).snapshot())
+            .is_some_and(|d| d.saved_rope != self.editor.snapshot(cx))
     }
 
     fn check_dirty(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -236,7 +227,7 @@ impl Notes {
             return;
         };
         let saved = document.saved_rope.clone();
-        let current = self.editor.read(cx).snapshot();
+        let current = self.editor.snapshot(cx);
         self.dirty_revision += 1;
         let revision = self.dirty_revision;
         self.dirty_cached = true;
@@ -299,7 +290,7 @@ impl Notes {
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
         self.record_activation_preference(notebook_ui::PreferenceIntent::ViewMode(mode));
         self.reading_text = if mode == ViewMode::Reading {
-            self.editor.read(cx).value()
+            self.editor.text(cx)
         } else {
             SharedString::default()
         };
@@ -313,12 +304,9 @@ impl Notes {
             book.settings.view_mode = mode;
             self.persist_notebooks(cx);
         }
-        self.editor.update(cx, |editor, cx| {
-            editor.set_live_preview(mode == ViewMode::LivePreview, cx)
-        });
+        self.editor.set_mode(mode, cx);
         if mode != ViewMode::Reading && self.document().is_some() {
-            self.editor
-                .update(cx, |editor, cx| editor.focus(window, cx));
+            self.editor.focus(window, cx);
         } else {
             self.focus.focus(window);
         }
@@ -390,14 +378,14 @@ impl Render for Notes {
                         if this.can_edit_document()
                             && this.editor.focus_handle(cx).is_focused(window)
                         {
-                            this.editor
-                                .update(cx, |editor, cx| editor.toggle_selected_tasks(window, cx));
+                            this.editor.toggle_selected_tasks(window, cx);
                         }
                     }))
                     .size_full()
                     .font_family(self.content_font(cx))
                     .child(
-                        Input::new(&self.editor)
+                        self.editor
+                            .widget()
                             .h_full()
                             .appearance(false)
                             .text_size(content_size)
@@ -424,7 +412,7 @@ impl Render for Notes {
                     })
                     .child(
                         TextView::markdown(
-                            ("reading", self.editor.entity_id().as_u64() as usize),
+                            ("reading", self.editor.id().as_u64() as usize),
                             self.reading_text.clone(),
                             window,
                             cx,
@@ -441,7 +429,7 @@ impl Render for Notes {
                             move |destination, source, window, cx| {
                                 let _ = owner.update(cx, |this, cx| {
                                     if this.document_id() == identity
-                                        && this.editor.read(cx).value().as_ref() == source
+                                        && this.editor.text(cx).as_ref() == source
                                     {
                                         this.open_link(destination, window, cx);
                                     }
@@ -459,9 +447,7 @@ impl Render for Notes {
                                     {
                                         return;
                                     }
-                                    this.editor.update(cx, |editor, cx| {
-                                        editor.toggle_markdown_task(offset, source, window, cx);
-                                    });
+                                    this.editor.toggle_task(offset, source, window, cx);
                                 });
                             }
                         })

@@ -97,7 +97,7 @@ fn retarget_pending_tree_open(cx: &mut TestAppContext, target: Retarget) {
                     this.tree_move(true, window, cx);
                 }
             }
-            assert_eq!(this.editor.read(cx).value().as_ref(), "A");
+            assert_eq!(this.editor.text(cx).as_ref(), "A");
             assert_eq!(this.document_id(), identity);
             identity
         })
@@ -113,14 +113,14 @@ fn retarget_pending_tree_open(cx: &mut TestAppContext, target: Retarget) {
         match target {
             Retarget::NextNote => {
                 assert_eq!(this.document().unwrap().path.file_name().unwrap(), "c.md");
-                assert_eq!(this.editor.read(cx).value().as_ref(), "C");
+                assert_eq!(this.editor.text(cx).as_ref(), "C");
                 assert!(this.image_path().is_none());
                 // A new content identity belongs to the final installed target.
                 assert_ne!(this.session.content().identity(), original_identity);
             }
             Retarget::Folder | Retarget::CurrentNote => {
                 assert_eq!(this.document().unwrap().path.file_name().unwrap(), "a.md");
-                assert_eq!(this.editor.read(cx).value().as_ref(), "A");
+                assert_eq!(this.editor.text(cx).as_ref(), "A");
                 assert!(this.image_path().is_none());
                 assert_eq!(this.document_id(), original_identity);
             }

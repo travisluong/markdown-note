@@ -891,16 +891,11 @@ impl Notes {
             .map(|document| document.saved.clone())
             .unwrap_or_default();
         // Installation creates new history; changing view mode retains this editor.
-        let editor = cx.new(|cx| {
-            InputState::new(window, cx)
-                .multi_line(true)
-                .searchable(true)
-                .default_value(text)
-        });
+        let editor = Editor::new(text, window, cx);
         self.editor_subscription = Self::subscribe_editor(&editor, window, cx);
         self.editor = editor;
         self.reading_text = if self.mode == ViewMode::Reading {
-            self.editor.read(cx).value()
+            self.editor.text(cx)
         } else {
             SharedString::default()
         };
@@ -908,13 +903,10 @@ impl Notes {
         self.dirty_revision += 1;
         self.dirty_cached = false;
         let image_document = self.document().map(|document| document.path.clone());
-        self.editor.update(cx, |editor, cx| {
-            editor.set_image_document(image_document, cx);
-            editor.set_live_preview(self.mode == ViewMode::LivePreview, cx);
-        });
+        self.editor.set_document_path(image_document, cx);
+        self.editor.set_mode(self.mode, cx);
         if self.mode != ViewMode::Reading && self.document().is_some() {
-            self.editor
-                .update(cx, |editor, cx| editor.focus(window, cx));
+            self.editor.focus(window, cx);
         } else {
             self.focus.focus(window);
         }
@@ -1799,9 +1791,7 @@ impl Notes {
                                 this.record_save_error(error);
                             }
                             let image_document = this.document().map(|doc| doc.path.clone());
-                            this.editor.update(cx, |editor, cx| {
-                                editor.set_image_document(image_document, cx)
-                            });
+                            this.editor.set_document_path(image_document, cx);
                             if let Some(book) = &mut this.notebooks.active
                                 && book.root == root
                             {

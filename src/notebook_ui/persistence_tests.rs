@@ -136,7 +136,7 @@ fn activation_waits_for_the_target_book_latest_settings(cx: &mut TestAppContext)
         let notes = notes.read(cx);
         assert!(notes.is_busy());
         assert_eq!(notes.notebooks.active.as_ref().unwrap().root, fixture.root);
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "original A");
+        assert_eq!(notes.editor.text(cx).as_ref(), "original A");
     });
     cx.executor().advance_clock(Duration::from_secs(10));
     cx.run_until_parked();
@@ -147,7 +147,7 @@ fn activation_waits_for_the_target_book_latest_settings(cx: &mut TestAppContext)
         assert_eq!(active.root, fixture.other);
         assert_eq!(active.settings.date_format, "MMMM Do, YYYY");
         assert_eq!(notes.mode, ViewMode::Reading);
-        assert_eq!(notes.editor.read(cx).value().as_ref(), "original B");
+        assert_eq!(notes.editor.text(cx).as_ref(), "original B");
     });
     assert_eq!(
         notebook::load_index(&fixture.index).unwrap().active,

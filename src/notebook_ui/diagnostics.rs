@@ -68,19 +68,19 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     }
                     6 => {
                         assert!(this.mode == ViewMode::LivePreview);
-                        assert_eq!(this.editor.read(cx).value().as_str(), "# Nested");
+                        assert_eq!(this.editor.text(cx).as_str(), "# Nested");
                         this.set_mode(ViewMode::LivePreview, window, cx);
                         this.request(Next::File(first.join("root.md")), window, cx);
                     }
                     7 => {
                         assert!(this.mode == ViewMode::LivePreview);
-                        assert_eq!(this.editor.read(cx).value().as_str(), "# Root");
+                        assert_eq!(this.editor.text(cx).as_str(), "# Root");
                         this.set_mode(ViewMode::Reading, window, cx);
                         this.request(Next::File(first.join("folder/nested.md")), window, cx);
                     }
                     8 => {
                         assert_eq!(this.reading_text.as_str(), "# Nested");
-                        this.editor.update(cx, |editor, cx| editor.set_value("# Saved", window, cx));
+                        this.editor.diagnostic_input().update(cx, |editor, cx| editor.set_value("# Saved", window, cx));
                         assert!(this.dirty(cx));
                         // Exercise the same response handler as the native save prompt.
                         this.diagnostic_answer_request(None, Next::File(first.join("root.md")), window, cx);
@@ -91,7 +91,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     9 => {
                         assert_eq!(fs::read_to_string(first.join("folder/nested.md")).unwrap(), "# Saved");
                         assert_eq!(this.reading_text.as_str(), "# Root");
-                        this.editor.update(cx, |editor, cx| editor.set_value("discard me", window, cx));
+                        this.editor.diagnostic_input().update(cx, |editor, cx| editor.set_value("discard me", window, cx));
                         this.diagnostic_answer_request(Some(1), Next::Notebook { path: second.clone(), create: false }, window, cx);
                     }
                     10 => {
@@ -134,7 +134,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     }
                     15 => {
                         assert!(this.mode == ViewMode::Source);
-                        assert_eq!(this.editor.read(cx).value().as_str(), "# Saved");
+                        assert_eq!(this.editor.text(cx).as_str(), "# Saved");
                         assert!(this.notebooks.tree_focus.is_focused(window));
                         this.set_mode(ViewMode::LivePreview, window, cx);
                         this.notebooks.tree_focus.focus(window);
@@ -144,7 +144,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     }
                     16 => {
                         assert!(this.mode == ViewMode::LivePreview);
-                        assert_eq!(this.editor.read(cx).value().as_str(), "# Root");
+                        assert_eq!(this.editor.text(cx).as_str(), "# Root");
                         assert!(this.notebooks.tree_focus.is_focused(window));
                         this.set_mode(ViewMode::Reading, window, cx);
                         this.notebooks.tree_focus.focus(window);
@@ -166,7 +166,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     18 => {
                         assert_eq!(this.reading_text.as_str(), "# Saved");
                         assert!(this.notebooks.tree_focus.is_focused(window));
-                        this.editor.update(cx, |editor, cx| editor.set_value("unsaved", window, cx));
+                        this.editor.diagnostic_input().update(cx, |editor, cx| editor.set_value("unsaved", window, cx));
                         this.diagnostic_answer_request(None, Next::TreeFile(first.join("root.md")), window, cx);
                         assert!(this.dirty(cx));
                         assert_eq!(this.notebooks.explorer.rows()[this.notebooks.explorer.cursor().unwrap()].label, "nested.md");
@@ -218,7 +218,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.remove_notebook(second_path, window, cx);
                         assert!(second.is_dir());
                         assert_eq!(this.notebooks.index.notebooks.len(), 1);
-                        this.editor.update(cx, |editor, cx| editor.set_value("unsaved removal", window, cx));
+                        this.editor.diagnostic_input().update(cx, |editor, cx| editor.set_value("unsaved removal", window, cx));
                         this.diagnostic_answer_request(None, Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx);
                         assert!(this.notebooks.active.is_some());
                         assert!(this.dirty(cx));

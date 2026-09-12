@@ -36,7 +36,7 @@ fn fixture<'a>(
 fn edit(notes: &Entity<Notes>, text: &str, cx: &mut VisualTestContext) {
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.editor.update(cx, |editor, cx| {
+            this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated(text, window, cx);
             });
