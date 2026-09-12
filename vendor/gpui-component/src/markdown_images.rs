@@ -3,12 +3,25 @@ use markdown::{ParseOptions, mdast::Node};
 use std::{collections::BTreeMap, path::Path};
 
 pub fn paragraphs(source: &str) -> BTreeMap<usize, String> {
-    let mut images = BTreeMap::new();
-    if !source.contains("![") {
-        return images;
+    if !requires_parse(source) {
+        return BTreeMap::new();
     }
-    if let Ok(Node::Root(root)) = markdown::to_mdast(source, &ParseOptions::gfm()) {
-        for child in root.children {
+    markdown::to_mdast(source, &ParseOptions::gfm())
+        .map(|root| paragraphs_from_ast(&root))
+        .unwrap_or_default()
+}
+
+#[doc(hidden)]
+pub fn requires_parse(source: &str) -> bool {
+    source.contains("![")
+}
+
+/// Recognize standalone images while borrowing the worker's GFM tree.
+#[doc(hidden)]
+pub fn paragraphs_from_ast(root: &Node) -> BTreeMap<usize, String> {
+    let mut images = BTreeMap::new();
+    if let Node::Root(root) = root {
+        for child in &root.children {
             if let Node::Paragraph(p) = child {
                 if p.children.len() == 1 {
                     if let Node::Image(image) = &p.children[0] {

@@ -185,6 +185,12 @@ snapshot, starts without an idle timer, and never cancels the running parse on
 another keypress. Safe edits translate snapshot link ranges; context changes,
 document replacement, mode changes, and exhausted edit logs reject stale results.
 GFM parsing and full-document string conversion run on the background executor.
+Each queued mixed request now builds at most one GFM tree and lends it to link,
+table, fenced-code and image visitors. Each visitor retains its own candidate
+guard and standalone entry point; plain requests build no GFM tree. The tree
+is dropped on the worker after producing the existing indexes, so no AST cache
+is retained across edits. `diagnostic_preview_parse_work` counts actual GFM
+calls and input bytes separately from the existing table/index counters.
 Line measurement and cursor reveal cannot invoke document parsers. Presentation
 invalidations are revision-based and measured lazily in the existing viewport
 plus overscan, preserving the scroll anchor and unchanged shaped rows.

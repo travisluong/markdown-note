@@ -30,3 +30,21 @@ fn find_and_replace_literal_unicode_and_match_navigation() {
 
 #[path = "../vendor/gpui-component/src/input/fenced_code.rs"]
 mod fenced_code;
+
+#[cfg(feature = "editor-diagnostics")]
+#[test]
+fn production_preview_parser_counts_gfm_work_once() {
+    use gpui_component::input::{PreviewParseWork, diagnostic_preview_parse_work};
+    assert_eq!(
+        diagnostic_preview_parse_work("plain café 你好\r\ntext"),
+        PreviewParseWork::default()
+    );
+    let mixed = "[café](note.md)\r\n\r\n| a | b |\r\n| - | - |\r\n| c | d |\r\n\r\n![image](image.png)\r\n\r\n```json\r\n{}\r\n```\r\n";
+    assert_eq!(
+        diagnostic_preview_parse_work(mixed),
+        PreviewParseWork {
+            gfm_calls: 1,
+            gfm_bytes: mixed.len()
+        }
+    );
+}

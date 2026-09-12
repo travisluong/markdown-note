@@ -1,6 +1,6 @@
 //! Background fenced-code classification and bounded snapshot-based lookup.
 use crate::highlighter::code::{CodeTokens, code_lines, language};
-use markdown::{ParseOptions, mdast::Node};
+use markdown::mdast::Node;
 use std::{
     collections::{BTreeMap, HashMap},
     ops::Range,
@@ -60,10 +60,23 @@ pub(super) struct Snapshot {
 }
 
 impl Snapshot {
+    pub fn requires_parse(source: &str) -> bool {
+        source.contains("```") || source.contains("~~~")
+    }
+
+    #[cfg(test)]
     pub fn parse(source: &str, previous: &Cache) -> Self {
-        if !source.contains("```") && !source.contains("~~~") {
+        if !Self::requires_parse(source) {
             return Self::default();
         }
+        let Ok(root) = markdown::to_mdast(source, &markdown::ParseOptions::gfm()) else {
+            return Self::default();
+        };
+        Self::from_ast(source, previous, &root)
+    }
+
+    /// Classify fences and reuse tokens while borrowing the worker's GFM tree.
+    pub fn from_ast(source: &str, previous: &Cache, root: &Node) -> Self {
         fn visit(
             node: &Node,
             source: &str,
@@ -171,9 +184,7 @@ impl Snapshot {
         }
         let mut result = Self::default();
         let mut cache = Cache::new();
-        if let Ok(root) = markdown::to_mdast(source, &ParseOptions::gfm()) {
-            visit(&root, source, previous, &mut result, &mut cache);
-        }
+        visit(root, source, previous, &mut result, &mut cache);
         result.cache = Arc::new(cache);
         result
     }

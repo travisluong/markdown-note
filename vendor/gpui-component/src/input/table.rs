@@ -91,15 +91,22 @@ pub fn cells(line: &str, base: usize) -> Vec<Range<usize>> {
 
 fn parse(text: &str, base: usize) -> (Vec<Range<usize>>, Vec<Table>) {
     // GFM requires at least one pipe in a table header. Avoid parsing plain documents.
-    if !text.contains('|') {
+    if !TableIndex::requires_parse(text) {
         return Default::default();
     }
-    let Ok(Node::Root(root)) = markdown::to_mdast(text, &ParseOptions::gfm()) else {
+    let Ok(root) = markdown::to_mdast(text, &ParseOptions::gfm()) else {
+        return Default::default();
+    };
+    parse_from_ast(text, base, &root)
+}
+
+fn parse_from_ast(text: &str, base: usize, node: &Node) -> (Vec<Range<usize>>, Vec<Table>) {
+    let Node::Root(root) = node else {
         return Default::default();
     };
     let mut blocks = vec![];
     let mut tables = vec![];
-    for node in root.children {
+    for node in &root.children {
         let Some(p) = node.position() else { continue };
         let range = p.start.offset..p.end.offset;
         blocks.push(base + range.start..base + range.end);
@@ -643,7 +650,23 @@ impl TableIndex {
     }
     pub fn rebuild_source(&mut self, source: &str) {
         (self.blocks, self.tables) = parse(&source, 0);
-        self.parsed_bytes += source.len() as u64;
+        self.finish_rebuild(source.len());
+    }
+    #[doc(hidden)]
+    pub fn requires_parse(source: &str) -> bool {
+        source.contains('|')
+    }
+    /// Borrow the GFM tree for this source; `None` means parsing was skipped or failed.
+    #[doc(hidden)]
+    pub fn rebuild_from_ast(&mut self, source: &str, root: Option<&Node>) {
+        (self.blocks, self.tables) = root
+            .filter(|_| Self::requires_parse(source))
+            .map(|root| parse_from_ast(source, 0, root))
+            .unwrap_or_default();
+        self.finish_rebuild(source.len());
+    }
+    fn finish_rebuild(&mut self, source_len: usize) {
+        self.parsed_bytes += source_len as u64;
         self.revision += 1;
         self.initialized = true;
     }

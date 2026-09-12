@@ -92,17 +92,24 @@ fn parse_document(source: &str) -> LinkIndex {
     parse_document_inner(source, true)
 }
 
+pub(super) fn requires_parse(source: &str) -> bool {
+    source
+        .bytes()
+        .any(|b| matches!(b, b'[' | b'<' | b':' | b'@'))
+}
+
 fn parse_document_inner(source: &str, allow_skip: bool) -> LinkIndex {
-    if allow_skip
-        && !source
-            .bytes()
-            .any(|b| matches!(b, b'[' | b'<' | b':' | b'@'))
-    {
+    if allow_skip && !requires_parse(source) {
         return LinkIndex::default();
     }
     let Ok(root) = markdown::to_mdast(source, &ParseOptions::gfm()) else {
         return LinkIndex::default();
     };
+    from_ast(source, &root)
+}
+
+/// Build source indexes from a GFM tree parsed from this exact source.
+pub(super) fn from_ast(source: &str, root: &Node) -> LinkIndex {
     fn definitions(node: &Node, refs: &mut HashMap<String, (String, Option<String>)>) {
         if let Node::Definition(d) = node {
             refs.entry(d.identifier.clone())
@@ -148,9 +155,9 @@ fn parse_document_inner(source: &str, allow_skip: bool) -> LinkIndex {
         }
     }
     let mut refs = HashMap::new();
-    definitions(&root, &mut refs);
+    definitions(root, &mut refs);
     let mut links = Vec::new();
-    visit(&root, &refs, &mut links);
+    visit(root, &refs, &mut links);
     let paragraphs = root
         .children()
         .into_iter()
@@ -183,7 +190,7 @@ fn parse_document_inner(source: &str, allow_skip: bool) -> LinkIndex {
             .all(|node| matches!(node, Node::Definition(_)) || !nested_definition(node))
     });
     let mut definitions = String::new();
-    definition_source(&root, source, &mut definitions);
+    definition_source(root, source, &mut definitions);
     LinkIndex {
         links,
         paragraphs,

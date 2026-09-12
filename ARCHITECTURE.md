@@ -114,6 +114,10 @@ Additional contracts to preserve:
 - Live-preview parsing maintains one running job and one latest pending
   snapshot. Safe offset edits can rebase some results; context-changing edits
   invalidate them. Fenced-code tokens require their stricter revision checks.
+  A queued mixed request converts its rope once and builds at most one GFM
+  tree, borrowed by link/table/code/image visitors and dropped on the worker.
+  Independent guards preserve plain-text fast paths. Standalone and incremental
+  parsers remain available; no persistent AST cache replaces the existing indexes.
 - Preserve BOM and newline conventions; mixed endings normalize to the first
   observed convention. Failed replacement must leave the original file intact.
 - Notebook-relative paths pass through the notebook path helpers. Preserve

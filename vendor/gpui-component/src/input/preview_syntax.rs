@@ -29,23 +29,74 @@ pub(super) struct Parsed {
     pub links: Vec<MarkdownLink>,
     pub tables: TableIndex,
 }
+/// Actual full-document GFM work for one request, separate from index byte accounting.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PreviewParseWork {
+    pub gfm_calls: usize,
+    pub gfm_bytes: usize,
+}
+
 impl Request {
     pub fn parse(self) -> Parsed {
-        let source = self.text.to_string();
-        let links = super::markdown_links::parse(&source);
-        let mut tables = TableIndex::default();
-        tables.rebuild_source(&source);
-        Parsed {
-            code: Arc::new(super::fenced_code::Snapshot::parse(
-                &source,
-                &self.code_cache,
-            )),
-            images: crate::markdown_images::paragraphs(&source),
-            revision: self.revision,
-            links,
-            tables,
-        }
+        self.parse_with_work().0
     }
+
+    fn parse_with_work(self) -> (Parsed, PreviewParseWork) {
+        let source = self.text.to_string();
+        let links_needed = super::markdown_links::requires_parse(&source);
+        let tables_needed = TableIndex::requires_parse(&source);
+        let code_needed = super::fenced_code::Snapshot::requires_parse(&source);
+        let images_needed = crate::markdown_images::requires_parse(&source);
+        let mut work = PreviewParseWork::default();
+        let root = if links_needed || tables_needed || code_needed || images_needed {
+            work.gfm_calls += 1;
+            work.gfm_bytes += source.len();
+            markdown::to_mdast(&source, &markdown::ParseOptions::gfm()).ok()
+        } else {
+            None
+        };
+        let links = root
+            .as_ref()
+            .filter(|_| links_needed)
+            .map(|root| super::markdown_links::from_ast(&source, root).links)
+            .unwrap_or_default();
+        let code = root
+            .as_ref()
+            .filter(|_| code_needed)
+            .map(|root| super::fenced_code::Snapshot::from_ast(&source, &self.code_cache, root))
+            .unwrap_or_default();
+        let images = root
+            .as_ref()
+            .filter(|_| images_needed)
+            .map(crate::markdown_images::paragraphs_from_ast)
+            .unwrap_or_default();
+        let mut tables = TableIndex::default();
+        tables.rebuild_from_ast(&source, root.as_ref());
+        // The tree stays on this worker and is dropped before returning derived indexes.
+        (
+            Parsed {
+                code: Arc::new(code),
+                images,
+                revision: self.revision,
+                links,
+                tables,
+            },
+            work,
+        )
+    }
+}
+
+/// Exercise the production request parser without starting a native editor or window.
+#[cfg(feature = "editor-diagnostics")]
+#[doc(hidden)]
+pub fn diagnostic_preview_parse_work(source: &str) -> PreviewParseWork {
+    Request {
+        code_cache: Arc::default(),
+        revision: 0,
+        text: Rope::from(source),
+    }
+    .parse_with_work()
+    .1
 }
 
 #[derive(Default)]
@@ -376,5 +427,173 @@ mod code_queue_tests {
         queue.reset();
         assert!(queue.code_cache.is_empty());
         assert!(!queue.finish(next.revision));
+    }
+}
+
+#[cfg(test)]
+mod shared_analysis_tests {
+    use super::*;
+    use crate::input::RopeExt;
+
+    const MIXED: &str = "# café\n\n[**你好**][id] and <https://example.org>.\n\n[id]: notes/café.md \"Title\"\n\n| left | right |\n| :--- | ---: |\n| [cell][id] | `a\\|b` |\n\n![café](images/café.png)\n\n> ```json\n> {\"label\": \"你好\"}\n> ```\n\n```rust\nfn main() {}\n```\n";
+
+    fn request(source: &str, cache: Arc<super::super::fenced_code::Cache>) -> Request {
+        Request {
+            code_cache: cache,
+            revision: 42,
+            text: Rope::from(source),
+        }
+    }
+
+    fn assert_tables(actual: &TableIndex, expected: &TableIndex) {
+        assert_eq!(actual.tables.len(), expected.tables.len());
+        for (actual, expected) in actual.tables.iter().zip(&expected.tables) {
+            assert_eq!(actual.source, expected.source);
+            assert_eq!(actual.separator, expected.separator);
+            assert_eq!(actual.alignments, expected.alignments);
+            assert_eq!(actual.column_characters, expected.column_characters);
+            assert_eq!(actual.cache_key(), expected.cache_key());
+            assert_eq!(actual.rows.len(), expected.rows.len());
+            for (row, (actual_row, expected_row)) in
+                actual.rows.iter().zip(expected.rows.iter()).enumerate()
+            {
+                assert_eq!(actual.row_range(row), expected.row_range(row));
+                assert_eq!(actual_row.present_cells, expected_row.present_cells);
+                assert_eq!(actual_row.cells.len(), expected_row.cells.len());
+                for column in 0..actual_row.cells.len() {
+                    assert_eq!(
+                        actual.cell_range(row, column),
+                        expected.cell_range(row, column)
+                    );
+                }
+            }
+        }
+    }
+
+    fn assert_code(
+        actual: &super::super::fenced_code::Snapshot,
+        expected: &super::super::fenced_code::Snapshot,
+    ) {
+        assert_eq!(actual.blocks, expected.blocks);
+        assert_eq!(actual.details.len(), expected.details.len());
+        for (actual, expected) in actual.details.iter().zip(&expected.details) {
+            assert_eq!(actual.source, expected.source);
+            assert_eq!(actual.opening, expected.opening);
+            assert_eq!(actual.content, expected.content);
+            assert_eq!(actual.closing, expected.closing);
+            assert_eq!(actual.first, expected.first);
+            assert_eq!(actual.last, expected.last);
+        }
+        assert_eq!(actual.lines.len(), expected.lines.len());
+        for (offset, actual) in &actual.lines {
+            let expected = &expected.lines[offset];
+            assert_eq!(actual.prefix, expected.prefix);
+            assert_eq!(actual.tokens, expected.tokens);
+        }
+        assert_eq!(*actual.cache, *expected.cache);
+    }
+
+    #[test]
+    fn mixed_requests_match_standalone_indexes_and_byte_accounting() {
+        let crlf = MIXED.replace('\n', "\r\n");
+        for source in [
+            "",
+            "ordinary café 你好\r\nnext paragraph",
+            MIXED,
+            crlf.as_str(),
+            "[first][id] [ID][] [id]\n\n[id]: a.md \"first\"\n[id]: b.md\n\n> [nested][inner]\n>\n> [inner]: nested.md\n\n[outer][inner]\n\n![reference][img]\n\n[img]: image.png\n",
+            "> | a | b |\n> | - | - |\n> | [nested](a.md) | b |\n>\n> ![nested](a.png)\n\n- ```json\n  {\"key\": \"café\"}\n  ```\n",
+            "[broken]( ![broken](\n\n| a | b |\n| --- | --- |\n| short |\n| excess | cells | extra |\n\n~~~rust\nfn main() {\n[code][id]\n![code](x.png)\n",
+            "`inline ``` marker` and escaped \\[link](a.md)\n\n    indented | [code](a.md)\n\nhttps://example.org a@example.org\n",
+            "| ordinary pipe\n\ntext\n",
+            "[link](a.md)\n\nparagraph without table markers\n",
+        ] {
+            let cache = Arc::default();
+            let (actual, work) = request(source, Arc::clone(&cache)).parse_with_work();
+            let mut tables = TableIndex::default();
+            tables.rebuild_source(source);
+            assert_tables(&actual.tables, &tables);
+            assert_eq!(actual.tables.revision, tables.revision);
+            assert_eq!(actual.tables.parsed_bytes, source.len() as u64);
+            assert_eq!(
+                actual.links,
+                super::super::markdown_links::parse(source),
+                "{source:?}"
+            );
+            assert_eq!(
+                actual.images,
+                crate::markdown_images::paragraphs(source),
+                "{source:?}"
+            );
+            assert_code(
+                &actual.code,
+                &super::super::fenced_code::Snapshot::parse(source, &cache),
+            );
+            assert_eq!(actual.revision, 42);
+            let calls =
+                usize::from(!source.is_empty() && source != "ordinary café 你好\r\nnext paragraph");
+            assert_eq!(work.gfm_calls, calls, "{source:?}");
+            assert_eq!(work.gfm_bytes, calls * source.len(), "{source:?}");
+        }
+        let (mixed, work) = request(MIXED, Arc::default()).parse_with_work();
+        assert_eq!(mixed.links.len(), 3);
+        assert_eq!(mixed.links[0].destination, "notes/café.md");
+        assert_eq!(mixed.links[0].title.as_deref(), Some("Title"));
+        assert_eq!(&MIXED[mixed.links[0].label.clone()], "**你好**");
+        assert_eq!(mixed.tables.tables.len(), 1);
+        assert_eq!(mixed.images.len(), 1);
+        assert_eq!(mixed.code.blocks.len(), 2);
+        assert_eq!(
+            work,
+            PreviewParseWork {
+                gfm_calls: 1,
+                gfm_bytes: MIXED.len()
+            }
+        );
+    }
+
+    #[test]
+    fn shared_tables_keep_incremental_block_context_and_fragment_bases() {
+        let source = "intro\n\n| first | other |\n| --- | --- |\n| one | two |\n\nbetween\n\n| café | 你好 |\n| :--- | ---: |\n| three | four |\n\ntail\n";
+        let mut text = Rope::from(source);
+        let mut tables = request(source, Arc::default()).parse().tables;
+        let mut expected = TableIndex::default();
+        expected.rebuild_source(source);
+        for (needle, replacement) in [
+            (":---", "---:"),
+            ("between", "middle\n\nparagraph"),
+            ("---:", "---"),
+            ("intro", "préface\r\nintro"),
+        ] {
+            let old = text.clone();
+            let source = old.to_string();
+            let at = source.find(needle).unwrap();
+            let range = at..at + needle.len();
+            text.replace(range.clone(), replacement);
+            tables.update(&old, &text, &range, &Rope::from(replacement));
+            expected.update(&old, &text, &range, &Rope::from(replacement));
+            assert_tables(&tables, &expected);
+            let mut rebuilt = TableIndex::default();
+            rebuilt.rebuild(&text);
+            assert_eq!(
+                format!("{:?}", tables.tables),
+                format!("{:?}", rebuilt.tables)
+            );
+        }
+    }
+
+    #[test]
+    fn shared_code_reuses_unchanged_cache_entries_after_source_moves() {
+        let first = request(MIXED, Arc::default()).parse();
+        assert!(!first.code.cache.is_empty());
+        let moved = format!("préface 你好\r\n\r\n{MIXED}{MIXED}");
+        let (next, work) = request(&moved, first.code.cache.clone()).parse_with_work();
+        assert_eq!(next.code.blocks.len(), first.code.blocks.len() * 2);
+        assert_eq!(next.code.cache.len(), first.code.cache.len());
+        for (key, tokens) in first.code.cache.iter() {
+            assert!(Arc::ptr_eq(tokens, &next.code.cache[key]));
+        }
+        assert_eq!(work.gfm_calls, 1);
+        assert_eq!(work.gfm_bytes, moved.len());
     }
 }

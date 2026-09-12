@@ -1,21 +1,21 @@
-mod fenced_code;
 mod blink_cursor;
 mod change;
 mod clear_button;
 mod cursor;
 mod element;
+mod fenced_code;
 mod indent;
 mod input;
 mod live_preview;
-mod preview_syntax;
-pub mod markdown_links;
 mod lsp;
+pub mod markdown_links;
 mod mask_pattern;
 mod mode;
 mod movement;
 mod number_input;
 mod otp_input;
 pub(crate) mod popovers;
+mod preview_syntax;
 mod rope_ext;
 mod scroll;
 mod search;
@@ -41,3 +41,7 @@ pub use rope_ext::*;
 pub use ropey::Rope;
 mod line_index;
 pub use live_preview::{EditorWork, editor_work};
+
+#[cfg(feature = "editor-diagnostics")]
+#[doc(hidden)]
+pub use preview_syntax::{PreviewParseWork, diagnostic_preview_parse_work};

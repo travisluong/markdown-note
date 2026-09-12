@@ -15,7 +15,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
 | 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
-| 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Thin editor adapter, off-layout initial Reading parse, shared analysis and measured work bounds remain. |
+| 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Shared GFM analysis verified: mixed queued requests use one parse, plain requests use zero; 67 editor tests passed, preserving incremental/cache/work bounds. Thin editor adapter and off-layout initial Reading parse remain. |
 
 ## Verification rules
 
@@ -84,3 +84,14 @@ passed 25 library tests, 64 application tests, 4 public document tests and 67
 editor tests (160 total). The new count moves existing tests between targets;
 no tests were ignored. These are headless results; file conflict policy remains
 the next separate storage behavior change.
+
+## Shared Live-preview analysis
+
+A queued mixed document previously invoked up to four independent full GFM
+parsers. Its link, table, fence and image visitors now borrow one worker-local
+tree. Exact per-request diagnostics measured zero GFM calls/bytes for plain
+text and one call consuming the mixed source length. Visitor equivalence covers
+Unicode, CRLF, reference definitions, nested containers and unfinished fences;
+table incremental metadata and moved code-cache identity remain intact. All 67
+editor tests passed, including existing large-fixture and queue work bounds.
+This is a reduction in parsing work, not a measured native frame-latency result.
