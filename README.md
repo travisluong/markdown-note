@@ -64,12 +64,17 @@ remain visible. Use **Refresh** to pick up external changes; there is no file wa
 
 Each notebook stores appearance preferences and its last selected file and expanded
 folders in `.gpui-note/settings.json`; file and folder paths are notebook-relative. This internal folder is hidden from the sidebar.
-`%APPDATA%\gpui-note\notebooks.json` stores only the notebook paths and active
+The user configuration file stores only the notebook paths and active
 notebook, so the menu and active notebook can be restored on launch. Settings use
 atomic writes. Missing notebooks remain in the menu; corrupt or unsupported
 settings are reported and preserved. Manage notebooks lists notebook names and full folder paths;
 Remove forgets a notebook without deleting its folder or files. Removing the active
 notebook closes it, with Save/Discard/Cancel protection for unsaved edits.
+
+The configuration file is `%APPDATA%\gpui-note\notebooks.json` on Windows,
+`~/Library/Application Support/gpui-note/notebooks.json` on macOS, and
+`$XDG_CONFIG_HOME/gpui-note/notebooks.json` on Linux (falling back to
+`~/.config/gpui-note/notebooks.json` when XDG_CONFIG_HOME is unset or not absolute).
 
 An asterisk in the title means there are unsaved changes. Opening another file
 or switching notebooks or closing prompts to Save, Discard, or Cancel. Failed opens/saves preserve the

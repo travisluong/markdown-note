@@ -334,9 +334,69 @@ impl Index {
 }
 
 pub fn index_path() -> io::Result<PathBuf> {
-    std::env::var_os("APPDATA")
-        .map(|base| PathBuf::from(base).join("gpui-note/notebooks.json"))
-        .ok_or_else(|| io::Error::other("APPDATA is not set; notebook history cannot be stored."))
+    index_path_for(std::env::consts::OS, |key| std::env::var_os(key))
+}
+
+fn index_path_for(
+    os: &str,
+    env: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> io::Result<PathBuf> {
+    let absolute = |key| env(key).map(PathBuf::from).filter(|path| path.is_absolute());
+    let base = match os {
+        "windows" => absolute("APPDATA"),
+        "macos" => absolute("HOME").map(|home| home.join("Library/Application Support")),
+        _ => absolute("XDG_CONFIG_HOME")
+            .or_else(|| absolute("HOME").map(|home| home.join(".config"))),
+    };
+    base.map(|base| base.join("gpui-note/notebooks.json"))
+        .ok_or_else(|| io::Error::other(format!(
+            "No absolute configuration directory is available for {os}; notebook history cannot be stored."
+        )))
+}
+
+#[cfg(test)]
+mod index_path_tests {
+    use super::*;
+
+    #[test]
+    fn platform_paths_do_not_require_windows_environment_on_unix() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        for (os, variable, suffix) in [
+            ("windows", "APPDATA", "gpui-note/notebooks.json"),
+            ("macos", "HOME", "Library/Application Support/gpui-note/notebooks.json"),
+            ("linux", "HOME", ".config/gpui-note/notebooks.json"),
+            ("linux", "XDG_CONFIG_HOME", "gpui-note/notebooks.json"),
+        ] {
+            let path = index_path_for(os, |key| (key == variable).then(|| root.as_os_str().to_owned())).unwrap();
+            assert_eq!(path, root.join(suffix));
+            let mut index = load_index(&path).unwrap();
+            index.register(root.join("Notes"));
+            write_json(&path, &index).unwrap();
+            assert_eq!(load_index(&path).unwrap().active, index.active);
+        }
+    }
+
+    #[test]
+    fn xdg_override_must_be_absolute_and_takes_precedence() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let config = temp.path().join("config");
+        for override_path in [Path::new(""), Path::new("relative"), config.as_path()] {
+            let path = index_path_for("linux", |key| match key {
+                "HOME" => Some(home.clone().into_os_string()),
+                "XDG_CONFIG_HOME" => Some(override_path.as_os_str().to_owned()),
+                _ => None,
+            }).unwrap();
+            let base = if override_path.is_absolute() { config.clone() } else { home.join(".config") };
+            assert_eq!(path, base.join("gpui-note/notebooks.json"));
+        }
+        for os in ["windows", "macos", "linux"] {
+            assert!(index_path_for(os, |_| None).is_err());
+            assert!(index_path_for(os, |_| Some("".into())).is_err());
+            assert!(index_path_for(os, |_| Some("relative".into())).is_err());
+        }
+    }
 }
 
 pub fn load_index(path: &Path) -> io::Result<Index> {
