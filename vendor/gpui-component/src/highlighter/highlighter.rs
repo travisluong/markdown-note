@@ -1,7 +1,7 @@
 use crate::highlighter::{HighlightTheme, LanguageRegistry};
 use crate::input::RopeExt;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gpui::{HighlightStyle, SharedString};
 
 use ropey::{ChunkCursor, Rope};
@@ -156,6 +156,13 @@ impl<'a> sum_tree::Dimension<'a, HighlightSummary> for Range<usize> {
 }
 
 impl SyntaxHighlighter {
+    pub(crate) fn captures(&self, range: Range<usize>) -> Vec<(Range<usize>, SharedString)> {
+        self.match_styles(range)
+            .into_iter()
+            .map(|item| (item.range, item.name))
+            .collect()
+    }
+
     /// Create a new SyntaxHighlighter for HTML.
     pub fn new(lang: &str) -> Self {
         match Self::build_combined_injections_query(&lang) {
@@ -720,7 +727,7 @@ pub(crate) fn unique_styles(
 }
 
 /// Merge other style (Other on top)
-fn merge_highlight_style(style: &mut HighlightStyle, other: &HighlightStyle) {
+pub(super) fn merge_highlight_style(style: &mut HighlightStyle, other: &HighlightStyle) {
     if let Some(color) = other.color {
         style.color = Some(color);
     }

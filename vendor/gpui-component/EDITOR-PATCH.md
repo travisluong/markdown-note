@@ -219,3 +219,13 @@ by the document's scroll limits; Markdown source still collapses normally.
 Headless image-editor regressions cover loaded and unavailable assets, wrapped
 source, clicks above/below images, scrolled views and both scroll boundaries, and repeated frames
 and clicks without delayed movement.
+
+## Fenced-code language support
+
+The application enables the bundled Tree-sitter grammars. Reading code blocks
+share normalized language resolution (including aliases and plain-text fallback)
+and retain theme-independent token classifications. Rendering resolves the current
+highlight theme, preserving syntax colors under search backgrounds. Headless
+reading-search diagnostics exercise the language bundle, aliases, multiline and
+Unicode tokens, plain fallbacks, and light/dark recoloring. The lockfile selects
+cc 1.2.67 to satisfy the bundled SQL grammar's ~1.2.1 build dependency.

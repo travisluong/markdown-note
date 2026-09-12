@@ -11,11 +11,10 @@ use gpui::{
     img, prelude::FluentBuilder as _, px, relative, rems,
 };
 use markdown::mdast;
-use ropey::Rope;
 
 use crate::{
     ActiveTheme as _, Icon, IconName, StyledExt, h_flex,
-    highlighter::{HighlightTheme, SyntaxHighlighter},
+    highlighter::{HighlightTheme, code::CodeTokens},
     text::{
         CodeBlockActionsFn,
         inline::{Inline, InlineState},
@@ -313,13 +312,13 @@ impl Paragraph {
 pub struct CodeBlock {
     pub(crate) source_runs: Vec<super::source_map::SourceRun>,
     lang: Option<SharedString>,
-    styles: Vec<(Range<usize>, HighlightStyle)>,
+    tokens: CodeTokens,
     state: Arc<Mutex<InlineState>>,
 }
 
 impl PartialEq for CodeBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.lang == other.lang && self.styles == other.styles
+        self.lang == other.lang && self.tokens == other.tokens
     }
 }
 
@@ -338,14 +337,9 @@ impl CodeBlock {
         code: SharedString,
         lang: Option<SharedString>,
         _: &TextViewStyle,
-        highlight_theme: &HighlightTheme,
+        _highlight_theme: &HighlightTheme,
     ) -> Self {
-        let mut styles = vec![];
-        if let Some(lang) = &lang {
-            let mut highlighter = SyntaxHighlighter::new(&lang);
-            highlighter.update(None, &Rope::from_str(code.as_str()));
-            styles = highlighter.styles(&(0..code.len()), highlight_theme);
-        };
+        let tokens = CodeTokens::new(&code, lang.as_ref().map(|lang| lang.as_str()));
 
         let state = Arc::new(Mutex::new(InlineState::default()));
         state.lock().unwrap().set_text(code);
@@ -353,7 +347,7 @@ impl CodeBlock {
         Self {
             lang,
             source_runs: Vec::new(),
-            styles,
+            tokens,
             state,
         }
     }
@@ -390,8 +384,14 @@ impl CodeBlock {
                     .relative()
                     .refine_style(&style.code_block)
                     .child(
-                        Inline::new("code", self.state.clone(), vec![], self.styles.clone())
-                            .source_highlights(&self.source_runs, node_cx),
+                        Inline::new(
+                            "code",
+                            self.state.clone(),
+                            vec![],
+                            self.tokens
+                                .styles(0..self.code().len(), &cx.theme().highlight_theme),
+                        )
+                        .source_highlights(&self.source_runs, node_cx),
                     )
                     .when_some(node_cx.code_block_actions.clone(), |this, actions| {
                         this.child(
@@ -652,32 +652,46 @@ impl Paragraph {
                     );
                 }
                 child_nodes.push(
-                    img(crate::markdown_images::resource(&image.url, node_cx.image_document.as_deref())
-                        .map(gpui::ImageSource::Resource).unwrap_or_else(|| gpui::ImageSource::from(image.url.clone())))
-                        .with_loading(|| div().h(gpui::px(80.)).child("Loading image…").into_any_element())
-                        .with_fallback(|| div().h(gpui::px(80.)).child("Image unavailable").into_any_element())
-                        .id(ix)
-                        .object_fit(ObjectFit::Contain)
-                        .max_w(relative(1.))
-                        .when_some(image.width, |this, width| this.w(width))
-                        .when_some(image.link.clone(), |this, link| {
-                            let title = image.title();
-                            let callback = node_cx.link_open.clone();
-                            let source = node_cx.source.clone();
-                            this.cursor_pointer()
-                                .tooltip(move |window, cx| {
-                                    Tooltip::new(title.clone()).build(window, cx)
-                                })
-                                .on_click(move |_, window, cx| {
-                                    cx.stop_propagation();
-                                    if let Some(callback) = &callback {
-                                        callback(&link.url, &source, window, cx);
-                                    } else {
-                                        cx.open_url(&link.url);
-                                    }
-                                })
-                        })
-                        .into_any_element(),
+                    img(crate::markdown_images::resource(
+                        &image.url,
+                        node_cx.image_document.as_deref(),
+                    )
+                    .map(gpui::ImageSource::Resource)
+                    .unwrap_or_else(|| gpui::ImageSource::from(image.url.clone())))
+                    .with_loading(|| {
+                        div()
+                            .h(gpui::px(80.))
+                            .child("Loading image…")
+                            .into_any_element()
+                    })
+                    .with_fallback(|| {
+                        div()
+                            .h(gpui::px(80.))
+                            .child("Image unavailable")
+                            .into_any_element()
+                    })
+                    .id(ix)
+                    .object_fit(ObjectFit::Contain)
+                    .max_w(relative(1.))
+                    .when_some(image.width, |this, width| this.w(width))
+                    .when_some(image.link.clone(), |this, link| {
+                        let title = image.title();
+                        let callback = node_cx.link_open.clone();
+                        let source = node_cx.source.clone();
+                        this.cursor_pointer()
+                            .tooltip(move |window, cx| {
+                                Tooltip::new(title.clone()).build(window, cx)
+                            })
+                            .on_click(move |_, window, cx| {
+                                cx.stop_propagation();
+                                if let Some(callback) = &callback {
+                                    callback(&link.url, &source, window, cx);
+                                } else {
+                                    cx.open_url(&link.url);
+                                }
+                            })
+                    })
+                    .into_any_element(),
                 );
 
                 source_runs.clear();
@@ -1015,9 +1029,12 @@ impl Node {
                                                 div()
                                                     .id(("task", task_offset.unwrap_or(ix)))
                                                     .cursor_default()
-                                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
-                                                        cx.stop_propagation();
-                                                    })
+                                                    .on_mouse_down(
+                                                        gpui::MouseButton::Left,
+                                                        |_, _, cx| {
+                                                            cx.stop_propagation();
+                                                        },
+                                                    )
                                                     .when_some(
                                                         node_cx
                                                             .task_toggle
@@ -1025,14 +1042,10 @@ impl Node {
                                                             .zip(*task_offset),
                                                         |view, (toggle, offset)| {
                                                             let source = node_cx.source.clone();
-                                                            view.on_click(
-                                                                move |_, window, cx| {
-                                                                    toggle(
-                                                                        offset, &source, window, cx,
-                                                                    );
-                                                                    cx.stop_propagation();
-                                                                },
-                                                            )
+                                                            view.on_click(move |_, window, cx| {
+                                                                toggle(offset, &source, window, cx);
+                                                                cx.stop_propagation();
+                                                            })
                                                         },
                                                     )
                                                     .flex()
@@ -1438,5 +1451,81 @@ impl Node {
                 div().into_any_element()
             }
         }
+    }
+}
+
+#[cfg(feature = "editor-diagnostics")]
+impl CodeBlock {
+    pub(crate) fn diagnostic_highlighting() {
+        use crate::highlighter::{Language, code::language};
+        let light = HighlightTheme::default_light();
+        let dark = HighlightTheme::default_dark();
+        for (tag, canonical) in [
+            (" RS extra", "rust"),
+            ("PY", "python"),
+            ("js", "javascript"),
+            ("ts", "typescript"),
+            ("jsonc", "json"),
+        ] {
+            assert_eq!(
+                language(Some(tag)).as_ref().map(|lang| lang.as_str()),
+                Some(canonical)
+            );
+        }
+        for tag in [None, Some(""), Some("unknown"), Some("text")] {
+            assert!(CodeTokens::new("{\"x\": 1}", tag).spans.is_empty());
+        }
+        // Construct every bundled query, catching grammar/query version mismatches.
+        for lang in Language::all() {
+            let _ = CodeTokens::new("let value = 42;\n", Some(lang.name()));
+        }
+        for (lang, code, keyword) in [
+            ("RS", "fn main() { let café = 42; }", "fn"),
+            ("py", "def greet():\n    return \"hello\"", "def"),
+            ("js", "const value = 42;", "const"),
+            ("ts", "const value: number = 42;", "const"),
+            ("json", "{\"value\": true}", "true"),
+        ] {
+            let block = Self::new(
+                code.into(),
+                Some(lang.into()),
+                &TextViewStyle::default(),
+                &light,
+            );
+            let start = code.find(keyword).unwrap();
+            let range = start..start + keyword.len();
+            let a = block.tokens.styles(range.clone(), &light);
+            let b = block.tokens.styles(range.clone(), &dark);
+            assert!(a.iter().any(|(_, s)| s.color.is_some()), "{lang}");
+            assert_ne!(a, b, "theme change must recolor cached {lang} tokens");
+            let marked = gpui::combine_highlights(
+                a.clone(),
+                vec![(
+                    range,
+                    HighlightStyle {
+                        background_color: Some(gpui::rgba(0xe5b84baa).into()),
+                        ..Default::default()
+                    },
+                )],
+            )
+            .collect::<Vec<_>>();
+            assert!(
+                marked
+                    .iter()
+                    .any(|(_, s)| s.color.is_some() && s.background_color.is_some())
+            );
+            for (span, _) in block.tokens.styles(0..code.len(), &light) {
+                assert!(code.is_char_boundary(span.start) && code.is_char_boundary(span.end));
+            }
+        }
+        let code = "/* hello\n你好 */\nfn main() {}";
+        let tokens = CodeTokens::new(code, Some("rust"));
+        let start = code.find("你好").unwrap();
+        assert!(
+            tokens
+                .styles(start..start + 6, &light)
+                .iter()
+                .any(|(_, s)| s.color == light.style("comment").unwrap().color)
+        );
     }
 }

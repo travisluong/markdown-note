@@ -1,3 +1,4 @@
+pub(crate) mod code;
 mod diagnostics;
 mod highlighter;
 mod languages;

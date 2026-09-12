@@ -497,6 +497,7 @@ impl TextView {
     #[cfg(feature = "editor-diagnostics")]
     #[doc(hidden)]
     pub fn diagnostic_reading_search() {
+        node::CodeBlock::diagnostic_highlighting();
         fn collect(node: &node::Node, range: &std::ops::Range<usize>, output: &mut String) {
             fn paragraph(p: &node::Paragraph, range: &std::ops::Range<usize>, output: &mut String) {
                 for child in &p.children {
