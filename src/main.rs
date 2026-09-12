@@ -15,6 +15,7 @@ mod lifecycle_tests;
 mod links;
 mod notebook_ui;
 mod reading_search;
+
 mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
@@ -24,7 +25,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use app::operation::{ForegroundOperation, OperationId};
+use app::session::{Content, OperationId, Session};
 use gpui::{prelude::*, *};
 use gpui_component::{
     ActiveTheme, Root, Sizable, WindowExt,
@@ -71,6 +72,7 @@ enum Next {
     Open,
     Close,
     File(PathBuf),
+    FileFromPicker(PathBuf),
     NewNote(PathBuf),
     TreeFile(PathBuf),
     SearchResult(search::Destination),
@@ -124,15 +126,13 @@ struct Notes {
     search: Option<Entity<search_ui::SearchPanel>>,
     search_subscription: Option<Subscription>,
     search_destination: Option<search::Destination>,
-    image_path: Option<PathBuf>,
-    document: Option<Document>,
+    session: Session<Document, PathBuf, Next>,
     editor: Entity<InputState>,
     editor_subscription: Subscription,
     mode: ViewMode,
     reading_text: SharedString,
     reading_search: Option<reading_search::ReadingSearch>,
     focus: FocusHandle,
-    foreground: ForegroundOperation,
     dirty_cached: bool,
     dirty_revision: u64,
     dirty_task: Option<Task<()>>,
@@ -180,15 +180,13 @@ impl Notes {
             search: None,
             search_subscription: None,
             search_destination: None,
-            image_path: None,
-            document: None,
+            session: Session::default(),
             editor,
             editor_subscription,
             mode: ViewMode::default(),
             reading_text: SharedString::default(),
             reading_search: None,
             focus,
-            foreground: ForegroundOperation::default(),
             dirty_cached: false,
             dirty_revision: 0,
             dirty_task: None,
@@ -215,7 +213,10 @@ impl Notes {
             }
             if matches!(event, InputEvent::Change) {
                 this.check_dirty(window, cx);
-                this.schedule_autosave(window, cx);
+                if let Some(document) = this.document_id() {
+                    let effects = this.session.edit_notice(document);
+                    this.apply_session_effects(effects, window, cx);
+                }
                 this.schedule_search(window, cx);
                 if this.mode == ViewMode::Reading {
                     this.reading_text = this.editor.read(cx).value();
@@ -226,13 +227,12 @@ impl Notes {
     }
 
     fn dirty(&self, cx: &App) -> bool {
-        self.document
-            .as_ref()
+        self.document()
             .is_some_and(|d| d.saved_rope != self.editor.read(cx).snapshot())
     }
 
     fn check_dirty(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(document) = self.document.as_ref() else {
+        let Some(document) = self.document() else {
             return;
         };
         let saved = document.saved_rope.clone();
@@ -258,10 +258,9 @@ impl Notes {
 
     fn refresh(&self, window: &mut Window, cx: &mut Context<Self>) {
         let name = self
-            .document
-            .as_ref()
+            .document()
             .map(|d| d.path.as_path())
-            .or(self.image_path.as_deref())
+            .or(self.image_path())
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "GPUI Note".into());
@@ -274,193 +273,27 @@ impl Notes {
     }
 
     fn is_busy(&self) -> bool {
-        self.foreground.is_busy()
+        self.session.is_busy()
     }
 
-    fn error(
-        &mut self,
-        message: &str,
-        error: impl std::fmt::Display,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        let prompt = window.prompt(
-            PromptLevel::Critical,
-            message,
-            Some(&error.to_string()),
-            &["OK"],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let _ = prompt.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if this.foreground.finish(operation) {
-                    this.resume_document(window, cx);
-                }
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    /// Resume a retained document after a cancelled or failed foreground operation.
-    fn resume_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.schedule_autosave(window, cx);
-        self.refresh(window, cx);
-    }
-
-    fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() {
-            return;
-        }
-        self.saves.timer = None;
-        if self.saves.writing {
-            let Some(operation) = self.foreground.begin() else {
-                return;
-            };
-            self.saves.pending = Some(autosave::Pending::Request(operation, next));
-            cx.notify();
-            return;
-        }
-        if !self.dirty(cx) {
-            self.continue_with(next, window, cx);
-            return;
-        }
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        let prompt = window.prompt(
-            PromptLevel::Warning,
-            "Save changes?",
-            Some("This document has unsaved changes."),
-            &[
-                PromptButton::Ok("Save".into()),
-                PromptButton::Other("Discard".into()),
-                PromptButton::Cancel("Cancel".into()),
-            ],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let answer = prompt.await.ok();
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.answer_request(operation, answer, next, window, cx);
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    fn answer_request(
-        &mut self,
-        operation: OperationId,
-        answer: Option<usize>,
-        next: Next,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.foreground.finish(operation) {
-            return;
-        }
-        match answer {
-            Some(0) => self.save(next, window, cx),
-            Some(1) => self.continue_with(next, window, cx),
-            _ => {
-                self.finish_search_navigation(false, window, cx);
-                if matches!(next, Next::TreeFile(_)) {
-                    self.restore_tree_cursor(window, cx);
-                }
-                self.resume_document(window, cx);
-            }
+    fn document(&self) -> Option<&Document> {
+        match self.session.content() {
+            Content::Document { value, .. } => Some(value),
+            _ => None,
         }
     }
 
-    #[cfg(feature = "editor-diagnostics")]
-    fn diagnostic_answer_request(
-        &mut self,
-        answer: Option<usize>,
-        next: Next,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let operation = self
-            .foreground
-            .begin()
-            .expect("diagnostic response needs an idle session");
-        self.answer_request(operation, answer, next, window, cx);
-    }
-
-    fn continue_with(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        match next {
-            Next::Nothing => self.refresh(window, cx),
-            Next::Open => self.open(window, cx),
-            Next::NewNote(root) => self.create_note(root, window, cx),
-            Next::Close => self.finish_close(window, cx),
-            Next::File(path) => self.open_path(path, false, window, cx),
-            Next::TreeFile(path) => self.open_path(path, true, window, cx),
-            Next::SearchResult(destination) => {
-                let path = destination.path.clone();
-                self.search_destination = Some(destination);
-                self.open_path(path, false, window, cx);
-            }
-            Next::RemoveNotebook(path) => self.remove_notebook(path, window, cx),
-            Next::Notebook { path, create } => self.activate_notebook(path, create, window, cx),
+    fn capabilities(&self) -> gpui_note::capabilities::Capabilities {
+        gpui_note::capabilities::Capabilities {
+            has_document: self.document().is_some(),
+            mode: self.mode,
+            busy: self.is_busy(),
+            has_notebook: self.notebooks.active.is_some(),
         }
     }
 
-    fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        let picker = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: Some("Open".into()),
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            let result = match picker.await {
-                Ok(Ok(Some(paths))) => match paths.into_iter().next() {
-                    Some(path) => {
-                        cx.background_executor()
-                            .spawn(async move { Document::open(path).map(Some) })
-                            .await
-                    }
-                    None => Ok(None),
-                },
-                Ok(Ok(None)) => Ok(None),
-                Ok(Err(error)) => Err(io::Error::other(error.to_string())),
-                Err(error) => Err(io::Error::other(error.to_string())),
-            };
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.finish_open(operation, result, window, cx);
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    fn finish_open(
-        &mut self,
-        operation: OperationId,
-        result: io::Result<Option<Document>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.foreground.finish(operation) {
-            return;
-        }
-        match result {
-            Ok(Some(document)) => {
-                self.install_document(Some(document), window, cx);
-                self.remember_file(cx);
-                self.refresh(window, cx);
-            }
-            Ok(None) => self.resume_document(window, cx),
-            Err(error) => self.error("Could not open file", error, window, cx),
-        }
+    fn can_edit_document(&self) -> bool {
+        self.capabilities().can_edit_document()
     }
 
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
@@ -483,7 +316,7 @@ impl Notes {
         self.editor.update(cx, |editor, cx| {
             editor.set_live_preview(mode == ViewMode::LivePreview, cx)
         });
-        if mode != ViewMode::Reading && self.document.is_some() {
+        if mode != ViewMode::Reading && self.document().is_some() {
             self.editor
                 .update(cx, |editor, cx| editor.focus(window, cx));
         } else {
@@ -498,7 +331,7 @@ impl Notes {
         }
         self.menu_previous_focus = window.focused(cx);
         let busy = self.is_busy();
-        let can_save = self.document.is_some() && !busy;
+        let can_save = self.document().is_some() && !busy;
         let mode = self.mode;
         let focus = self.focus.clone();
         let menu = PopupMenu::build(window, cx, |menu, _, cx| {
@@ -547,9 +380,9 @@ impl Notes {
 impl Render for Notes {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content_size = px(self.appearance().content_font_size as f32);
-        let content = if let Some(path) = &self.image_path {
+        let content = if let Some(path) = self.image_path() {
             images::viewer(path).into_any_element()
-        } else if let Some(document) = &self.document {
+        } else if let Some(document_path) = self.document().map(|document| document.path.clone()) {
             if self.mode != ViewMode::Reading {
                 div()
                     .key_context("DocumentEditor")
@@ -591,12 +424,12 @@ impl Render for Notes {
                     })
                     .child(
                         TextView::markdown(
-                            ("reading", self.saves.identity as usize),
+                            ("reading", self.editor.entity_id().as_u64() as usize),
                             self.reading_text.clone(),
                             window,
                             cx,
                         )
-                        .image_document(document.path.clone())
+                        .image_document(document_path)
                         .source_highlights(
                             self.reading_search
                                 .as_ref()
@@ -604,10 +437,10 @@ impl Render for Notes {
                         )
                         .on_link_open({
                             let owner = cx.weak_entity();
-                            let identity = self.saves.identity;
+                            let identity = self.document_id();
                             move |destination, source, window, cx| {
                                 let _ = owner.update(cx, |this, cx| {
-                                    if this.saves.identity == identity
+                                    if this.document_id() == identity
                                         && this.editor.read(cx).value().as_ref() == source
                                     {
                                         this.open_link(destination, window, cx);
@@ -617,11 +450,11 @@ impl Render for Notes {
                         })
                         .on_task_toggle({
                             let owner = cx.weak_entity();
-                            let document_path = self.document.as_ref().map(|d| d.path.clone());
+                            let document_path = self.document().map(|d| d.path.clone());
                             move |offset, source, window, cx| {
                                 let _ = owner.update(cx, |this, cx| {
                                     if this.is_busy()
-                                        || this.document.as_ref().map(|d| &d.path)
+                                        || this.document().map(|d| &d.path)
                                             != document_path.as_ref()
                                     {
                                         return;
@@ -938,21 +771,4 @@ fn main() {
             .expect("Could not create the GPUI Note window");
             cx.activate(true);
         });
-}
-
-impl Notes {
-    fn document(&self) -> Option<&Document> {
-        self.document.as_ref()
-    }
-    fn capabilities(&self) -> gpui_note::capabilities::Capabilities {
-        gpui_note::capabilities::Capabilities {
-            has_document: self.document().is_some(),
-            mode: self.mode,
-            busy: self.is_busy(),
-            has_notebook: self.notebooks.active.is_some(),
-        }
-    }
-    fn can_edit_document(&self) -> bool {
-        self.capabilities().can_edit_document()
-    }
 }

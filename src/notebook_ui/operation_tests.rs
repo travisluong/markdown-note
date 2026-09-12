@@ -67,10 +67,10 @@ fn retarget_pending_tree_open(cx: &mut TestAppContext, target: Retarget) {
                 .rows
                 .iter()
                 .position(|row| row.path == Path::new("b.md"));
-            let identity = this.saves.identity;
+            let identity = this.document_id();
             this.open_path(book_root.join("b.md"), true, window, cx);
             assert!(this.is_busy());
-            assert!(this.notebooks.tree_loading);
+            assert!(this.tree_loading());
 
             // Change the actual tree selection before the executor can finish B.
             // Arrows coalesce pending file targets instead of beginning a second load.
@@ -87,15 +87,8 @@ fn retarget_pending_tree_open(cx: &mut TestAppContext, target: Retarget) {
                     this.tree_move(true, window, cx);
                 }
             }
-            let expected_target = match target {
-                Retarget::NextNote => Some(book_root.join("c.md")),
-                Retarget::CurrentNote => Some(book_root.join("a.md")),
-                Retarget::Folder => None,
-                Retarget::Image => Some(book_root.join("image.png")),
-            };
-            assert_eq!(this.notebooks.tree_target, expected_target);
             assert_eq!(this.editor.read(cx).value().as_ref(), "A");
-            assert_eq!(this.saves.identity, identity);
+            assert_eq!(this.document_id(), identity);
             identity
         })
     });
@@ -105,35 +98,26 @@ fn retarget_pending_tree_open(cx: &mut TestAppContext, target: Retarget) {
     cx.update(|_, cx| {
         let this = notes.read(cx);
         assert!(!this.is_busy(), "retargeted load leaked its operation gate");
-        assert!(!this.notebooks.tree_loading);
-        assert!(this.notebooks.tree_target.is_none());
+        assert!(!this.tree_loading());
+        assert!(this.notebooks.tree_operation.is_none());
         match target {
             Retarget::NextNote => {
-                assert_eq!(
-                    this.document.as_ref().unwrap().path.file_name().unwrap(),
-                    "c.md"
-                );
+                assert_eq!(this.document().unwrap().path.file_name().unwrap(), "c.md");
                 assert_eq!(this.editor.read(cx).value().as_ref(), "C");
-                assert!(this.image_path.is_none());
-                // One installation proves the abandoned B result never replaced A.
-                assert_eq!(this.saves.identity, original_identity + 1);
+                assert!(this.image_path().is_none());
+                // A new content identity belongs to the final installed target.
+                assert_ne!(this.session.content().identity(), original_identity);
             }
             Retarget::Folder | Retarget::CurrentNote => {
-                assert_eq!(
-                    this.document.as_ref().unwrap().path.file_name().unwrap(),
-                    "a.md"
-                );
+                assert_eq!(this.document().unwrap().path.file_name().unwrap(), "a.md");
                 assert_eq!(this.editor.read(cx).value().as_ref(), "A");
-                assert!(this.image_path.is_none());
-                assert_eq!(this.saves.identity, original_identity);
+                assert!(this.image_path().is_none());
+                assert_eq!(this.document_id(), original_identity);
             }
             Retarget::Image => {
-                assert!(this.document.is_none());
-                assert_eq!(
-                    this.image_path.as_ref().unwrap().file_name().unwrap(),
-                    "image.png"
-                );
-                assert_eq!(this.saves.identity, original_identity + 1);
+                assert!(this.document().is_none());
+                assert_eq!(this.image_path().unwrap().file_name().unwrap(), "image.png");
+                assert_ne!(this.session.content().identity(), original_identity);
             }
         }
     });

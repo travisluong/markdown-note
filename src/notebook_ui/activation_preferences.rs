@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{ViewMode, app::operation::OperationId, notebook};
+use crate::{ViewMode, app::session::OperationId, notebook};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum PreferenceIntent {
@@ -34,6 +34,12 @@ impl ActivationPreferences {
 
     pub(super) fn operation(&self) -> OperationId {
         self.operation
+    }
+
+    pub(super) fn renew(&mut self, previous: OperationId, current: OperationId) {
+        if self.operation == previous {
+            self.operation = current;
+        }
     }
 
     pub(super) fn record(&mut self, operation: OperationId, root: &Path, intent: PreferenceIntent) {
@@ -68,15 +74,26 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{ActivationPreferences, PreferenceIntent};
-    use crate::{ViewMode, app::operation::ForegroundOperation, notebook};
+    use crate::{
+        ViewMode,
+        app::session::{Observed, Session},
+        notebook,
+    };
 
     #[test]
     fn choices_are_scoped_to_the_matching_operation_and_notebook() {
-        let mut gate = ForegroundOperation::default();
-        let operation = gate.begin().unwrap();
-        assert!(gate.finish(operation));
-        let stale = operation;
-        let operation = gate.begin().unwrap();
+        let mut session = Session::<(), (), ()>::default();
+        let _ = session.pick();
+        let stale = session.foreground().unwrap().0;
+        let _ = session.cancel(
+            stale,
+            Observed {
+                document: None,
+                dirty: false,
+            },
+        );
+        let _ = session.pick();
+        let operation = session.foreground().unwrap().0;
         let root = PathBuf::from("A");
         let mut choices = ActivationPreferences::new(operation, root.clone());
         choices.record(stale, &root, PreferenceIntent::ViewMode(ViewMode::Reading));
@@ -96,7 +113,9 @@ mod tests {
 
     #[test]
     fn latest_explicit_fields_replay_without_replacing_other_loaded_settings() {
-        let operation = ForegroundOperation::default().begin().unwrap();
+        let mut session = Session::<(), (), ()>::default();
+        let _ = session.pick();
+        let operation = session.foreground().unwrap().0;
         let root = PathBuf::from("A");
         let mut choices = ActivationPreferences::new(operation, root.clone());
         choices.record(

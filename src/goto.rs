@@ -366,7 +366,7 @@ impl Notes {
 
     fn command_unavailable(&self, command: Command) -> Option<&'static str> {
         command.unavailable(
-            self.document.is_some(),
+            self.document().is_some(),
             self.mode == ViewMode::Reading,
             self.is_busy(),
             self.notebooks.active.is_some(),
@@ -574,7 +574,7 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
             if let Some(book) = &this.notebooks.active {
                 let root = book.root.clone();
                 let count = fs::read_dir(&root).unwrap().count();
-                let previous_path = this.document.as_ref().map(|doc| doc.path.clone());
+                let previous_path = this.document().map(|doc| doc.path.clone());
                 this.diagnostic_answer_request(None, Next::NewNote(root.clone()), window, cx);
                 assert!(!this.is_busy());
                 assert_eq!(
@@ -582,10 +582,7 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                     count,
                     "cancel creates no note"
                 );
-                assert_eq!(
-                    this.document.as_ref().map(|doc| doc.path.clone()),
-                    previous_path
-                );
+                assert_eq!(this.document().map(|doc| doc.path.clone()), previous_path);
                 assert_eq!(this.editor.read(cx).value(), before);
             }
             this.command_palette(window, cx);

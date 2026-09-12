@@ -113,7 +113,9 @@ pub(super) async fn run(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
         notes.update(cx, |this, cx| {
             assert!(this.editor.read(cx).diagnostic_find(cx).is_none());
             assert!(this.editor.focus_handle(cx).is_focused(window));
-            let document = this.document.take();
+            let document = this
+                .document()
+                .map(|document| Document::open(document.path.clone()).unwrap());
             this.install_document(document, window, cx);
             assert!(
                 this.editor.read(cx).diagnostic_find(cx).is_none(),

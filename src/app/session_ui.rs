@@ -1,0 +1,404 @@
+//! GPUI effects for the document session. Session owns transition policy; these
+//! adapters own prompts, executor handles, captured I/O data and presentation.
+
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
+
+use gpui::{App, Context, PathPromptOptions, PromptButton, PromptLevel, Window};
+
+use crate::{Document, Next, Notes, search};
+
+use super::session::{
+    Choice, Content, DocumentId, Effect, Loaded, Observed, OperationId, Rejection, Stage,
+};
+
+impl Notes {
+    pub(crate) fn image_path(&self) -> Option<&Path> {
+        match self.session.content() {
+            Content::Image { value, .. } => Some(value.as_path()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn document_id(&self) -> Option<DocumentId> {
+        self.session.content().document_id()
+    }
+
+    /// Use at an actual save/navigation decision, never on every edit event.
+    pub(crate) fn observed_document(&self, cx: &App) -> Observed {
+        Observed {
+            document: self.document_id(),
+            dirty: self.dirty(cx),
+        }
+    }
+
+    /// Stage adapters consume effects requiring their captured I/O payload
+    /// (picker purpose, load result or preference barrier) before forwarding the
+    /// remaining shared effects here. No adapter acquires or releases ownership.
+    pub(crate) fn apply_session_effects(
+        &mut self,
+        effects: Vec<Effect<Next>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for effect in effects {
+            match effect {
+                Effect::StateChanged => self.refresh(window, cx),
+                Effect::CancelAutosave => self.saves.timer = None,
+                Effect::ArmAutosave(ticket) => self.arm_session_autosave(ticket, window, cx),
+                Effect::Prompt(operation) => self.prompt_session_save(operation, window, cx),
+                Effect::Write(ticket) => self.write_session_snapshot(ticket, window, cx),
+                Effect::BaselineAccepted(_) => self.saved_session_baseline(window, cx),
+                Effect::WriteFailed(_) => {
+                    // The write adapter attached the matching I/O error before
+                    // forwarding this effect; the model owns its retry policy.
+                }
+                Effect::Continue { operation, action } => {
+                    self.continue_operation(operation, action, window, cx);
+                }
+                Effect::Cancelled { operation, action } => {
+                    self.cancel_session_context(operation);
+                    self.finish_search_navigation(false, window, cx);
+                    if matches!(action, Some(Next::TreeFile(_))) {
+                        self.restore_tree_cursor(window, cx);
+                    }
+                }
+                Effect::Close => window.remove_window(),
+                Effect::Rejected(Rejection::IdentityExhausted) => {
+                    self.notebooks.notice = Some(
+                        "The session identity limit was reached. Keep your unsaved text and restart the application."
+                            .into(),
+                    );
+                    cx.notify();
+                }
+                Effect::Rejected(Rejection::Busy | Rejection::NoDocument) => {}
+                Effect::Pick(_)
+                | Effect::Load(_)
+                | Effect::Move(_)
+                | Effect::RestoreIndex(_)
+                | Effect::RestoreFailed(_)
+                | Effect::ResolveActivation(_)
+                | Effect::FlushActivation { .. }
+                | Effect::ActivationFlushFailed(_)
+                | Effect::ActivationFailed(_)
+                | Effect::FlushClose { .. }
+                | Effect::CloseFailed(_)
+                | Effect::ShowError(_)
+                | Effect::MoveFailed(_)
+                | Effect::Installed { .. }
+                | Effect::Moved(_)
+                | Effect::MoveBaselineConflict(_) => {
+                    unreachable!("the stage adapter must consume its I/O effects")
+                }
+            }
+        }
+    }
+
+    pub(crate) fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        let observed = self.observed_document(cx);
+        let effects = self.session.request(next, observed);
+        self.apply_session_effects(effects, window, cx);
+    }
+
+    pub(crate) fn save(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        let next = (!matches!(next, Next::Nothing)).then_some(next);
+        let effects = self.session.save(next);
+        self.apply_session_effects(effects, window, cx);
+    }
+
+    fn prompt_session_save(
+        &mut self,
+        operation: OperationId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let prompt = window.prompt(
+            PromptLevel::Warning,
+            "Save changes?",
+            Some("This document has unsaved changes."),
+            &[
+                PromptButton::Ok("Save".into()),
+                PromptButton::Other("Discard".into()),
+                PromptButton::Cancel("Cancel".into()),
+            ],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = prompt.await.ok();
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.answer_request(operation, answer, window, cx);
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn answer_request(
+        &mut self,
+        operation: OperationId,
+        answer: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let choice = match answer {
+            Some(0) => Choice::Save,
+            Some(1) => Choice::Discard,
+            _ => Choice::Cancel,
+        };
+        let observed = self.observed_document(cx);
+        let effects = self.session.answer(operation, choice, observed);
+        self.apply_session_effects(effects, window, cx);
+    }
+
+    fn continue_operation(
+        &mut self,
+        operation: OperationId,
+        next: Next,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match next {
+            Next::Nothing => {
+                let observed = self.observed_document(cx);
+                let effects = self.session.continued(operation, observed);
+                self.apply_session_effects(effects, window, cx);
+            }
+            Next::Open => self.open_with_operation(operation, window, cx),
+            Next::Close => self.close_with_operation(operation, window, cx),
+            Next::File(path) => self.open_path_with_operation(operation, path, false, window, cx),
+            Next::FileFromPicker(path) => {
+                self.load_file_with_operation(operation, path, false, window, cx)
+            }
+            Next::TreeFile(path) => {
+                self.open_path_with_operation(operation, path, true, window, cx)
+            }
+            Next::NewNote(root) => self.create_note_with_operation(operation, root, window, cx),
+            Next::RemoveNotebook(path) => {
+                self.remove_notebook_with_operation(operation, path, window, cx)
+            }
+            Next::Notebook { path, create } => {
+                self.activate_notebook_with_operation(operation, path, create, window, cx);
+            }
+            Next::SearchResult(destination) => {
+                let search::Destination { path, .. } = &destination;
+                let path = path.clone();
+                self.search_destination = Some(destination);
+                self.open_path_with_operation(operation, path, false, window, cx);
+            }
+        }
+    }
+
+    pub(crate) fn error(
+        &mut self,
+        message: &str,
+        error: impl std::fmt::Display,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effects = self.session.show_error();
+        for effect in effects {
+            if let Effect::ShowError(operation) = effect {
+                self.show_session_error(operation, message, &error.to_string(), window, cx);
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
+    }
+
+    pub(crate) fn show_session_error(
+        &mut self,
+        operation: OperationId,
+        title: &str,
+        detail: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let prompt = window.prompt(PromptLevel::Critical, title, Some(detail), &["OK"], cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let _ = prompt.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let observed = this.observed_document(cx);
+                let effects = this.session.cancel(operation, observed);
+                this.apply_session_effects(effects, window, cx);
+            });
+        })
+        .detach();
+    }
+
+    fn open_with_operation(
+        &mut self,
+        operation: OperationId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effects = self.session.dispatch(operation, Stage::Pick);
+        for effect in effects {
+            if let Effect::Pick(operation) = effect {
+                let picker = cx.prompt_for_paths(PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    multiple: false,
+                    prompt: Some("Open".into()),
+                });
+                cx.spawn_in(window, async move |this, cx| {
+                    let result = match picker.await {
+                        Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
+                        Ok(Err(error)) => Err(io::Error::other(error.to_string())),
+                        Err(error) => Err(io::Error::other(error.to_string())),
+                    };
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.finish_file_picker(operation, result, window, cx);
+                    });
+                })
+                .detach();
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
+    }
+
+    pub(crate) fn finish_file_picker(
+        &mut self,
+        operation: OperationId,
+        result: io::Result<Option<PathBuf>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(path) => {
+                let observed = self.observed_document(cx);
+                let effects =
+                    self.session
+                        .picked(operation, path.map(Next::FileFromPicker), observed);
+                self.apply_session_effects(effects, window, cx);
+            }
+            Err(error) => {
+                let effects = self.session.pick_failed(operation);
+                for effect in effects {
+                    if let Effect::ShowError(operation) = effect {
+                        self.show_session_error(
+                            operation,
+                            "Could not open file",
+                            &error.to_string(),
+                            window,
+                            cx,
+                        );
+                    } else {
+                        self.apply_session_effects(vec![effect], window, cx);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Capture the old path before the owned installation drops its metadata.
+    /// The explicit discarded-document effect controls search overlay invalidation.
+    pub(crate) fn complete_content_load(
+        &mut self,
+        operation: OperationId,
+        result: io::Result<Loaded<Document, PathBuf>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let previous = self
+            .document()
+            .zip(self.document_id())
+            .map(|(document, id)| (id, document.path.clone()));
+        let observed = self.observed_document(cx);
+        let error = result.as_ref().err().map(ToString::to_string);
+        let effects = self
+            .session
+            .loaded(operation, result.map_err(|_| ()), observed);
+        let mut installed = false;
+        for effect in effects {
+            match effect {
+                Effect::Installed {
+                    discarded_document, ..
+                } => {
+                    let discarded_path = previous
+                        .as_ref()
+                        .filter(|(id, _)| Some(*id) == discarded_document)
+                        .map(|(_, path)| path.as_path());
+                    self.install_session_editor(window, cx);
+                    self.search_document_installed(discarded_path, window, cx);
+                    installed = true;
+                }
+                Effect::ShowError(operation) => self.show_session_error(
+                    operation,
+                    "Could not open file",
+                    error.as_deref().unwrap_or("Unknown load error"),
+                    window,
+                    cx,
+                ),
+                Effect::ActivationFailed(_) => self.notebook_open_failed(
+                    io::Error::other(
+                        error
+                            .clone()
+                            .unwrap_or_else(|| "Unknown notebook load error".into()),
+                    ),
+                    window,
+                    cx,
+                ),
+                other => self.apply_session_effects(vec![other], window, cx),
+            }
+        }
+        installed
+    }
+
+    #[cfg(any(test, feature = "editor-diagnostics"))]
+    pub(crate) fn diagnostic_answer_request(
+        &mut self,
+        answer: Option<usize>,
+        next: Next,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let observed = self.observed_document(cx);
+        let effects = self.session.request(next, observed);
+        let prompt = effects.iter().find_map(|effect| {
+            if let Effect::Prompt(operation) = effect {
+                Some(*operation)
+            } else {
+                None
+            }
+        });
+        if let Some(operation) = prompt {
+            // TestPlatform does not implement native prompts. Drive the actual
+            // owned decision without opening a second prompt or inventing a token.
+            for effect in effects {
+                if !matches!(effect, Effect::Prompt(_)) {
+                    self.apply_session_effects(vec![effect], window, cx);
+                }
+            }
+            self.answer_request(operation, answer, window, cx);
+        } else {
+            self.apply_session_effects(effects, window, cx);
+        }
+    }
+
+    #[cfg(any(test, feature = "editor-diagnostics"))]
+    pub(crate) fn install_document(
+        &mut self,
+        document: Option<Document>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let observed = self.observed_document(cx);
+        let _ = self.session.request(Next::Nothing, observed);
+        if let Some((operation, super::session::PhaseKind::Prompt)) = self.session.foreground() {
+            let _ = self.session.answer(operation, Choice::Discard, observed);
+        }
+        let Some((operation, super::session::PhaseKind::Dispatching)) = self.session.foreground()
+        else {
+            panic!("fixture installation needs an idle session")
+        };
+        let _ = self.session.dispatch(operation, Stage::Load);
+        self.complete_content_load(
+            operation,
+            Ok(document.map_or(Loaded::Empty, Loaded::Document)),
+            window,
+            cx,
+        );
+    }
+}

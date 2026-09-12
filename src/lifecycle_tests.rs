@@ -2,6 +2,7 @@
 //! Picker outcomes enter the production completion handlers because GPUI's
 //! TestPlatform does not implement prompt_for_paths. No native UI is opened.
 use super::{Document, Next, Notes, notebook};
+use crate::app::session::{Effect, OperationId, PhaseKind};
 use gpui::{Entity, TestAppContext, VisualTestContext, prelude::*};
 use gpui_component::Root;
 use std::{fs, path::Path, time::Duration};
@@ -46,6 +47,21 @@ fn edit(notes: &Entity<Notes>, text: &str, cx: &mut VisualTestContext) {
     cx.run_until_parked();
 }
 
+fn begin_picker(
+    this: &mut Notes,
+    window: &mut gpui::Window,
+    cx: &mut gpui::Context<Notes>,
+) -> OperationId {
+    let effects = this.session.pick();
+    let operation = this.session.foreground().unwrap().0;
+    for effect in effects {
+        if !matches!(effect, Effect::Pick(_)) {
+            this.apply_session_effects(vec![effect], window, cx);
+        }
+    }
+    operation
+}
+
 fn elapse(cx: &mut VisualTestContext) {
     cx.executor().advance_clock(Duration::from_millis(150));
     cx.run_until_parked();
@@ -62,8 +78,8 @@ fn cancelled_file_picker_resumes_retained_dirty_document(cx: &mut TestAppContext
         notes.update(cx, |this, cx| {
             // request() cancels this timer before opening a picker.
             this.saves.timer = None;
-            let operation = this.foreground.begin().unwrap();
-            this.finish_open(operation, Ok(None), window, cx);
+            let operation = begin_picker(this, window, cx);
+            this.finish_file_picker(operation, Ok(None), window, cx);
         })
     });
     cx.run_until_parked();
@@ -85,7 +101,7 @@ fn folder_picker_outcomes_resume_an_expired_autosave(cx: &mut TestAppContext) {
     ] {
         edit(&notes, text, cx);
         let operation =
-            cx.update(|_, cx| notes.update(cx, |this, _| this.foreground.begin().unwrap()));
+            cx.update(|window, cx| notes.update(cx, |this, cx| begin_picker(this, window, cx)));
         elapse(cx);
         assert_ne!(fs::read_to_string(&path).unwrap(), text);
         cx.update(|window, cx| {
@@ -109,7 +125,15 @@ fn failed_notebook_activation_resumes_autosave(cx: &mut TestAppContext) {
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             this.saves.timer = None;
-            this.activate_notebook(dir.path().join("missing"), false, window, cx);
+            this.diagnostic_answer_request(
+                Some(1),
+                Next::Notebook {
+                    path: dir.path().join("missing"),
+                    create: false,
+                },
+                window,
+                cx,
+            );
         })
     });
     cx.run_until_parked();
@@ -128,8 +152,8 @@ fn failed_file_open_resumes_only_after_error_dismissal(cx: &mut TestAppContext) 
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             this.saves.timer = None;
-            let operation = this.foreground.begin().unwrap();
-            this.finish_open(
+            let operation = begin_picker(this, window, cx);
+            this.finish_file_picker(
                 operation,
                 Err(std::io::Error::other("unreadable")),
                 window,
@@ -166,7 +190,7 @@ fn cancelling_save_prompt_retains_document_and_resumes_autosave(cx: &mut TestApp
     assert_eq!(fs::read_to_string(&path).unwrap(), "retained");
     cx.update(|_, cx| {
         assert_eq!(
-            notes.read(cx).document.as_ref().unwrap().path,
+            notes.read(cx).document().unwrap().path,
             fs::canonicalize(&path).unwrap()
         )
     });
@@ -178,12 +202,18 @@ fn retained_document_keeps_autosave_disabled(cx: &mut TestAppContext) {
     let path = dir.path().join("note.md");
     fs::write(&path, "original").unwrap();
     let (notes, cx) = fixture(cx, &path);
-    cx.update(|_, cx| notes.update(cx, |this, _| this.saves.session.enabled = false));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let mut settings = this.autosave_settings();
+            settings.enabled = false;
+            this.update_autosave(settings, window, cx);
+        })
+    });
     edit(&notes, "retained", cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            let operation = this.foreground.begin().unwrap();
-            this.finish_open(operation, Ok(None), window, cx);
+            let operation = begin_picker(this, window, cx);
+            this.finish_file_picker(operation, Ok(None), window, cx);
         })
     });
     cx.run_until_parked();
@@ -203,18 +233,22 @@ fn background_save_finishing_does_not_release_a_picker(cx: &mut TestAppContext) 
         notes.update(cx, |this, cx| {
             this.saves.timer = None;
             this.start_write(None, window, cx);
-            assert!(this.saves.writing);
+            assert!(this.session.write().is_some());
             assert!(!this.is_busy());
-            this.foreground.begin().unwrap()
+            begin_picker(this, window, cx)
         })
     });
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&path).unwrap(), "saved snapshot");
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            assert!(!this.saves.writing);
+            assert!(!this.session.write().is_some());
             assert!(!this.dirty(cx));
-            assert!(this.foreground.owns(picker));
+            assert!(
+                this.session
+                    .foreground()
+                    .is_some_and(|(id, _)| id == picker)
+            );
             assert!(this.is_busy());
             this.finish_notebook_picker(picker, Ok(None), true, window, cx);
             assert!(!this.is_busy());
@@ -238,11 +272,10 @@ fn queued_manual_save_writes_the_newest_snapshot(cx: &mut TestAppContext) {
                 editor.replace_selection_isolated("newest snapshot", window, cx);
             });
             this.save(Next::Nothing, window, cx);
-            let Some(super::autosave::Pending::Save(operation, _)) = this.saves.pending.as_ref()
-            else {
-                panic!("manual save must wait for the background writer");
-            };
-            assert!(this.foreground.owns(*operation));
+            assert!(matches!(
+                this.session.foreground(),
+                Some((_, PhaseKind::WaitingForWrite))
+            ));
         })
     });
     cx.run_until_parked();
@@ -250,8 +283,8 @@ fn queued_manual_save_writes_the_newest_snapshot(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         let state = notes.read(cx);
         assert!(!state.dirty(cx));
-        assert!(!state.saves.writing);
-        assert!(state.saves.pending.is_none());
+        assert!(!state.session.write().is_some());
+        assert!(state.session.foreground().is_none());
         assert!(!state.is_busy());
     });
 }
@@ -270,11 +303,10 @@ fn queued_navigation_releases_its_wait_owner_before_loading(cx: &mut TestAppCont
             this.saves.timer = None;
             this.start_write(None, window, cx);
             this.request(Next::File(target.clone()), window, cx);
-            let Some(super::autosave::Pending::Request(operation, _)) = this.saves.pending.as_ref()
-            else {
-                panic!("navigation must wait for the background writer");
-            };
-            assert!(this.foreground.owns(*operation));
+            assert!(matches!(
+                this.session.foreground(),
+                Some((_, PhaseKind::WaitingForWrite))
+            ));
         })
     });
     cx.run_until_parked();
@@ -282,12 +314,12 @@ fn queued_navigation_releases_its_wait_owner_before_loading(cx: &mut TestAppCont
     cx.update(|_, cx| {
         let state = notes.read(cx);
         assert_eq!(
-            state.document.as_ref().unwrap().path,
+            state.document().unwrap().path,
             fs::canonicalize(target).unwrap()
         );
         assert_eq!(state.editor.read(cx).value().as_ref(), "target document");
         assert!(!state.is_busy());
-        assert!(state.saves.pending.is_none());
+        assert!(state.session.foreground().is_none());
     });
 }
 
@@ -305,13 +337,11 @@ fn stale_pending_navigation_keeps_saved_baseline_and_new_owner(cx: &mut TestAppC
             this.saves.timer = None;
             this.start_write(None, window, cx);
             this.request(Next::File(target), window, cx);
-            let Some(super::autosave::Pending::Request(old, _)) = this.saves.pending.as_ref()
-            else {
-                panic!("expected queued navigation");
-            };
-            // Simulate a superseded foreground continuation while the actual write runs.
-            assert!(this.foreground.finish(*old));
-            this.foreground.begin().unwrap()
+            let old = this.session.foreground().unwrap().0;
+            let observed = this.observed_document(cx);
+            let effects = this.session.cancel(old, observed);
+            this.apply_session_effects(effects, window, cx);
+            begin_picker(this, window, cx)
         })
     });
     cx.run_until_parked();
@@ -319,14 +349,14 @@ fn stale_pending_navigation_keeps_saved_baseline_and_new_owner(cx: &mut TestAppC
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             assert_eq!(
-                this.document.as_ref().unwrap().path,
+                this.document().unwrap().path,
                 fs::canonicalize(&path).unwrap()
             );
-            assert_eq!(this.document.as_ref().unwrap().saved, "saved snapshot");
+            assert_eq!(this.document().unwrap().saved, "saved snapshot");
             assert!(!this.dirty(cx));
-            assert!(this.foreground.owns(newer));
-            assert!(this.saves.pending.is_none());
-            this.finish_open(newer, Ok(None), window, cx);
+            assert!(this.session.foreground().is_some_and(|(id, _)| id == newer));
+            assert!(this.session.write().is_none());
+            this.finish_file_picker(newer, Ok(None), window, cx);
         })
     });
 }
@@ -341,27 +371,22 @@ fn stale_and_duplicate_foreground_completions_cannot_install_documents(cx: &mut 
     let (notes, cx) = fixture(cx, &path);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            let old = this.foreground.begin().unwrap();
-            this.finish_open(old, Ok(None), window, cx);
-            let newer = this.foreground.begin().unwrap();
-            this.finish_open(
-                old,
-                Ok(Some(Document::open(target.clone()).unwrap())),
-                window,
-                cx,
-            );
-            this.answer_request(old, Some(1), Next::File(target.clone()), window, cx);
+            let old = begin_picker(this, window, cx);
+            this.finish_file_picker(old, Ok(None), window, cx);
+            let newer = begin_picker(this, window, cx);
+            this.finish_file_picker(old, Ok(Some(target.clone())), window, cx);
+            this.answer_request(old, Some(1), window, cx);
             this.finish_notebook_picker(old, Ok(Some(dir.path().to_path_buf())), false, window, cx);
-            assert!(this.foreground.owns(newer));
+            assert!(this.session.foreground().is_some_and(|(id, _)| id == newer));
             assert_eq!(
-                this.document.as_ref().unwrap().path,
+                this.document().unwrap().path,
                 fs::canonicalize(&path).unwrap()
             );
-            this.finish_open(newer, Ok(None), window, cx);
-            this.finish_open(newer, Ok(Some(Document::open(target).unwrap())), window, cx);
+            this.finish_file_picker(newer, Ok(None), window, cx);
+            this.finish_file_picker(newer, Ok(Some(target)), window, cx);
             assert!(!this.is_busy());
             assert_eq!(
-                this.document.as_ref().unwrap().path,
+                this.document().unwrap().path,
                 fs::canonicalize(&path).unwrap()
             );
         })
@@ -405,10 +430,7 @@ fn moving_a_note_preserves_preferences_changed_while_the_move_is_pending(cx: &mu
     cx.update(|_, cx| {
         let notes = notes.read(cx);
         assert!(!notes.is_busy());
-        assert_eq!(
-            notes.document.as_ref().unwrap().path,
-            root.join("Archive/note.md")
-        );
+        assert_eq!(notes.document().unwrap().path, root.join("Archive/note.md"));
         assert_eq!(notes.mode, super::ViewMode::Source);
         assert_eq!(
             notes.notebooks.active.as_ref().unwrap().settings.view_mode,
@@ -429,10 +451,10 @@ fn disk_conflict_retains_text_and_pauses_autosave_until_explicit_save(cx: &mut T
     assert_eq!(fs::read_to_string(&path).unwrap(), "external");
     cx.update(|_, cx| {
         let notes = notes.read(cx);
-        assert!(notes.saves.conflict);
+        assert!(notes.session.save_conflicted());
         assert!(notes.saves.error.is_some());
         assert!(notes.dirty(cx));
-        assert_eq!(notes.document.as_ref().unwrap().saved, "original");
+        assert_eq!(notes.document().unwrap().saved, "original");
         assert_eq!(notes.editor.read(cx).value().as_ref(), "retained edit");
     });
     // Restoring the matching disk bytes does not silently resume a paused save.
@@ -445,7 +467,7 @@ fn disk_conflict_retains_text_and_pauses_autosave_until_explicit_save(cx: &mut T
     assert_eq!(fs::read_to_string(&path).unwrap(), "newer retained edit");
     cx.update(|_, cx| {
         let notes = notes.read(cx);
-        assert!(!notes.saves.conflict);
+        assert!(!notes.session.save_conflicted());
         assert!(notes.saves.error.is_none());
         assert!(!notes.dirty(cx));
     });
@@ -466,7 +488,7 @@ fn manual_save_checks_disk_version_even_when_editor_is_clean(cx: &mut TestAppCon
     assert_eq!(fs::read_to_string(&path).unwrap(), "external");
     cx.update(|_, cx| {
         let notes = notes.read(cx);
-        assert!(notes.saves.conflict);
+        assert!(notes.session.save_conflicted());
         assert!(!notes.dirty(cx));
         assert_eq!(notes.editor.read(cx).value().as_ref(), "original");
     });
@@ -486,13 +508,13 @@ fn conflict_completion_cancels_autosave_queued_while_the_write_was_running(
         notes.update(cx, |this, cx| {
             this.start_write(None, window, cx);
             this.schedule_autosave(window, cx);
-            assert!(this.saves.timer.is_some());
+            assert!(this.session.write().is_some());
         })
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
         let notes = notes.read(cx);
-        assert!(notes.saves.conflict);
+        assert!(notes.session.save_conflicted());
         assert!(notes.saves.timer.is_none());
     });
     fs::write(&path, "original").unwrap();
@@ -522,7 +544,7 @@ fn io_failure_during_manual_conflict_retry_does_not_resume_automatic_saves(
         .unwrap();
     cx.update(|window, cx| notes.update(cx, |this, cx| this.save(Next::Nothing, window, cx)));
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(notes.read(cx).saves.conflict));
+    cx.update(|_, cx| assert!(notes.read(cx).session.save_conflicted()));
     drop(lock);
     edit(&notes, "later retained edit", cx);
     elapse(cx);
@@ -530,7 +552,7 @@ fn io_failure_during_manual_conflict_retry_does_not_resume_automatic_saves(
     cx.update(|window, cx| notes.update(cx, |this, cx| this.save(Next::Nothing, window, cx)));
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&path).unwrap(), "later retained edit");
-    cx.update(|_, cx| assert!(!notes.read(cx).saves.conflict));
+    cx.update(|_, cx| assert!(!notes.read(cx).session.save_conflicted()));
 }
 
 #[gpui::test]
@@ -552,7 +574,7 @@ fn move_retains_unsaved_history_and_revalidates_the_saved_file_version(cx: &mut 
     edit(&notes, "retained edit", cx);
     let identity = cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            let identity = this.saves.identity;
+            let identity = this.document_id();
             this.drop_entry(
                 &super::notebook_ui::EntryDrag {
                     root: root.clone(),
@@ -569,8 +591,8 @@ fn move_retains_unsaved_history_and_revalidates_the_saved_file_version(cx: &mut 
     let moved = root.join("Archive/note.md");
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            assert_eq!(this.saves.identity, identity);
-            assert_eq!(this.document.as_ref().unwrap().path, moved);
+            assert_eq!(this.document_id(), identity);
+            assert_eq!(this.document().unwrap().path, moved);
             assert!(this.dirty(cx));
             assert_eq!(this.editor.read(cx).value().as_ref(), "retained edit");
             this.save(Next::Nothing, window, cx);
@@ -585,7 +607,29 @@ fn move_retains_unsaved_history_and_revalidates_the_saved_file_version(cx: &mut 
         let notes = notes.read(cx);
         assert_eq!(notes.editor.read(cx).value().as_ref(), "original");
         assert!(notes.dirty(cx));
-        assert_eq!(notes.saves.identity, identity);
-        assert!(!notes.saves.conflict);
+        assert_eq!(notes.document_id(), identity);
+        assert!(!notes.session.save_conflicted());
     });
+}
+
+#[gpui::test]
+fn stale_autosave_arm_effect_cannot_replace_the_latest_timer(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("note.md");
+    fs::write(&path, "original").unwrap();
+    let (notes, cx) = fixture(cx, &path);
+    edit(&notes, "first edit", cx);
+    let old = cx.update(|_, cx| notes.read(cx).session.autosave().unwrap());
+    edit(&notes, "latest edit", cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let current = this.session.autosave().unwrap();
+            assert_ne!(old, current);
+            this.arm_session_autosave(old, window, cx);
+            assert_eq!(this.session.autosave(), Some(current));
+        })
+    });
+    elapse(cx);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "latest edit");
+    cx.update(|_, cx| assert!(!notes.read(cx).dirty(cx)));
 }

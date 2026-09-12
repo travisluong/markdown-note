@@ -50,9 +50,13 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
     });
     notes.update(cx, |notes, cx| {
         notes.saves.session.enabled = false;
+        notes.install_document(
+            Some(document_fixture("diagnostics.md", &fixture)),
+            window,
+            cx,
+        );
         notes.editor_subscription = Notes::subscribe_editor(&diagnostic, window, cx);
         notes.editor = diagnostic;
-        notes.document = Some(document_fixture("diagnostics.md", &fixture));
         notes.set_mode(ViewMode::LivePreview, window, cx);
     });
     geometry_round(notes.clone(), output, 0, window);
@@ -115,9 +119,9 @@ fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<
             .multi_line(true)
             .default_value(text.clone())
     });
+    notes.install_document(Some(document_fixture("benchmark.md", &text)), window, cx);
     notes.editor_subscription = Notes::subscribe_editor(&editor, window, cx);
     notes.editor = editor;
-    notes.document = Some(document_fixture("benchmark.md", &text));
     notes.set_mode(ViewMode::LivePreview, window, cx);
 }
 

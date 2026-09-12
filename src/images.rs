@@ -27,37 +27,38 @@ pub(super) fn viewer(path: &Path) -> impl IntoElement {
 }
 
 impl Notes {
-    pub(super) fn open_image(
+    pub(crate) fn open_image_with_operation(
         &mut self,
+        operation: OperationId,
         path: PathBuf,
         tree_focus: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let result = self
-            .notebooks
-            .active
-            .as_ref()
-            .ok_or_else(|| io::Error::other("Open a notebook first."))
-            .and_then(|book| {
-                path.strip_prefix(&book.root)
-                    .map_err(io::Error::other)
-                    .and_then(|relative| notebook::resolve(&book.root, relative))
-            });
-        match result {
-            Ok(path) => {
-                self.install_document(None, window, cx);
-                self.image_path = Some(path);
-                if tree_focus {
+        let effects = self.session.dispatch(operation, app::session::Stage::Load);
+        for effect in effects {
+            if let app::session::Effect::Load(operation) = effect {
+                let result = self
+                    .notebooks
+                    .active
+                    .as_ref()
+                    .ok_or_else(|| io::Error::other("Open a notebook first."))
+                    .and_then(|book| {
+                        path.strip_prefix(&book.root)
+                            .map_err(io::Error::other)
+                            .and_then(|relative| notebook::resolve(&book.root, relative))
+                    })
+                    .map(app::session::Loaded::Image);
+                if self.complete_content_load(operation, result, window, cx) && tree_focus {
                     self.notebooks.tree_focus.focus(window);
                 }
                 self.refresh(window, cx);
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
             }
-            Err(error) => self.error("Could not open image", error, window, cx),
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,7 +86,7 @@ impl Notes {
         drop_allowed(
             self.mode,
             self.is_busy(),
-            self.document.as_ref().map(|d| d.path.as_path()),
+            self.document().map(|d| d.path.as_path()),
             self.notebooks
                 .active
                 .as_ref()
@@ -106,9 +107,9 @@ impl Notes {
             return;
         };
         let root = self.notebooks.active.as_ref().unwrap().root.clone();
-        let note = self.document.as_ref().unwrap().path.clone();
+        let note = self.document().unwrap().path.clone();
         let expected_note = note.clone();
-        let identity = self.saves.identity;
+        let identity = self.document_id();
         let revision = self.dirty_revision;
         let snapshot = self.editor.read(cx).snapshot();
         let worker_snapshot = snapshot.clone();
@@ -125,8 +126,8 @@ impl Notes {
             match result {
                 Ok((mut imported, offset, text)) => {
                     let _ = this.update_in(cx, |this, window, cx| {
-                        if !this.can_drop_images() || this.saves.identity != identity || this.dirty_revision != revision
-                            || this.document.as_ref().is_none_or(|doc| doc.path != expected_note) {
+                        if !this.can_drop_images() || this.document_id() != identity || this.dirty_revision != revision
+                            || this.document().is_none_or(|doc| doc.path != expected_note) {
                             this.notebooks.notice = Some("Image drop canceled because the document changed. Drop the image again.".into());
                             cx.notify();
                             return;

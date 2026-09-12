@@ -81,7 +81,7 @@ impl Notes {
         if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
-        let Some(doc) = &self.document else {
+        let Some(doc) = self.document() else {
             return;
         };
         match destination(
@@ -133,7 +133,7 @@ impl Notes {
         } else {
             target.clone()
         };
-        let identity = self.saves.identity;
+        let identity = self.document_id();
         let owner = cx.weak_entity();
         let error = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
         window.open_dialog(cx, move |dialog, _, _| {
@@ -174,7 +174,7 @@ impl Notes {
                                 &target.read(cx).value(),
                                 title.as_deref(),
                             );
-                            if this.saves.identity != identity
+                            if this.document_id() != identity
                                 || this.editor.read(cx).value().as_ref() != snapshot
                                 || !this.can_edit_document()
                             {

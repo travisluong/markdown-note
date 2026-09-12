@@ -88,10 +88,14 @@ fn cancelling_preferences_failure_after_discard_retains_and_autosaves_the_note(
     fail_index_write(&fixture, &notes, cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.notebooks.active.as_mut().unwrap().settings.autosave = notebook::Autosave {
-                enabled: true,
-                delay_ms: 100,
-            };
+            this.update_autosave(
+                notebook::Autosave {
+                    enabled: true,
+                    delay_ms: 100,
+                },
+                window,
+                cx,
+            );
             this.editor.update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
                 editor.replace_selection_isolated("retained A", window, cx);

@@ -48,7 +48,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     3 => {
                         assert!(!window.has_active_dialog(cx));
                         assert_eq!(notebook::name(&this.notebooks.active.as_ref().unwrap().root), "First");
-                        assert!(this.document.is_none());
+                        assert!(this.document().is_none());
                         fs::create_dir_all(first.join("folder/empty")).unwrap();
                         fs::write(first.join("folder/nested.md"), "# Nested").unwrap();
                         fs::write(first.join("root.md"), "# Root").unwrap();
@@ -84,7 +84,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(this.dirty(cx));
                         // Exercise the same response handler as the native save prompt.
                         this.diagnostic_answer_request(None, Next::File(first.join("root.md")), window, cx);
-                        assert_eq!(this.document.as_ref().unwrap().path.file_name().unwrap(), "nested.md");
+                        assert_eq!(this.document().unwrap().path.file_name().unwrap(), "nested.md");
                         assert!(this.dirty(cx));
                         this.diagnostic_answer_request(Some(0), Next::File(first.join("root.md")), window, cx);
                     }
@@ -96,7 +96,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     }
                     10 => {
                         assert_eq!(notebook::name(&this.notebooks.active.as_ref().unwrap().root), "Second");
-                        assert!(this.document.is_none());
+                        assert!(this.document().is_none());
                         assert_eq!(fs::read_to_string(first.join("root.md")).unwrap(), "# Root");
                         this.request(Next::Notebook { path: first.clone(), create: false }, window, cx);
                     }
@@ -226,7 +226,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     27 => this.diagnostic_answer_request(Some(1), Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx),
                     28 => {
                         assert!(this.notebooks.active.is_none());
-                        assert!(this.document.is_none());
+                        assert!(this.document().is_none());
                         assert!(this.notebooks.rows.is_empty());
                         assert!(window.has_active_dialog(cx));
                         assert_eq!(this.appearance().content_font_size, 16);

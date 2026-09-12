@@ -17,7 +17,7 @@ pub(crate) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
             let ready = notes
                 .update(cx, |this, cx| {
                     !this.is_busy()
-                        && !this.saves.writing
+                        && this.session.write().is_none()
                         && this
                             .search
                             .as_ref()

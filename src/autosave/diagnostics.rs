@@ -24,7 +24,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
             loop {
                 Timer::after(Duration::from_millis(250)).await;
                 assert!(started.elapsed().as_secs() < 45, "autosave timeout at {step}");
-                if notes.read_with(cx, |this, _| !this.saves.writing && !this.is_busy()).unwrap() { break; }
+                if notes.read_with(cx, |this, _| !this.session.write().is_some() && !this.is_busy()).unwrap() { break; }
             }
             cx.update(|window, cx| notes.update(cx, |this, cx| {
                 match step {
@@ -43,7 +43,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     }
                     2 => {
                         assert_eq!(Document::open(path.clone()).unwrap().saved, "snapshot A\n");
-                        assert_eq!(this.document.as_ref().unwrap().saved, "snapshot A\n");
+                        assert_eq!(this.document().unwrap().saved, "snapshot A\n");
                         assert!(this.dirty(cx));
                         this.update_autosave(notebook::Autosave { enabled: true, delay_ms: 1000 }, window, cx);
                         this.update_autosave(notebook::Autosave { enabled: true, delay_ms: 100 }, window, cx);
@@ -55,7 +55,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.start_write(None, window, cx);
                         this.editor.update(cx, |e, cx| e.set_value("manual newest\n", window, cx));
                         this.save(Next::Nothing, window, cx);
-                        assert!(matches!(this.saves.pending, Some(Pending::Save(_, _))));
+                        assert!(matches!(this.session.foreground(), Some((_, app::session::PhaseKind::WaitingForWrite))));
                     }
                     4 => {
                         assert_eq!(Document::open(path.clone()).unwrap().saved, "manual newest\n");
@@ -63,7 +63,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.editor.update(cx, |e, cx| e.set_value("before navigation\n", window, cx));
                         this.start_write(None, window, cx);
                         this.request(Next::File(path.clone()), window, cx);
-                        assert!(matches!(this.saves.pending, Some(Pending::Request(_, _))));
+                        assert!(matches!(this.session.foreground(), Some((_, app::session::PhaseKind::WaitingForWrite))));
                     }
                     5 => {
                         assert_eq!(this.editor.read(cx).value().as_str(), "before navigation\n");
@@ -80,8 +80,23 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(!this.is_busy());
                         fs::remove_dir(&path).unwrap();
                         fs::rename(fixture.path().join("backup.md"), &path).unwrap();
-                        let document = this.document.as_mut().unwrap();
-                        document.version = document::version_after_move(&path, &document.version).unwrap();
+                        // The fixture moved the same file away and back. Accept its
+                        // matching version through the normal owned move completion.
+                        let effects = this.session.move_content();
+                        for effect in effects {
+                            if let app::session::Effect::Move(operation) = effect {
+                                let dirty = this.dirty(cx);
+                                let effects = this.session.moved(operation, |content| {
+                                    if let app::session::MovingContent::Document(document) = content {
+                                        document.version = document::version_after_move(&path, &document.version).unwrap();
+                                    }
+                                    app::session::MoveOutcome { dirty, conflict: false }
+                                });
+                                for effect in effects {
+                                    if !matches!(effect, app::session::Effect::Moved(_)) { this.apply_session_effects(vec![effect], window, cx); }
+                                }
+                            } else { this.apply_session_effects(vec![effect], window, cx); }
+                        }
                         this.save(Next::Nothing, window, cx);
                     }
                     7 => {

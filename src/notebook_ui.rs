@@ -15,6 +15,9 @@ pub(super) mod diagnostics;
 mod operation_tests;
 
 #[cfg(test)]
+mod session_tests;
+
+#[cfg(test)]
 mod autosave_tests;
 
 #[cfg(test)]
@@ -27,7 +30,7 @@ mod persistence_tests;
 mod activation_preference_tests;
 
 enum SettingsAfterFlush {
-    Close { discard_failed: bool },
+    Close,
     Activate { path: PathBuf, create: bool },
 }
 
@@ -77,8 +80,7 @@ pub(super) struct NotebookState {
     write_delay: Duration,
     #[cfg(test)]
     activation_install_delay: Duration,
-    tree_loading: bool,
-    tree_target: Option<PathBuf>,
+    tree_operation: Option<OperationId>,
     folder_target: Option<PathBuf>,
     pub notice: Option<String>,
     creating: bool,
@@ -117,8 +119,7 @@ impl NotebookState {
             write_delay: Duration::ZERO,
             #[cfg(test)]
             activation_install_delay: Duration::ZERO,
-            tree_loading: false,
-            tree_target: None,
+            tree_operation: None,
             folder_target: None,
             notice: None,
             creating: false,
@@ -240,32 +241,44 @@ impl Notes {
     }
 
     pub(super) fn restore_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        let configured_path = self.notebooks.index_path.clone();
-        cx.spawn_in(window, async move |this, cx| {
-            let result = cx.background_executor().spawn(async move {
-                let path = match configured_path { Some(path) => path, None => notebook::index_path()? };
-                notebook::load_index(&path).map(|index| (path, index))
-            }).await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) { return; }
-                match result {
-                    Ok((path, index)) => {
-                        let active = index.active.clone();
-                        this.notebooks.index = index;
-                        this.notebooks.index_path = Some(path);
-                        this.notebooks.index_writable = true;
-                        if let Some(path) = active { this.activate_notebook(path, false, window, cx); }
-                    }
-                    Err(error) => this.notebooks.notice = Some(format!("Could not restore notebooks: {error}. Notebook history is disabled to preserve existing settings.")),
-                }
-                cx.notify();
-            });
-        }).detach();
+        let effects = self.session.restore();
+        for effect in effects {
+            if let app::session::Effect::RestoreIndex(operation) = effect {
+                let configured_path = self.notebooks.index_path.clone();
+                cx.spawn_in(window, async move |this, cx| {
+                    let result = cx.background_executor().spawn(async move {
+                        let path = match configured_path { Some(path) => path, None => notebook::index_path()? };
+                        notebook::load_index(&path).map(|index| (path, index))
+                    }).await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        match result {
+                            Ok((path, index)) => {
+                                let next = index.active.clone().map(|path| Next::Notebook { path, create: false });
+                                let effects = this.session.restored(operation, Ok(next));
+                                if effects.is_empty() { return; }
+                                this.notebooks.index = index;
+                                this.notebooks.index_path = Some(path);
+                                this.notebooks.index_writable = true;
+                                this.apply_session_effects(effects, window, cx);
+                            }
+                            Err(error) => {
+                                let effects = this.session.restored(operation, Err(()));
+                                for effect in effects {
+                                    if matches!(effect, app::session::Effect::RestoreFailed(_)) {
+                                        this.notebooks.notice = Some(format!("Could not restore notebooks: {error}. Notebook history is disabled to preserve existing settings."));
+                                    } else {
+                                        this.apply_session_effects(vec![effect], window, cx);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }).detach();
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
     }
-
     pub(super) fn notebook_menu(&self, mut menu: PopupMenu, _: &mut App) -> PopupMenu {
         menu = menu.menu_with_disabled(
             "Manage notebooks",
@@ -555,21 +568,71 @@ impl Notes {
             .as_ref()
             .is_some_and(|book| book.root == path)
         {
-            self.notebooks.active = None;
-            self.search = None;
-            self.search_subscription = None;
-            self.apply_appearance(window, cx);
-            self.notebooks.generation += 1;
-            self.notebooks.directories.clear();
-            self.notebooks.rows.clear();
-            self.notebooks.cursor = None;
-            self.install_document(None, window, cx);
+            self.request(Next::RemoveNotebook(path), window, cx);
+        } else {
+            // Removing an inactive index entry does not navigate or save the
+            // retained document. Its existing autosave remains independent.
+            self.notebooks.index.forget(&path);
+            self.persist_notebooks(cx);
+            self.refresh(window, cx);
+        }
+    }
+
+    pub(crate) fn remove_notebook_with_operation(
+        &mut self,
+        operation: OperationId,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.notebooks.index_writable {
+            let observed = self.observed_document(cx);
+            let effects = self.session.continued(operation, observed);
+            self.apply_session_effects(effects, window, cx);
+            return;
+        }
+        if self
+            .notebooks
+            .active
+            .as_ref()
+            .is_some_and(|book| book.root == path)
+        {
+            let effects = self.session.dispatch(operation, app::session::Stage::Load);
+            if effects.is_empty() {
+                return;
+            }
+            for effect in effects {
+                if let app::session::Effect::Load(operation) = effect {
+                    self.notebooks.active = None;
+                    self.search = None;
+                    self.search_subscription = None;
+                    self.apply_appearance(window, cx);
+                    self.notebooks.generation += 1;
+                    self.notebooks.directories.clear();
+                    self.notebooks.rows.clear();
+                    self.notebooks.cursor = None;
+                    self.complete_content_load(
+                        operation,
+                        Ok(app::session::Loaded::Empty),
+                        window,
+                        cx,
+                    );
+                } else {
+                    self.apply_session_effects(vec![effect], window, cx);
+                }
+            }
+        } else {
+            let observed = self.observed_document(cx);
+            let effects = self.session.continued(operation, observed);
+            if effects.is_empty() {
+                return;
+            }
+            self.apply_session_effects(effects, window, cx);
         }
         self.notebooks.index.forget(&path);
         self.persist_notebooks(cx);
         self.refresh(window, cx);
     }
-
     fn create_from_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_busy() {
             return;
@@ -601,38 +664,38 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_busy() {
-            return;
+        let effects = self.session.pick();
+        for effect in effects {
+            if let app::session::Effect::Pick(operation) = effect {
+                self.notebooks.modal_error = None;
+                let picker = cx.prompt_for_paths(PathPromptOptions {
+                    files: false,
+                    directories: true,
+                    multiple: false,
+                    prompt: Some(
+                        if location {
+                            "Choose location"
+                        } else {
+                            "Open notebook"
+                        }
+                        .into(),
+                    ),
+                });
+                cx.spawn_in(window, async move |this, cx| {
+                    let result = match picker.await {
+                        Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
+                        Ok(Err(error)) => Err(error.to_string()),
+                        Err(error) => Err(error.to_string()),
+                    };
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.finish_notebook_picker(operation, result, location, window, cx);
+                    });
+                })
+                .detach();
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
         }
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        self.notebooks.modal_error = None;
-        let picker = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
-            multiple: false,
-            prompt: Some(
-                if location {
-                    "Choose location"
-                } else {
-                    "Open notebook"
-                }
-                .into(),
-            ),
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            let result = match picker.await {
-                Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
-                Ok(Err(error)) => Err(error.to_string()),
-                Err(error) => Err(error.to_string()),
-            };
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.finish_notebook_picker(operation, result, location, window, cx);
-            });
-        })
-        .detach();
-        cx.notify();
     }
 
     pub(super) fn finish_notebook_picker(
@@ -643,89 +706,109 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.foreground.finish(operation) {
-            return;
-        }
+        let observed = self.observed_document(cx);
         match result {
             Ok(Some(path)) if !location => {
-                self.request(
-                    Next::Notebook {
+                let effects = self.session.picked(
+                    operation,
+                    Some(Next::Notebook {
                         path,
                         create: false,
-                    },
-                    window,
-                    cx,
+                    }),
+                    observed,
                 );
+                self.apply_session_effects(effects, window, cx);
             }
             result => {
+                let effects = self.session.picked(operation, None, observed);
+                if effects.is_empty() {
+                    return;
+                }
                 match result {
                     Ok(Some(path)) => self.notebooks.location = Some(path),
                     Err(error) => self.notebooks.modal_error = Some(error),
                     Ok(None) => {}
                 }
-                self.resume_document(window, cx);
+                self.apply_session_effects(effects, window, cx);
             }
         }
     }
-
-    pub(super) fn activate_notebook(
+    pub(crate) fn activate_notebook_with_operation(
         &mut self,
+        operation: OperationId,
         path: PathBuf,
         create: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        self.notebooks.activation_preferences = self
-            .notebooks
-            .active
-            .as_ref()
-            .map(|book| ActivationPreferences::new(operation, book.root.clone()));
-        self.notebooks.modal_error = None;
-        cx.spawn_in(window, async move |this, cx| {
-            // Resolve identity before reading settings, so a pending write for
-            // this target can reach disk before Notebook::open reloads it.
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    if create {
-                        Ok(path)
-                    } else {
-                        fs::canonicalize(path)
-                    }
+        let effects = self
+            .session
+            .dispatch(operation, app::session::Stage::ActivateNotebook);
+        for effect in effects {
+            if let app::session::Effect::ResolveActivation(operation) = effect {
+                self.notebooks.activation_preferences = self
+                    .notebooks
+                    .active
+                    .as_ref()
+                    .map(|book| ActivationPreferences::new(operation, book.root.clone()));
+                self.notebooks.modal_error = None;
+                let path = path.clone();
+                cx.spawn_in(window, async move |this, cx| {
+                    // Resolve identity before reading settings, so pending target writes
+                    // reach disk before Notebook::open reloads that same destination.
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            if create {
+                                Ok(path)
+                            } else {
+                                fs::canonicalize(path)
+                            }
+                        })
+                        .await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        let observed = this.observed_document(cx);
+                        let effects =
+                            this.session
+                                .activation_resolved(operation, result.is_ok(), observed);
+                        for effect in effects {
+                            match effect {
+                                app::session::Effect::FlushActivation { operation, .. } => {
+                                    let path = result
+                                        .as_ref()
+                                        .expect("accepted successful resolution")
+                                        .clone();
+                                    let barrier = this
+                                        .notebooks
+                                        .writer
+                                        .as_ref()
+                                        .map(|writer| writer.flush_book(&path))
+                                        .unwrap_or_default();
+                                    this.notebooks.settings_waiter = Some(SettingsWaiter {
+                                        operation,
+                                        barrier,
+                                        after: SettingsAfterFlush::Activate { path, create },
+                                    });
+                                    this.resolve_settings_waiter(window, cx);
+                                }
+                                app::session::Effect::ActivationFailed(_) => {
+                                    this.take_activation_preferences(operation);
+                                    this.notebook_open_failed(
+                                        io::Error::other(result.as_ref().unwrap_err().to_string()),
+                                        window,
+                                        cx,
+                                    );
+                                }
+                                other => this.apply_session_effects(vec![other], window, cx),
+                            }
+                        }
+                    });
                 })
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.owns(operation) {
-                    return;
-                }
-                match result {
-                    Ok(path) => {
-                        let barrier = this
-                            .notebooks
-                            .writer
-                            .as_ref()
-                            .map(|writer| writer.flush_book(&path))
-                            .unwrap_or_default();
-                        this.notebooks.settings_waiter = Some(SettingsWaiter {
-                            operation,
-                            barrier,
-                            after: SettingsAfterFlush::Activate { path, create },
-                        });
-                        this.resolve_settings_waiter(window, cx);
-                    }
-                    Err(error) => {
-                        this.foreground.finish(operation);
-                        this.take_activation_preferences(operation);
-                        this.notebook_open_failed(error, window, cx);
-                    }
-                }
-            });
-        })
-        .detach();
-        cx.notify();
+                .detach();
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
     }
 
     fn load_notebook_after_flush(
@@ -759,7 +842,9 @@ impl Notes {
             #[cfg(test)]
             cx.background_executor().timer(install_delay).await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) {
+                if this.session.foreground()
+                    != Some((operation, app::session::PhaseKind::LoadingNotebook))
+                {
                     return;
                 }
                 let preferences = this.take_activation_preferences(operation);
@@ -775,7 +860,15 @@ impl Notes {
                         this.mode = book.settings.view_mode;
                         this.notebooks.active = Some(book);
                         this.apply_appearance(window, cx);
-                        this.install_document(document, window, cx);
+                        this.complete_content_load(
+                            operation,
+                            Ok(document.map_or(
+                                app::session::Loaded::Empty,
+                                app::session::Loaded::Document,
+                            )),
+                            window,
+                            cx,
+                        );
                         this.refresh_tree(window, cx);
                         this.remember_file(cx);
                         if window.has_active_dialog(cx) {
@@ -783,7 +876,7 @@ impl Notes {
                         }
                     }
                     Err(error) => {
-                        this.notebook_open_failed(error, window, cx);
+                        this.complete_content_load(operation, Err(error), window, cx);
                     }
                 }
                 this.refresh(window, cx);
@@ -800,7 +893,10 @@ impl Notes {
             return;
         };
         let operation = preferences.operation();
-        if self.foreground.owns(operation)
+        if self
+            .session
+            .foreground()
+            .is_some_and(|(id, _)| id == operation)
             && let Some(book) = &self.notebooks.active
         {
             preferences.record(operation, &book.root, intent);
@@ -823,7 +919,7 @@ impl Notes {
         }
     }
 
-    fn notebook_open_failed(
+    pub(crate) fn notebook_open_failed(
         &mut self,
         error: io::Error,
         window: &mut Window,
@@ -835,78 +931,76 @@ impl Notes {
         } else {
             self.notebooks.notice = Some(message);
         }
-        self.resume_document(window, cx);
+        self.refresh(window, cx);
     }
 
-    pub(super) fn create_note(
+    pub(crate) fn create_note_with_operation(
         &mut self,
+        operation: OperationId,
         root: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_busy()
-            || !self
-                .notebooks
-                .active
-                .as_ref()
-                .is_some_and(|book| book.root == root)
+        if !self
+            .notebooks
+            .active
+            .as_ref()
+            .is_some_and(|book| book.root == root)
         {
+            let observed = self.observed_document(cx);
+            let effects = self.session.continued(operation, observed);
+            self.apply_session_effects(effects, window, cx);
             return;
         }
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        cx.spawn_in(window, async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { notebook::create_untitled(&root).and_then(Document::open) })
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) {
-                    return;
-                }
-                match result {
-                    Ok(document) => {
-                        if this.mode == ViewMode::Reading {
+        let effects = self.session.dispatch(operation, app::session::Stage::Load);
+        for effect in effects {
+            if let app::session::Effect::Load(operation) = effect {
+                let root = root.clone();
+                cx.spawn_in(window, async move |this, cx| {
+                    let result =
+                        cx.background_executor()
+                            .spawn(async move {
+                                notebook::create_untitled(&root).and_then(Document::open)
+                            })
+                            .await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        if this.session.foreground()
+                            != Some((operation, app::session::PhaseKind::Loading))
+                        {
+                            return;
+                        }
+                        if result.is_ok() && this.mode == ViewMode::Reading {
                             this.set_mode(ViewMode::Source, window, cx);
                         }
                         this.search_destination = None;
-                        this.install_document(Some(document), window, cx);
-                        this.remember_file(cx);
-                        this.reveal_sidebar(cx);
-                        this.refresh_tree(window, cx);
-                    }
-                    Err(error) => this.error("Could not create note", error, window, cx),
-                }
-                this.refresh(window, cx);
-            });
-        })
-        .detach();
-        cx.notify();
+                        if this.complete_content_load(
+                            operation,
+                            result.map(app::session::Loaded::Document),
+                            window,
+                            cx,
+                        ) {
+                            this.remember_file(cx);
+                            this.reveal_sidebar(cx);
+                            this.refresh_tree(window, cx);
+                        }
+                        this.refresh(window, cx);
+                    });
+                })
+                .detach();
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
     }
-
-    pub(super) fn install_document(
-        &mut self,
-        document: Option<Document>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let discarded_path = if self.search.is_some() && self.dirty(cx) {
-            self.document.as_ref().map(|document| document.path.clone())
-        } else {
-            None
-        };
-        self.image_path = None;
+    pub(crate) fn install_session_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.reading_search = None;
         self.saves.timer = None;
-        self.saves.identity += 1;
         self.saves.error = None;
-        self.saves.conflict = false;
-        // A fresh editor prevents undo from restoring another document.
-        let text = document
-            .as_ref()
-            .map(|d| d.saved.clone())
+        let text = self
+            .document()
+            .map(|document| document.saved.clone())
             .unwrap_or_default();
+        // Installation creates new history; changing view mode retains this editor.
         let editor = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
@@ -915,7 +1009,6 @@ impl Notes {
         });
         self.editor_subscription = Self::subscribe_editor(&editor, window, cx);
         self.editor = editor;
-        self.document = document;
         self.reading_text = if self.mode == ViewMode::Reading {
             self.editor.read(cx).value()
         } else {
@@ -924,19 +1017,21 @@ impl Notes {
         self.dirty_task = None;
         self.dirty_revision += 1;
         self.dirty_cached = false;
+        let image_document = self.document().map(|document| document.path.clone());
         self.editor.update(cx, |editor, cx| {
-            editor.set_image_document(self.document.as_ref().map(|d| d.path.clone()), cx);
-            editor.set_live_preview(self.mode == ViewMode::LivePreview, cx)
+            editor.set_image_document(image_document, cx);
+            editor.set_live_preview(self.mode == ViewMode::LivePreview, cx);
         });
-        if self.mode != ViewMode::Reading && self.document.is_some() {
+        if self.mode != ViewMode::Reading && self.document().is_some() {
             self.editor
                 .update(cx, |editor, cx| editor.focus(window, cx));
         } else {
             self.focus.focus(window);
         }
-        self.search_document_installed(discarded_path.as_deref(), window, cx);
+        self.schedule_autosave(window, cx);
     }
 
+    #[cfg(test)]
     pub(super) fn open_path(
         &mut self,
         path: PathBuf,
@@ -944,86 +1039,112 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if images::supported(&path) {
-            self.open_image(path, keep_tree_focus, window, cx);
-            return;
-        }
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        self.notebooks.tree_loading = keep_tree_focus;
-        self.notebooks.tree_target = keep_tree_focus.then(|| path.clone());
-        let loading_path = path.clone();
-        let root = self.notebooks.active.as_ref().map(|book| book.root.clone());
-        cx.spawn_in(window, async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    if let Some(root) = root
-                        && let Ok(relative) = path.strip_prefix(&root)
-                    {
-                        return notebook::resolve(&root, relative).and_then(Document::open);
-                    }
-                    Document::open(path)
-                })
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) {
-                    return;
-                }
-                this.notebooks.tree_loading = false;
-                if keep_tree_focus && this.notebooks.tree_target.as_ref() != Some(&loading_path) {
-                    if let Some(target) = this.notebooks.tree_target.take()
-                        && !this.document.as_ref().is_some_and(|doc| doc.path == target)
-                    {
-                        this.open_path(target, true, window, cx);
-                        return;
-                    }
-                    // A folder or the current note keeps the original buffer.
-                    this.resume_document(window, cx);
-                    return;
-                }
-                this.notebooks.tree_target = None;
-                match result {
-                    Ok(document) => {
-                        this.install_document(Some(document), window, cx);
-                        this.remember_file(cx);
-                        if keep_tree_focus {
-                            this.notebooks.tree_focus.focus(window);
-                        }
-                        if let Some(destination) = this.search_destination.take() {
-                            this.reveal_search_result(destination, window, cx);
-                            this.finish_search_navigation(true, window, cx);
-                        }
-                    }
-                    Err(error) => {
-                        this.search_destination = None;
-                        this.finish_search_navigation(false, window, cx);
-                        if keep_tree_focus {
-                            this.restore_tree_cursor(window, cx);
-                        }
-                        this.error("Could not open file", error, window, cx);
-                    }
-                }
-                this.refresh(window, cx);
-            });
-        })
-        .detach();
-        cx.notify();
+        self.request(
+            if keep_tree_focus {
+                Next::TreeFile(path)
+            } else {
+                Next::File(path)
+            },
+            window,
+            cx,
+        );
     }
 
+    pub(crate) fn open_path_with_operation(
+        &mut self,
+        operation: OperationId,
+        path: PathBuf,
+        keep_tree_focus: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if images::supported(&path) {
+            self.open_image_with_operation(operation, path, keep_tree_focus, window, cx);
+        } else {
+            self.load_file_with_operation(operation, path, keep_tree_focus, window, cx);
+        }
+    }
+
+    pub(crate) fn load_file_with_operation(
+        &mut self,
+        operation: OperationId,
+        path: PathBuf,
+        keep_tree_focus: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effects = self.session.dispatch(operation, app::session::Stage::Load);
+        for effect in effects {
+            if let app::session::Effect::Load(operation) = effect {
+                self.notebooks.tree_operation = keep_tree_focus.then_some(operation);
+                let root = self.notebooks.active.as_ref().map(|book| book.root.clone());
+                let path = path.clone();
+                cx.spawn_in(window, async move |this, cx| {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            if let Some(root) = root
+                                && let Ok(relative) = path.strip_prefix(&root)
+                            {
+                                return notebook::resolve(&root, relative).and_then(Document::open);
+                            }
+                            Document::open(path)
+                        })
+                        .await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        if this.session.foreground()
+                            != Some((operation, app::session::PhaseKind::Loading))
+                        {
+                            return;
+                        }
+                        if this.notebooks.tree_operation == Some(operation) {
+                            this.notebooks.tree_operation = None;
+                        }
+                        let installed = this.complete_content_load(
+                            operation,
+                            result.map(app::session::Loaded::Document),
+                            window,
+                            cx,
+                        );
+                        if installed {
+                            this.remember_file(cx);
+                            if keep_tree_focus {
+                                this.notebooks.tree_focus.focus(window);
+                            }
+                            if let Some(destination) = this.search_destination.take() {
+                                this.reveal_search_result(destination, window, cx);
+                                this.finish_search_navigation(true, window, cx);
+                            }
+                        } else if this.session.foreground()
+                            == Some((operation, app::session::PhaseKind::Error))
+                        {
+                            this.search_destination = None;
+                            this.finish_search_navigation(false, window, cx);
+                            if keep_tree_focus {
+                                this.restore_tree_cursor(window, cx);
+                            }
+                        }
+                        this.refresh(window, cx);
+                    });
+                })
+                .detach();
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
+    }
     pub(super) fn remember_file(&mut self, cx: &mut Context<Self>) {
+        let document_path = self.document().map(|doc| doc.path.clone());
         if let Some(book) = &mut self.notebooks.active {
             // File -> Open may select a standalone document outside this notebook.
-            if let Some(relative) = self
-                .document
+            if let Some(relative) = document_path
                 .as_ref()
-                .and_then(|d| d.path.strip_prefix(&book.root).ok())
+                .and_then(|path| path.strip_prefix(&book.root).ok())
             {
                 if notebook::safe_relative(relative) {
                     book.settings.last_file = Some(relative.to_path_buf());
                 }
-            } else if self.document.is_none() {
+            } else if document_path.is_none() {
                 book.settings.last_file = None;
             }
         }
@@ -1109,40 +1230,67 @@ impl Notes {
         }));
     }
 
-    pub(super) fn finish_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        // Disable the rendered editor while settings persistence delays removal.
-        cx.notify();
-        self.notebooks.settings_waiter = Some(SettingsWaiter {
-            operation,
-            barrier: self
-                .notebooks
-                .writer
-                .as_ref()
-                .map(|writer| writer.flush_all())
-                .unwrap_or_default(),
-            after: SettingsAfterFlush::Close {
-                discard_failed: false,
-            },
-        });
-        cx.defer_in(window, |this, window, cx| {
-            this.resolve_settings_waiter(window, cx)
-        });
+    pub(crate) fn close_with_operation(
+        &mut self,
+        operation: OperationId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let effects = self.session.dispatch(operation, app::session::Stage::Close);
+        for effect in effects {
+            if let app::session::Effect::FlushClose { operation, .. } = effect {
+                self.notebooks.settings_waiter = Some(SettingsWaiter {
+                    operation,
+                    barrier: self
+                        .notebooks
+                        .writer
+                        .as_ref()
+                        .map(|writer| writer.flush_all())
+                        .unwrap_or_default(),
+                    after: SettingsAfterFlush::Close,
+                });
+                cx.defer_in(window, |this, window, cx| {
+                    this.resolve_settings_waiter(window, cx)
+                });
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
+    }
+
+    pub(crate) fn cancel_session_context(&mut self, operation: OperationId) {
+        if self
+            .notebooks
+            .settings_waiter
+            .as_ref()
+            .is_some_and(|waiter| waiter.operation == operation)
+        {
+            self.notebooks.settings_waiter = None;
+        }
+        if self.notebooks.tree_operation == Some(operation) {
+            self.notebooks.tree_operation = None;
+        }
+        self.take_activation_preferences(operation);
+        self.search_destination = None;
     }
 
     fn resolve_settings_waiter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(mut waiter) = self.notebooks.settings_waiter.take() else {
             return;
         };
-        if !self.foreground.owns(waiter.operation) {
+        let closing = matches!(waiter.after, SettingsAfterFlush::Close);
+        let phase = if closing {
+            app::session::PhaseKind::Closing
+        } else {
+            app::session::PhaseKind::FlushingActivation
+        };
+        if self.session.foreground() != Some((waiter.operation, phase)) {
             self.take_activation_preferences(waiter.operation);
             return;
         }
-        // View mode can still change while busy. Include every late preference
-        // submission before a close succeeds or presents its final error choice.
-        if matches!(waiter.after, SettingsAfterFlush::Close { .. }) {
+        // Include every late preference submission before closing, even after the
+        // explicit permission to discard failed preferences has been supplied.
+        if closing {
             waiter.barrier = self
                 .notebooks
                 .writer
@@ -1156,102 +1304,121 @@ impl Notes {
             .as_ref()
             .map(|writer| writer.flush_status(&waiter.barrier))
             .unwrap_or(notebook::FlushStatus::Succeeded);
-        match status {
-            notebook::FlushStatus::Pending => self.notebooks.settings_waiter = Some(waiter),
-            notebook::FlushStatus::Succeeded => self.complete_settings_waiter(waiter, window, cx),
-            notebook::FlushStatus::Failed(_)
-                if matches!(
-                    waiter.after,
-                    SettingsAfterFlush::Close {
-                        discard_failed: true
+        if matches!(status, notebook::FlushStatus::Pending) {
+            self.notebooks.settings_waiter = Some(waiter);
+            return;
+        }
+        let effects = if closing {
+            self.session.close_flushed(
+                waiter.operation,
+                matches!(status, notebook::FlushStatus::Succeeded),
+            )
+        } else {
+            self.session.activation_flushed(
+                waiter.operation,
+                matches!(status, notebook::FlushStatus::Succeeded),
+            )
+        };
+        let mut failed = false;
+        for effect in effects {
+            match effect {
+                app::session::Effect::Load(operation) => {
+                    if let SettingsAfterFlush::Activate { path, create } = &waiter.after {
+                        self.load_notebook_after_flush(
+                            path.clone(),
+                            *create,
+                            operation,
+                            window,
+                            cx,
+                        );
                     }
-                ) =>
-            {
-                self.complete_settings_waiter(waiter, window, cx);
-            }
-            notebook::FlushStatus::Failed(errors) => {
-                let closing = matches!(waiter.after, SettingsAfterFlush::Close { .. });
-                let mut buttons = vec![
-                    PromptButton::Ok("Retry".into()),
-                    PromptButton::Cancel("Cancel".into()),
-                ];
-                if closing {
-                    buttons.push(PromptButton::Other(
-                        "Close without saving preferences".into(),
-                    ));
                 }
-                let detail = errors
-                    .iter()
-                    .map(|error| {
-                        format!("{}: {}", notebook::display_path(&error.path), error.message)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let prompt = window.prompt(
-                    PromptLevel::Warning,
-                    "Could not save notebook preferences",
-                    Some(&detail),
-                    &buttons,
-                    cx,
-                );
-                cx.spawn_in(window, async move |this, cx| {
-                    let answer = prompt.await.ok();
-                    let _ = this.update_in(cx, |this, window, cx| {
-                        if !this.foreground.owns(waiter.operation) {
-                            return;
-                        }
-                        match answer {
-                            Some(0) => {
-                                if closing {
-                                    waiter.barrier = this
-                                        .notebooks
-                                        .writer
-                                        .as_ref()
-                                        .map(|writer| writer.flush_all())
-                                        .unwrap_or_default();
-                                }
-                                if let Some(writer) = &mut this.notebooks.writer {
-                                    writer.retry(&waiter.barrier);
-                                }
-                                this.notebooks.settings_waiter = Some(waiter);
-                                this.pump_settings_writer(cx);
-                                this.resolve_settings_waiter(window, cx);
-                            }
-                            Some(2) if closing => {
-                                waiter.after = SettingsAfterFlush::Close {
-                                    discard_failed: true,
-                                };
-                                this.notebooks.settings_waiter = Some(waiter);
-                                this.resolve_settings_waiter(window, cx);
-                            }
-                            _ => {
-                                this.foreground.finish(waiter.operation);
-                                this.take_activation_preferences(waiter.operation);
-                                this.resume_document(window, cx);
-                            }
-                        }
-                    });
-                })
-                .detach();
-                cx.notify();
+                app::session::Effect::CloseFailed(_)
+                | app::session::Effect::ActivationFlushFailed(_) => failed = true,
+                other => self.apply_session_effects(vec![other], window, cx),
             }
         }
+        if !failed {
+            return;
+        }
+        let notebook::FlushStatus::Failed(errors) = status else {
+            unreachable!()
+        };
+        let mut buttons = vec![
+            PromptButton::Ok("Retry".into()),
+            PromptButton::Cancel("Cancel".into()),
+        ];
+        if closing {
+            buttons.push(PromptButton::Other(
+                "Close without saving preferences".into(),
+            ));
+        }
+        let detail = errors
+            .iter()
+            .map(|error| format!("{}: {}", notebook::display_path(&error.path), error.message))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prompt = window.prompt(
+            PromptLevel::Warning,
+            "Could not save notebook preferences",
+            Some(&detail),
+            &buttons,
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = prompt.await.ok();
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.answer_settings_failure(waiter, answer, window, cx);
+            });
+        })
+        .detach();
     }
 
-    fn complete_settings_waiter(
+    fn answer_settings_failure(
         &mut self,
-        waiter: SettingsWaiter,
+        mut waiter: SettingsWaiter,
+        answer: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match waiter.after {
-            SettingsAfterFlush::Close { .. } => {
-                if self.foreground.finish(waiter.operation) {
-                    window.remove_window();
-                }
+        let closing = matches!(waiter.after, SettingsAfterFlush::Close);
+        let effects = match answer {
+            Some(0) if closing => self.session.retry_close(waiter.operation),
+            Some(0) => self.session.retry_activation(waiter.operation),
+            Some(2) if closing => self.session.discard_close_preferences(waiter.operation),
+            _ => {
+                let observed = self.observed_document(cx);
+                self.session.cancel(waiter.operation, observed)
             }
-            SettingsAfterFlush::Activate { path, create } => {
-                self.load_notebook_after_flush(path, create, waiter.operation, window, cx);
+        };
+        for effect in effects {
+            match effect {
+                app::session::Effect::FlushClose {
+                    operation, retry, ..
+                }
+                | app::session::Effect::FlushActivation { operation, retry } => {
+                    if let Some(preferences) = &mut self.notebooks.activation_preferences {
+                        preferences.renew(waiter.operation, operation);
+                    }
+                    waiter.operation = operation;
+                    if closing {
+                        waiter.barrier = self
+                            .notebooks
+                            .writer
+                            .as_ref()
+                            .map(|writer| writer.flush_all())
+                            .unwrap_or_default();
+                    }
+                    if retry && let Some(writer) = &mut self.notebooks.writer {
+                        writer.retry(&waiter.barrier);
+                    }
+                    self.notebooks.settings_waiter = Some(waiter);
+                    self.pump_settings_writer(cx);
+                    self.resolve_settings_waiter(window, cx);
+                    self.refresh(window, cx);
+                    return;
+                }
+                other => self.apply_session_effects(vec![other], window, cx),
             }
         }
     }
@@ -1361,16 +1528,22 @@ impl Notes {
             self.persist_notebooks(cx);
         } else {
             let path = book.root.join(row.path);
-            if !self.document.as_ref().is_some_and(|d| d.path == path) {
+            if !self.document().is_some_and(|d| d.path == path) {
                 self.request(Next::TreeFile(path), window, cx);
             }
         }
         cx.notify();
     }
 
+    fn tree_loading(&self) -> bool {
+        self.notebooks.tree_operation.is_some_and(|operation| {
+            self.session.foreground() == Some((operation, app::session::PhaseKind::Loading))
+        })
+    }
+
     fn tree_move(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
         let len = self.notebooks.rows.len();
-        if len == 0 || (self.is_busy() && !self.notebooks.tree_loading) {
+        if len == 0 || (self.is_busy() && !self.tree_loading()) {
             return;
         }
         let next = match self.notebooks.cursor {
@@ -1397,10 +1570,9 @@ impl Notes {
             .active
             .as_ref()
             .zip(
-                self.document
-                    .as_ref()
+                self.document()
                     .map(|d| d.path.as_path())
-                    .or(self.image_path.as_deref()),
+                    .or(self.image_path()),
             )
             .and_then(|(book, path)| {
                 self.notebooks
@@ -1429,17 +1601,23 @@ impl Notes {
                     .as_ref()
                     .map(|book| book.root.join(&row.path))
             });
-        if self.notebooks.tree_loading {
-            self.notebooks.tree_target = target;
+        if self.tree_loading() {
+            let target =
+                target.filter(|path| !self.document().is_some_and(|doc| &doc.path == path));
+            let effects = self.session.retarget_load(
+                self.notebooks.tree_operation.unwrap(),
+                target.map(Next::TreeFile),
+            );
+            self.apply_session_effects(effects, window, cx);
         } else if let Some(path) = target
-            && !self.document.as_ref().is_some_and(|doc| doc.path == path)
+            && !self.document().is_some_and(|doc| doc.path == path)
         {
             self.request(Next::TreeFile(path), window, cx);
         }
     }
 
     fn tree_horizontal(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() && !self.notebooks.tree_loading {
+        if self.is_busy() && !self.tree_loading() {
             return;
         }
         let Some(index) = self.notebooks.cursor else {
@@ -1547,10 +1725,9 @@ impl Notes {
                                     .active
                                     .as_ref()
                                     .zip(
-                                        this.document
-                                            .as_ref()
+                                        this.document()
                                             .map(|d| d.path.as_path())
-                                            .or(this.image_path.as_deref()),
+                                            .or(this.image_path()),
                                     )
                                     .is_some_and(|(book, document_path)| {
                                         !row.directory
@@ -1666,7 +1843,7 @@ impl Notes {
         if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
-        if self.saves.writing {
+        if self.session.write().is_some() {
             self.notebooks.notice =
                 Some("A save is finishing. Please drop the entry again in a moment.".into());
             cx.notify();
@@ -1681,93 +1858,122 @@ impl Notes {
         let root = book.root.clone();
         let from = drag.path.clone();
         let document_version = self
-            .document
-            .as_ref()
+            .document()
             .map(|document| (document.path.clone(), document.version.clone()));
-        self.saves.timer = None;
-        let Some(operation) = self.foreground.begin() else {
-            return;
-        };
-        cx.notify();
-        cx.spawn_in(window, async move |this, cx| {
-            let worker_root = root.clone();
-            let worker_from = from.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let to = notebook::move_entry(&worker_root, &worker_from, &parent)?;
-                    let moved_version = document_version.and_then(|(old_path, version)| {
-                        let path = notebook::remap_path(
-                            &old_path,
-                            &worker_root.join(&worker_from),
-                            &worker_root.join(&to),
-                        );
-                        (path != old_path).then(|| {
-                            let result = document::version_after_move(&path, &version);
-                            (path, result)
+        let effects = self.session.move_content();
+        for effect in effects {
+            if let app::session::Effect::Move(operation) = effect {
+                let root = root.clone();
+                let from = from.clone();
+                let parent = parent.clone();
+                let document_version = document_version.clone();
+                cx.spawn_in(window, async move |this, cx| {
+                    let worker_root = root.clone();
+                    let worker_from = from.clone();
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let to = notebook::move_entry(&worker_root, &worker_from, &parent)?;
+                            let moved_version = document_version.and_then(|(old_path, version)| {
+                                let path = notebook::remap_path(
+                                    &old_path,
+                                    &worker_root.join(&worker_from),
+                                    &worker_root.join(&to),
+                                );
+                                (path != old_path).then(|| {
+                                    let result = document::version_after_move(&path, &version);
+                                    (path, result)
+                                })
+                            });
+                            Ok::<_, io::Error>((to, moved_version))
                         })
-                    });
-                    Ok::<_, io::Error>((to, moved_version))
-                })
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) {
-                    return;
-                }
-                match result {
-                    Ok((to, moved_version)) => {
-                        if let Some(document) = &mut this.document {
-                            document.path = notebook::remap_path(
-                                &document.path,
-                                &root.join(&from),
-                                &root.join(&to),
-                            );
-                        }
-                        if let Some((path, result)) = moved_version
-                            && let Some(document) = &mut this.document
-                            && document.path == path
-                        {
-                            match result {
-                                Ok(version) => document.version = version,
-                                Err(error) => {
-                                    // The move succeeded. Retain its new path and the
-                                    // buffer, but require explicit conflict recovery.
-                                    this.saves.conflict = true;
-                                    this.record_save_error(error);
+                        .await;
+                    let _ = this.update_in(cx, |this, window, cx| match result {
+                        Ok((to, moved_version)) => {
+                            let dirty = this.dirty(cx);
+                            let mut move_error = None;
+                            let effects = this.session.moved(operation, |content| {
+                                match content {
+                                    app::session::MovingContent::Document(document) => {
+                                        document.path = notebook::remap_path(
+                                            &document.path,
+                                            &root.join(&from),
+                                            &root.join(&to),
+                                        );
+                                        if let Some((path, result)) = moved_version
+                                            && document.path == path
+                                        {
+                                            match result {
+                                                Ok(version) => document.version = version,
+                                                Err(error) => move_error = Some(error),
+                                            }
+                                        }
+                                    }
+                                    app::session::MovingContent::Image(path) => {
+                                        *path = notebook::remap_path(
+                                            path,
+                                            &root.join(&from),
+                                            &root.join(&to),
+                                        );
+                                    }
+                                    app::session::MovingContent::Empty => {}
+                                }
+                                app::session::MoveOutcome {
+                                    dirty,
+                                    conflict: move_error.is_some(),
+                                }
+                            });
+                            if effects.is_empty() {
+                                return;
+                            }
+                            if let Some(error) = move_error {
+                                this.record_save_error(error);
+                            }
+                            let image_document = this.document().map(|doc| doc.path.clone());
+                            this.editor.update(cx, |editor, cx| {
+                                editor.set_image_document(image_document, cx)
+                            });
+                            if let Some(book) = &mut this.notebooks.active
+                                && book.root == root
+                            {
+                                book.settings.remap_entry(&from, &to);
+                            }
+                            this.notebooks.notice = None;
+                            this.persist_notebooks(cx);
+                            for row in &mut this.notebooks.rows {
+                                row.path = notebook::remap_path(&row.path, &from, &to);
+                            }
+                            this.refresh_sorted_tree(window, cx);
+                            this.schedule_search(window, cx);
+                            for effect in effects {
+                                if !matches!(
+                                    effect,
+                                    app::session::Effect::Moved(_)
+                                        | app::session::Effect::MoveBaselineConflict(_)
+                                ) {
+                                    this.apply_session_effects(vec![effect], window, cx);
                                 }
                             }
                         }
-                        if let Some(path) = &mut this.image_path {
-                            *path = notebook::remap_path(path, &root.join(&from), &root.join(&to));
+                        Err(error) => {
+                            let observed = this.observed_document(cx);
+                            let effects = this.session.move_failed(operation, observed);
+                            for effect in effects {
+                                if let app::session::Effect::MoveFailed(_) = effect {
+                                    this.notebooks.notice =
+                                        Some(format!("Could not move entry: {error}"));
+                                } else {
+                                    this.apply_session_effects(vec![effect], window, cx);
+                                }
+                            }
                         }
-                        this.editor.update(cx, |editor, cx| {
-                            editor.set_image_document(
-                                this.document.as_ref().map(|doc| doc.path.clone()),
-                                cx,
-                            );
-                        });
-                        if let Some(book) = &mut this.notebooks.active
-                            && book.root == root
-                        {
-                            book.settings.remap_entry(&from, &to);
-                        }
-                        this.notebooks.notice = None;
-                        this.persist_notebooks(cx);
-                        for row in &mut this.notebooks.rows {
-                            row.path = notebook::remap_path(&row.path, &from, &to);
-                        }
-                        this.refresh_sorted_tree(window, cx);
-                        this.schedule_search(window, cx);
-                    }
-                    Err(error) => {
-                        this.notebooks.notice = Some(format!("Could not move entry: {error}"))
-                    }
-                }
-                this.schedule_autosave(window, cx);
-                cx.notify();
-            });
-        })
-        .detach();
+                    });
+                })
+                .detach();
+            } else {
+                self.apply_session_effects(vec![effect], window, cx);
+            }
+        }
     }
 }
 
