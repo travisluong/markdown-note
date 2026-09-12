@@ -180,6 +180,16 @@ semantic edit/save/search queries instead of repurposing a command's predicate.
 
 ## Verification without desktop interaction
 
+Windows distribution is owned by
+[`packaging/windows/gpui-note.iss`](packaging/windows/gpui-note.iss) and the
+[`build.yml`](.github/workflows/build.yml) release workflow. The installer owns
+only app binaries, shortcuts and its per-user uninstall registration; notebook
+files and preferences remain application/user-owned. Keep its AppId stable for
+upgrades. Only the separate release-asset upload job has repository write
+permission. See the [packaging guide](packaging/windows/README.md) for compiler
+verification and manual installation checks; agents must not run the installer
+or application to validate desktop behavior.
+
 [Rust 1.98.1](rust-toolchain.toml) is pinned. The separate
 [validation workflow](.github/workflows/check.yml) checks Windows, Linux and
 macOS; Windows also enforces format and strict lint. Packaging is separate.

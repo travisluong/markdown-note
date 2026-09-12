@@ -23,28 +23,49 @@ manually from **Actions**. Ordinary pushes, tag pushes and pull requests do not
 generate its release artifacts. A published release's tag must contain the
 workflow; manual **Run workflow** becomes available when it is on the default branch.
 
-Open **Actions → Build desktop binaries**, choose a successful run, and download
-the artifact for your computer. Extract the artifact ZIP, then the archive inside:
+For Windows, open [Releases](https://github.com/travisluong/gpui-note/releases)
+and download `gpui-note-<version>-windows-x86_64-setup.exe` under **Assets** once
+the build finishes. Run it and choose **Install**. It installs for your Windows
+account without requiring administrator privileges, adds GPUI Note to the Start
+menu and **Settings → Apps → Installed apps**, and offers an optional desktop
+shortcut and launch on completion. The default location is
+`%LOCALAPPDATA%\Programs\GPUI Note`.
+
+To upgrade, save your notes, close GPUI Note, and run the newer installer.
+Uninstall through Installed apps; your notebooks and preferences are retained.
+The app and installer are currently unsigned, so Windows may display a
+SmartScreen warning. Automatic updates are not included yet.
+
+The release also includes the portable Windows ZIP and the other platforms'
+archives. For manual builds, open **Actions → Build desktop binaries**, choose a
+successful run, and download the artifact for your computer. Extract the Actions
+artifact ZIP first; the Windows installer inside can then be run directly:
 
 | Artifact | Contents |
 | --- | --- |
-| `gpui-note-windows-x86_64` | ZIP containing `gpui-note.exe` |
+| `gpui-note-windows-x86_64` | Setup EXE plus a portable ZIP containing `gpui-note.exe` |
 | `gpui-note-linux-x86_64` | tar.gz containing `gpui-note` |
 | `gpui-note-macos-apple-silicon` | ZIP containing `GPUI Note.app` for M-series Macs |
 | `gpui-note-macos-intel` | ZIP containing `GPUI Note.app` for Intel Macs |
 
-Run `gpui-note.exe` on Windows or `./gpui-note` from a terminal on Linux.
+For the portable Windows build, extract its ZIP and run `gpui-note.exe`.
+On Linux, extract the tar.gz and run `./gpui-note` from a terminal.
 On macOS, extract `GPUI Note.app`, move it to Applications if desired, and open it
 from Finder or the Dock; Terminal is not needed. The app is not Developer
 ID-signed or notarized. If macOS blocks the first launch, follow
 [Apple's instructions to open an app from an unknown developer](https://support.apple.com/guide/mac-help/mh40616/mac)
 using System Settings → Privacy & Security → Open Anyway.
 
-Artifacts are retained for 14 days and do not include installers or `.dmg` images.
+Actions artifacts are retained for 14 days. Published-release builds attach all
+downloads directly to that GitHub Release after all platform builds succeed;
+manual workflow runs only produce Actions artifacts. macOS `.dmg` images are
+not included. Windows installer build instructions and manual checks are in
+[`packaging/windows/README.md`](packaging/windows/README.md).
 The Linux build uses Ubuntu 22.04 and needs compatible system libraries and a
 working graphics driver; it is not a self-contained AppImage. The release
-workflow checks compilation and the macOS bundle's property list and executable
-permissions. It does not establish interactive UI behavior on each platform.
+workflow checks application and installer compilation and the macOS bundle's
+property list and executable permissions. It does not establish interactive UI
+or install/upgrade/uninstall behavior on each platform.
 
 ## Get started
 
