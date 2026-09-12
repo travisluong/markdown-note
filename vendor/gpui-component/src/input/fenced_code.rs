@@ -179,11 +179,18 @@ impl Snapshot {
     }
 }
 
+struct Edit {
+    delta: super::preview_syntax::Delta,
+    affected: Range<usize>,
+    independent: bool,
+}
+
 #[derive(Default)]
 pub(super) struct Index {
     pub snapshot: Arc<Snapshot>,
-    edits: Vec<super::preview_syntax::Delta>,
+    edits: Vec<Edit>,
     overflowed: bool,
+    unchanged_prefix: usize,
 }
 impl Index {
     pub fn new(snapshot: Arc<Snapshot>) -> Self {
@@ -191,22 +198,66 @@ impl Index {
             snapshot,
             edits: Vec::new(),
             overflowed: false,
+            unchanged_prefix: usize::MAX,
         }
     }
+    #[cfg(test)]
     pub fn edit(&mut self, range: Range<usize>, inserted: usize) {
-        if self.snapshot.blocks.is_empty() || self.overflowed {
+        self.edit_context(range.clone(), inserted, range, false);
+    }
+
+    pub fn edit_context(
+        &mut self,
+        range: Range<usize>,
+        inserted: usize,
+        affected: Range<usize>,
+        independent: bool,
+    ) {
+        if self.snapshot.blocks.is_empty() {
             return;
         }
+        self.unchanged_prefix = self
+            .unchanged_prefix
+            .min(self.original_offset(affected.start));
+        if self.overflowed {
+            return;
+        }
+        // A typing burst (including backspace/undo inside the insertion) is one
+        // translation, rather than exhausting the lookup budget on every key.
+        if let Some(last) = self.edits.last_mut() {
+            let end = last.delta.range.start + last.delta.inserted;
+            if range.start >= last.delta.range.start && range.end <= end {
+                last.delta.inserted = last.delta.inserted - range.len() + inserted;
+                last.independent &= independent;
+                return;
+            }
+        }
         if self.edits.len() == 64 {
-            // Bound lookup work during long bursts; fresh analysis restores it.
             self.overflowed = true;
             self.edits.clear();
         } else {
-            self.edits
-                .push(super::preview_syntax::Delta { range, inserted });
+            self.edits.push(Edit {
+                delta: super::preview_syntax::Delta { range, inserted },
+                affected,
+                independent,
+            });
         }
     }
+
+    fn original_offset(&self, mut offset: usize) -> usize {
+        for edit in self.edits.iter().rev().map(|e| &e.delta) {
+            let end = edit.range.start + edit.inserted;
+            if offset >= end {
+                offset = offset
+                    .saturating_add_signed(edit.range.len() as isize - edit.inserted as isize);
+            } else if offset >= edit.range.start {
+                offset = edit.range.start;
+            }
+        }
+        offset
+    }
     pub fn active_blocks(&self, selection: &Range<usize>) -> Range<usize> {
+        let selection = self.original_offset(selection.start)..self.original_offset(selection.end);
         let blocks = &self.snapshot.details;
         let start = blocks.partition_point(|b| {
             if selection.is_empty() {
@@ -224,18 +275,48 @@ impl Index {
         });
         start..end
     }
-    pub fn block(&self, offset: usize) -> Option<&Block> {
-        if self.overflowed || !self.edits.is_empty() {
+    pub fn block(&self, offset: usize) -> Option<Block> {
+        if self.overflowed && offset >= self.unchanged_prefix {
             return None;
         }
+        let original = self.original_offset(offset);
         let at = self
             .snapshot
             .details
-            .partition_point(|b| b.source.end < offset);
-        self.snapshot
-            .details
-            .get(at)
-            .filter(|b| b.source.start <= offset && offset <= b.source.end)
+            .partition_point(|b| b.source.end < original);
+        let mut block = self.snapshot.details.get(at)?.clone();
+        if self.overflowed && block.source.end >= self.unchanged_prefix {
+            return None;
+        }
+        if original < block.source.start || original > block.source.end {
+            return None;
+        }
+        for edit in &self.edits {
+            // Structural changes can affect following blocks, but cannot change
+            // a completed block earlier in the document. Ordinary prose edits
+            // simply translate untouched blocks and their cached code tokens.
+            if edit.affected.start <= block.source.end
+                && (!edit.independent || edit.affected.end >= block.source.start)
+            {
+                return None;
+            }
+            if edit.delta.range.end <= block.source.start {
+                let delta = edit.delta.inserted as isize - edit.delta.range.len() as isize;
+                let shift = |r: &mut Range<usize>| {
+                    r.start = r.start.saturating_add_signed(delta);
+                    r.end = r.end.saturating_add_signed(delta);
+                };
+                shift(&mut block.source);
+                shift(&mut block.opening);
+                shift(&mut block.content);
+                if let Some(closing) = &mut block.closing {
+                    shift(closing);
+                }
+                block.first = block.first.saturating_add_signed(delta);
+                block.last = block.last.saturating_add_signed(delta);
+            }
+        }
+        Some(block)
     }
     pub fn decoration(
         &self,
@@ -259,27 +340,18 @@ impl Index {
         })
     }
     pub fn line(&self, start: usize) -> Option<CodeLine> {
-        if self.overflowed {
+        if self.overflowed && start >= self.unchanged_prefix {
             return None;
         }
-        let mut original = start;
-        for edit in self.edits.iter().rev() {
-            let end = edit.range.start + edit.inserted;
-            if original >= end {
-                original = original
-                    .saturating_add_signed(edit.range.len() as isize - edit.inserted as isize);
-            } else if original >= edit.range.start {
-                original = edit.range.start;
-            }
-        }
+        let original = self.original_offset(start);
         let at = self.snapshot.blocks.partition_point(|r| r.end <= original);
         let block = self.snapshot.blocks.get(at)?;
         if !block.contains(&original) {
             return None;
         }
-        // Never paint classifications from an older document revision. Retain
-        // literal source presentation while the current request is running.
-        if !self.edits.is_empty() {
+        // Only unchanged, safely translated blocks may reuse source mappings
+        // and tokens. Uncertain blocks stay literal until fresh analysis.
+        if self.block(start).is_none() {
             return Some(CodeLine::default());
         }
         Some(
@@ -385,7 +457,7 @@ mod tests {
         for _ in 0..100 {
             index.edit(0..0, 1);
         }
-        assert!(index.line(row + 105).is_none());
+        assert!(index.line(row + 105).unwrap().tokens.spans.is_empty());
         assert!(
             Arc::ptr_eq(&index.snapshot, &snapshot),
             "large snapshots retire on the background executor"
@@ -489,6 +561,57 @@ mod block_tests {
             assert!(b.closing.is_none(), "{source}");
             assert!(!index.decoration(b.last, &(0..0), 0.6).unwrap().hidden);
         }
+    }
+
+    #[test]
+    fn translated_blocks_keep_tokens_and_active_source_coordinates() {
+        let source = "before\n```js\nconst café = 1;\n```\nafter";
+        let mut index = Index::new(Arc::new(Snapshot::parse(source, &Cache::new())));
+        let code = source.find("const").unwrap();
+        let colors = index.line(code).unwrap().tokens;
+        index.edit_context(1..1, 2, 0..6, true);
+        let b = index.block(code + 2).unwrap();
+        assert_eq!(b.source.start, 9);
+        assert_eq!(index.line(code + 2).unwrap().tokens, colors);
+        assert!(index.decoration(9, &(0..0), 0.6).unwrap().hidden);
+        assert!(index.decoration(9, &(code + 2..code + 2), 0.6).is_none());
+        // Editing the closing fence cannot retain its old hidden geometry.
+        let closing = b.closing.unwrap();
+        index.edit_context(closing.start..closing.start + 1, 0, closing, false);
+        assert!(index.block(code + 2).is_none());
+        assert!(index.line(code + 2).unwrap().tokens.spans.is_empty());
+    }
+
+    #[test]
+    fn exhausted_mapping_log_keeps_the_unchanged_prefix_rendered() {
+        let source = "```js\nconst x = 1;\n```\nafter";
+        let mut index = Index::new(Arc::new(Snapshot::parse(source, &Cache::new())));
+        // Disjoint structural edits cannot coalesce. The bounded fallback must
+        // still retain blocks preceding every edit, even after the 64th edit.
+        for i in 0..100 {
+            let at = source.len() + i * 3;
+            index.edit_context(at..at, 1, at..at, false);
+        }
+        assert!(index.overflowed);
+        assert!(
+            index
+                .decoration(0, &(source.len()..source.len()), 0.6)
+                .unwrap()
+                .hidden
+        );
+        assert!(!index.line(6).unwrap().tokens.spans.is_empty());
+
+        let mut changed = Index::new(Arc::new(Snapshot::parse(source, &Cache::new())));
+        changed.edit_context(10..11, 1, 6..18, false);
+        for i in 0..100 {
+            let at = source.len() + i * 3;
+            changed.edit_context(at..at, 1, at..at, false);
+        }
+        assert!(changed.overflowed);
+        assert!(
+            changed.block(0).is_none(),
+            "overflow must not restore a partly edited block"
+        );
     }
 
     #[test]

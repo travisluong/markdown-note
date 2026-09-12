@@ -261,3 +261,11 @@ Block geometry uses the existing height index, lazy viewport measurement, and
 background syntax snapshots; stale classifications never hide source. Headless
 tests cover nested/unfinished/empty fences, Unicode/CRLF, keyboard and pointer
 entry, selection, search, themes, history, and bounded large-block invalidation.
+
+Code previews retain unaffected block geometry and cached tokens while background
+analysis is pending. Bounded edit translations preserve earlier blocks during
+new-fence typing and shift untouched blocks during plain-text edits. Structural
+edits invalidate the affected block and potentially dependent following blocks.
+Typing/backspace bursts coalesce; log overflow still preserves the unchanged
+prefix. Regression tests cover per-keystroke and delayed analysis, Unicode/CRLF,
+long edit/undo bursts, source-coordinate reveal, and closing-fence invalidation.

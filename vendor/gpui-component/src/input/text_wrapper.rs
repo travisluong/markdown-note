@@ -413,7 +413,26 @@ impl TextWrapper {
             self.syntax_revision += 1;
         }
         if !self.code.snapshot.blocks.is_empty() {
-            self.code.edit(range.clone(), inserted.len());
+            let first = self.text.offset_to_point(range.start).row;
+            let last = self.text.offset_to_point(range.end).row;
+            let affected = self.text.line_start_offset(first)..self.text.line_end_offset(last);
+            // Unlike general Markdown links/tables, fences are unaffected by
+            // plain text on an adjacent line. Keep this inspection bounded.
+            let independent = first == last
+                && affected.len() <= 8192
+                && inserted.len() <= 8192
+                && !inserted.chars().any(|c| matches!(c, '\r' | '\n'))
+                && self
+                    .text
+                    .slice(affected.clone())
+                    .chars()
+                    .chain(inserted.chars())
+                    .all(|c| {
+                        c.is_alphanumeric()
+                            || matches!(c, ' ' | '\t' | '\r' | '\n' | '.' | ',' | '!' | '?')
+                    });
+            self.code
+                .edit_context(range.clone(), inserted.len(), affected, independent);
             self.syntax_revision += 1;
         }
         self.analysis.edit(range.clone(), inserted.len(), safe);
@@ -2283,6 +2302,83 @@ mod sustained_edit_tests {
     }
 
     #[test]
+    fn unrelated_typing_keeps_code_rendered_while_analysis_is_pending() {
+        for newline in ["\n", "\r\n"] {
+            let source =
+                "before\n\n```js\nconst café = 1;\n```\n\nafter\n\n".replace('\n', newline);
+            let mut wrapper = make(&source);
+            let rows = wrapper.text.lines_len();
+            measure(&mut wrapper, 0..rows);
+            let colors = wrapper.lines[3].presentation.as_ref().unwrap().code.clone();
+            let height = wrapper.lines[3].height_units();
+            let assert_rendered = |wrapper: &TextWrapper, row: usize| {
+                assert!(wrapper.lines[row - 1].code_block.as_ref().unwrap().hidden);
+                assert!(wrapper.lines[row + 1].code_block.as_ref().unwrap().hidden);
+                assert!(wrapper.lines[row].code_block.is_some());
+                assert_eq!(wrapper.lines[row].height_units(), height);
+                assert_eq!(
+                    wrapper.lines[row].presentation.as_ref().unwrap().code,
+                    colors
+                );
+            };
+            // Deliberately leave a background result behind while a new fence
+            // and its language tag are typed, then deliver that stale result.
+            wrapper.analysis.request(&wrapper.text.clone());
+            let delayed = wrapper.analysis.start().unwrap();
+            for ch in "```js".chars() {
+                let at = wrapper.text.len();
+                edit(&mut wrapper, at..at, &ch.to_string());
+                wrapper.reveal_code(at + 1..at + 1, 0.6);
+                measure(&mut wrapper, 0..rows);
+                assert_rendered(&wrapper, 3);
+            }
+            assert!(!wrapper.apply_analysis(delayed.parse()));
+            measure(&mut wrapper, 0..rows);
+            assert_rendered(&wrapper, 3);
+            let latest = wrapper.analysis.start().unwrap();
+            assert!(wrapper.apply_analysis(latest.parse()));
+            measure(&mut wrapper, 0..rows);
+            assert_rendered(&wrapper, 3);
+            assert!(
+                wrapper.lines[rows - 1].code_block.is_none(),
+                "new fence stays editable"
+            );
+
+            // Repeat with an already recognized new fence and a fresh result
+            // after every language-tag keystroke, as in a fast background worker.
+            for ch in "on".chars() {
+                let at = wrapper.text.len();
+                edit(&mut wrapper, at..at, &ch.to_string());
+                wrapper.reveal_code(at + 1..at + 1, 0.6);
+                measure(&mut wrapper, 0..rows);
+                assert_rendered(&wrapper, 3);
+                let latest = wrapper.analysis.start().unwrap();
+                assert!(wrapper.apply_analysis(latest.parse()));
+                measure(&mut wrapper, 0..rows);
+                assert_rendered(&wrapper, 3);
+                assert!(wrapper.lines[rows - 1].code_block.is_none());
+            }
+
+            // Ordinary text before and after code, including a long input burst,
+            // must not expose its fences or temporarily drop syntax colors.
+            for _ in 0..200 {
+                edit(&mut wrapper, 1..1, "é");
+                wrapper.reveal_code(3..3, 0.6);
+                measure(&mut wrapper, 0..rows);
+                assert_rendered(&wrapper, 3);
+                edit(&mut wrapper, 1..3, ""); // undo the insertion
+                measure(&mut wrapper, 0..rows);
+                assert_rendered(&wrapper, 3);
+            }
+            let at = wrapper.text.line_start_offset(6) + 2;
+            edit(&mut wrapper, at..at, "text");
+            wrapper.reveal_code(at + 4..at + 4, 0.6);
+            measure(&mut wrapper, 0..rows);
+            assert_rendered(&wrapper, 3);
+        }
+    }
+
+    #[test]
     fn code_reveal_is_viewport_bounded_and_preserves_literal_nested_content() {
         let source = format!(
             "before\n```\n{}```\nafter",
@@ -2339,10 +2435,10 @@ mod sustained_edit_tests {
         let stale = wrapper.analysis.start().unwrap();
         edit(&mut wrapper, 1..1, "x");
         let row = wrapper.text.to_string().find("fn").unwrap();
-        assert!(wrapper.code.line(row).unwrap().tokens.spans.is_empty());
+        assert!(!wrapper.code.line(row).unwrap().tokens.spans.is_empty());
         // Links can rebase this result; code must still await its exact revision.
         wrapper.apply_analysis(stale.parse());
-        assert!(wrapper.code.line(row).unwrap().tokens.spans.is_empty());
+        assert!(!wrapper.code.line(row).unwrap().tokens.spans.is_empty());
         let current = wrapper.analysis.start().unwrap();
         assert!(wrapper.apply_analysis(current.parse()));
         assert!(std::sync::Arc::ptr_eq(&cached, wrapper.analysis.code_cache.values().next().unwrap()));
