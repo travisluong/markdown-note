@@ -29,15 +29,21 @@ computer. Extract the downloaded artifact ZIP, then extract the archive inside:
 | --- | --- |
 | `gpui-note-windows-x86_64` | ZIP containing `gpui-note.exe` |
 | `gpui-note-linux-x86_64` | tar.gz containing `gpui-note` |
-| `gpui-note-macos-apple-silicon` | tar.gz containing `gpui-note` for M-series Macs |
-| `gpui-note-macos-intel` | tar.gz containing `gpui-note` for Intel Macs |
+| `gpui-note-macos-apple-silicon` | ZIP containing `GPUI Note.app` for M-series Macs |
+| `gpui-note-macos-intel` | ZIP containing `GPUI Note.app` for Intel Macs |
 
-Run `gpui-note.exe` on Windows or `./gpui-note` from a terminal on macOS/Linux.
-Artifacts are retained for 14 days. These are standalone executables, without
-installers, macOS `.app`/`.dmg` packaging, or distribution signing/notarization.
+On macOS, extract `GPUI Note.app`, move it to Applications if desired, and open it
+from Finder or the Dock; Terminal is not needed. The app is not Developer ID-signed
+or notarized. If macOS blocks the first launch, follow
+[Apple's instructions to open an app from an unknown developer](https://support.apple.com/guide/mac-help/mh40616/mac)
+using System Settings → Privacy & Security → Open Anyway.
+
+Run `gpui-note.exe` on Windows or `./gpui-note` from a terminal on Linux.
+Artifacts are retained for 14 days. Downloads do not include installers or `.dmg` images.
 The Linux build uses Ubuntu 22.04 and needs compatible system libraries and a
 working graphics driver; it is not a self-contained AppImage. The workflow
-checks compilation, not interactive UI behavior.
+checks compilation and the macOS bundle's property list and executable permissions,
+not interactive UI behavior.
 
 ## Use
 

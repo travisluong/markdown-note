@@ -76,9 +76,25 @@ jobs:
       - name: Build release executable
         run: cargo +stable build --release --locked --target "$BUILD_TARGET" --bin gpui-note
 
-      # A tar archive preserves the executable bit on macOS and Linux.
-      - name: Package macOS or Linux executable
-        if: runner.os != 'Windows'
+      - name: Package macOS application
+        if: runner.os == 'macOS'
+        run: |
+          APP_BUNDLE="target/$BUILD_TARGET/release/GPUI Note.app"
+          mkdir -p "$APP_BUNDLE/Contents/MacOS" dist
+          cp "target/$BUILD_TARGET/release/gpui-note" "$APP_BUNDLE/Contents/MacOS/gpui-note"
+          chmod 755 "$APP_BUNDLE/Contents/MacOS/gpui-note"
+          cp packaging/macos/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+          APP_VERSION=$(cargo +stable metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "gpui-note"))')
+          plutil -insert CFBundleShortVersionString -string "$APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
+          plutil -insert CFBundleVersion -string "$APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
+          plutil -lint "$APP_BUNDLE/Contents/Info.plist"
+          test -x "$APP_BUNDLE/Contents/MacOS/gpui-note"
+          # Preserve the bundle directory and executable permissions in a Finder-friendly ZIP.
+          ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "dist/$ARCHIVE_NAME.zip"
+
+      # A tar archive preserves the executable bit on Linux.
+      - name: Package Linux executable
+        if: runner.os == 'Linux'
         run: |
           mkdir -p dist
           tar -czf "dist/$ARCHIVE_NAME.tar.gz" -C "target/$BUILD_TARGET/release" gpui-note
