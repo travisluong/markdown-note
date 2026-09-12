@@ -108,8 +108,11 @@ pub fn display_path(path: &Path) -> String {
 }
 
 pub fn remap_path(path: &Path, from: &Path, to: &Path) -> PathBuf {
-    path.strip_prefix(from)
-        .map_or_else(|_| path.to_path_buf(), |suffix| to.join(suffix))
+    match path.strip_prefix(from) {
+        Ok(suffix) if suffix.as_os_str().is_empty() => to.to_path_buf(),
+        Ok(suffix) => to.join(suffix),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 #[cfg(test)]

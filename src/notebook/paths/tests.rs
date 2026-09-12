@@ -45,3 +45,21 @@ fn only_normalize_verbatim_drive_and_unc_for_display() {
         assert_eq!(path.to_string_lossy(), input);
     }
 }
+
+#[test]
+fn exact_file_remap_preserves_a_usable_filename_without_a_trailing_separator() {
+    let directory = tempfile::tempdir().unwrap();
+    let from = directory.path().join("note.md");
+    let to = directory.path().join("moved.md");
+    std::fs::write(&to, "note").unwrap();
+    let remapped = super::remap_path(&from, &from, &to);
+    // Path equality ignores a trailing separator; the OS spelling must not add one.
+    assert_eq!(remapped.as_os_str(), to.as_os_str());
+    assert_eq!(std::fs::read_to_string(remapped).unwrap(), "note");
+    assert_eq!(
+        super::remap_path(&from.join("child.md"), &from, &to),
+        to.join("child.md")
+    );
+    let unrelated = directory.path().join("other.md");
+    assert_eq!(super::remap_path(&unrelated, &from, &to), unrelated);
+}

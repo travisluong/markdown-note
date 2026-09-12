@@ -123,3 +123,13 @@ A new TestPlatform regression reproduced a mode mismatch: changing to Source
 while a note moved left the editor in Source but restored Live-preview settings
 from the worker's older snapshot. Move completion now remaps only paths in the
 current settings. The regression failed before the fix and passed afterward.
+
+## Exact moved-file paths
+
+The cross-platform move/save regression exposed an empty-suffix path remap that
+appended a trailing separator to an exact filename. Path equality ignored the
+extra separator, but subsequent file I/O rejected it. The path policy now returns
+the destination unchanged for an exact match. A regression comparing the OS
+spelling and opening the file failed before the fix on Windows and passed on
+Windows and Linux afterward; the actual Linux moved-buffer save/history test
+also passed. Nested and unrelated paths keep their existing mapping behavior.
