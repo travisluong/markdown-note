@@ -241,6 +241,10 @@ impl TextElement {
         let mut line_corners = vec![];
 
         for line in lines.iter() {
+            if line.code_block.as_ref().is_some_and(|c| c.hidden) {
+                prev_lines_offset += line.len() + 1;
+                continue;
+            }
             if let Some(image) = line.image.as_ref().filter(|image| !image.reveal) {
                 if start_ix < prev_lines_offset + line.len() && end_ix > prev_lines_offset {
                     line_corners.push(Corners {
@@ -318,10 +322,11 @@ impl TextElement {
                     .unwrap_or_else(|| line.position_for_index(line.len(), line_height).unwrap());
 
                 // Only build geometry for shaped segments, even for Select All on a huge line.
-                let top = line.segment_start as f32 * row_height;
+                let top = line.segment_start as f32 * row_height + line.code_top(line_height);
                 let bottom = (line.segment_start + line.wrapped_lines.len().saturating_sub(1))
                     as f32
-                    * row_height;
+                    * row_height
+                    + line.code_top(line_height);
                 if start.y < top {
                     start = point(line.indent, top);
                 }
@@ -330,8 +335,9 @@ impl TextElement {
                 }
 
                 // Split the selection into multiple items
-                let wrapped_lines =
-                    (end.y / row_height).ceil() as usize - (start.y / row_height).ceil() as usize;
+                let wrapped_lines = ((end.y - line.code_top(line_height)) / row_height).round()
+                    as usize
+                    - ((start.y - line.code_top(line_height)) / row_height).round() as usize;
 
                 let mut end_x = end.x;
                 if wrapped_lines > 0 {
@@ -800,6 +806,14 @@ impl TextElement {
                 continue;
             }
             let mut line_layout = LineLayout::new();
+            line_layout.code_block = line_item.code_block.clone();
+            line_layout.mapped = line_item.mapped.clone();
+            line_layout.code_width = text_wrapper.code_width();
+            if line_item.code_block.as_ref().is_some_and(|c| c.hidden) {
+                lines.push(line_layout);
+                offset += line_item.len() + 1;
+                continue;
+            }
             line_layout.image = line_item.image.clone();
             line_layout.scale = line_item.scale;
             if let Some(p) = &line_item.presentation {
@@ -813,7 +827,9 @@ impl TextElement {
                     )
                 });
             }
-            line_layout.mapped = line_item.mapped.clone();
+            if line_item.code_block.is_some() {
+                line_layout.indent += window.rem_size() * 0.75;
+            }
             let source;
             let line = if let Some(mapped) = &line_item.mapped {
                 mapped.text.as_str()
@@ -868,6 +884,9 @@ impl TextElement {
                             let source = m.display_to_source[range.start + ix];
                             let mut run = base.clone();
                             run.len = ch.len_utf8();
+                            if p.code.is_some() {
+                                run.font = gpui::font(cx.theme().mono_font_family.clone());
+                            }
                             if p.quote_depth > 0 {
                                 run.color = cx.theme().muted_foreground;
                             }
@@ -1191,6 +1210,11 @@ impl Element for TextElement {
                     .set_wrap_width(Some(bounds.size.width - RIGHT_MARGIN), cx);
             }
             state.text_wrapper.set_font(font, text_size, cx);
+            state.text_wrapper.configure_code(
+                gpui::font(cx.theme().mono_font_family.clone()),
+                cx.theme().mono_font_size,
+                window.rem_size() * 0.75,
+            );
             state
                 .text_wrapper
                 .set_task_size(window.rem_size() * 0.875, cx);
@@ -1199,6 +1223,10 @@ impl Element for TextElement {
                 .text_wrapper
                 .reveal(state.text.offset_to_point(state.cursor()).row, cx);
             state.text_wrapper.reveal_cell(state.cursor(), cx);
+            state.text_wrapper.reveal_code(
+                state.selected_range.into(),
+                window.rem_size() * 0.75 / line_height,
+            );
         });
 
         let state = self.state.read(cx);
@@ -1451,7 +1479,7 @@ impl Element for TextElement {
 
         // A one-frame deferred offset wins over ordinary caret reveal.
         self.state.update(cx, |state, _| {
-            if let Some((offset, screen_y)) = state.image_click_anchor.take() {
+            if let Some((offset, screen_y)) = state.preview_click_anchor.take() {
                 if offset == state.cursor() {
                     let p = state.text.offset_to_point(offset);
                     if let Some(local) = last_layout
@@ -1663,6 +1691,41 @@ impl Element for TextElement {
         // Paint indent guides
         if let Some(path) = prepaint.indent_guides_path.take() {
             window.paint_path(path, cx.theme().border.opacity(0.85));
+        }
+
+        // Code surfaces belong below selection and search highlights.
+        let mut code_y = invisible_top_padding;
+        for line in prepaint.last_layout.lines.iter() {
+            if let Some(code) = &line.code_block {
+                if !code.hidden {
+                    let radius = cx.theme().radius;
+                    let corners = Corners {
+                        top_left: if code.first { radius } else { px(0.) },
+                        top_right: if code.first { radius } else { px(0.) },
+                        bottom_left: if code.last { radius } else { px(0.) },
+                        bottom_right: if code.last { radius } else { px(0.) },
+                    };
+                    let gutter = (line.indent - window.rem_size() * 0.75).max(px(0.));
+                    window.paint_quad(gpui::quad(
+                        Bounds::new(
+                            point(
+                                origin.x + prepaint.last_layout.line_number_width + gutter,
+                                origin.y + code_y,
+                            ),
+                            size(
+                                (line.code_width - gutter).max(px(0.)),
+                                line.size(line_height).height,
+                            ),
+                        ),
+                        corners,
+                        cx.theme().muted,
+                        px(0.),
+                        gpui::transparent_black(),
+                        gpui::BorderStyle::Solid,
+                    ));
+                }
+            }
+            code_y += line.size(line_height).height;
         }
 
         // Paint selections

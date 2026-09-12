@@ -25,7 +25,7 @@ impl Node {
         self.count = 1 + count(&self.left) + count(&self.right);
         self.height = height(&self.left)
             + height(&self.right)
-            + self.item.lines_len() as f32 * self.item.scale;
+            + self.item.height_units();
         self.wraps = wraps(&self.left) + wraps(&self.right) + self.item.lines_len();
     }
 }
@@ -86,7 +86,7 @@ impl Lines {
             if row <= left {
                 n = node.left.as_deref();
             } else {
-                sum += height(&node.left) + node.item.lines_len() as f32 * node.item.scale;
+                sum += height(&node.left) + node.item.height_units();
                 row -= left + 1;
                 n = node.right.as_deref();
             }
@@ -100,10 +100,10 @@ impl Lines {
             let h = height(&node.left);
             if y < h {
                 n = node.left.as_deref();
-            } else if y < h + node.item.lines_len() as f32 * node.item.scale {
+            } else if y < h + node.item.height_units() {
                 return row + count(&node.left);
             } else {
-                y -= h + node.item.lines_len() as f32 * node.item.scale;
+                y -= h + node.item.height_units();
                 row += count(&node.left) + 1;
                 n = node.right.as_deref();
             }

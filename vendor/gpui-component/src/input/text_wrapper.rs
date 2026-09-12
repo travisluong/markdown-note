@@ -31,6 +31,7 @@ pub(super) struct TableRowLayout {
 /// A line with soft wrapped lines info.
 #[derive(Debug, Clone)]
 pub(super) struct LineItem {
+    pub(super) code_block: Option<super::fenced_code::Decoration>,
     pub(super) image: Option<ImageLayout>,
     pub(super) table: Option<std::rc::Rc<TableRowLayout>>,
     /// The original line text, without end `\n`.
@@ -64,9 +65,20 @@ impl LineItem {
             .map_or(self.wrapped_lines.len(), |t| t.height)
     }
 
+    pub(super) fn height_units(&self) -> f32 {
+        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
+            return 0.;
+        }
+        self.lines_len() as f32 * self.scale
+            + self
+                .code_block
+                .as_ref()
+                .map_or(0., |c| c.top() + c.bottom())
+    }
+
     /// Get the height of this line item with given line height.
     pub(super) fn height(&self, line_height: Pixels) -> Pixels {
-        self.lines_len() as f32 * line_height * self.scale
+        self.height_units() * line_height
     }
 }
 
@@ -114,6 +126,11 @@ pub(super) struct TextWrapper {
     live_preview: bool,
     estimating: bool,
     reveal_row: usize,
+    code_selection: Range<usize>,
+    code_padding: f32,
+    code_font: Option<Font>,
+    code_font_size: Pixels,
+    code_inset: Pixels,
 }
 
 #[allow(unused)]
@@ -147,6 +164,11 @@ impl TextWrapper {
             live_preview: false,
             estimating: false,
             reveal_row: 0,
+            code_selection: 0..0,
+            code_padding: 0.6,
+            code_font: None,
+            code_font_size: font_size,
+            code_inset: px(12.),
         }
     }
 
@@ -187,6 +209,37 @@ impl TextWrapper {
                     .map(|b| b.ix)
                     .collect()
             });
+        }
+    }
+
+    pub(super) fn configure_code(&mut self, font: Font, font_size: Pixels, inset: Pixels) {
+        if self.code_font.as_ref() != Some(&font)
+            || self.code_font_size != font_size
+            || self.code_inset != inset
+        {
+            self.code_font = Some(font);
+            self.code_font_size = font_size;
+            self.code_inset = inset;
+            if self.live_preview {
+                self.syntax_revision += 1;
+            }
+        }
+    }
+    pub(super) fn code_width(&self) -> Pixels {
+        self.wrap_width.unwrap_or(px(800.))
+    }
+    pub(super) fn reveal_code(&mut self, selection: Range<usize>, padding: f32) {
+        if !self.live_preview {
+            return;
+        }
+        let changed = self.code_padding != padding
+            || (self.code_selection != selection
+                && self.code.active_blocks(&self.code_selection)
+                    != self.code.active_blocks(&selection));
+        self.code_selection = selection;
+        self.code_padding = padding;
+        if changed {
+            self.syntax_revision += 1;
         }
     }
 
@@ -330,6 +383,21 @@ impl TextWrapper {
             },
         );
         self.estimating = false;
+        if self.live_preview && !self.code.snapshot.blocks.is_empty() {
+            let start = changed_text
+                .offset_to_point(range.start.min(changed_text.len()))
+                .row;
+            let end = (start + new_text.lines_len())
+                .min(self.lines.len())
+                .min(start + 256);
+            for row in start..end {
+                if let Some(line) = self.lines.get(row) {
+                    let mut line = line.clone();
+                    line.measured = false;
+                    self.lines.splice(row..=row, vec![line]);
+                }
+            }
+        }
     }
 
     /// Document changes never run a GFM parser on the input thread.
@@ -466,9 +534,12 @@ impl TextWrapper {
             return;
         }
         let offset = text.line_start_offset(row);
-        let mut wrapper = cx
-            .text_system()
-            .line_wrapper(self.font.clone(), self.font_size);
+        let font = if self.live_preview && self.code.line(offset).is_some() {
+            self.code_font.clone().unwrap_or_else(|| self.font.clone())
+        } else {
+            self.font.clone()
+        };
+        let mut wrapper = cx.text_system().line_wrapper(font, self.font_size);
         let task_size = self.task_size;
         // Remeasuring unchanged source must not temporarily discard image height.
         let image = self.lines.get(row).and_then(|line| line.image.clone());
@@ -547,6 +618,7 @@ impl TextWrapper {
                     .map(|i| (i * columns).min(line.len())..((i + 1) * columns).min(line.len()))
                     .collect();
                 new_lines.push(LineItem {
+                    code_block: None,
                     image: None,
                     table: None,
                     line: Rope::from(line),
@@ -563,7 +635,16 @@ impl TextWrapper {
             let source = line.to_string();
             self.copied_bytes += source.len();
             super::live_preview::record_ui_work(source.len(), source.len());
-            let presentation = self.live_preview.then(|| {
+            let code_block = if self.live_preview {
+                self.code.decoration(
+                    changed_text.line_start_offset(new_start_row + ix),
+                    &self.code_selection,
+                    self.code_padding,
+                )
+            } else {
+                None
+            };
+            let mut presentation = self.live_preview.then(|| {
                 let start = changed_text.line_start_offset(new_start_row + ix);
                 if let Some(code) = self.code.line(start) {
                     super::live_preview::Presentation::literal(&source, code.prefix, code.tokens)
@@ -573,9 +654,29 @@ impl TextWrapper {
                     )
                 }
             });
-            let scale = presentation.as_ref().map_or(1., |p| p.scale());
+            if code_block.as_ref().is_some_and(|c| c.empty) {
+                if let Some(p) = &mut presentation {
+                    p.hidden = vec![0..source.len()];
+                }
+            }
+            let scale = if code_block.is_some() {
+                self.code_font_size / self.font_size
+            } else {
+                presentation.as_ref().map_or(1., |p| p.scale())
+            };
             let mapped = presentation.as_ref().map(|p| {
-                std::rc::Rc::new(p.display(&source, new_start_row + ix == self.reveal_row))
+                let mut mapped = p.display(
+                    &source,
+                    code_block.is_none()
+                        && (p.code.is_some() || new_start_row + ix == self.reveal_row),
+                );
+                if code_block.as_ref().is_some_and(|c| c.empty) {
+                    let start = changed_text.line_start_offset(new_start_row + ix);
+                    mapped.display_to_source[0] = self.code.block(start).map_or(0, |b| {
+                        b.content.start.saturating_sub(start).min(source.len())
+                    });
+                }
+                std::rc::Rc::new(mapped)
             });
             let line_str = mapped.as_ref().map_or(source.as_str(), |m| m.text.as_str());
             let mut wrapped_lines = vec![];
@@ -592,6 +693,11 @@ impl TextWrapper {
                 for boundary in wrap_line(
                     &line_str,
                     (wrap_width
+                        - if code_block.is_some() {
+                            self.code_inset * 2.
+                        } else {
+                            px(0.)
+                        }
                         - presentation
                             .as_ref()
                             .map_or(px(0.), |p| px(p.quote_indent(self.font_size.into()))))
@@ -613,6 +719,7 @@ impl TextWrapper {
             }
 
             new_lines.push(LineItem {
+                code_block,
                 image: None,
                 table: None,
                 line: Rope::from(line),
@@ -958,6 +1065,8 @@ impl DisplayPoint {
 
 /// The layout info of a line with soft wrapped lines.
 pub(crate) struct LineLayout {
+    pub(super) code_block: Option<super::fenced_code::Decoration>,
+    pub(super) code_width: Pixels,
     pub(super) image: Option<ImageLayout>,
     pub(super) table: Option<TablePaintLayout>,
     pub(super) task: Option<(usize, bool, Pixels)>,
@@ -982,6 +1091,11 @@ pub(super) struct TablePaintLayout {
 }
 
 impl LineLayout {
+    pub(super) fn code_top(&self, line_height: Pixels) -> Pixels {
+        self.code_block
+            .as_ref()
+            .map_or(px(0.), |c| c.top() * line_height)
+    }
     pub(super) fn task_bounds(&self, line_height: Pixels) -> Option<gpui::Bounds<Pixels>> {
         let (state, _, width) = self.task?;
         let origin =
@@ -990,6 +1104,8 @@ impl LineLayout {
     }
     pub(crate) fn new() -> Self {
         Self {
+            code_block: None,
+            code_width: px(0.),
             table: None,
             image: None,
             task: None,
@@ -1041,7 +1157,12 @@ impl LineLayout {
         offset: usize,
         line_height: Pixels,
     ) -> Option<Point<Pixels>> {
-        if self.image.as_ref().is_some_and(|i| !i.reveal) { return (offset <= self.len()).then(|| point(px(0.), px(0.))); }
+        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
+            return Some(point(px(0.), px(0.)));
+        }
+        if self.image.as_ref().is_some_and(|i| !i.reveal) {
+            return (offset <= self.len()).then(|| point(px(0.), px(0.)));
+        }
         if let Some(table) = &self.table {
             if offset > self.len {
                 return None;
@@ -1075,14 +1196,17 @@ impl LineLayout {
                 .checked_sub(self.segment_start)
                 .and_then(|i| self.wrapped_lines.get(i))
                 .map_or(px(0.), |line| line.x_for_index(offset - ranges[row].start));
-            return Some(point(x + self.indent, row as f32 * line_height));
+            return Some(point(
+                x + self.indent,
+                row as f32 * line_height + self.code_top(line_height / self.scale),
+            ));
         }
         let mut acc_len = 0;
         for (i, line) in self.wrapped_lines.iter().enumerate() {
             if offset <= acc_len + line.len {
                 return Some(point(
                     self.indent + line.x_for_index(offset - acc_len),
-                    i as f32 * line_height,
+                    i as f32 * line_height + self.code_top(line_height / self.scale),
                 ));
             }
             acc_len += line.len;
@@ -1125,6 +1249,26 @@ impl LineLayout {
         pos: Point<Pixels>,
         line_height: Pixels,
     ) -> Option<usize> {
+        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
+            return None;
+        }
+        if self.code_block.is_some() && (pos.y < px(0.) || pos.y >= self.size(line_height).height) {
+            return None;
+        }
+        let pos = if self.code_block.is_some() {
+            point(
+                pos.x,
+                (pos.y - self.code_top(line_height)).max(px(0.)).min(
+                    (self.size(line_height).height
+                        - self.code_top(line_height)
+                        - self.code_block.as_ref().unwrap().bottom() * line_height
+                        - px(0.01))
+                    .max(px(0.)),
+                ),
+            )
+        } else {
+            pos
+        };
         if let Some(image) = &self.image {
             let text_height = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) as f32 * line_height } else { px(0.) };
             if pos.y >= text_height && pos.y < text_height + image.rows as f32 * line_height { return Some(if pos.y < text_height + image.rows as f32 * line_height / 2. { 0 } else { self.len() }); }
@@ -1225,6 +1369,9 @@ impl LineLayout {
     }
 
     pub(super) fn size(&self, line_height: Pixels) -> Size<Pixels> {
+        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
+            return size(px(0.), px(0.));
+        }
         if let Some(image) = &self.image {
             let text_rows = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) } else { 0 };
             return size(self.longest_width.max(image.width), (text_rows + image.rows) as f32 * line_height);
@@ -1238,7 +1385,10 @@ impl LineLayout {
             self.segment_ranges
                 .as_ref()
                 .map_or(self.wrapped_lines.len(), |r| r.len())
-                * line_height,
+                * line_height
+                + self.code_block.as_ref().map_or(px(0.), |c| {
+                    (c.top() + c.bottom()) * line_height / self.scale
+                }),
         )
     }
 
@@ -1249,6 +1399,10 @@ impl LineLayout {
         window: &mut Window,
         cx: &mut App,
     ) {
+        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
+            return;
+        }
+        let pos = pos + point(px(0.), self.code_top(line_height));
         if let Some(image) = &self.image {
             use crate::ActiveTheme as _;
             let text_rows = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) } else { 0 };
@@ -1631,6 +1785,7 @@ mod tests {
         wrapper.lines = vec![
             // range: 0..15
             LineItem {
+                code_block: None,
                 image: None,
                 table: None,
                 line: Rope::from("Hello, 世界!\r"),
@@ -1644,6 +1799,7 @@ mod tests {
             },
             // range: 16..36
             LineItem {
+                code_block: None,
                 image: None,
                 table: None,
                 line: Rope::from("This is second line."),
@@ -1657,6 +1813,7 @@ mod tests {
             },
             // range: 37..56
             LineItem {
+                code_block: None,
                 image: None,
                 table: None,
                 line: Rope::from("This is third line."),
@@ -1670,6 +1827,7 @@ mod tests {
             },
             // range: 57..79
             LineItem {
+                code_block: None,
                 image: None,
                 table: None,
                 line: Rope::from("这里是第 4 行。"),
@@ -1753,6 +1911,7 @@ mod tests {
 impl LineItem {
     pub(super) fn diagnostic_line(n: usize) -> Self {
         Self {
+            code_block: None,
             image: None,
             table: None,
             line: Rope::from("x".repeat(n)),
@@ -2121,6 +2280,53 @@ mod sustained_edit_tests {
             }
         }
         wrapper.layout_tables_in(rows, &mut |_, _| vec![]);
+    }
+
+    #[test]
+    fn code_reveal_is_viewport_bounded_and_preserves_literal_nested_content() {
+        let source = format!(
+            "before\n```\n{}```\nafter",
+            "literal **café** &amp;\n".repeat(10_000)
+        );
+        let mut wrapper = make(&source);
+        measure(&mut wrapper, 5000..5020);
+        let copied = wrapper.copied_bytes;
+        let at = wrapper.text.line_start_offset(5005);
+        wrapper.reveal_code(at..at, 0.6);
+        measure(&mut wrapper, 5000..5020);
+        assert!(wrapper.copied_bytes - copied < 2000);
+        assert!(wrapper.lines[5005].code_block.is_none());
+        let revision = wrapper.syntax_revision;
+        wrapper.reveal_code(at + 1..at + 1, 0.6);
+        assert_eq!(
+            revision, wrapper.syntax_revision,
+            "moving within one block doesn't invalidate it"
+        );
+        wrapper.reveal_code(0..0, 0.6);
+        measure(&mut wrapper, 5000..5020);
+        assert!(wrapper.lines[5005].code_block.is_some());
+        assert_eq!(
+            wrapper.lines[5005].mapped.as_ref().unwrap().text,
+            "literal **café** &amp;"
+        );
+
+        let mut nested = make("before\n> ```\n> literal **你好**\n> ```\nafter");
+        measure(&mut nested, 0..5);
+        assert_eq!(
+            nested.lines[2].mapped.as_ref().unwrap().text,
+            "literal **你好**"
+        );
+        assert_eq!(nested.lines[1].height_units(), 0.);
+        let at = nested.text.line_start_offset(2);
+        nested.reveal_code(at..at, 0.6);
+        measure(&mut nested, 0..5);
+        for row in 1..=3 {
+            assert!(nested.lines[row].code_block.is_none());
+            assert_eq!(
+                nested.lines[row].mapped.as_ref().unwrap().text,
+                nested.lines[row].line.to_string()
+            );
+        }
     }
 
     #[test]

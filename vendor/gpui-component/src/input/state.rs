@@ -294,8 +294,8 @@ pub struct InputState {
     pub(super) last_layout: Option<LastLayout>,
     pub(super) link_layout_text: Option<Rope>,
     pub(super) last_cursor: Option<usize>,
-    /// Source offset and painted screen Y to preserve for one image-line click.
-    pub(super) image_click_anchor: Option<(usize, Pixels)>,
+    /// Source offset and painted screen Y to preserve when preview blocks expand or collapse.
+    pub(super) preview_click_anchor: Option<(usize, Pixels)>,
     /// The input container bounds
     pub(super) input_bounds: Bounds<Pixels>,
     /// The text bounds
@@ -421,7 +421,7 @@ impl InputState {
             last_bounds: None,
             last_selected_range: None,
             last_cursor: None,
-            image_click_anchor: None,
+            preview_click_anchor: None,
             scroll_handle: ScrollHandle::new(),
             scroll_size: gpui::size(px(0.), px(0.)),
             deferred_scroll_offset: None,
@@ -1490,13 +1490,20 @@ impl InputState {
             return;
         }
 
-        self.image_click_anchor = None;
+        self.preview_click_anchor = None;
         if self.live_preview && event.button == MouseButton::Left && !event.modifiers.shift {
             let old_row = self.text.offset_to_point(self.cursor()).row;
             let target = self.text.offset_to_point(offset);
             if target.row != old_row {
                 if let (Some(layout), Some(bounds)) = (&self.last_layout, self.last_bounds) {
-                    if layout.line(old_row).is_some_and(|line| line.image.is_some()) {
+                    if layout
+                        .line(old_row)
+                        .is_some_and(|line| line.image.is_some())
+                        || layout
+                            .line(target.row)
+                            .is_some_and(|line| line.code_block.is_some())
+                        || self.text_wrapper.code.block(self.cursor()).is_some()
+                    {
                         if let Some(line) = layout.line(target.row) {
                             if let Some(local) =
                                 line.position_for_index(target.column, layout.line_height)
@@ -1504,7 +1511,7 @@ impl InputState {
                                 let y = bounds.origin.y
                                     + self.text_wrapper.lines.prefix(target.row) * layout.line_height
                                     + local.y;
-                                self.image_click_anchor = Some((offset, y));
+                                self.preview_click_anchor = Some((offset, y));
                             }
                         }
                     }
@@ -2995,5 +3002,55 @@ impl InputState {
         }
         result.sort_by_key(|(r, _)| r.start);
         result
+    }
+}
+#[cfg(feature = "editor-diagnostics")]
+impl InputState {
+    /// Headless presentation and geometry inspection; never creates a native window.
+    #[doc(hidden)]
+    pub fn diagnostic_code_row(&self, row: usize) -> (bool, bool, String, f32) {
+        let line = self.text_wrapper.lines.get(row).unwrap();
+        (
+            line.code_block.is_some(),
+            line.code_block.as_ref().is_some_and(|c| c.hidden),
+            line.mapped
+                .as_ref()
+                .map_or_else(|| line.line.to_string(), |m| m.text.clone()),
+            line.height_units(),
+        )
+    }
+    #[doc(hidden)]
+    pub fn diagnostic_code_point(&self, row: usize, column: usize) -> Point<Pixels> {
+        let layout = self.last_layout.as_ref().unwrap();
+        self.last_bounds.unwrap().origin
+            + point(
+                layout.line_number_width,
+                self.text_wrapper.lines.prefix(row) * layout.line_height,
+            )
+            + layout
+                .line(row)
+                .unwrap()
+                .position_for_index(column, layout.line_height)
+                .unwrap()
+    }
+    /// Route an in-memory pointer event through the real editor handler.
+    #[doc(hidden)]
+    pub fn diagnostic_code_click(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.on_mouse_down(
+            &MouseDownEvent {
+                position,
+                button: MouseButton::Left,
+                click_count: 1,
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        self.selecting = false;
     }
 }

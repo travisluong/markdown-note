@@ -250,3 +250,14 @@ can exercise the vendored implementation; production has no new public API.
 Tests cover cache reuse/pruning, delayed results, nested/unfinished fences,
 Unicode/CRLF/tab mappings, literal presentation, and actual TestPlatform shaped
 runs across themes, wrapping, mode changes and undo/redo. No native UI is used.
+
+Inactive fenced code blocks in Live preview hide fence rows and share Reading
+mode's theme colors, monospace font/size, padding, and rounded code surfaces.
+The source-mapped editor reveals the entire block when the caret or selection
+intersects it, including navigation from Find; losing focus alone preserves
+this state. Empty blocks retain a clickable row at the content insertion point.
+Pointer expansion preserves the clicked source position within scroll limits.
+Block geometry uses the existing height index, lazy viewport measurement, and
+background syntax snapshots; stale classifications never hide source. Headless
+tests cover nested/unfinished/empty fences, Unicode/CRLF, keyboard and pointer
+entry, selection, search, themes, history, and bounded large-block invalidation.

@@ -15,9 +15,46 @@ pub(super) struct CodeLine {
     pub tokens: CodeTokens,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct Block {
+    pub source: Range<usize>,
+    pub opening: Range<usize>,
+    pub content: Range<usize>,
+    pub closing: Option<Range<usize>>,
+    pub first: usize,
+    pub last: usize,
+}
+impl Block {
+    pub fn active(&self, selection: &Range<usize>) -> bool {
+        if selection.is_empty() {
+            self.source.contains(&selection.start) || selection.start == self.source.end
+        } else {
+            selection.start < self.source.end && selection.end > self.source.start
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Decoration {
+    pub hidden: bool,
+    pub first: bool,
+    pub last: bool,
+    pub empty: bool,
+    pub padding: f32,
+}
+impl Decoration {
+    pub fn top(&self) -> f32 {
+        if self.first { self.padding } else { 0. }
+    }
+    pub fn bottom(&self) -> f32 {
+        if self.last { self.padding } else { 0. }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Snapshot {
     pub blocks: Vec<Range<usize>>,
+    pub details: Vec<Block>,
     pub lines: BTreeMap<usize, CodeLine>,
     pub cache: Arc<Cache>,
 }
@@ -45,6 +82,43 @@ impl Snapshot {
                 }
                 let start = source[..range.start].rfind('\n').map_or(0, |n| n + 1);
                 result.blocks.push(start..range.end);
+                let opening_end = source[range.clone()]
+                    .find('\n')
+                    .map_or(range.end, |n| range.start + n + 1);
+                let last_start = source[..range.end].rfind('\n').map_or(start, |n| n + 1);
+                let mappings = code_lines(source, range.clone(), &code.value);
+                let marker = raw.as_bytes()[0];
+                let count = raw.bytes().take_while(|b| *b == marker).count();
+                let tail = source[last_start..range.end]
+                    .trim_start_matches(|c: char| c.is_whitespace() || c == '>');
+                let fence_len = tail.bytes().take_while(|b| *b == marker).count();
+                let closed = last_start >= opening_end
+                    && fence_len >= count
+                    && tail[fence_len..].trim().is_empty()
+                    && (code.value.is_empty()
+                        || mappings.last().is_some_and(|m| m.line_start < last_start));
+                let closing = closed.then_some(last_start..range.end);
+                let content_end = closing.as_ref().map_or(range.end, |r| r.start);
+                let empty = opening_end >= content_end;
+                let first = if empty { last_start } else { opening_end };
+                let last = if empty {
+                    first
+                } else {
+                    let end = content_end
+                        - usize::from(source.as_bytes().get(content_end - 1) == Some(&b'\n'));
+                    source[..end]
+                        .rfind('\n')
+                        .map_or(first, |n| n + 1)
+                        .max(first)
+                };
+                result.details.push(Block {
+                    source: start..range.end,
+                    opening: start..opening_end,
+                    content: opening_end..content_end,
+                    closing,
+                    first,
+                    last,
+                });
                 let tokens = if let Some(lang) = language(code.lang.as_deref()) {
                     let key = (lang.to_string(), code.value.clone());
                     cache
@@ -58,7 +132,7 @@ impl Snapshot {
                 } else {
                     Arc::new(CodeTokens::default())
                 };
-                for mapping in code_lines(source, range, &code.value) {
+                for mapping in mappings {
                     let mut spans = Vec::new();
                     let first = tokens
                         .spans
@@ -131,6 +205,58 @@ impl Index {
             self.edits
                 .push(super::preview_syntax::Delta { range, inserted });
         }
+    }
+    pub fn active_blocks(&self, selection: &Range<usize>) -> Range<usize> {
+        let blocks = &self.snapshot.details;
+        let start = blocks.partition_point(|b| {
+            if selection.is_empty() {
+                b.source.end < selection.start
+            } else {
+                b.source.end <= selection.start
+            }
+        });
+        let end = blocks.partition_point(|b| {
+            if selection.is_empty() {
+                b.source.start <= selection.end
+            } else {
+                b.source.start < selection.end
+            }
+        });
+        start..end
+    }
+    pub fn block(&self, offset: usize) -> Option<&Block> {
+        if self.overflowed || !self.edits.is_empty() {
+            return None;
+        }
+        let at = self
+            .snapshot
+            .details
+            .partition_point(|b| b.source.end < offset);
+        self.snapshot
+            .details
+            .get(at)
+            .filter(|b| b.source.start <= offset && offset <= b.source.end)
+    }
+    pub fn decoration(
+        &self,
+        start: usize,
+        selection: &Range<usize>,
+        padding: f32,
+    ) -> Option<Decoration> {
+        let block = self.block(start)?;
+        if block.active(selection) {
+            return None;
+        }
+        let empty = block.content.is_empty();
+        Some(Decoration {
+            hidden: (block.opening.contains(&start)
+                || block.closing.as_ref().is_some_and(|r| r.contains(&start)))
+                && !(empty && start == block.first),
+            first: start == block.first,
+            last: start == block.last,
+            empty,
+            padding,
+        })
     }
     pub fn line(&self, start: usize) -> Option<CodeLine> {
         if self.overflowed {
@@ -286,5 +412,93 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod block_tests {
+    use super::*;
+    #[test]
+    fn fences_content_and_selection_are_block_scoped() {
+        for source in [
+            "before\n```rust\n你好\n\n```\nafter",
+            "before\r\n~~~~ rust\r\n你好\r\n\r\n~~~~\r\nafter",
+            "before\n> ```rust\n> 你好\n> \n> ```\nafter",
+            "before\n- item\n\n  ```rust\n  你好\n  \n  ```\nafter",
+        ] {
+            let index = Index::new(Arc::new(Snapshot::parse(source, &Cache::new())));
+            let block = &index.snapshot.details[0];
+            assert!(block.closing.is_some(), "{source}");
+            assert!(
+                index
+                    .decoration(block.opening.start, &(0..0), 0.6)
+                    .unwrap()
+                    .hidden
+            );
+            assert!(
+                index
+                    .decoration(block.closing.as_ref().unwrap().start, &(0..0), 0.6)
+                    .unwrap()
+                    .hidden
+            );
+            assert!(index.decoration(block.first, &(0..0), 0.6).unwrap().first);
+            assert!(index.decoration(block.last, &(0..0), 0.6).unwrap().last);
+            for caret in [
+                block.opening.start,
+                source.find("你好").unwrap(),
+                block.source.end,
+            ] {
+                assert!(
+                    index
+                        .decoration(block.opening.start, &(caret..caret), 0.6)
+                        .is_none()
+                );
+                assert!(index.decoration(block.last, &(caret..caret), 0.6).is_none());
+            }
+            assert!(!block.active(&(0..block.source.start)));
+            assert!(block.active(&(0..block.content.end)));
+            assert_eq!(index.active_blocks(&(0..source.len())), 0..1);
+        }
+    }
+    #[test]
+    fn empty_and_unfinished_blocks_have_a_clickable_row() {
+        for source in [
+            "before\n```\n```",
+            "before\n~~~",
+            "before\n```\n",
+            "before\n```rs\ncode",
+        ] {
+            let index = Index::new(Arc::new(Snapshot::parse(source, &Cache::new())));
+            let b = &index.snapshot.details[0];
+            let first = index.decoration(b.first, &(0..0), 0.6).unwrap();
+            assert!(!first.hidden, "{source}: {b:?}");
+            assert!(first.first);
+            assert!(index.decoration(b.last, &(0..0), 0.6).unwrap().last);
+        }
+    }
+    #[test]
+    fn fence_like_content_in_unclosed_blocks_stays_visible() {
+        for source in [
+            "before\n```\n> ```",
+            "before\n```\n    ```",
+            "before\n````\n```",
+            "before\n```\n~~~",
+        ] {
+            let index = Index::new(Arc::new(Snapshot::parse(source, &Cache::new())));
+            let b = &index.snapshot.details[0];
+            assert!(b.closing.is_none(), "{source}");
+            assert!(!index.decoration(b.last, &(0..0), 0.6).unwrap().hidden);
+        }
+    }
+
+    #[test]
+    fn stale_analysis_never_hides_fences() {
+        let mut index = Index::new(Arc::new(Snapshot::parse(
+            "before\n```\ncode\n```",
+            &Cache::new(),
+        )));
+        assert!(index.decoration(7, &(0..0), 0.6).is_some());
+        index.edit(0..0, 1);
+        assert!(index.decoration(8, &(0..0), 0.6).is_none());
     }
 }
