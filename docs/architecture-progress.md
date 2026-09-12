@@ -201,3 +201,12 @@ closure cannot apply preferences to another form or notebook. Thirteen focused
 Windows tests passed in an isolated pre-Session checkout, including invalid and
 valid values, sections, theme/font controls, scope, stale events and both close
 paths. Strict diagnostics Clippy also passed for that isolated integration.
+
+## Explorer state boundary
+
+The pure `Explorer` owner keeps directory cache state, projected rows, selection
+and generation checks private. It accepts notebook settings and captured scan
+results, and exposes rows and missing-directory requests to the UI adapter. Four
+Linux owner tests pass. A new collapse/refresh/re-expand regression failed before
+invalidating obsolete Loading entries at refresh start; current workers and
+completed caches remain valid. Live explorer integration follows separately.

@@ -6,6 +6,7 @@
 pub mod capabilities;
 pub mod commands;
 pub mod document;
+pub mod explorer;
 pub mod notebook;
 pub mod templates;
 mod view_mode;
