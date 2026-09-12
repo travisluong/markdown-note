@@ -18,6 +18,8 @@ mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
 mod templates;
+#[cfg(test)]
+mod lifecycle_tests;
 
 use std::{
     fs,
@@ -375,12 +377,18 @@ impl Notes {
         cx.spawn_in(window, async move |this, cx| {
             let _ = prompt.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
-                this.refresh(window, cx);
+                this.resume_document(window, cx);
             });
         })
         .detach();
         cx.notify();
+    }
+
+    /// Resume a retained document after a cancelled or failed foreground operation.
+    fn resume_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.busy = false;
+        self.schedule_autosave(window, cx);
+        self.refresh(window, cx);
     }
 
     fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
@@ -436,8 +444,7 @@ impl Notes {
                 if matches!(next, Next::TreeFile(_)) {
                     self.restore_tree_cursor(window, cx);
                 }
-                self.schedule_autosave(window, cx);
-                self.refresh(window, cx);
+                self.resume_document(window, cx);
             }
         }
     }
@@ -483,20 +490,29 @@ impl Notes {
                 Err(error) => Err(io::Error::other(error.to_string())),
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
-                match result {
-                    Ok(Some(document)) => {
-                        this.install_document(Some(document), window, cx);
-                        this.remember_file(cx);
-                    }
-                    Ok(None) => {}
-                    Err(error) => this.error("Could not open file", error, window, cx),
-                }
-                this.refresh(window, cx);
+                this.finish_open(result, window, cx);
             });
         })
         .detach();
         cx.notify();
+    }
+
+    fn finish_open(
+        &mut self,
+        result: io::Result<Option<Document>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.busy = false;
+        match result {
+            Ok(Some(document)) => {
+                self.install_document(Some(document), window, cx);
+                self.remember_file(cx);
+                self.refresh(window, cx);
+            }
+            Ok(None) => self.resume_document(window, cx),
+            Err(error) => self.error("Could not open file", error, window, cx),
+        }
     }
 
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {

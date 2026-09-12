@@ -563,25 +563,34 @@ impl Notes {
                 Err(error) => Err(error.to_string()),
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
-                match result {
-                    Ok(Some(path)) if location => this.notebooks.location = Some(path),
-                    Ok(Some(path)) => this.request(
-                        Next::Notebook {
-                            path,
-                            create: false,
-                        },
-                        window,
-                        cx,
-                    ),
-                    Ok(None) => {}
-                    Err(error) => this.notebooks.modal_error = Some(error),
-                }
-                cx.notify();
+                this.finish_notebook_picker(result, location, window, cx);
             });
         })
         .detach();
         cx.notify();
+    }
+
+    pub(super) fn finish_notebook_picker(
+        &mut self,
+        result: Result<Option<PathBuf>, String>,
+        location: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.busy = false;
+        match result {
+            Ok(Some(path)) if !location => {
+                self.request(Next::Notebook { path, create: false }, window, cx);
+            }
+            result => {
+                match result {
+                    Ok(Some(path)) => self.notebooks.location = Some(path),
+                    Err(error) => self.notebooks.modal_error = Some(error),
+                    Ok(None) => {}
+                }
+                self.resume_document(window, cx);
+            }
+        }
     }
 
     pub(super) fn activate_notebook(
@@ -639,6 +648,7 @@ impl Notes {
                         } else {
                             this.notebooks.notice = Some(message);
                         }
+                        this.resume_document(window, cx);
                     }
                 }
                 this.refresh(window, cx);

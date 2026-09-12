@@ -58,8 +58,11 @@ impl Notes {
             return;
         }
         let identity = self.saves.identity;
+        let delay = cx
+            .background_executor()
+            .timer(Duration::from_millis(settings.delay_ms));
         self.saves.timer = Some(cx.spawn_in(window, async move |this, cx| {
-            Timer::after(Duration::from_millis(settings.delay_ms)).await;
+            delay.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if this.saves.identity == identity
                     && !this.saves.writing
