@@ -122,8 +122,8 @@ close and retry prompts. Close refreshes all revision requirements before remova
 including preferences changed while busy or while its error prompt is open. Six
 TestPlatform cases use disposable notebooks, the registered close callback, real
 preference writes, simulated prompt answers and executor time. All six passed on
-Windows and Linux as part of their full 240-test suites. The independent same-book
-reload preference race is being repaired in a separate change.
+Windows and Linux as part of their full 240-test suites. The separate same-book
+reload preference race is repaired below.
 
 ## Preference changes during a move
 
@@ -167,3 +167,15 @@ format check and strict all-target diagnostics Clippy gate passed. Clippy requir
 one behavior-preserving `Option` early-return simplification in the new worker.
 The existing dependency future-compatibility warning remains. The prior Linux
 default check and full 240-test run also passed; no macOS execution is claimed.
+
+## Preferences changed during notebook reload
+
+A deterministic after-read delay reproduced two overwrite failures: a captured
+Source setting replaced a newer Reading choice, and an external Reading setting
+replaced an explicit re-selection of Source. Activation now retains typed mode,
+normalized sidebar-width and notebook-autosave intents keyed by operation and
+canonical root. Only explicit fields replay into the same notebook. Other loaded
+preferences remain intact; changes on A cannot replace B, and autosave for a
+standalone document stays in session scope. Four real TestPlatform regressions
+and two pure owner tests passed on Windows, followed by all 19 notebook lifecycle
+tests. The regression hook delays installation after real filesystem reads.

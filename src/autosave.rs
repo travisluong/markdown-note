@@ -54,9 +54,11 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.notebook_autosave()
-            && let Some(book) = &mut self.notebooks.active
-        {
+        let notebook_scoped = self.notebook_autosave();
+        if notebook_scoped {
+            self.record_activation_preference(notebook_ui::PreferenceIntent::Autosave(settings));
+        }
+        if notebook_scoped && let Some(book) = &mut self.notebooks.active {
             book.settings.autosave = settings;
             self.persist_notebooks(cx);
         } else {

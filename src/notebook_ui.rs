@@ -4,6 +4,10 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::time::Duration;
 
+mod activation_preferences;
+use activation_preferences::ActivationPreferences;
+pub(super) use activation_preferences::PreferenceIntent;
+
 #[cfg(feature = "editor-diagnostics")]
 pub(super) mod diagnostics;
 
@@ -18,6 +22,9 @@ mod close_tests;
 
 #[cfg(test)]
 mod persistence_tests;
+
+#[cfg(test)]
+mod activation_preference_tests;
 
 enum SettingsAfterFlush {
     Close { discard_failed: bool },
@@ -64,9 +71,12 @@ pub(super) struct NotebookState {
     persistence: Option<Task<()>>,
     writer: Option<notebook::SettingsWriter>,
     settings_waiter: Option<SettingsWaiter>,
+    activation_preferences: Option<ActivationPreferences>,
     window: AnyWindowHandle,
     #[cfg(test)]
     write_delay: Duration,
+    #[cfg(test)]
+    activation_install_delay: Duration,
     tree_loading: bool,
     tree_target: Option<PathBuf>,
     folder_target: Option<PathBuf>,
@@ -101,9 +111,12 @@ impl NotebookState {
             persistence: None,
             writer: None,
             settings_waiter: None,
+            activation_preferences: None,
             window: window.window_handle(),
             #[cfg(test)]
             write_delay: Duration::ZERO,
+            #[cfg(test)]
+            activation_install_delay: Duration::ZERO,
             tree_loading: false,
             tree_target: None,
             folder_target: None,
@@ -664,6 +677,11 @@ impl Notes {
         let Some(operation) = self.foreground.begin() else {
             return;
         };
+        self.notebooks.activation_preferences = self
+            .notebooks
+            .active
+            .as_ref()
+            .map(|book| ActivationPreferences::new(operation, book.root.clone()));
         self.notebooks.modal_error = None;
         cx.spawn_in(window, async move |this, cx| {
             // Resolve identity before reading settings, so a pending write for
@@ -699,6 +717,7 @@ impl Notes {
                     }
                     Err(error) => {
                         this.foreground.finish(operation);
+                        this.take_activation_preferences(operation);
                         this.notebook_open_failed(error, window, cx);
                     }
                 }
@@ -716,6 +735,8 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        #[cfg(test)]
+        let install_delay = std::mem::take(&mut self.notebooks.activation_install_delay);
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_executor()
@@ -734,12 +755,18 @@ impl Notes {
                     Ok::<_, io::Error>((book, document))
                 })
                 .await;
+            #[cfg(test)]
+            cx.background_executor().timer(install_delay).await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if !this.foreground.finish(operation) {
                     return;
                 }
+                let preferences = this.take_activation_preferences(operation);
                 match result {
-                    Ok((book, document)) => {
+                    Ok((mut book, document)) => {
+                        if let Some(preferences) = preferences {
+                            preferences.replay(operation, &mut book);
+                        }
                         this.search = None;
                         this.reset_sidebar_resize(cx);
                         this.notebooks.index.register(book.root.clone());
@@ -762,6 +789,36 @@ impl Notes {
         })
         .detach();
         cx.notify();
+    }
+
+    /// The active notebook is canonical. A pending activation can only replay
+    /// explicit choices onto that same notebook, never onto a different target.
+    pub(super) fn record_activation_preference(&mut self, intent: PreferenceIntent) {
+        let Some(preferences) = &mut self.notebooks.activation_preferences else {
+            return;
+        };
+        let operation = preferences.operation();
+        if self.foreground.owns(operation)
+            && let Some(book) = &self.notebooks.active
+        {
+            preferences.record(operation, &book.root, intent);
+        }
+    }
+
+    fn take_activation_preferences(
+        &mut self,
+        operation: OperationId,
+    ) -> Option<ActivationPreferences> {
+        if self
+            .notebooks
+            .activation_preferences
+            .as_ref()
+            .is_some_and(|preferences| preferences.operation() == operation)
+        {
+            self.notebooks.activation_preferences.take()
+        } else {
+            None
+        }
     }
 
     fn notebook_open_failed(
@@ -1080,6 +1137,7 @@ impl Notes {
             return;
         };
         if !self.foreground.owns(waiter.operation) {
+            self.take_activation_preferences(waiter.operation);
             return;
         }
         // View mode can still change while busy. Include every late preference
@@ -1168,6 +1226,7 @@ impl Notes {
                             }
                             _ => {
                                 this.foreground.finish(waiter.operation);
+                                this.take_activation_preferences(waiter.operation);
                                 this.resume_document(window, cx);
                             }
                         }

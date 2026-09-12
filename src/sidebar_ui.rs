@@ -123,10 +123,11 @@ impl Notes {
     }
 
     pub(super) fn save_sidebar_width(&mut self, width: f32, cx: &mut Context<Self>) {
+        let width = notebook::normalize_sidebar_width(width);
+        self.record_activation_preference(notebook_ui::PreferenceIntent::SidebarWidth(width));
         let Some(book) = self.notebooks.active.as_mut() else {
             return;
         };
-        let width = notebook::normalize_sidebar_width(width);
         if book.settings.sidebar_width != width {
             book.settings.sidebar_width = width;
             self.persist_notebooks(cx);

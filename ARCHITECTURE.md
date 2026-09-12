@@ -99,6 +99,11 @@ Follow its callers and completions before treating a file as an isolated module.
    for late preference changes, and handles Retry, Cancel, or Close without saving
    preferences explicitly. Cancel resumes the retained document's autosave.
    Book and index replacements remain independently atomic, not one transaction.
+   Reloading a notebook records explicit mode, sidebar-width and notebook-scoped
+   autosave choices under the activation token and canonical root. Only those
+   fields replay into the matching loaded book, including unchanged reselection;
+   untouched externally loaded preferences retain their loaded values. Autosave
+   choices for a standalone document remain session preferences.
 
 Additional contracts to preserve:
 

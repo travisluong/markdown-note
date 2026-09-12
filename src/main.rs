@@ -491,6 +491,7 @@ impl Notes {
     }
 
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
+        self.record_activation_preference(notebook_ui::PreferenceIntent::ViewMode(mode));
         self.reading_text = if mode == ViewMode::Reading {
             self.editor.read(cx).value()
         } else {
