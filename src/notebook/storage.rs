@@ -83,14 +83,25 @@ pub fn save_state(path: &Path, index: &Index, book: Option<&Notebook>) -> io::Re
     // Revalidate before writing so externally damaged or newer settings survive.
     load_index(path)?;
     if let Some(book) = book {
-        if is_link(&fs::symlink_metadata(&book.root)?) {
-            return Err(io::Error::other(
-                "The notebook folder was replaced by a link.",
-            ));
-        }
-        Notebook::open(&book.root, false)?;
-        write_json(&settings_path(&book.root), &book.settings)?;
+        save_book(book)?;
     }
+    write_json(path, index)
+}
+
+/// Replace one notebook's settings after preserving its existing path/schema guards.
+pub fn save_book(book: &Notebook) -> io::Result<()> {
+    if is_link(&fs::symlink_metadata(&book.root)?) {
+        return Err(io::Error::other(
+            "The notebook folder was replaced by a link.",
+        ));
+    }
+    Notebook::open(&book.root, false)?;
+    write_json(&settings_path(&book.root), &book.settings)
+}
+
+/// Replace the index independently, preserving corrupt or unsupported existing data.
+pub fn save_index(path: &Path, index: &Index) -> io::Result<()> {
+    load_index(path)?;
     write_json(path, index)
 }
 

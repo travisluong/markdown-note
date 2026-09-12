@@ -5,6 +5,7 @@ mod paths;
 mod settings;
 mod storage;
 mod tree;
+mod writer;
 
 pub use paths::{
     display_path, is_link, markdown, name, remap_path, resolve, safe_relative, validate_name,
@@ -15,7 +16,10 @@ pub use settings::{
     normalize_sidebar_width, parse_hidden_extensions,
 };
 pub use storage::{
-    Notebook, create_untitled, index_path, load_index, move_entry, read_directory, save_state,
-    settings_path, write_json,
+    Notebook, create_untitled, index_path, load_index, move_entry, read_directory, save_book,
+    save_index, save_state, settings_path, write_json,
 };
 pub use tree::{Entry, FileSort, sidebar_file_name};
+pub use writer::{
+    FlushBarrier, FlushStatus, Revision, SettingsWriter, WriteFailure, WriteJob, WriteJobId,
+};

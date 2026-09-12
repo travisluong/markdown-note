@@ -13,7 +13,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | 3. Lifecycle/edit fixes and integration coverage | Implemented and verified | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. A separately reproduced close-time input loss was repaired; all 91 application tests passed afterward. |
 | 4. Data/storage boundaries and file policy | In progress | Library entry point exposes document format/I/O, notebook domain owners and shared view preference. Public storage regression tests cover BOM, newline conventions, invalid files and failed replacement. Conflict detection and metadata policy remain. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
-| 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
+| 6. Bounded settings writer | In progress | Pure writer model and independent guarded book/index storage operations implemented; 10 tests passed, including 20,000-submission stress and actual disk outcomes. Application switch/close integration remains. |
 | 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
 | 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Shared GFM analysis verified: mixed queued requests use one parse, plain requests use zero; 67 editor tests passed, preserving incremental/cache/work bounds. Initial Reading parse moved off layout; 8 controlled lifecycle tests passed. Thin editor adapter remains. |
 
@@ -105,3 +105,14 @@ layout, stale successes/errors, coalescing, style and callback updates, exact
 rendered source identity, find/reveal, retained scroll, HTML switching and view
 teardown. An unchanged shared source has a pointer fast path before exact text
 equality. No native rendering latency or physical interaction result is inferred.
+
+## Settings writer policy
+
+`notebook::SettingsWriter` retains one running job and the latest pending settings
+per destination, plus one latest index snapshot with a book-revision dependency.
+Captured flush barriers accept newer successful revisions; failed latest snapshots
+wait for explicit retry or a new edit. An unrelated failed notebook does not block
+a newer active index. Ten Windows tests passed, including 20,000 submissions,
+fair scheduling, stale completions, failure/retry paths, both notebooks reaching
+disk and corrupt/unsupported JSON preservation. The application driver is being
+integrated separately; this model commit alone does not replace the old UI chain.
