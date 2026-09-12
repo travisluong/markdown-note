@@ -51,7 +51,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies current overlay and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
-| Links and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. An image import retains rollback until insertion into its captured document/source succeeds. |
+| Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
 ## Lifecycle rules

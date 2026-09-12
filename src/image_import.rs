@@ -1,4 +1,4 @@
-//! Filesystem image imports are prepared on the background executor.
+//! File drops link existing files and prepare image imports on the background executor.
 use markdown::{ParseOptions, mdast::Node};
 use std::{
     fs,
@@ -37,18 +37,23 @@ impl Import {
 pub(crate) fn prepare(root: &Path, sources: &[PathBuf]) -> io::Result<Import> {
     let root = fs::canonicalize(root)?;
     if sources.is_empty() {
-        return Err(io::Error::other("Drop one or more image files."));
+        return Err(io::Error::other("Drop one or more files."));
     }
     let mut validated = Vec::new();
     // Validate the complete batch before creating any notebook files.
     for source in sources {
         let metadata = fs::symlink_metadata(source)?;
-        if !metadata.is_file() || crate::notebook::is_link(&metadata) || !supported(source) {
+        if !metadata.is_file() || crate::notebook::is_link(&metadata) {
             return Err(io::Error::other(
-                "Drop only PNG, JPEG, GIF, WebP, or BMP image files.",
+                "Drop files, rather than folders or filesystem shortcuts.",
             ));
         }
+        let is_image = supported(source);
         let source = fs::canonicalize(source)?;
+        if !is_image {
+            validated.push((source, None));
+            continue;
+        }
         let bytes = fs::read(&source)?;
         let format = image::guess_format(&bytes).map_err(io::Error::other)?;
         if !matches!(
@@ -66,10 +71,15 @@ pub(crate) fn prepare(root: &Path, sources: &[PathBuf]) -> io::Result<Import> {
         reader
             .decode()
             .map_err(|e| io::Error::other(format!("Could not decode {}: {e}", source.display())))?;
-        validated.push((source, bytes));
+        validated.push((source, Some(bytes)));
     }
     let mut imported = Import::default();
     for (source, bytes) in validated {
+        // Ordinary files are linked in place, including notes in subfolders.
+        let Some(bytes) = bytes else {
+            imported.paths.push(source);
+            continue;
+        };
         if source.parent() == Some(root.as_path()) {
             imported.paths.push(source);
             continue;
@@ -112,15 +122,15 @@ pub(crate) fn markdown(note: &Path, paths: &[PathBuf]) -> io::Result<String> {
     let mut paragraphs = Vec::new();
     for path in paths {
         let target =
-            url::Url::from_file_path(path).map_err(|_| io::Error::other("Invalid image path."))?;
+            url::Url::from_file_path(path).map_err(|_| io::Error::other("Invalid file path."))?;
         let relative = base
             .make_relative(&target)
-            .ok_or_else(|| io::Error::other("Image must belong to this notebook."))?;
+            .unwrap_or_else(|| target.to_string())
+            // Markdown resolves character references even in angle-bracket destinations.
+            .replace('&', "%26");
         let name = path.file_name().unwrap().to_string_lossy();
         if name.chars().any(char::is_control) {
-            return Err(io::Error::other(
-                "Image filename contains control characters.",
-            ));
+            return Err(io::Error::other("File name contains control characters."));
         }
         let mut alt = String::new();
         for ch in name.chars() {
@@ -129,13 +139,18 @@ pub(crate) fn markdown(note: &Path, paths: &[PathBuf]) -> io::Result<String> {
             }
             alt.push(ch);
         }
-        paragraphs.push(format!("![{alt}](<{relative}>)"));
+        let prefix = if supported(path) { "!" } else { "" };
+        paragraphs.push(format!("{prefix}[{alt}](<{relative}>)"));
     }
     Ok(paragraphs.join("\n\n"))
 }
 
 /// Protect structural blocks and inline syntax when choosing the insertion point.
-pub(crate) fn insertion(source: &str, offset: usize, images: &str) -> io::Result<(usize, String)> {
+pub(crate) fn insertion(
+    source: &str,
+    offset: usize,
+    markdown: &str,
+) -> io::Result<(usize, String)> {
     if !source.is_char_boundary(offset) {
         return Err(io::Error::other("Invalid drop position."));
     }
@@ -169,7 +184,7 @@ pub(crate) fn insertion(source: &str, offset: usize, images: &str) -> io::Result
                         offset += 1;
                     }
                     if matches!(node, Node::Code(_)) && pos.end.offset == source.len() {
-                        // An unclosed fence would swallow the image; refuse instead of changing code.
+                        // An unclosed fence would swallow the link; refuse instead of changing code.
                         let raw = &source[pos.start.offset..pos.end.offset];
                         let first = raw.lines().next().unwrap_or("").trim_start();
                         if first.starts_with("```") || first.starts_with("~~~") {
@@ -181,7 +196,7 @@ pub(crate) fn insertion(source: &str, offset: usize, images: &str) -> io::Result
                             });
                             if !closed {
                                 return Err(io::Error::other(
-                                    "Close the code fence before dropping an image here.",
+                                    "Close the code fence before dropping a file here.",
                                 ));
                             }
                         }
@@ -207,7 +222,7 @@ pub(crate) fn insertion(source: &str, offset: usize, images: &str) -> io::Result
     } else {
         "\n\n"
     };
-    Ok((offset, format!("{prefix}{images}{suffix}")))
+    Ok((offset, format!("{prefix}{markdown}{suffix}")))
 }
 
 #[cfg(test)]
@@ -265,13 +280,87 @@ mod tests {
         let bad = fixture.path().join("bad.png");
         fs::write(&bad, b"invalid").unwrap();
         assert!(prepare(&root, &[good.clone(), bad]).is_err());
-        let mixed = fixture.path().join("file.txt");
-        fs::write(&mixed, "text").unwrap();
-        assert!(prepare(&root, &[good.clone(), mixed]).is_err());
+        let missing = fixture.path().join("missing.txt");
+        assert!(prepare(&root, &[good.clone(), missing]).is_err());
         assert!(prepare(&root, &[good.clone(), fixture.path().to_path_buf()]).is_err());
         assert!(prepare(&root, &[]).is_err());
         assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
         assert!(prepare(&fixture.path().join("missing"), &[good]).is_err());
+    }
+    #[test]
+    fn mixed_drops_link_files_in_place_and_roll_back_only_imported_images() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("notebook");
+        fs::create_dir_all(root.join("nested")).unwrap();
+        let note = root.join("current.md");
+        let other_note = root.join("nested/other.md");
+        let attachment = fixture.path().join("report.pdf");
+        let image = fixture.path().join("photo.png");
+        fs::write(&other_note, "# Other note").unwrap();
+        fs::write(&attachment, "attachment").unwrap();
+        png(&image);
+
+        let batch = prepare(
+            &root,
+            &[other_note.clone(), image.clone(), attachment.clone()],
+        )
+        .unwrap();
+        assert_eq!(batch.paths[0], fs::canonicalize(&other_note).unwrap());
+        assert_eq!(batch.paths[2], fs::canonicalize(&attachment).unwrap());
+        let text = markdown(&note, &batch.paths).unwrap();
+        assert_eq!(
+            text,
+            "[other.md](<nested/other.md>)\n\n![photo.png](<photo.png>)\n\n[report.pdf](<../report.pdf>)"
+        );
+        let source = "before after";
+        let (offset, inserted) = insertion(source, 7, &text).unwrap();
+        let result = format!("{}{}{}", &source[..offset], inserted, &source[offset..]);
+        assert_eq!(
+            gpui_component::input::markdown_links::parse(&result).len(),
+            2
+        );
+        assert_eq!(
+            gpui_component::markdown_images::paragraphs(&result).len(),
+            1
+        );
+        assert!(!root.join("other.md").exists());
+        assert!(!root.join("report.pdf").exists());
+        assert!(root.join("photo.png").exists());
+        drop(batch);
+        assert!(!root.join("photo.png").exists());
+        assert_eq!(fs::read_to_string(other_note).unwrap(), "# Other note");
+        assert_eq!(fs::read_to_string(attachment).unwrap(), "attachment");
+        assert!(image.exists());
+    }
+
+    #[test]
+    fn file_links_escape_labels_and_resolve_relative_to_nested_notes() {
+        let fixture = tempfile::tempdir().unwrap();
+        let note = fixture.path().join("notes/deep/note.md");
+        for name in [
+            "写真 [a] #100%.md",
+            "report (final).pdf",
+            "a &amp; _b_ `c`.txt",
+        ] {
+            let path = fixture.path().join(name);
+            let text = markdown(&note, std::slice::from_ref(&path)).unwrap();
+            let links = gpui_component::input::markdown_links::parse(&text);
+            assert_eq!(links.len(), 1, "{text}");
+            let target = url::Url::from_file_path(&note)
+                .unwrap()
+                .join(&links[0].destination)
+                .unwrap();
+            assert_eq!(target.to_file_path().unwrap(), path);
+            let children = inline_syntax(&text);
+            let Node::Link(link) = &children[0] else {
+                panic!("expected a file link");
+            };
+            assert_eq!(link.children.len(), 1);
+            let Node::Text(label) = &link.children[0] else {
+                panic!("expected a literal file name");
+            };
+            assert_eq!(label.value, name);
+        }
     }
     #[test]
     fn escaped_unicode_paths_parse_and_resolve() {

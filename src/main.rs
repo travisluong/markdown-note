@@ -626,16 +626,16 @@ impl Render for Notes {
                 div().flex().flex_1().min_h_0().overflow_hidden().child(
                     self.render_sidebar_layout(
                         div()
-                            .id("image-drop-content")
+                            .id("file-drop-content")
                             .size_full()
                             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                                 cx.stop_propagation();
-                                this.drop_images(paths.paths().to_vec(), window, cx);
+                                this.drop_files(paths.paths().to_vec(), window, cx);
                             }))
                             .on_drop(cx.listener(
                                 |this, drag: &notebook_ui::EntryDrag, window, cx| {
                                     cx.stop_propagation();
-                                    this.drop_images(vec![drag.root.join(&drag.path)], window, cx);
+                                    this.drop_files(vec![drag.root.join(&drag.path)], window, cx);
                                 },
                             ))
                             .child(content)

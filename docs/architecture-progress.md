@@ -423,3 +423,21 @@ including session close and all four GPUI preference-close tests),
 `cargo fmt --check`,
 `cargo clippy --offline --locked --all-targets --features editor-diagnostics -- -D warnings`,
 and `cargo build --offline --locked --bin mithril`.
+
+## Link ordinary files dropped into notes (2026-09-12)
+
+Both sidebar and external file drops now use a shared file-drop handler.
+Ordinary files are linked at their existing locations, including nested notes,
+while supported images retain their import/embed behavior. Mixed batches retain
+input order and image rollback until the captured document accepts insertion.
+Link labels escape literal Markdown and destinations encode ampersands to avoid
+Markdown character-reference decoding changing the target filename.
+
+Windows/MSVC validation passed: `cargo check --offline --locked`,
+`cargo test --offline --locked --lib --bins --features editor-diagnostics`
+(62 library and 111 application tests), `cargo fmt --check`, strict all-target
+diagnostics Clippy, and `git diff --check`. Regression coverage exercises mixed
+file/image drops, nested relative links, Unicode and special filenames, and
+rollback preserving linked files. The full integration command could not finish:
+Windows denied replacement of `target/debug/mithril.exe`; a Mithril process was
+running and was left untouched. No desktop validation was performed.

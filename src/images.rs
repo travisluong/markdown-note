@@ -82,7 +82,7 @@ fn drop_allowed(mode: ViewMode, busy: bool, note: Option<&Path>, root: Option<&P
 }
 
 impl Notes {
-    fn can_drop_images(&self) -> bool {
+    fn can_drop_files(&self) -> bool {
         drop_allowed(
             self.mode,
             self.is_busy(),
@@ -94,13 +94,13 @@ impl Notes {
         )
     }
 
-    pub(super) fn drop_images(
+    pub(super) fn drop_files(
         &mut self,
         paths: Vec<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.can_drop_images() || window.has_active_dialog(cx) {
+        if !self.can_drop_files() || window.has_active_dialog(cx) {
             return;
         }
         let Some(offset) = self.editor.drop_offset(window.mouse_position(), cx) else {
@@ -126,9 +126,9 @@ impl Notes {
             match result {
                 Ok((mut imported, offset, text)) => {
                     let _ = this.update_in(cx, |this, window, cx| {
-                        if !this.can_drop_images() || this.document_id() != identity || this.dirty_revision != revision
+                        if !this.can_drop_files() || this.document_id() != identity || this.dirty_revision != revision
                             || this.document().is_none_or(|doc| doc.path != expected_note) {
-                            this.notebooks.notice = Some("Image drop canceled because the document changed. Drop the image again.".into());
+                            this.notebooks.notice = Some("File drop canceled because the document changed. Drop the files again.".into());
                             cx.notify();
                             return;
                         }
@@ -138,7 +138,7 @@ impl Notes {
                             this.notebooks.notice = None;
                             this.refresh_sorted_tree(window, cx);
                         } else {
-                            this.notebooks.notice = Some("Image drop canceled because the document changed. Drop the image again.".into());
+                            this.notebooks.notice = Some("File drop canceled because the document changed. Drop the files again.".into());
                             cx.notify();
                         }
                     });
@@ -147,7 +147,7 @@ impl Notes {
                 }
                 Err(error) => {
                     let _ = this.update_in(cx, |this, _, cx| {
-                        this.notebooks.notice = Some(format!("Could not import images: {error}"));
+                        this.notebooks.notice = Some(format!("Could not insert dropped files: {error}"));
                         cx.notify();
                     });
                 }
