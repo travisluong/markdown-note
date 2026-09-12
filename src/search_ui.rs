@@ -20,6 +20,7 @@ pub(super) struct SearchPanel {
     scroll: UniformListScrollHandle,
     cancelled: Arc<AtomicBool>,
     task: Option<Task<()>>,
+    overlay_path: Option<PathBuf>,
 }
 
 impl Drop for SearchPanel {
@@ -73,12 +74,29 @@ impl Notes {
                 scroll: UniformListScrollHandle::new(),
                 cancelled: Arc::new(AtomicBool::new(false)),
                 task: None,
+                overlay_path: None,
             });
         }
         let panel = self.search.as_mut().unwrap();
         panel.visible = true;
         panel.query.update(cx, |query, cx| query.focus(window, cx));
         cx.notify();
+    }
+
+    /// A discarded buffer must stop contributing to both pending and published
+    /// results. Clean document navigation keeps the existing search presentation.
+    pub(super) fn invalidate_discarded_search_overlay(
+        &mut self,
+        discarded_path: &Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.search.as_ref().is_some_and(|panel| {
+            discarded_path.starts_with(&panel.root)
+                && panel.overlay_path.as_deref() == Some(discarded_path)
+        }) {
+            self.schedule_search(window, cx);
+        }
     }
 
     pub(super) fn schedule_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -97,6 +115,7 @@ impl Notes {
             .get(panel.selected)
             .map(|hit| (hit.relative.clone(), hit.range.clone()));
         panel.hits.clear();
+        panel.overlay_path = None;
         panel.selected = 0;
         panel.scroll.scroll_to_item(0, ScrollStrategy::Top);
         if query.is_empty() {
@@ -108,9 +127,12 @@ impl Notes {
         let buffer = self
             .document
             .as_ref()
+            .filter(|doc| doc.path.starts_with(&root))
             .map(|doc| (doc.path.clone(), self.editor.read(cx).snapshot()));
+        panel.overlay_path = buffer.as_ref().map(|(path, _)| path.clone());
+        let debounce = cx.background_executor().timer(Duration::from_millis(200));
         panel.task = Some(cx.spawn_in(window, async move |this, cx| {
-            Timer::after(Duration::from_millis(200)).await;
+            debounce.await;
             let worker_cancel = cancelled.clone();
             let result = cx
                 .background_executor()
@@ -379,6 +401,9 @@ fn adjacent_result(selected: usize, count: usize, down: bool) -> usize {
     if down { selected.saturating_add(1).min(count.saturating_sub(1)) }
     else { selected.saturating_sub(1) }
 }
+
+#[cfg(test)]
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod navigation_tests {

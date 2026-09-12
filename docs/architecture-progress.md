@@ -10,7 +10,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | --- | --- | --- |
 | 1. Editor redo policy | Implemented and verified | `tests/editor_history.rs`: 11 headless tests passed, including divergent typing/commands/IME, no-op replacements and generic History compatibility; complete 168-test suite passed. |
 | 2. Reliable baseline | Pending | Correct feature docs, format, lint, separate validation CI, explicit toolchain and platform checks. |
-| 3. Lifecycle/edit fixes and integration coverage | In progress | F2 cancellation, F3 revalidation and F4 inline image insertion repaired and verified. F5 discarded overlays, F6 operation ownership and broader table/save integration coverage remain. |
+| 3. Lifecycle/edit fixes and integration coverage | In progress | F2 cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired and verified. F6 operation ownership and broader table/save integration coverage remain. |
 | 4. Data/storage boundaries and file policy | Pending | Library entry point; document and notebook modules; conflict detection and metadata policy with platform tests. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
@@ -26,6 +26,9 @@ lifecycle coverage includes file-picker cancellation, folder-picker outcomes,
 failed activation/open, save-prompt cancellation and disabled autosave. Picker
 outcomes enter the production completion handlers because GPUI TestPlatform
 does not implement the native folder/file picker.
+
+The subsequent F5 search lifecycle target passed three additional tests for
+published/debounced discarded overlays and clean-navigation state preservation.
 
 Run the default application check and diagnostics-enabled headless suite after
 behavioral changes; use focused tests while developing each repair. Establish

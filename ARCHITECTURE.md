@@ -107,8 +107,10 @@ Additional contracts to preserve:
   use the active notebook whenever one exists, otherwise session settings. Do
   not accidentally unify these different policies during extraction.
 - Notebook search intentionally preserves the result list, selection and scroll
-  when opening a result. Correct stale unsaved overlays without resetting every
-  successful navigation. Query matching currently folds ASCII only.
+  when opening a result. Document installation explicitly invalidates a matching
+  discarded unsaved overlay, while clean navigation retains its search state.
+  Query matching currently folds ASCII only; revalidation scans all occurrences
+  even though notebook result collection is capped.
 
 ## Vendored editor boundary
 

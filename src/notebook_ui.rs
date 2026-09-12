@@ -707,6 +707,11 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let discarded_path = if self.search.is_some() && self.dirty(cx) {
+            self.document.as_ref().map(|document| document.path.clone())
+        } else {
+            None
+        };
         self.image_path = None;
         self.reading_search = None;
         self.saves.timer = None;
@@ -743,6 +748,9 @@ impl Notes {
                 .update(cx, |editor, cx| editor.focus(window, cx));
         } else {
             self.focus.focus(window);
+        }
+        if let Some(path) = discarded_path {
+            self.invalidate_discarded_search_overlay(&path, window, cx);
         }
     }
 
