@@ -118,6 +118,11 @@ Additional contracts to preserve:
   tree, borrowed by link/table/code/image visitors and dropped on the worker.
   Independent guards preserve plain-text fast paths. Standalone and incremental
   parsers remain available; no persistent AST cache replaces the existing indexes.
+- Reading `TextView` also uses one running parse and one latest pending request,
+  including initial layout. Requests are keyed by exact source and Markdown/HTML
+  type; generations reject stale successes and errors. Presentation props refresh
+  without reparsing, while a retained tree keeps its own source for callbacks.
+  Find waits for that exact tree snapshot; the existing ListState survives updates.
 - Preserve BOM and newline conventions; mixed endings normalize to the first
   observed convention. Failed replacement must leave the original file intact.
 - Notebook-relative paths pass through the notebook path helpers. Preserve

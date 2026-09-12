@@ -141,6 +141,16 @@ an explanatory notice. Parsing stays on the background executor; UI scroll
 handles stay on the UI thread. `tests/reading_search.rs` exercises the mappings
 and the actual renderer parser without opening a window.
 
+Cold Reading initialization also dispatches parsing to the background executor.
+TextView keeps one running request and one latest pending source/type snapshot;
+both success and error completions must match the latest generation. A retained
+tree continues to supply its own source to callbacks while the next parse waits.
+Style, theme and callback props update independently because AST construction
+depends only on source and Markdown/HTML type. The same ListState survives
+updates, and find highlights/reveal wait for the matching rendered snapshot.
+`tests/reading_lifecycle.rs` controls worker completion on TestPlatform to verify
+cold layout, coalescing, stale errors, styles, callbacks, find, scroll and teardown.
+
 Menu rows and popup surfaces explicitly use the arrow cursor, and popup hit
 areas occlude the editor underneath. Deferred input scrolling is normalized
 before painting: empty placeholders stay at their layout origin and single-line

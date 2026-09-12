@@ -15,7 +15,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
 | 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
-| 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Shared GFM analysis verified: mixed queued requests use one parse, plain requests use zero; 67 editor tests passed, preserving incremental/cache/work bounds. Thin editor adapter and off-layout initial Reading parse remain. |
+| 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Shared GFM analysis verified: mixed queued requests use one parse, plain requests use zero; 67 editor tests passed, preserving incremental/cache/work bounds. Initial Reading parse moved off layout; 8 controlled lifecycle tests passed. Thin editor adapter remains. |
 
 ## Verification rules
 
@@ -95,3 +95,13 @@ Unicode, CRLF, reference definitions, nested containers and unfinished fences;
 table incremental metadata and moved code-cache identity remain intact. All 67
 editor tests passed, including existing large-fixture and queue work bounds.
 This is a reduction in parsing work, not a measured native frame-latency result.
+
+## Reading background initialization
+
+Initial Reading parsing no longer runs in request_layout. One running worker
+and one latest pending source/type request replace the former unbounded update
+channel. Eight controlled TestPlatform tests passed on Windows, covering cold
+layout, stale successes/errors, coalescing, style and callback updates, exact
+rendered source identity, find/reveal, retained scroll, HTML switching and view
+teardown. An unchanged shared source has a pointer fast path before exact text
+equality. No native rendering latency or physical interaction result is inferred.
