@@ -102,6 +102,11 @@ Additional contracts to preserve:
   continuation is obsolete. A queued save/navigation releases its waiting token
   before dispatching the next operation. Tree arrows may retarget the current
   load without acquiring another token.
+- Acquiring foreground ownership must notify the view so rendered controls and
+  the editor apply their disabled state. In particular, clean close disables
+  input while awaiting settings persistence; it cannot accept a new unsaved edit
+  after the close decision. `notebook_ui::close_tests` exercises the registered
+  close callback, delayed persistence, ordinary text input and final removal.
 - Live-preview parsing maintains one running job and one latest pending
   snapshot. Safe offset edits can rebase some results; context-changing edits
   invalidate them. Fenced-code tokens require their stricter revision checks.

@@ -11,6 +11,9 @@ mod operation_tests;
 #[cfg(test)]
 mod autosave_tests;
 
+#[cfg(test)]
+mod close_tests;
+
 #[derive(Clone)]
 enum DirectoryState {
     Loading,
@@ -922,6 +925,8 @@ impl Notes {
         let Some(operation) = self.foreground.begin() else {
             return;
         };
+        // Disable the rendered editor while settings persistence delays removal.
+        cx.notify();
         let pending = self.notebooks.persistence.take();
         cx.spawn_in(window, async move |this, cx| {
             if let Some(pending) = pending {

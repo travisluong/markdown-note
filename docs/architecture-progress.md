@@ -10,7 +10,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | --- | --- | --- |
 | 1. Editor redo policy | Implemented and verified | `tests/editor_history.rs`: 11 headless tests passed, including divergent typing/commands/IME, no-op replacements and generic History compatibility; complete Windows/Linux suites passed. |
 | 2. Reliable baseline | Windows/Linux verified; macOS execution pending | Feature docs corrected; dedicated formatting commit; strict Clippy passes without added suppressions; Rust 1.98.1 pinned; separate three-platform validation CI configured. Release packaging unchanged. |
-| 3. Lifecycle/edit fixes and integration coverage | In progress | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed in complete suites. Additional close-while-settings-write input regression is being tested separately. |
+| 3. Lifecycle/edit fixes and integration coverage | Implemented and verified | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. A separately reproduced close-time input loss was repaired; all 91 application tests passed afterward. |
 | 4. Data/storage boundaries and file policy | Pending | Library entry point; document and notebook modules; conflict detection and metadata policy with platform tests. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
@@ -44,6 +44,14 @@ save/navigation, tree retargeting and discarded search overlays. Picker outcomes
 enter production completion handlers because TestPlatform does not implement
 native folder/file picking. List/task/table diagnostics run actual InputState
 transactions on TestPlatform without benchmark progress-file side effects.
+
+After that full baseline, `notebook_ui::close_tests` reproduced accepted input
+being lost while a clean close awaited settings persistence. The test uses the
+registered close callback and ordinary text-input handler, and verifies actual
+window removal. Notifying the view when close acquires ownership rejects that
+input. The focused test and the complete Windows application target passed
+(**91 tests**) after this separate repair; the baseline integration code is
+unchanged.
 
 Two additional TestPlatform tests reproduced the retained-dirty-buffer autosave
 failure after actual Discard navigation retargeted to the current note or a
