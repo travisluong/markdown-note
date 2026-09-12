@@ -10,7 +10,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | --- | --- | --- |
 | 1. Editor redo policy | Implemented and verified | `tests/editor_history.rs`: 11 headless tests passed, including divergent typing/commands/IME, no-op replacements and generic History compatibility; complete 168-test suite passed. |
 | 2. Reliable baseline | In progress | Feature documentation corrected; Rust 1.98.1 pinned and separate three-platform validation CI configured. Format, strict lint and platform execution remain. Release packaging workflow unchanged. |
-| 3. Lifecycle/edit fixes and integration coverage | In progress | F2 picker/error cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. Additional retained-dirty-buffer tree-retarget autosave regression is being reproduced separately. |
+| 3. Lifecycle/edit fixes and integration coverage | In progress | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. A new complete suite run remains after baseline cleanup. |
 | 4. Data/storage boundaries and file policy | Pending | Library entry point; document and notebook modules; conflict detection and metadata policy with platform tests. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
@@ -37,6 +37,13 @@ passed both list/task/selection and table-command diagnostics on TestPlatform.
 The default application check passed. This is not yet a new full-suite result.
 Linux/macOS jobs are configured but have not been executed from this Windows
 workspace; no source was pushed.
+
+Two additional TestPlatform tests reproduced the retained-dirty-buffer autosave
+failure after actual Discard navigation retargeted to the current note or a
+folder. Both failed before the repair; the subsequent notebook UI test filter
+passed all seven tests after routing retained-buffer exits through
+`resume_document`. Virtual time, disposable notebooks and production prompt/tree
+handlers are used; the old note is saved and the abandoned target stays intact.
 
 Run the default application check and diagnostics-enabled headless suite after
 behavioral changes; use focused tests while developing each repair. Establish

@@ -66,8 +66,9 @@ Follow its callers and completions before treating a file as an isolated module.
    happens to be in the editor at completion. Later typing must remain dirty.
 3. **Navigate:** `request(Next)` serializes against an active save and runs the
    Save/Discard/Cancel decision. `continue_with` dispatches the approved action.
-   Failed loads retain the current document. Cancelled pickers, failed activation
-   and error dismissal use `resume_document` to rearm autosave for retained text.
+   Failed loads retain the current document. Cancelled pickers, failed activation,
+   error dismissal and tree loads abandoned for the current note or a folder use
+   `resume_document` to rearm autosave for retained text.
    Autosave debounce uses the GPUI executor timer, allowing deterministic tests.
 4. **Install:** `install_document` creates a fresh editor, replaces its
    subscription, advances document identity, clears Reading find and resets the

@@ -8,6 +8,9 @@ pub(super) mod diagnostics;
 #[cfg(test)]
 mod operation_tests;
 
+#[cfg(test)]
+mod autosave_tests;
+
 #[derive(Clone)]
 enum DirectoryState {
     Loading,
@@ -793,9 +796,11 @@ impl Notes {
                     if let Some(target) = this.notebooks.tree_target.take() {
                         if !this.document.as_ref().is_some_and(|doc| doc.path == target) {
                             this.open_path(target, true, window, cx);
+                            return;
                         }
                     }
-                    cx.notify();
+                    // A folder or the current note keeps the original buffer.
+                    this.resume_document(window, cx);
                     return;
                 }
                 this.notebooks.tree_target = None;
