@@ -13,13 +13,13 @@ Native desktop tests remain user-run under AGENTS.md.
 | 3. Lifecycle/edit fixes and integration coverage | Implemented and verified | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. A separately reproduced close-time input loss was repaired; all 91 application tests passed afterward. |
 | 4. Data/storage boundaries and file policy | Implemented and verified on Windows/Linux | Library exposes format/I/O, notebook domain owners and shared values. Disk versions guard saves; conflict pause retains editor/history; app-owned moves revalidate saved bytes. Metadata and optimistic race limits are explicit in `document-storage.md`. Both full headless suites passed. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
-| 6. Bounded settings writer | In progress | Pure writer model and independent guarded book/index storage operations implemented; 10 tests passed, including 20,000-submission stress and actual disk outcomes. Application switch/close integration remains. |
+| 6. Bounded settings writer | Implemented and verified on Windows/Linux | Pure one-running/latest-per-destination model and one GPUI worker loop replace the task chain. Ten model/disk tests and six actual lifecycle tests pass, including 20,000 submissions, target-book flush, unrelated failures, close retry/cancel/explicit discard and late preference changes. |
 | 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
 | 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Shared GFM analysis verified: mixed queued requests use one parse, plain requests use zero; 67 editor tests passed, preserving incremental/cache/work bounds. Initial Reading parse moved off layout; 8 controlled lifecycle tests passed. Thin editor adapter remains. |
 
 ## Verification rules
 
-Current baseline, Rust/Cargo 1.98.1:
+Initial clean architecture baseline, Rust/Cargo 1.98.1 (later results below):
 
 | Platform | Verification |
 | --- | --- |
@@ -114,8 +114,16 @@ Captured flush barriers accept newer successful revisions; failed latest snapsho
 wait for explicit retry or a new edit. An unrelated failed notebook does not block
 a newer active index. Ten Windows tests passed, including 20,000 submissions,
 fair scheduling, stale completions, failure/retry paths, both notebooks reaching
-disk and corrupt/unsupported JSON preservation. The application driver is being
-integrated separately; this model commit alone does not replace the old UI chain.
+disk and corrupt/unsupported JSON preservation.
+
+The application now uses one worker loop rather than a chain of captured tasks.
+A typed `SettingsWaiter` retains the foreground token across target-book flush,
+close and retry prompts. Close refreshes all revision requirements before removal,
+including preferences changed while busy or while its error prompt is open. Six
+TestPlatform cases use disposable notebooks, the registered close callback, real
+preference writes, simulated prompt answers and executor time. All six passed on
+Windows and Linux as part of their full 240-test suites. The independent same-book
+reload preference race is being repaired in a separate change.
 
 ## Preference changes during a move
 
@@ -153,3 +161,9 @@ sharing/readonly failures, actual junction rejection and open-file rename
 restrictions; Linux adds Unix mode bits, parent link/rename and concurrent receipt
 interference. The suites also include the separately integrated settings driver.
 No native desktop was launched; macOS execution remains pending.
+
+After these storage and settings integrations, the Windows default build check,
+format check and strict all-target diagnostics Clippy gate passed. Clippy required
+one behavior-preserving `Option` early-return simplification in the new worker.
+The existing dependency future-compatibility warning remains. The prior Linux
+default check and full 240-test run also passed; no macOS execution is claimed.

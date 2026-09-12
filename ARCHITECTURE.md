@@ -47,8 +47,8 @@ Follow its callers and completions before treating a file as an isolated module.
 | Encoding, disk versions and guarded note replacement | [document/mod.rs](src/document/mod.rs): `open`, `DiskVersion`; [document/storage.rs](src/document/storage.rs): `save_file`, `WriteReceipt`, `SaveError`; [storage contract](docs/document-storage.md) | Storage has no GPUI dependencies. The application `Document` retains saved text/rope and opaque disk evidence; current text belongs to `InputState`. |
 | Debounced autosave and queued foreground operations | [autosave.rs](src/autosave.rs): `SaveState`, `schedule_autosave`, `start_write`; [app/operation.rs](src/app/operation.rs): `ForegroundOperation` | Background writes own a captured document baseline. Foreground prompts, navigation and saves own explicit operation tokens; queued actions carry their waiting token. |
 | Notebook schema, path policy, tree values and filesystem operations | [notebook.rs](src/notebook.rs) re-exports [settings](src/notebook/settings.rs), [paths](src/notebook/paths.rs), [tree](src/notebook/tree.rs) and [storage](src/notebook/storage.rs) | Storage depends on schema/path/tree policies; policies have no UI dependencies. Existing `notebook::` entry points are preserved. |
-| Settings scheduling policy | [notebook/writer.rs](src/notebook/writer.rs): `SettingsWriter`, `WriteJob`, `FlushBarrier`; [tests/settings_writer.rs](tests/settings_writer.rs) | Pure one-running/latest-per-destination model with index dependencies and revision-scoped flush/error results. Application driver integration is still in progress. |
-| Notebook activation, document installation, explorer and persistence queue | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`, `activate_notebook`, `install_document`, `persist_notebooks`, `drop_entry` | Owns document replacement as well as tree presentation. |
+| Settings scheduling and flush policy | [notebook/writer.rs](src/notebook/writer.rs): `SettingsWriter`, `WriteJob`, `FlushBarrier`; [tests/settings_writer.rs](tests/settings_writer.rs) | One running write and one latest snapshot per destination; the index depends on its submitted book revision. One worker loop and token-owned `SettingsWaiter` drive application persistence. |
+| Notebook activation, document installation, explorer and settings flush coordination | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`, `activate_notebook`, `install_document`, `pump_settings_writer`, `resolve_settings_waiter`, `drop_entry` | Owns document replacement as well as tree presentation. Activation and close retain foreground ownership while flushing settings. |
 | Sidebar visibility and width | [sidebar_ui.rs](src/sidebar_ui.rs) | Explorer and Search share sidebar geometry and visibility. |
 | Preferences and settings controls | [settings_ui.rs](src/settings_ui.rs) | Applies the GPUI global theme, writes notebook settings and keeps session preferences. `can_insert_date` currently doubles as a general edit-capability check. |
 | Quick open and command palette | [goto.rs](src/goto.rs): `Command`, `discover`, `ranked_entries` | Command catalogue, filesystem discovery, dispatch, focus and rendering are together. |
@@ -91,9 +91,14 @@ Follow its callers and completions before treating a file as an isolated module.
    revalidates its saved bytes with `version_after_move` before using the new file
    identity. A failed revalidation keeps the actual moved path and buffer but
    pauses automatic saving. Exact path remaps must not append a separator.
-6. **Persist preferences:** notebook settings and the user index are separate
-   atomic JSON replacements. The current task chain preserves write ordering;
-   switch/close await it. Two file replacements are not one transaction.
+6. **Persist preferences:** one persistent `SettingsWriter` coalesces queued
+   notebook settings by destination and keeps a separate latest index with its
+   book-revision dependency. One worker drains eligible writes. Activation flushes
+   the canonical target notebook before reading it; unrelated failures remain
+   retryable. Close drains all queued destinations, refreshes its requirements
+   for late preference changes, and handles Retry, Cancel, or Close without saving
+   preferences explicitly. Cancel resumes the retained document's autosave.
+   Book and index replacements remain independently atomic, not one transaction.
 
 Additional contracts to preserve:
 

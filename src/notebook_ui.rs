@@ -1,6 +1,8 @@
 use super::*;
 use gpui_component::{Disableable, dialog::Dialog, menu::PopupMenuItem};
 use std::collections::BTreeMap;
+#[cfg(test)]
+use std::time::Duration;
 
 #[cfg(feature = "editor-diagnostics")]
 pub(super) mod diagnostics;
@@ -13,6 +15,20 @@ mod autosave_tests;
 
 #[cfg(test)]
 mod close_tests;
+
+#[cfg(test)]
+mod persistence_tests;
+
+enum SettingsAfterFlush {
+    Close { discard_failed: bool },
+    Activate { path: PathBuf, create: bool },
+}
+
+struct SettingsWaiter {
+    operation: OperationId,
+    barrier: notebook::FlushBarrier,
+    after: SettingsAfterFlush,
+}
 
 #[derive(Clone)]
 enum DirectoryState {
@@ -46,6 +62,11 @@ pub(super) struct NotebookState {
     scroll: UniformListScrollHandle,
     pub(super) tree_focus: FocusHandle,
     persistence: Option<Task<()>>,
+    writer: Option<notebook::SettingsWriter>,
+    settings_waiter: Option<SettingsWaiter>,
+    window: AnyWindowHandle,
+    #[cfg(test)]
+    write_delay: Duration,
     tree_loading: bool,
     tree_target: Option<PathBuf>,
     folder_target: Option<PathBuf>,
@@ -78,6 +99,11 @@ impl NotebookState {
             scroll: UniformListScrollHandle::new(),
             tree_focus: cx.focus_handle(),
             persistence: None,
+            writer: None,
+            settings_waiter: None,
+            window: window.window_handle(),
+            #[cfg(test)]
+            write_delay: Duration::ZERO,
             tree_loading: false,
             tree_target: None,
             folder_target: None,
@@ -639,11 +665,58 @@ impl Notes {
             return;
         };
         self.notebooks.modal_error = None;
-        let pending = self.notebooks.persistence.take();
         cx.spawn_in(window, async move |this, cx| {
-            if let Some(pending) = pending {
-                pending.await;
-            }
+            // Resolve identity before reading settings, so a pending write for
+            // this target can reach disk before Notebook::open reloads it.
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    if create {
+                        Ok(path)
+                    } else {
+                        fs::canonicalize(path)
+                    }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if !this.foreground.owns(operation) {
+                    return;
+                }
+                match result {
+                    Ok(path) => {
+                        let barrier = this
+                            .notebooks
+                            .writer
+                            .as_ref()
+                            .map(|writer| writer.flush_book(&path))
+                            .unwrap_or_default();
+                        this.notebooks.settings_waiter = Some(SettingsWaiter {
+                            operation,
+                            barrier,
+                            after: SettingsAfterFlush::Activate { path, create },
+                        });
+                        this.resolve_settings_waiter(window, cx);
+                    }
+                    Err(error) => {
+                        this.foreground.finish(operation);
+                        this.notebook_open_failed(error, window, cx);
+                    }
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn load_notebook_after_flush(
+        &mut self,
+        path: PathBuf,
+        create: bool,
+        operation: OperationId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
@@ -681,13 +754,7 @@ impl Notes {
                         }
                     }
                     Err(error) => {
-                        let message = format!("Could not open notebook: {error}");
-                        if window.has_active_dialog(cx) {
-                            this.notebooks.modal_error = Some(message);
-                        } else {
-                            this.notebooks.notice = Some(message);
-                        }
-                        this.resume_document(window, cx);
+                        this.notebook_open_failed(error, window, cx);
                     }
                 }
                 this.refresh(window, cx);
@@ -695,6 +762,21 @@ impl Notes {
         })
         .detach();
         cx.notify();
+    }
+
+    fn notebook_open_failed(
+        &mut self,
+        error: io::Error,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let message = format!("Could not open notebook: {error}");
+        if window.has_active_dialog(cx) {
+            self.notebooks.modal_error = Some(message);
+        } else {
+            self.notebooks.notice = Some(message);
+        }
+        self.resume_document(window, cx);
     }
 
     pub(super) fn create_note(
@@ -903,21 +985,69 @@ impl Notes {
         };
         let book = self.notebooks.active.clone();
         let index = self.notebooks.index.clone();
-        let previous = self.notebooks.persistence.take();
+        self.notebooks
+            .writer
+            .get_or_insert_with(|| notebook::SettingsWriter::new(path))
+            .submit(index, book);
+        self.pump_settings_writer(cx);
+    }
+
+    fn pump_settings_writer(&mut self, cx: &mut Context<Self>) {
+        let Some(mut job) = self
+            .notebooks
+            .writer
+            .as_mut()
+            .and_then(|writer| writer.take_job())
+        else {
+            return;
+        };
+        let window = self.notebooks.window;
+        #[cfg(test)]
+        let delay = std::mem::take(&mut self.notebooks.write_delay);
+        // One worker drains eligible destinations. Submissions only replace model
+        // snapshots; they never append another task waiting on this task.
         self.notebooks.persistence = Some(cx.spawn(async move |this, cx| {
-            if let Some(previous) = previous {
-                previous.await;
+            #[cfg(test)]
+            if !delay.is_zero() {
+                cx.background_executor().timer(delay).await;
             }
-            let result = cx
-                .background_executor()
-                .spawn(async move { notebook::save_state(&path, &index, book.as_ref()) })
-                .await;
-            if let Err(error) = result {
-                let _ = this.update(cx, |this, cx| {
-                    this.notebooks.notice =
-                        Some(format!("Could not save notebook settings: {error}"));
-                    cx.notify();
-                });
+            loop {
+                let id = job.id();
+                let path = job.path().to_path_buf();
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { job.write() })
+                    .await;
+                let next = window
+                    .update(cx, |_, window, cx| {
+                        this.update(cx, |this, cx| {
+                            let message = result.as_ref().err().map(|error| {
+                                format!(
+                                    "Could not save notebook settings at {}: {error}",
+                                    notebook::display_path(&path)
+                                )
+                            });
+                            let writer = this.notebooks.writer.as_mut()?;
+                            if !writer.complete(id, result) {
+                                return None;
+                            }
+                            if let Some(message) = message {
+                                this.notebooks.notice = Some(message);
+                            }
+                            this.resolve_settings_waiter(window, cx);
+                            cx.notify();
+                            this.notebooks
+                                .writer
+                                .as_mut()
+                                .and_then(|writer| writer.take_job())
+                        })
+                        .ok()
+                        .flatten()
+                    })
+                    .ok()
+                    .flatten();
+                let Some(next) = next else { break };
+                job = next;
             }
         }));
     }
@@ -928,18 +1058,143 @@ impl Notes {
         };
         // Disable the rendered editor while settings persistence delays removal.
         cx.notify();
-        let pending = self.notebooks.persistence.take();
-        cx.spawn_in(window, async move |this, cx| {
-            if let Some(pending) = pending {
-                pending.await;
+        self.notebooks.settings_waiter = Some(SettingsWaiter {
+            operation,
+            barrier: self
+                .notebooks
+                .writer
+                .as_ref()
+                .map(|writer| writer.flush_all())
+                .unwrap_or_default(),
+            after: SettingsAfterFlush::Close {
+                discard_failed: false,
+            },
+        });
+        cx.defer_in(window, |this, window, cx| {
+            this.resolve_settings_waiter(window, cx)
+        });
+    }
+
+    fn resolve_settings_waiter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(mut waiter) = self.notebooks.settings_waiter.take() else {
+            return;
+        };
+        if !self.foreground.owns(waiter.operation) {
+            return;
+        }
+        // View mode can still change while busy. Include every late preference
+        // submission before a close succeeds or presents its final error choice.
+        if matches!(waiter.after, SettingsAfterFlush::Close { .. }) {
+            waiter.barrier = self
+                .notebooks
+                .writer
+                .as_ref()
+                .map(|writer| writer.flush_all())
+                .unwrap_or_default();
+        }
+        let status = self
+            .notebooks
+            .writer
+            .as_ref()
+            .map(|writer| writer.flush_status(&waiter.barrier))
+            .unwrap_or(notebook::FlushStatus::Succeeded);
+        match status {
+            notebook::FlushStatus::Pending => self.notebooks.settings_waiter = Some(waiter),
+            notebook::FlushStatus::Succeeded => self.complete_settings_waiter(waiter, window, cx),
+            notebook::FlushStatus::Failed(_)
+                if matches!(
+                    waiter.after,
+                    SettingsAfterFlush::Close {
+                        discard_failed: true
+                    }
+                ) =>
+            {
+                self.complete_settings_waiter(waiter, window, cx);
             }
-            let _ = this.update_in(cx, |this, window, _| {
-                if this.foreground.finish(operation) {
+            notebook::FlushStatus::Failed(errors) => {
+                let closing = matches!(waiter.after, SettingsAfterFlush::Close { .. });
+                let mut buttons = vec![
+                    PromptButton::Ok("Retry".into()),
+                    PromptButton::Cancel("Cancel".into()),
+                ];
+                if closing {
+                    buttons.push(PromptButton::Other(
+                        "Close without saving preferences".into(),
+                    ));
+                }
+                let detail = errors
+                    .iter()
+                    .map(|error| {
+                        format!("{}: {}", notebook::display_path(&error.path), error.message)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let prompt = window.prompt(
+                    PromptLevel::Warning,
+                    "Could not save notebook preferences",
+                    Some(&detail),
+                    &buttons,
+                    cx,
+                );
+                cx.spawn_in(window, async move |this, cx| {
+                    let answer = prompt.await.ok();
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        if !this.foreground.owns(waiter.operation) {
+                            return;
+                        }
+                        match answer {
+                            Some(0) => {
+                                if closing {
+                                    waiter.barrier = this
+                                        .notebooks
+                                        .writer
+                                        .as_ref()
+                                        .map(|writer| writer.flush_all())
+                                        .unwrap_or_default();
+                                }
+                                if let Some(writer) = &mut this.notebooks.writer {
+                                    writer.retry(&waiter.barrier);
+                                }
+                                this.notebooks.settings_waiter = Some(waiter);
+                                this.pump_settings_writer(cx);
+                                this.resolve_settings_waiter(window, cx);
+                            }
+                            Some(2) if closing => {
+                                waiter.after = SettingsAfterFlush::Close {
+                                    discard_failed: true,
+                                };
+                                this.notebooks.settings_waiter = Some(waiter);
+                                this.resolve_settings_waiter(window, cx);
+                            }
+                            _ => {
+                                this.foreground.finish(waiter.operation);
+                                this.resume_document(window, cx);
+                            }
+                        }
+                    });
+                })
+                .detach();
+                cx.notify();
+            }
+        }
+    }
+
+    fn complete_settings_waiter(
+        &mut self,
+        waiter: SettingsWaiter,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match waiter.after {
+            SettingsAfterFlush::Close { .. } => {
+                if self.foreground.finish(waiter.operation) {
                     window.remove_window();
                 }
-            });
-        })
-        .detach();
+            }
+            SettingsAfterFlush::Activate { path, create } => {
+                self.load_notebook_after_flush(path, create, waiter.operation, window, cx);
+            }
+        }
     }
 
     fn refresh_tree(&mut self, window: &mut Window, cx: &mut Context<Self>) {

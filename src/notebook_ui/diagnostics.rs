@@ -265,6 +265,9 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
         crate::search_ui::diagnostic_search(&notes, cx).await;
         let pending = notes.update(cx, |this, _| this.notebooks.persistence.take()).unwrap();
         if let Some(pending) = pending { pending.await; }
+        assert!(notes.update(cx, |this, _| this.notebooks.writer.as_ref().is_none_or(|writer| {
+            writer.flush_status(&writer.flush_all()) == notebook::FlushStatus::Succeeded
+        })).unwrap(), "notebook preference flush failed");
         let restored = notebook::load_index(&index).unwrap();
         assert_eq!(restored.notebooks.len(), 1);
         assert_eq!(restored.active, Some(fs::canonicalize(&first).unwrap()));
