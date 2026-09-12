@@ -343,7 +343,10 @@ mod tests {
                 assert_eq!(offset, source.len(), "{source} at {inside}");
                 let result = format!("{}{}{}", &source[..offset], inserted, &source[offset..]);
                 assert_eq!(inline_syntax(&result), expected, "{source} at {inside}");
-                assert_eq!(gpui_component::markdown_images::paragraphs(&result).len(), 1);
+                assert_eq!(
+                    gpui_component::markdown_images::paragraphs(&result).len(),
+                    1
+                );
             }
             for boundary in [prefix.len(), prefix.len() + span.len()] {
                 let (offset, inserted) = insertion(&source, boundary, images).unwrap();

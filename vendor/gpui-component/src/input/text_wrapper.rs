@@ -59,7 +59,14 @@ impl LineItem {
     /// Get number of soft wrapped lines of this line (include the first line).
     #[inline]
     pub(super) fn lines_len(&self) -> usize {
-        if let Some(image) = &self.image { return image.rows + if image.reveal { self.wrapped_lines.len() } else { 0 }; }
+        if let Some(image) = &self.image {
+            return image.rows
+                + if image.reveal {
+                    self.wrapped_lines.len()
+                } else {
+                    0
+                };
+        }
         self.table
             .as_ref()
             .map_or(self.wrapped_lines.len(), |t| t.height)
@@ -466,7 +473,8 @@ impl TextWrapper {
         let code = super::fenced_code::Index::new(parsed.code);
         if current {
             self.analysis.code_cache = code.snapshot.cache.clone();
-            self.retired_code.push(std::mem::replace(&mut self.code, code));
+            self.retired_code
+                .push(std::mem::replace(&mut self.code, code));
         } else {
             self.retired_code.push(code);
         }
@@ -543,7 +551,13 @@ impl TextWrapper {
                 tables,
             });
         }
-        if !self.retired_code.is_empty() { retired.push(super::preview_syntax::Retired { links: Default::default(), tables: Vec::new(), code: std::mem::take(&mut self.retired_code) }); }
+        if !self.retired_code.is_empty() {
+            retired.push(super::preview_syntax::Retired {
+                links: Default::default(),
+                tables: Vec::new(),
+                code: std::mem::take(&mut self.retired_code),
+            });
+        }
         retired
     }
 
@@ -669,7 +683,9 @@ impl TextWrapper {
                     super::live_preview::Presentation::literal(&source, code.prefix, code.tokens)
                 } else {
                     super::live_preview::Presentation::parse(&source).with_links(
-                        &self.links.in_range(start..start + source.len()), start, source.len(),
+                        &self.links.in_range(start..start + source.len()),
+                        start,
+                        source.len(),
                     )
                 }
             });
@@ -1289,8 +1305,23 @@ impl LineLayout {
             pos
         };
         if let Some(image) = &self.image {
-            let text_height = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) as f32 * line_height } else { px(0.) };
-            if pos.y >= text_height && pos.y < text_height + image.rows as f32 * line_height { return Some(if pos.y < text_height + image.rows as f32 * line_height / 2. { 0 } else { self.len() }); }
+            let text_height = if image.reveal {
+                self.segment_ranges
+                    .as_ref()
+                    .map_or(self.wrapped_lines.len(), |r| r.len()) as f32
+                    * line_height
+            } else {
+                px(0.)
+            };
+            if pos.y >= text_height && pos.y < text_height + image.rows as f32 * line_height {
+                return Some(
+                    if pos.y < text_height + image.rows as f32 * line_height / 2. {
+                        0
+                    } else {
+                        self.len()
+                    },
+                );
+            }
         }
         if let Some(table) = &self.table {
             if pos.y < px(0.) || pos.y >= table.height * line_height {
@@ -1392,8 +1423,17 @@ impl LineLayout {
             return size(px(0.), px(0.));
         }
         if let Some(image) = &self.image {
-            let text_rows = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) } else { 0 };
-            return size(self.longest_width.max(image.width), (text_rows + image.rows) as f32 * line_height);
+            let text_rows = if image.reveal {
+                self.segment_ranges
+                    .as_ref()
+                    .map_or(self.wrapped_lines.len(), |r| r.len())
+            } else {
+                0
+            };
+            return size(
+                self.longest_width.max(image.width),
+                (text_rows + image.rows) as f32 * line_height,
+            );
         }
         if let Some(table) = &self.table {
             return size(self.longest_width, table.height * line_height);
@@ -1424,18 +1464,51 @@ impl LineLayout {
         let pos = pos + point(px(0.), self.code_top(line_height));
         if let Some(image) = &self.image {
             use crate::ActiveTheme as _;
-            let text_rows = if image.reveal { self.segment_ranges.as_ref().map_or(self.wrapped_lines.len(), |r| r.len()) } else { 0 };
+            let text_rows = if image.reveal {
+                self.segment_ranges
+                    .as_ref()
+                    .map_or(self.wrapped_lines.len(), |r| r.len())
+            } else {
+                0
+            };
             let origin = pos + point(px(0.), text_rows as f32 * line_height);
             if let Some(data) = &image.data {
-                let _ = window.paint_image(gpui::Bounds::new(origin, size(image.width, image.height)), gpui::Corners::default(), data.clone(), 0, false);
+                let _ = window.paint_image(
+                    gpui::Bounds::new(origin, size(image.width, image.height)),
+                    gpui::Corners::default(),
+                    data.clone(),
+                    0,
+                    false,
+                );
             } else {
-                window.paint_quad(gpui::fill(gpui::Bounds::new(origin, size(image.width, image.height)), cx.theme().accent));
-                let label = if image.failed { "Image unavailable" } else { "Loading image…" };
+                window.paint_quad(gpui::fill(
+                    gpui::Bounds::new(origin, size(image.width, image.height)),
+                    cx.theme().accent,
+                ));
+                let label = if image.failed {
+                    "Image unavailable"
+                } else {
+                    "Loading image…"
+                };
                 let style = window.text_style();
-                let text = window.text_system().shape_line(label.into(), style.font_size.to_pixels(window.rem_size()), &[gpui::TextRun { len: label.len(), font: style.font(), color: cx.theme().muted_foreground, background_color: None, underline: None, strikethrough: None }], None);
+                let text = window.text_system().shape_line(
+                    label.into(),
+                    style.font_size.to_pixels(window.rem_size()),
+                    &[gpui::TextRun {
+                        len: label.len(),
+                        font: style.font(),
+                        color: cx.theme().muted_foreground,
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    }],
+                    None,
+                );
                 let _ = text.paint(origin + point(px(8.), px(8.)), line_height, window, cx);
             }
-            if !image.reveal { return; }
+            if !image.reveal {
+                return;
+            }
         }
         if let Some(table) = &self.table {
             use crate::ActiveTheme as _;
@@ -2441,13 +2514,32 @@ mod sustained_edit_tests {
         assert!(!wrapper.code.line(row).unwrap().tokens.spans.is_empty());
         let current = wrapper.analysis.start().unwrap();
         assert!(wrapper.apply_analysis(current.parse()));
-        assert!(std::sync::Arc::ptr_eq(&cached, wrapper.analysis.code_cache.values().next().unwrap()));
+        assert!(std::sync::Arc::ptr_eq(
+            &cached,
+            wrapper.analysis.code_cache.values().next().unwrap()
+        ));
         measure(&mut wrapper, 0..7);
         let line = &wrapper.lines[4];
-        assert_eq!(line.mapped.as_ref().unwrap().text, "fn main() { let café = \"**literal**\"; }");
-        assert!(!line.presentation.as_ref().unwrap().code.as_ref().unwrap().spans.is_empty());
+        assert_eq!(
+            line.mapped.as_ref().unwrap().text,
+            "fn main() { let café = \"**literal**\"; }"
+        );
+        assert!(
+            !line
+                .presentation
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap()
+                .spans
+                .is_empty()
+        );
         for offset in [row, row + 3, row + "fn main() { let café".len()] {
-            assert_eq!(wrapper.display_point_to_offset(wrapper.offset_to_display_point(offset)), offset);
+            assert_eq!(
+                wrapper.display_point_to_offset(wrapper.offset_to_display_point(offset)),
+                offset
+            );
         }
         let tag = wrapper.text.to_string().find("rs").unwrap();
         edit(&mut wrapper, tag..tag + 2, "unknown");
@@ -2508,14 +2600,19 @@ mod sustained_edit_tests {
                 .collect::<Vec<_>>();
             assert_eq!(cached.len(), 6, "headers, hidden separators, and body rows");
             let height = wrapper.lines.total_height();
-            let widths = wrapper.tables.tables.iter()
+            let widths = wrapper
+                .tables
+                .tables
+                .iter()
                 .map(|table| wrapper.table_widths[&table.cache_key()].clone())
                 .collect::<Vec<_>>();
             let assert_stable = |wrapper: &TextWrapper| {
                 assert_eq!(wrapper.tables.tables.len(), 2);
                 assert_eq!(wrapper.lines.total_height(), height);
                 for (row, cached) in &cached {
-                    let current = wrapper.lines[*row].table.as_ref()
+                    let current = wrapper.lines[*row]
+                        .table
+                        .as_ref()
                         .expect("table must never show source");
                     if cached.height > 0 {
                         assert!(std::rc::Rc::ptr_eq(cached, current));
@@ -2529,7 +2626,8 @@ mod sustained_edit_tests {
                     assert_eq!(wrapper.table_widths[&table.cache_key()], *expected);
                 }
             };
-            let offsets = source.match_indices('[')
+            let offsets = source
+                .match_indices('[')
                 .map(|(at, _)| at + 1)
                 .collect::<Vec<_>>();
             wrapper.analysis.request(&wrapper.text.clone());
@@ -2687,17 +2785,34 @@ pub(super) struct ImageLayout {
     pub failed: bool,
 }
 impl std::fmt::Debug for ImageLayout {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("ImageLayout").field("rows", &self.rows).finish() }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageLayout")
+            .field("rows", &self.rows)
+            .finish()
+    }
 }
 impl TextWrapper {
-    pub(super) fn measure_images(&mut self, rows: Range<usize>, line_height: Pixels, window: &mut Window, cx: &mut App) {
-        if !self.live_preview || self.image_document.is_none() { return; }
+    pub(super) fn measure_images(
+        &mut self,
+        rows: Range<usize>,
+        line_height: Pixels,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if !self.live_preview || self.image_document.is_none() {
+            return;
+        }
         for row in rows {
-            let Some(mut item) = self.lines.get(row).cloned() else { continue; };
+            let Some(mut item) = self.lines.get(row).cloned() else {
+                continue;
+            };
             item.image = None;
             if let Some(url) = self.images.get(&self.text.line_start_offset(row)) {
-                let resource = crate::markdown_images::resource(url, self.image_document.as_deref());
-                let loaded = resource.as_ref().and_then(|resource| window.use_asset::<gpui::ImgResourceLoader>(resource, cx));
+                let resource =
+                    crate::markdown_images::resource(url, self.image_document.as_deref());
+                let loaded = resource
+                    .as_ref()
+                    .and_then(|resource| window.use_asset::<gpui::ImgResourceLoader>(resource, cx));
                 let failed = resource.is_none() || loaded.as_ref().is_some_and(|r| r.is_err());
                 let data = loaded.and_then(Result::ok);
                 let (width, height) = data.as_ref().map_or((px(240.), px(80.)), |image| {
@@ -2707,7 +2822,14 @@ impl TextWrapper {
                     let ratio = (self.wrap_width.unwrap_or(w) / w).min(1.);
                     (w * ratio, h * ratio)
                 });
-                item.image = Some(ImageLayout { data, width, height, rows: (height / line_height).ceil() as usize + 1, reveal: row == self.reveal_row, failed });
+                item.image = Some(ImageLayout {
+                    data,
+                    width,
+                    height,
+                    rows: (height / line_height).ceil() as usize + 1,
+                    reveal: row == self.reveal_row,
+                    failed,
+                });
             }
             self.lines.splice(row..=row, vec![item]);
         }
@@ -2722,12 +2844,31 @@ mod image_layout_tests {
     fn image_height_and_hit_mapping() {
         let mut line = LineLayout::new();
         line.len = 12;
-        line.image = Some(ImageLayout { data: None, width: px(200.), height: px(90.), rows: 6, reveal: false, failed: true });
+        line.image = Some(ImageLayout {
+            data: None,
+            width: px(200.),
+            height: px(90.),
+            rows: 6,
+            reveal: false,
+            failed: true,
+        });
         assert_eq!(line.size(px(20.)).height, px(120.));
-        assert_eq!(line.closest_index_for_position(point(px(70.), px(10.)), px(20.)), Some(0));
-        assert_eq!(line.closest_index_for_position(point(px(70.), px(110.)), px(20.)), Some(12));
-        assert_eq!(line.closest_index_for_position(point(px(70.), px(121.)), px(20.)), None);
-        assert_eq!(line.position_for_index(6, px(20.)), Some(point(px(0.), px(0.))));
+        assert_eq!(
+            line.closest_index_for_position(point(px(70.), px(10.)), px(20.)),
+            Some(0)
+        );
+        assert_eq!(
+            line.closest_index_for_position(point(px(70.), px(110.)), px(20.)),
+            Some(12)
+        );
+        assert_eq!(
+            line.closest_index_for_position(point(px(70.), px(121.)), px(20.)),
+            None
+        );
+        assert_eq!(
+            line.position_for_index(6, px(20.)),
+            Some(point(px(0.), px(0.)))
+        );
         let mut item = LineItem::diagnostic_line(1);
         item.image = line.image.clone();
         let mut lines = super::super::line_index::Lines::default();

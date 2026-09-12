@@ -8,9 +8,11 @@ mod benchmark;
 mod find_diagnostics;
 mod goto;
 mod help_ui;
-mod links;
-mod images;
 mod image_import;
+mod images;
+#[cfg(test)]
+mod lifecycle_tests;
+mod links;
 mod notebook;
 mod notebook_ui;
 mod reading_search;
@@ -19,8 +21,6 @@ mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
 mod templates;
-#[cfg(test)]
-mod lifecycle_tests;
 
 use std::{
     fs,
@@ -190,7 +190,9 @@ struct Notes {
     settings_section: settings_ui::SettingsSection,
     theme_pickers: Vec<Entity<gpui_component::color_picker::ColorPickerState>>,
     theme_subscriptions: Vec<Subscription>,
-    font_pickers: Vec<Entity<gpui_component::select::SelectState<gpui_component::select::SearchableVec<String>>>>,
+    font_pickers: Vec<
+        Entity<gpui_component::select::SelectState<gpui_component::select::SearchableVec<String>>>,
+    >,
     font_subscriptions: Vec<Subscription>,
     installed_fonts: Vec<String>,
     saves: autosave::SaveState,
@@ -372,7 +374,9 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         let prompt = window.prompt(
             PromptLevel::Critical,
             message,
@@ -404,7 +408,9 @@ impl Notes {
         }
         self.saves.timer = None;
         if self.saves.writing {
-            let Some(operation) = self.foreground.begin() else { return; };
+            let Some(operation) = self.foreground.begin() else {
+                return;
+            };
             self.saves.pending = Some(autosave::Pending::Request(operation, next));
             cx.notify();
             return;
@@ -413,7 +419,9 @@ impl Notes {
             self.continue_with(next, window, cx);
             return;
         }
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         let prompt = window.prompt(
             PromptLevel::Warning,
             "Save changes?",
@@ -443,7 +451,9 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.foreground.finish(operation) { return; }
+        if !self.foreground.finish(operation) {
+            return;
+        }
         match answer {
             Some(0) => self.save(next, window, cx),
             Some(1) => self.continue_with(next, window, cx),
@@ -465,7 +475,10 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let operation = self.foreground.begin().expect("diagnostic response needs an idle session");
+        let operation = self
+            .foreground
+            .begin()
+            .expect("diagnostic response needs an idle session");
         self.answer_request(operation, answer, next, window, cx);
     }
 
@@ -488,7 +501,9 @@ impl Notes {
     }
 
     fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         let picker = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -524,7 +539,9 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.foreground.finish(operation) { return; }
+        if !self.foreground.finish(operation) {
+            return;
+        }
         match result {
             Ok(Some(document)) => {
                 self.install_document(Some(document), window, cx);
@@ -597,7 +614,8 @@ impl Notes {
                     Box::new(ReadingView),
                 )
             } else if kind == MenuKind::Help {
-                menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts)).menu("About", Box::new(About))
+                menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts))
+                    .menu("About", Box::new(About))
             } else {
                 self.notebook_menu(menu, cx)
             }
@@ -763,8 +781,12 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &ReadingView, window, cx| {
                 this.set_mode(ViewMode::Reading, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &HelpMenu, window, cx| this.show_menu(MenuKind::Help, window, cx)))
-            .on_action(cx.listener(|this, _: &KeyboardShortcuts, window, cx| this.open_help(true, window, cx)))
+            .on_action(cx.listener(|this, _: &HelpMenu, window, cx| {
+                this.show_menu(MenuKind::Help, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &KeyboardShortcuts, window, cx| {
+                this.open_help(true, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &About, window, cx| this.open_help(false, window, cx)))
             .on_action(cx.listener(|this, _: &FileMenu, window, cx| {
                 this.show_menu(MenuKind::File, window, cx)
@@ -845,7 +867,16 @@ impl Render for Notes {
                                 this.show_menu(MenuKind::Notebooks, window, cx)
                             })),
                     )
-                    .child(Button::new("help-menu").cursor_default().ghost().small().label("Help").on_click(cx.listener(|this, _, window, cx| this.show_menu(MenuKind::Help, window, cx)))),
+                    .child(
+                        Button::new("help-menu")
+                            .cursor_default()
+                            .ghost()
+                            .small()
+                            .label("Help")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.show_menu(MenuKind::Help, window, cx)
+                            })),
+                    ),
             )
             .when_some(self.saves.error.clone(), |view, error| {
                 view.child(div().p_2().text_sm().child(error))
@@ -854,22 +885,27 @@ impl Render for Notes {
                 view.child(div().p_2().text_sm().child(notice))
             })
             .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(self.render_sidebar_layout(
-                        div().id("image-drop-content").size_full()
+                div().flex().flex_1().min_h_0().overflow_hidden().child(
+                    self.render_sidebar_layout(
+                        div()
+                            .id("image-drop-content")
+                            .size_full()
                             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                                 cx.stop_propagation();
                                 this.drop_images(paths.paths().to_vec(), window, cx);
                             }))
-                            .on_drop(cx.listener(|this, drag: &notebook_ui::EntryDrag, window, cx| {
-                                cx.stop_propagation();
-                                this.drop_images(vec![drag.root.join(&drag.path)], window, cx);
-                            }))
-                            .child(content).into_any_element(), window, cx)),
+                            .on_drop(cx.listener(
+                                |this, drag: &notebook_ui::EntryDrag, window, cx| {
+                                    cx.stop_propagation();
+                                    this.drop_images(vec![drag.root.join(&drag.path)], window, cx);
+                                },
+                            ))
+                            .child(content)
+                            .into_any_element(),
+                        window,
+                        cx,
+                    ),
+                ),
             )
             .when_some(self.menu.clone(), |this, (kind, menu)| {
                 this.child(deferred(
@@ -930,7 +966,11 @@ fn main() {
         .with_assets(gpui_component_assets::Assets)
         .run(|cx: &mut App| {
             gpui_component::init(cx);
-            cx.bind_keys(help_ui::app_shortcuts().into_iter().map(|shortcut| shortcut.binding));
+            cx.bind_keys(
+                help_ui::app_shortcuts()
+                    .into_iter()
+                    .map(|shortcut| shortcut.binding),
+            );
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {
                     cx.quit();

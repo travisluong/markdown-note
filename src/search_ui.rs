@@ -190,7 +190,9 @@ impl Notes {
     }
 
     fn move_search_result(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) { return; }
+        if self.is_busy() || window.has_active_dialog(cx) {
+            return;
+        }
         if let Some(panel) = &mut self.search {
             if panel.hits.is_empty() {
                 return;
@@ -205,12 +207,23 @@ impl Notes {
         self.activate_search_result(window, cx);
     }
 
-    pub(super) fn finish_search_navigation(&mut self, success: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn finish_search_navigation(
+        &mut self,
+        success: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(panel) = &mut self.search {
             if let Some(previous) = panel.navigation.take() {
-                if !success { panel.selected = previous.min(panel.hits.len().saturating_sub(1)); }
-                panel.scroll.scroll_to_item(panel.selected, ScrollStrategy::Top);
-                if panel.visible { panel.query.update(cx, |query, cx| query.focus(window, cx)); }
+                if !success {
+                    panel.selected = previous.min(panel.hits.len().saturating_sub(1));
+                }
+                panel
+                    .scroll
+                    .scroll_to_item(panel.selected, ScrollStrategy::Top);
+                if panel.visible {
+                    panel.query.update(cx, |query, cx| query.focus(window, cx));
+                }
                 cx.notify();
             }
         }
@@ -379,7 +392,9 @@ impl Notes {
                                             .child(div().child(hit.after.clone())),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
-                                        if this.is_busy() || window.has_active_dialog(cx) { return; }
+                                        if this.is_busy() || window.has_active_dialog(cx) {
+                                            return;
+                                        }
                                         if let Some(panel) = &mut this.search {
                                             panel.selected = i;
                                         }
@@ -398,8 +413,11 @@ impl Notes {
 }
 
 fn adjacent_result(selected: usize, count: usize, down: bool) -> usize {
-    if down { selected.saturating_add(1).min(count.saturating_sub(1)) }
-    else { selected.saturating_sub(1) }
+    if down {
+        selected.saturating_add(1).min(count.saturating_sub(1))
+    } else {
+        selected.saturating_sub(1)
+    }
 }
 
 #[cfg(test)]
@@ -586,7 +604,12 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                         );
                         assert_eq!(this.document.as_ref().unwrap().path, a);
                         assert_eq!(this.editor.read(cx).value().as_str(), "unsaved needle");
-                        this.diagnostic_answer_request(Some(0), Next::SearchResult(destination), window, cx);
+                        this.diagnostic_answer_request(
+                            Some(0),
+                            Next::SearchResult(destination),
+                            window,
+                            cx,
+                        );
                     }
                     12 => {
                         assert_eq!(this.document.as_ref().unwrap().path, b);

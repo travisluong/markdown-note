@@ -23,9 +23,7 @@ fn wraps(n: &Link) -> usize {
 impl Node {
     fn refresh(&mut self) {
         self.count = 1 + count(&self.left) + count(&self.right);
-        self.height = height(&self.left)
-            + height(&self.right)
-            + self.item.height_units();
+        self.height = height(&self.left) + height(&self.right) + self.item.height_units();
         self.wraps = wraps(&self.left) + wraps(&self.right) + self.item.lines_len();
     }
 }

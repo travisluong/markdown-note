@@ -90,7 +90,13 @@ impl NotebookState {
     pub(super) fn rebuild_rows(&mut self) {
         let mut rows = Vec::new();
         if let Some(book) = &self.active {
-            Self::append_rows(&self.directories, Path::new(""), 0, &book.settings, &mut rows);
+            Self::append_rows(
+                &self.directories,
+                Path::new(""),
+                0,
+                &book.settings,
+                &mut rows,
+            );
         }
         replace_rows(&mut self.rows, &mut self.cursor, rows);
     }
@@ -122,14 +128,20 @@ impl NotebookState {
                         depth,
                         directory: entry.directory,
                         disabled: entry.link
-                            || (!entry.directory && !(notebook::markdown(&entry.relative) || images::supported(&entry.relative))),
+                            || (!entry.directory
+                                && !(notebook::markdown(&entry.relative)
+                                    || images::supported(&entry.relative))),
                         filename: (!entry.directory).then(|| notebook::name(&entry.relative)),
                         label: format!(
                             "{}{}",
                             if entry.directory {
                                 notebook::name(&entry.relative)
                             } else {
-                                notebook::sidebar_file_name(&entry.relative, settings.show_file_extensions, &settings.always_hide_extensions)
+                                notebook::sidebar_file_name(
+                                    &entry.relative,
+                                    settings.show_file_extensions,
+                                    &settings.always_hide_extensions,
+                                )
                             },
                             if entry.link { " (link)" } else { "" }
                         ),
@@ -186,7 +198,9 @@ impl Notes {
     }
 
     pub(super) fn restore_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         let configured_path = self.notebooks.index_path.clone();
         cx.spawn_in(window, async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
@@ -547,7 +561,9 @@ impl Notes {
         if self.is_busy() {
             return;
         }
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         self.notebooks.modal_error = None;
         let picker = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -584,10 +600,19 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.foreground.finish(operation) { return; }
+        if !self.foreground.finish(operation) {
+            return;
+        }
         match result {
             Ok(Some(path)) if !location => {
-                self.request(Next::Notebook { path, create: false }, window, cx);
+                self.request(
+                    Next::Notebook {
+                        path,
+                        create: false,
+                    },
+                    window,
+                    cx,
+                );
             }
             result => {
                 match result {
@@ -607,7 +632,9 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         self.notebooks.modal_error = None;
         let pending = self.notebooks.persistence.take();
         cx.spawn_in(window, async move |this, cx| {
@@ -632,7 +659,9 @@ impl Notes {
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) { return; }
+                if !this.foreground.finish(operation) {
+                    return;
+                }
                 match result {
                     Ok((book, document)) => {
                         this.search = None;
@@ -680,14 +709,18 @@ impl Notes {
         {
             return;
         }
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move { notebook::create_untitled(&root).and_then(Document::open) })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) { return; }
+                if !this.foreground.finish(operation) {
+                    return;
+                }
                 match result {
                     Ok(document) => {
                         if this.mode == ViewMode::Reading {
@@ -772,7 +805,9 @@ impl Notes {
             self.open_image(path, keep_tree_focus, window, cx);
             return;
         }
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         self.notebooks.tree_loading = keep_tree_focus;
         self.notebooks.tree_target = keep_tree_focus.then(|| path.clone());
         let loading_path = path.clone();
@@ -790,7 +825,9 @@ impl Notes {
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) { return; }
+                if !this.foreground.finish(operation) {
+                    return;
+                }
                 this.notebooks.tree_loading = false;
                 if keep_tree_focus && this.notebooks.tree_target.as_ref() != Some(&loading_path) {
                     if let Some(target) = this.notebooks.tree_target.take() {
@@ -882,7 +919,9 @@ impl Notes {
     }
 
     pub(super) fn finish_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         let pending = self.notebooks.persistence.take();
         cx.spawn_in(window, async move |this, cx| {
             if let Some(pending) = pending {
@@ -1038,7 +1077,12 @@ impl Notes {
             .notebooks
             .active
             .as_ref()
-            .zip(self.document.as_ref().map(|d| d.path.as_path()).or(self.image_path.as_deref()))
+            .zip(
+                self.document
+                    .as_ref()
+                    .map(|d| d.path.as_path())
+                    .or(self.image_path.as_deref()),
+            )
             .and_then(|(book, path)| {
                 self.notebooks
                     .rows
@@ -1183,7 +1227,12 @@ impl Notes {
                                     .notebooks
                                     .active
                                     .as_ref()
-                                    .zip(this.document.as_ref().map(|d| d.path.as_path()).or(this.image_path.as_deref()))
+                                    .zip(
+                                        this.document
+                                            .as_ref()
+                                            .map(|d| d.path.as_path())
+                                            .or(this.image_path.as_deref()),
+                                    )
                                     .is_some_and(|(book, document_path)| {
                                         !row.directory
                                             && !row.disabled
@@ -1252,7 +1301,8 @@ impl Notes {
                                     .child(format!("{prefix}{}", row.label))
                                     .when_some(row.filename.clone(), |view, filename| {
                                         view.tooltip(move |window, cx| {
-                                            gpui_component::tooltip::Tooltip::new(filename.clone()).build(window, cx)
+                                            gpui_component::tooltip::Tooltip::new(filename.clone())
+                                                .build(window, cx)
                                         })
                                     })
                                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -1313,7 +1363,9 @@ impl Notes {
         let from = drag.path.clone();
         let mut settings = book.settings.clone();
         self.saves.timer = None;
-        let Some(operation) = self.foreground.begin() else { return; };
+        let Some(operation) = self.foreground.begin() else {
+            return;
+        };
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
             let worker_root = root.clone();
@@ -1327,7 +1379,9 @@ impl Notes {
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if !this.foreground.finish(operation) { return; }
+                if !this.foreground.finish(operation) {
+                    return;
+                }
                 match result {
                     Ok((to, settings)) => {
                         if let Some(document) = &mut this.document {
@@ -1341,7 +1395,10 @@ impl Notes {
                             *path = notebook::remap_path(path, &root.join(&from), &root.join(&to));
                         }
                         this.editor.update(cx, |editor, cx| {
-                            editor.set_image_document(this.document.as_ref().map(|doc| doc.path.clone()), cx);
+                            editor.set_image_document(
+                                this.document.as_ref().map(|doc| doc.path.clone()),
+                                cx,
+                            );
                         });
                         if let Some(book) = &mut this.notebooks.active {
                             book.settings = settings;

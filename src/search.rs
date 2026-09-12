@@ -343,7 +343,10 @@ mod tests {
         let text = "é Foo foo FOO É";
         assert_eq!(revalidate(text, &destination("foo", false, 3)), Some(3..6));
         assert_eq!(revalidate(text, &destination("foo", true, 3)), Some(7..10));
-        assert_eq!(revalidate(text, &destination("FOO", true, 12)), Some(11..14));
+        assert_eq!(
+            revalidate(text, &destination("FOO", true, 12)),
+            Some(11..14)
+        );
         assert_eq!(revalidate("é É", &destination("é", false, 3)), Some(0..2));
         assert_eq!(revalidate("é É", &destination("É", false, 0)), Some(3..5));
         assert_eq!(

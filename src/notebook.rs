@@ -341,7 +341,11 @@ fn index_path_for(
     os: &str,
     env: impl Fn(&str) -> Option<std::ffi::OsString>,
 ) -> io::Result<PathBuf> {
-    let absolute = |key| env(key).map(PathBuf::from).filter(|path| path.is_absolute());
+    let absolute = |key| {
+        env(key)
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
     let base = match os {
         "windows" => absolute("APPDATA"),
         "macos" => absolute("HOME").map(|home| home.join("Library/Application Support")),
@@ -364,11 +368,18 @@ mod index_path_tests {
         let root = temp.path();
         for (os, variable, suffix) in [
             ("windows", "APPDATA", "gpui-note/notebooks.json"),
-            ("macos", "HOME", "Library/Application Support/gpui-note/notebooks.json"),
+            (
+                "macos",
+                "HOME",
+                "Library/Application Support/gpui-note/notebooks.json",
+            ),
             ("linux", "HOME", ".config/gpui-note/notebooks.json"),
             ("linux", "XDG_CONFIG_HOME", "gpui-note/notebooks.json"),
         ] {
-            let path = index_path_for(os, |key| (key == variable).then(|| root.as_os_str().to_owned())).unwrap();
+            let path = index_path_for(os, |key| {
+                (key == variable).then(|| root.as_os_str().to_owned())
+            })
+            .unwrap();
             assert_eq!(path, root.join(suffix));
             let mut index = load_index(&path).unwrap();
             index.register(root.join("Notes"));
@@ -387,8 +398,13 @@ mod index_path_tests {
                 "HOME" => Some(home.clone().into_os_string()),
                 "XDG_CONFIG_HOME" => Some(override_path.as_os_str().to_owned()),
                 _ => None,
-            }).unwrap();
-            let base = if override_path.is_absolute() { config.clone() } else { home.join(".config") };
+            })
+            .unwrap();
+            let base = if override_path.is_absolute() {
+                config.clone()
+            } else {
+                home.join(".config")
+            };
             assert_eq!(path, base.join("gpui-note/notebooks.json"));
         }
         for os in ["windows", "macos", "linux"] {

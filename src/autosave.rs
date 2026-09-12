@@ -82,7 +82,9 @@ impl Notes {
         }
         self.saves.timer = None;
         if self.saves.writing {
-            let Some(operation) = self.foreground.begin() else { return; };
+            let Some(operation) = self.foreground.begin() else {
+                return;
+            };
             self.saves.pending = Some(Pending::Save(operation, next));
             cx.notify();
             return;
@@ -90,9 +92,16 @@ impl Notes {
         self.start_write(Some(next), window, cx);
     }
 
-    pub(super) fn start_write(&mut self, next: Option<Next>, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn start_write(
+        &mut self,
+        next: Option<Next>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         debug_assert!(!self.saves.writing);
-        if self.is_busy() { return; }
+        if self.is_busy() {
+            return;
+        }
         let Some(document) = &self.document else {
             return;
         };
@@ -100,7 +109,9 @@ impl Notes {
         let (path, bom, newline) = (document.path.clone(), document.bom, document.newline);
         let snapshot = self.editor.read(cx).snapshot();
         let operation = if next.is_some() {
-            let Some(operation) = self.foreground.begin() else { return; };
+            let Some(operation) = self.foreground.begin() else {
+                return;
+            };
             Some(operation)
         } else {
             None

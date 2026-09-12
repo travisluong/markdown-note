@@ -84,7 +84,8 @@ fn folder_picker_outcomes_resume_an_expired_autosave(cx: &mut TestAppContext) {
         ("selected location", Ok(Some(dir.path().to_path_buf()))),
     ] {
         edit(&notes, text, cx);
-        let operation = cx.update(|_, cx| notes.update(cx, |this, _| this.foreground.begin().unwrap()));
+        let operation =
+            cx.update(|_, cx| notes.update(cx, |this, _| this.foreground.begin().unwrap()));
         elapse(cx);
         assert_ne!(fs::read_to_string(&path).unwrap(), text);
         cx.update(|window, cx| {
@@ -128,7 +129,12 @@ fn failed_file_open_resumes_only_after_error_dismissal(cx: &mut TestAppContext) 
         notes.update(cx, |this, cx| {
             this.saves.timer = None;
             let operation = this.foreground.begin().unwrap();
-            this.finish_open(operation, Err(std::io::Error::other("unreadable")), window, cx);
+            this.finish_open(
+                operation,
+                Err(std::io::Error::other("unreadable")),
+                window,
+                cx,
+            );
         })
     });
     cx.run_until_parked();
@@ -174,10 +180,12 @@ fn retained_document_keeps_autosave_disabled(cx: &mut TestAppContext) {
     let (notes, cx) = fixture(cx, &path);
     cx.update(|_, cx| notes.update(cx, |this, _| this.saves.session.enabled = false));
     edit(&notes, "retained", cx);
-    cx.update(|window, cx| notes.update(cx, |this, cx| {
-        let operation = this.foreground.begin().unwrap();
-        this.finish_open(operation, Ok(None), window, cx);
-    }));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let operation = this.foreground.begin().unwrap();
+            this.finish_open(operation, Ok(None), window, cx);
+        })
+    });
     cx.run_until_parked();
     elapse(cx);
     assert_eq!(fs::read_to_string(&path).unwrap(), "original");
@@ -191,23 +199,27 @@ fn background_save_finishing_does_not_release_a_picker(cx: &mut TestAppContext) 
     fs::write(&path, "original").unwrap();
     let (notes, cx) = fixture(cx, &path);
     edit(&notes, "saved snapshot", cx);
-    let picker = cx.update(|window, cx| notes.update(cx, |this, cx| {
-        this.saves.timer = None;
-        this.start_write(None, window, cx);
-        assert!(this.saves.writing);
-        assert!(!this.is_busy());
-        this.foreground.begin().unwrap()
-    }));
+    let picker = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.saves.timer = None;
+            this.start_write(None, window, cx);
+            assert!(this.saves.writing);
+            assert!(!this.is_busy());
+            this.foreground.begin().unwrap()
+        })
+    });
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&path).unwrap(), "saved snapshot");
-    cx.update(|window, cx| notes.update(cx, |this, cx| {
-        assert!(!this.saves.writing);
-        assert!(!this.dirty(cx));
-        assert!(this.foreground.owns(picker));
-        assert!(this.is_busy());
-        this.finish_notebook_picker(picker, Ok(None), true, window, cx);
-        assert!(!this.is_busy());
-    }));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(!this.saves.writing);
+            assert!(!this.dirty(cx));
+            assert!(this.foreground.owns(picker));
+            assert!(this.is_busy());
+            this.finish_notebook_picker(picker, Ok(None), true, window, cx);
+            assert!(!this.is_busy());
+        })
+    });
 }
 
 #[gpui::test]
@@ -217,19 +229,22 @@ fn queued_manual_save_writes_the_newest_snapshot(cx: &mut TestAppContext) {
     fs::write(&path, "original").unwrap();
     let (notes, cx) = fixture(cx, &path);
     edit(&notes, "older snapshot", cx);
-    cx.update(|window, cx| notes.update(cx, |this, cx| {
-        this.saves.timer = None;
-        this.start_write(None, window, cx);
-        this.editor.update(cx, |editor, cx| {
-            editor.select_source_range(0..editor.value().len(), window, cx);
-            editor.replace_selection_isolated("newest snapshot", window, cx);
-        });
-        this.save(Next::Nothing, window, cx);
-        let Some(super::autosave::Pending::Save(operation, _)) = this.saves.pending.as_ref() else {
-            panic!("manual save must wait for the background writer");
-        };
-        assert!(this.foreground.owns(*operation));
-    }));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.saves.timer = None;
+            this.start_write(None, window, cx);
+            this.editor.update(cx, |editor, cx| {
+                editor.select_source_range(0..editor.value().len(), window, cx);
+                editor.replace_selection_isolated("newest snapshot", window, cx);
+            });
+            this.save(Next::Nothing, window, cx);
+            let Some(super::autosave::Pending::Save(operation, _)) = this.saves.pending.as_ref()
+            else {
+                panic!("manual save must wait for the background writer");
+            };
+            assert!(this.foreground.owns(*operation));
+        })
+    });
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&path).unwrap(), "newest snapshot");
     cx.update(|_, cx| {
@@ -250,20 +265,26 @@ fn queued_navigation_releases_its_wait_owner_before_loading(cx: &mut TestAppCont
     fs::write(&target, "target document").unwrap();
     let (notes, cx) = fixture(cx, &path);
     edit(&notes, "save before navigating", cx);
-    cx.update(|window, cx| notes.update(cx, |this, cx| {
-        this.saves.timer = None;
-        this.start_write(None, window, cx);
-        this.request(Next::File(target.clone()), window, cx);
-        let Some(super::autosave::Pending::Request(operation, _)) = this.saves.pending.as_ref() else {
-            panic!("navigation must wait for the background writer");
-        };
-        assert!(this.foreground.owns(*operation));
-    }));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.saves.timer = None;
+            this.start_write(None, window, cx);
+            this.request(Next::File(target.clone()), window, cx);
+            let Some(super::autosave::Pending::Request(operation, _)) = this.saves.pending.as_ref()
+            else {
+                panic!("navigation must wait for the background writer");
+            };
+            assert!(this.foreground.owns(*operation));
+        })
+    });
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&path).unwrap(), "save before navigating");
     cx.update(|_, cx| {
         let state = notes.read(cx);
-        assert_eq!(state.document.as_ref().unwrap().path, fs::canonicalize(target).unwrap());
+        assert_eq!(
+            state.document.as_ref().unwrap().path,
+            fs::canonicalize(target).unwrap()
+        );
         assert_eq!(state.editor.read(cx).value().as_ref(), "target document");
         assert!(!state.is_busy());
         assert!(state.saves.pending.is_none());
@@ -279,27 +300,35 @@ fn stale_pending_navigation_keeps_saved_baseline_and_new_owner(cx: &mut TestAppC
     fs::write(&target, "target document").unwrap();
     let (notes, cx) = fixture(cx, &path);
     edit(&notes, "saved snapshot", cx);
-    let newer = cx.update(|window, cx| notes.update(cx, |this, cx| {
-        this.saves.timer = None;
-        this.start_write(None, window, cx);
-        this.request(Next::File(target), window, cx);
-        let Some(super::autosave::Pending::Request(old, _)) = this.saves.pending.as_ref() else {
-            panic!("expected queued navigation");
-        };
-        // Simulate a superseded foreground continuation while the actual write runs.
-        assert!(this.foreground.finish(*old));
-        this.foreground.begin().unwrap()
-    }));
+    let newer = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.saves.timer = None;
+            this.start_write(None, window, cx);
+            this.request(Next::File(target), window, cx);
+            let Some(super::autosave::Pending::Request(old, _)) = this.saves.pending.as_ref()
+            else {
+                panic!("expected queued navigation");
+            };
+            // Simulate a superseded foreground continuation while the actual write runs.
+            assert!(this.foreground.finish(*old));
+            this.foreground.begin().unwrap()
+        })
+    });
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&path).unwrap(), "saved snapshot");
-    cx.update(|window, cx| notes.update(cx, |this, cx| {
-        assert_eq!(this.document.as_ref().unwrap().path, fs::canonicalize(&path).unwrap());
-        assert_eq!(this.document.as_ref().unwrap().saved, "saved snapshot");
-        assert!(!this.dirty(cx));
-        assert!(this.foreground.owns(newer));
-        assert!(this.saves.pending.is_none());
-        this.finish_open(newer, Ok(None), window, cx);
-    }));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(
+                this.document.as_ref().unwrap().path,
+                fs::canonicalize(&path).unwrap()
+            );
+            assert_eq!(this.document.as_ref().unwrap().saved, "saved snapshot");
+            assert!(!this.dirty(cx));
+            assert!(this.foreground.owns(newer));
+            assert!(this.saves.pending.is_none());
+            this.finish_open(newer, Ok(None), window, cx);
+        })
+    });
 }
 
 #[gpui::test]
@@ -310,20 +339,33 @@ fn stale_and_duplicate_foreground_completions_cannot_install_documents(cx: &mut 
     fs::write(&path, "original").unwrap();
     fs::write(&target, "target document").unwrap();
     let (notes, cx) = fixture(cx, &path);
-    cx.update(|window, cx| notes.update(cx, |this, cx| {
-        let old = this.foreground.begin().unwrap();
-        this.finish_open(old, Ok(None), window, cx);
-        let newer = this.foreground.begin().unwrap();
-        this.finish_open(old, Ok(Some(Document::open(target.clone()).unwrap())), window, cx);
-        this.answer_request(old, Some(1), Next::File(target.clone()), window, cx);
-        this.finish_notebook_picker(old, Ok(Some(dir.path().to_path_buf())), false, window, cx);
-        assert!(this.foreground.owns(newer));
-        assert_eq!(this.document.as_ref().unwrap().path, fs::canonicalize(&path).unwrap());
-        this.finish_open(newer, Ok(None), window, cx);
-        this.finish_open(newer, Ok(Some(Document::open(target).unwrap())), window, cx);
-        assert!(!this.is_busy());
-        assert_eq!(this.document.as_ref().unwrap().path, fs::canonicalize(&path).unwrap());
-    }));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let old = this.foreground.begin().unwrap();
+            this.finish_open(old, Ok(None), window, cx);
+            let newer = this.foreground.begin().unwrap();
+            this.finish_open(
+                old,
+                Ok(Some(Document::open(target.clone()).unwrap())),
+                window,
+                cx,
+            );
+            this.answer_request(old, Some(1), Next::File(target.clone()), window, cx);
+            this.finish_notebook_picker(old, Ok(Some(dir.path().to_path_buf())), false, window, cx);
+            assert!(this.foreground.owns(newer));
+            assert_eq!(
+                this.document.as_ref().unwrap().path,
+                fs::canonicalize(&path).unwrap()
+            );
+            this.finish_open(newer, Ok(None), window, cx);
+            this.finish_open(newer, Ok(Some(Document::open(target).unwrap())), window, cx);
+            assert!(!this.is_busy());
+            assert_eq!(
+                this.document.as_ref().unwrap().path,
+                fs::canonicalize(&path).unwrap()
+            );
+        })
+    });
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
 }
