@@ -1,5 +1,9 @@
 # Local editor patch
 
+The [file-level inventory](EDITOR-PATCH-INVENTORY.md) maps every modified and
+added file against the verified published 0.5.1 package, with regression entry
+points and upgrade reconciliation notes. Preserve both documents and the license.
+
 Document edits invalidate the abandoned redo branch after Undo. InputState clears
 redo only for actual text changes, after the replay guard; generic History keeps
 its existing opt-in policy. `tests/editor_history.rs` covers isolated edits,
@@ -50,8 +54,11 @@ Changes cover input support, Reading-view source mappings, menu cursors, and the
 
 The integration test target in `tests/editor.rs` compiles the patched parser,
 height index, and wrapper modules directly, avoiding unrelated upstream component
-test dependencies. The optional in-app diagnostics additionally exercise the
-actual InputState edit, undo, redo, mode, selection, disabled, and IME paths.
+test dependencies. `tests/editor_transactions.rs` runs the actual InputState
+list/task and table diagnostics on headless TestPlatform, including undo/redo,
+mode, selection, disabled and IME paths. Table progress is an explicit callback;
+only the benchmark caller writes progress files. Additional in-app diagnostics
+cover native rendering and remain user-run.
 
 When updating upstream, rebase these input changes and rerun the tests and
 release benchmark. Do not silently remove the Cargo patch.

@@ -124,8 +124,10 @@ Additional contracts to preserve:
 
 The root Cargo patch selects `vendor/gpui-component`, based on upstream 0.5.1 at
 `0f0ab35233212f8f3277028995caf0c41e13ee6c`. Its license and
-[EDITOR-PATCH.md](vendor/gpui-component/EDITOR-PATCH.md) must remain. Edit this
-checked-in source, never Cargo's registry cache.
+[EDITOR-PATCH.md](vendor/gpui-component/EDITOR-PATCH.md) must remain. The
+[file-level inventory](vendor/gpui-component/EDITOR-PATCH-INVENTORY.md) records
+all patches against the verified published package and their regression entry
+points. Edit this checked-in source, never Cargo's registry cache.
 
 | Concern | Vendor files under `src/` |
 | --- | --- |

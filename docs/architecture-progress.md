@@ -15,7 +15,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
 | 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
-| 8. Editor boundary and analysis performance | Pending | Thin editor adapter, vendor patch inventory, off-layout initial Reading parse, shared analysis investigation and measured work bounds. |
+| 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Thin editor adapter, off-layout initial Reading parse, shared analysis and measured work bounds remain. |
 
 ## Verification rules
 
