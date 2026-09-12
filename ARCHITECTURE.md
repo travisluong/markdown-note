@@ -22,7 +22,7 @@ flowchart TD
     Notes --> Reading[Vendored TextView: Reading rendering and source maps]
     Notes --> Saves[autosave.rs: save scheduling and completion]
     Saves --> FileIO[main.rs: Document and save_file]
-    Notes --> Notebook[notebook.rs: settings and filesystem operations]
+    Notes --> Notebook[notebook.rs: explicit domain facade]
     Notes --> Search[search.rs: notebook scans and literal matching]
     Notes --> Imports[image_import.rs: asset import transaction]
     Search --> Notebook
@@ -42,7 +42,7 @@ Follow its callers and completions before treating a file as an isolated module.
 | Startup, actions, document state, save prompts, root rendering | [main.rs](src/main.rs): `Notes`, `Next`, `request`, `continue_with`, `NotesWindow` | `NotesWindow` renders modal layers outside `Notes::render` to avoid recursively borrowing the entity. |
 | Encoding and atomic note replacement | [main.rs](src/main.rs): `Document::open`, `normalize_newlines`, `save_file` | Saved text and saved rope represent the last successful write; current text belongs to `InputState`. |
 | Debounced autosave and queued foreground operations | [autosave.rs](src/autosave.rs): `SaveState`, `schedule_autosave`, `start_write`; [app/operation.rs](src/app/operation.rs): `ForegroundOperation` | Background writes own a captured document baseline. Foreground prompts, navigation and saves own explicit operation tokens; queued actions carry their waiting token. |
-| Notebook settings, schema defaults, paths, directory entries and mutations | [notebook.rs](src/notebook.rs): `Settings`, `Notebook`, `Index`, `resolve`, `save_state`, `move_entry`, `create_untitled` | Includes preference values and filesystem behavior; `Settings` refers to root `ViewMode`. |
+| Notebook schema, path policy, tree values and filesystem operations | [notebook.rs](src/notebook.rs) re-exports [settings](src/notebook/settings.rs), [paths](src/notebook/paths.rs), [tree](src/notebook/tree.rs) and [storage](src/notebook/storage.rs) | Storage depends on schema/path/tree policies; policies have no UI dependencies. Existing `notebook::` entry points are preserved. |
 | Notebook activation, document installation, explorer and persistence queue | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`, `activate_notebook`, `install_document`, `persist_notebooks`, `drop_entry` | Owns document replacement as well as tree presentation. |
 | Sidebar visibility and width | [sidebar_ui.rs](src/sidebar_ui.rs) | Explorer and Search share sidebar geometry and visibility. |
 | Preferences and settings controls | [settings_ui.rs](src/settings_ui.rs) | Applies the GPUI global theme, writes notebook settings and keeps session preferences. `can_insert_date` currently doubles as a general edit-capability check. |
