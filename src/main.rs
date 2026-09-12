@@ -735,6 +735,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_min_size: Some(size(px(400.), px(300.))),
+                    app_id: Some("org.mithril.Mithril".into()),
                     titlebar: Some(TitlebarOptions {
                         title: Some("Mithril".into()),
                         // The Windows client title bar contains text and controls only.

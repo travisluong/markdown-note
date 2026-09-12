@@ -25,8 +25,8 @@ published GitHub Release. A manual workflow run only uploads Actions artifacts.
   are not implemented; users run a newer installer to upgrade.
 - Both application and installer are unsigned. Publisher metadata is a display
   label, not a verified signing identity. Configure signing separately before
-  advertising signed downloads. Shortcuts currently use the executable's icon;
-  custom Windows branding is a separate change.
+  advertising signed downloads. Shortcuts use the marketing logo embedded in
+  the executable; the installer uses the same multi-resolution ICO.
 
 ## Build locally
 

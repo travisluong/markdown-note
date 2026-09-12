@@ -372,3 +372,30 @@ Windows/MSVC verification: `cargo check --offline --locked --bin mithril`,
 `cargo build --offline --locked --bin mithril` passed. No desktop app was
 launched. Native appearance, dragging, minimize/maximize and close behavior
 remain manual validation.
+
+## Marketing logo across application icons (2026-09-12)
+
+Checked-in SVG, seven-size ICO, 512px PNG and Retina ICNS assets now derive from
+the marketing site's exact silver M mark. `scripts/build-icons.mjs` documents
+regeneration through the marketing repository's sharp dependency. Normal builds
+need only the generated files. `build.rs` embeds resource 1 into the Windows
+binary (the ID GPUI loads), and Inno Setup uses that same ICO. macOS packaging
+copies the ICNS into Resources and declares it in Info.plist. Linux archives
+include a PNG and desktop entry matching the window's application ID.
+
+Verification on Windows/MSVC:
+
+- Default Cargo check/build, formatting and strict all-target diagnostics lint
+  passed; the combined changes passed all 301 headless Rust tests.
+- A non-executing PE data-resource inspection compared all seven embedded icon
+  images byte-for-byte against the ICO. Pillow decoded every ICO size and the
+  macOS ICNS; the plist binding and exact marketing SVG copies were checked.
+- Inno Setup 6.7.3 compiled the branded installer using the checked debug binary
+  into `target/installer-icon-check/`; no installer or desktop app was launched.
+- actionlint validated the release workflow; `git diff --check` passed.
+- In the marketing repository, the favicon SVG now copies the source mark and
+  its ICO is regenerated from it. Static build and all existing headless website
+  checks passed; favicon entries decode at 16/32/48px.
+
+Native shell/taskbar/title-bar appearance and macOS/Linux builds remain manual
+or CI validation. The pre-existing proc-macro-error2 compatibility notice remains.

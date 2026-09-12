@@ -80,7 +80,8 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           APP_BUNDLE="target/$BUILD_TARGET/release/Mithril.app"
-          mkdir -p "$APP_BUNDLE/Contents/MacOS" dist
+          mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" dist
+          cp assets/brand/mithril.icns "$APP_BUNDLE/Contents/Resources/mithril.icns"
           cp "target/$BUILD_TARGET/release/mithril" "$APP_BUNDLE/Contents/MacOS/mithril"
           chmod 755 "$APP_BUNDLE/Contents/MacOS/mithril"
           cp packaging/macos/Info.plist "$APP_BUNDLE/Contents/Info.plist"
@@ -97,7 +98,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          tar -czf "dist/$ARCHIVE_NAME.tar.gz" -C "target/$BUILD_TARGET/release" mithril
+          tar -czf "dist/$ARCHIVE_NAME.tar.gz" -C "target/$BUILD_TARGET/release" mithril \
+            -C "$GITHUB_WORKSPACE" assets/brand/mithril.png packaging/linux/org.mithril.Mithril.desktop packaging/linux/README.md
 
       - name: Package Windows executable
         if: runner.os == 'Windows'

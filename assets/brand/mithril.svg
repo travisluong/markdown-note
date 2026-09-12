@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs><linearGradient id="silver" x1="12" y1="8" x2="52" y2="57" gradientUnits="userSpaceOnUse"><stop stop-color="#f4fbff"/><stop offset=".46" stop-color="#b5cbd9"/><stop offset="1" stop-color="#526b7e"/></linearGradient></defs>
+  <path d="M8 49V15L20 8L32 26L44 8L56 15V49L44 56V29L32 46L20 29V56L8 49Z" fill="url(#silver)"/>
+  <path d="M8 15L20 8V29L8 49V15Z" fill="#e4f2fb"/>
+  <path d="M44 8L56 15L44 29V8Z" fill="#fff"/>
+  <path d="M32 26L44 8V29L32 46V26Z" fill="#87a6bc"/>
+  <path d="M20 8L32 26V46L20 29V8Z" fill="#c6dce9"/>
+  <path d="M44 29L56 15V49L44 56V29Z" fill="#668398"/>
+  <path d="M8 15L20 8L32 26L44 8L56 15" stroke="#f2faff" stroke-opacity=".6"/>
+</svg>

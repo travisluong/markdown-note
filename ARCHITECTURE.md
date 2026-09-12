@@ -192,6 +192,13 @@ semantic edit/save/search queries instead of repurposing a command's predicate.
 
 ## Verification without desktop interaction
 
+Application branding is owned by [`assets/brand/README.md`](assets/brand/README.md)
+and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
+marketing site's exact SVG mark. `build.rs` embeds Windows icon resource 1;
+release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
+launcher identity matches `WindowOptions::app_id` (`org.mithril.Mithril`).
+These shell icons are independent of the icon-free Windows title bar.
+
 Windows distribution is owned by
 [`packaging/windows/mithril.iss`](packaging/windows/mithril.iss) and the
 [`build.yml`](.github/workflows/build.yml) release workflow. The installer owns

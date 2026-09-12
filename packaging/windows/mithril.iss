@@ -26,6 +26,7 @@ MinVersion=10.0
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 WizardStyle=modern
+SetupIconFile=..\..\assets\brand\mithril.ico
 OutputDir={#OutputDir}
 OutputBaseFilename=mithril-{#AppVersion}-windows-x86_64-setup
 Compression=lzma2

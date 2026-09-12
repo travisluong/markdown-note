@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Mithril
+Comment=Markdown notes
+Exec=mithril
+Icon=org.mithril.Mithril
+Terminal=false
+Categories=Office;TextEditor;
+StartupWMClass=org.mithril.Mithril
