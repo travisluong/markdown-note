@@ -39,7 +39,7 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       BUILD_TARGET: ${{ matrix.target }}
-      ARCHIVE_NAME: gpui-note-${{ matrix.platform }}
+      ARCHIVE_NAME: mithril-${{ matrix.platform }}
 
     steps:
       - name: Check out source and vendored components
@@ -74,21 +74,21 @@ jobs:
           rustc +stable --version
 
       - name: Build release executable
-        run: cargo +stable build --release --locked --target "$BUILD_TARGET" --bin gpui-note
+        run: cargo +stable build --release --locked --target "$BUILD_TARGET" --bin mithril
 
       - name: Package macOS application
         if: runner.os == 'macOS'
         run: |
-          APP_BUNDLE="target/$BUILD_TARGET/release/GPUI Note.app"
+          APP_BUNDLE="target/$BUILD_TARGET/release/Mithril.app"
           mkdir -p "$APP_BUNDLE/Contents/MacOS" dist
-          cp "target/$BUILD_TARGET/release/gpui-note" "$APP_BUNDLE/Contents/MacOS/gpui-note"
-          chmod 755 "$APP_BUNDLE/Contents/MacOS/gpui-note"
+          cp "target/$BUILD_TARGET/release/mithril" "$APP_BUNDLE/Contents/MacOS/mithril"
+          chmod 755 "$APP_BUNDLE/Contents/MacOS/mithril"
           cp packaging/macos/Info.plist "$APP_BUNDLE/Contents/Info.plist"
-          APP_VERSION=$(cargo +stable metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "gpui-note"))')
+          APP_VERSION=$(cargo +stable metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "mithril"))')
           plutil -insert CFBundleShortVersionString -string "$APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
           plutil -insert CFBundleVersion -string "$APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
           plutil -lint "$APP_BUNDLE/Contents/Info.plist"
-          test -x "$APP_BUNDLE/Contents/MacOS/gpui-note"
+          test -x "$APP_BUNDLE/Contents/MacOS/mithril"
           # Preserve the bundle directory and executable permissions in a Finder-friendly ZIP.
           ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "dist/$ARCHIVE_NAME.zip"
 
@@ -97,14 +97,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          tar -czf "dist/$ARCHIVE_NAME.tar.gz" -C "target/$BUILD_TARGET/release" gpui-note
+          tar -czf "dist/$ARCHIVE_NAME.tar.gz" -C "target/$BUILD_TARGET/release" mithril
 
       - name: Package Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -LiteralPath "target/$env:BUILD_TARGET/release/gpui-note.exe" -DestinationPath "dist/$env:ARCHIVE_NAME.zip"
+          Compress-Archive -LiteralPath "target/$env:BUILD_TARGET/release/mithril.exe" -DestinationPath "dist/$env:ARCHIVE_NAME.zip"
 
       - name: Build Windows installer
         if: runner.os == 'Windows'
@@ -112,21 +112,21 @@ jobs:
         run: |
           $metadata = cargo +stable metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo package metadata' }
-          $version = ($metadata.packages | Where-Object name -eq 'gpui-note').version
-          if (-not $version) { throw 'Missing gpui-note package version' }
+          $version = ($metadata.packages | Where-Object name -eq 'mithril').version
+          if (-not $version) { throw 'Missing mithril package version' }
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup 6 compiler is missing from the runner' }
           $sourceDir = (Resolve-Path "target/$env:BUILD_TARGET/release").Path
           $outputDir = (Resolve-Path dist).Path
-          & $compiler "/DAppVersion=$version" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/gpui-note.iss
+          & $compiler "/DAppVersion=$version" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/mithril.iss
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
-          $installer = Join-Path $outputDir "gpui-note-$version-windows-x86_64-setup.exe"
+          $installer = Join-Path $outputDir "mithril-$version-windows-x86_64-setup.exe"
           if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer output is missing' }
 
       - name: Upload build
         uses: actions/upload-artifact@v7
         with:
-          name: gpui-note-${{ matrix.platform }}
+          name: mithril-${{ matrix.platform }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14
@@ -143,7 +143,7 @@ jobs:
       - name: Download packaged builds
         uses: actions/download-artifact@v8
         with:
-          pattern: gpui-note-*
+          pattern: mithril-*
           merge-multiple: true
           path: dist
 

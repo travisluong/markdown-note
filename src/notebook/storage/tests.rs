@@ -22,14 +22,14 @@ fn platform_paths_do_not_require_windows_environment_on_unix() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     for (os, variable, suffix) in [
-        ("windows", "APPDATA", "gpui-note/notebooks.json"),
+        ("windows", "APPDATA", "mithril/notebooks.json"),
         (
             "macos",
             "HOME",
-            "Library/Application Support/gpui-note/notebooks.json",
+            "Library/Application Support/mithril/notebooks.json",
         ),
-        ("linux", "HOME", ".config/gpui-note/notebooks.json"),
-        ("linux", "XDG_CONFIG_HOME", "gpui-note/notebooks.json"),
+        ("linux", "HOME", ".config/mithril/notebooks.json"),
+        ("linux", "XDG_CONFIG_HOME", "mithril/notebooks.json"),
     ] {
         let path = index_path_for(os, |key| {
             (key == variable).then(|| root.as_os_str().to_owned())
@@ -60,7 +60,7 @@ fn xdg_override_must_be_absolute_and_takes_precedence() {
         } else {
             home.join(".config")
         };
-        assert_eq!(path, base.join("gpui-note/notebooks.json"));
+        assert_eq!(path, base.join("mithril/notebooks.json"));
     }
     for os in ["windows", "macos", "linux"] {
         assert!(index_path_for(os, |_| None).is_err());
@@ -335,7 +335,7 @@ fn directory_listing_and_safe_paths() {
     );
     assert!(read_directory(temp.path(), Path::new("missing")).is_err());
     assert!(resolve(temp.path(), Path::new("../outside.md")).is_err());
-    assert!(resolve(temp.path(), Path::new(".gpui-note/settings.json")).is_err());
+    assert!(resolve(temp.path(), Path::new(".mithril/settings.json")).is_err());
     assert!(markdown(Path::new("A.MD")));
     assert!(!markdown(Path::new("b.txt")));
 }

@@ -242,7 +242,7 @@ impl Notes {
                 }
             } else {
                 body = body
-                    .child("GPUI Note")
+                    .child("Mithril")
                     .child(format!("Version {}", env!("CARGO_PKG_VERSION")))
                     .child("A Markdown notebook built with GPUI. More information coming soon.");
             }
@@ -252,7 +252,7 @@ impl Notes {
                 .title(if shortcuts {
                     "Keyboard shortcuts"
                 } else {
-                    "About GPUI Note"
+                    "About Mithril"
                 })
                 .w(px(700.).min(window.viewport_size().width - px(32.)))
                 .max_h((window.viewport_size().height - px(80.)).max(px(120.)))

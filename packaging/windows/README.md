@@ -1,24 +1,24 @@
 # Windows installer
 
-`gpui-note.iss` packages the Windows x86-64 executable with Inno Setup 6.3 or
+`mithril.iss` packages the Windows x86-64 executable with Inno Setup 6.3 or
 newer. GitHub's `windows-2022` runner includes Inno Setup 6. The release workflow
 compiles this script, retains the portable ZIP, and attaches the downloads to a
 published GitHub Release. A manual workflow run only uploads Actions artifacts.
 
 ## Installation contract
 
-- One per-user installation at `%LOCALAPPDATA%\Programs\GPUI Note` by default;
+- One per-user installation at `%LOCALAPPDATA%\Programs\Mithril` by default;
   no elevation, machine-wide registry changes, file associations or PATH edits.
 - A Start menu shortcut, an optional unchecked desktop shortcut, and an Installed
   apps entry with version, publisher, support link and uninstaller.
 - Keep `AppId` stable across releases. Inno Setup reuses the previous install
   directory and uninstall entry. `AppVersion` comes from `Cargo.toml` package
   metadata; bump it for a new release. Running an older installer is not blocked.
-- The payload is explicitly limited to `gpui-note.exe`. There are no wildcard
-  deletion rules. Notebooks and `%APPDATA%\gpui-note` preferences remain outside
+- The payload is explicitly limited to `mithril.exe`. There are no wildcard
+  deletion rules. Notebooks and `%APPDATA%\mithril` preferences remain outside
   installer ownership, including on uninstall. Keep notes outside the install
   directory.
-- Save and close GPUI Note before upgrading or uninstalling. The installer does
+- Save and close Mithril before upgrading or uninstalling. The installer does
   not ask Windows Restart Manager to close or restart the editor. Windows may
   require a restart if files are still locked.
 - Launch on completion is skipped during silent installation. Automatic updates
@@ -36,19 +36,19 @@ commands. Output stays under ignored `target/`.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-cargo build --release --locked --bin gpui-note
+cargo build --release --locked --bin mithril
 if ($LASTEXITCODE -ne 0) { throw 'Application build failed' }
 $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed' }
-$version = ($metadata.packages | Where-Object name -eq 'gpui-note').version
+$version = ($metadata.packages | Where-Object name -eq 'mithril').version
 $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
 $sourceDir = (Resolve-Path target/release).Path
 $outputDir = Join-Path (Get-Location) 'target/installer'
-& $compiler "/DAppVersion=$version" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/gpui-note.iss
+& $compiler "/DAppVersion=$version" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/mithril.iss
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
 ```
 
-The result is `target/installer/gpui-note-<version>-windows-x86_64-setup.exe`.
+The result is `target/installer/mithril-<version>-windows-x86_64-setup.exe`.
 CI uses the explicit MSVC target's release directory instead, and writes to
 `dist/`. Only the publish job has `contents: write`; compilation jobs stay
 read-only. Release tags enter the upload command through an environment variable.

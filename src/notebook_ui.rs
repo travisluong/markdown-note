@@ -1,6 +1,6 @@
 use super::*;
 use gpui_component::{Disableable, dialog::Dialog, menu::PopupMenuItem};
-use gpui_note::explorer::Explorer;
+use mithril::explorer::Explorer;
 #[cfg(test)]
 use std::time::Duration;
 

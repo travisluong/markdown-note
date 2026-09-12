@@ -6,7 +6,7 @@ use gpui_component::{
     input::{InputEvent, InputState},
     select::{SearchableVec, SelectEvent, SelectState},
 };
-use gpui_note::{notebook, templates};
+use mithril::{notebook, templates};
 
 mod render;
 #[cfg(test)]

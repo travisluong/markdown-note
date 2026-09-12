@@ -9,7 +9,7 @@ use gpui_component::{
     select::Select,
     switch::Switch,
 };
-use gpui_note::{notebook, templates};
+use mithril::{notebook, templates};
 
 impl Render for SettingsPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

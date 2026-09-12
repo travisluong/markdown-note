@@ -257,14 +257,14 @@ fn ranking() {
 #[test]
 fn recursive_duplicates_and_settings() {
     let temp = tempfile::tempdir().unwrap();
-    for folder in ["a/deep", "b", ".gpui-note"] {
+    for folder in ["a/deep", "b", ".mithril"] {
         fs::create_dir_all(temp.path().join(folder)).unwrap();
     }
     for file in [
         "a/deep/Note.md",
         "b/Note.md",
         "b/ignore.txt",
-        ".gpui-note/private.md",
+        ".mithril/private.md",
     ] {
         fs::write(temp.path().join(file), "").unwrap();
     }

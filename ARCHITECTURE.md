@@ -7,7 +7,7 @@ records verification and platform limits. Update this map when a contract moves.
 
 ## System shape
 
-GPUI Note is a single-window Markdown application with one active document,
+Mithril is a single-window Markdown application with one active document,
 image, or empty view. Ordinary files hold notes, a per-user index lists notebooks,
 and each notebook has JSON preferences. Source and Live preview share one editor
 and undo history. Reading is derived from that editor's source.
@@ -97,6 +97,12 @@ operation, including unchanged re-selection; untouched loaded settings survive.
 Removing an inactive notebook is an index edit and does not navigate or save the
 active document.
 
+Mithril stores each notebook's preferences in `.mithril/settings.json` and the
+per-user notebook index under the platform configuration directory's `mithril`
+folder. The explorer, search and path guards exclude `.mithril`. Earlier storage
+directory names are not automatically migrated; preserve settings by renaming
+those directories before opening existing notebooks with Mithril.
+
 ## Snapshot and coordinate rules
 
 - Markdown source is authoritative. Source/Live copy source selections; Reading
@@ -181,7 +187,7 @@ semantic edit/save/search queries instead of repurposing a command's predicate.
 ## Verification without desktop interaction
 
 Windows distribution is owned by
-[`packaging/windows/gpui-note.iss`](packaging/windows/gpui-note.iss) and the
+[`packaging/windows/mithril.iss`](packaging/windows/mithril.iss) and the
 [`build.yml`](.github/workflows/build.yml) release workflow. The installer owns
 only app binaries, shortcuts and its per-user uninstall registration; notebook
 files and preferences remain application/user-owned. Keep its AppId stable for
@@ -209,7 +215,7 @@ integration tests. Some tests include vendor source through `#[path]`, so root
 format/lint checks can report those files.
 
 GPUI tests use TestPlatform, not native desktop windows. Agents must not launch
-`GPUI_NOTE_BENCH`, `GPUI_NOTE_NOTEBOOK_CHECK`, `GPUI_NOTE_AUTOSAVE_CHECK` or other
+`MITHRIL_BENCH`, `MITHRIL_NOTEBOOK_CHECK`, `MITHRIL_AUTOSAVE_CHECK` or other
 native application harnesses, even hidden. Leave physical input, native pickers,
 rendered benchmarks and platform UI validation to the user. Historical results
 in [benchmarks/README.md](benchmarks/README.md) are not current verification.

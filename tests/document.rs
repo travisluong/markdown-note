@@ -1,5 +1,5 @@
 //! Exercise the storage API through the library, without importing the app root.
-use gpui_note::document::{self, Newline, TextFormat};
+use mithril::document::{self, Newline, TextFormat};
 use std::{fs, io};
 
 #[test]

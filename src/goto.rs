@@ -12,8 +12,8 @@ use gpui_component::{
     input::{Input, InputEvent, InputState},
 };
 #[cfg(feature = "editor-diagnostics")]
-use gpui_note::ViewMode;
-use gpui_note::{
+use mithril::ViewMode;
+use mithril::{
     commands::{Command, PaletteEntry, PaletteModel, discover},
     notebook, templates,
 };

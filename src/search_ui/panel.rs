@@ -12,7 +12,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState, Rope},
 };
-use gpui_note::search;
+use mithril::search;
 use std::{
     collections::{BTreeSet, VecDeque},
     path::{Path, PathBuf},

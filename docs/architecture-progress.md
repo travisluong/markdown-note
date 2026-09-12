@@ -294,7 +294,7 @@ was pushed and no native application or desktop automation was launched.
 
 ## Windows installer — 2026-09-12
 
-Added `packaging/windows/gpui-note.iss` for per-user Windows installation, Start
+Added `packaging/windows/mithril.iss` for per-user Windows installation, Start
 menu and optional desktop shortcuts, and Installed apps registration/uninstall.
 The stable AppId lets newer installers reuse the existing installation. Installer
 ownership excludes notebook files and application preferences. Automatic editor
@@ -307,10 +307,10 @@ only. No release was created or uploaded during local verification.
 
 Validation on Windows/MSVC with the pinned Rust 1.98.1:
 
-- `cargo build --release --locked --offline --bin gpui-note`: passed.
+- `cargo build --release --locked --offline --bin mithril`: passed.
 - Inno Setup 6.7.3 compiled the actual script with the freshly built executable:
   passed. Local output is
-  `target/installer/gpui-note-0.1.0-windows-x86_64-setup.exe` (9,275,958 bytes).
+  `target/installer/mithril-0.1.0-windows-x86_64-setup.exe` (9,275,958 bytes).
 - Installer PE product version and publisher match the package/configuration.
 - actionlint 1.7.12 on `.github/workflows/build.yml`: passed.
 - PowerShell AST parsing of the installer workflow step: passed.
@@ -319,8 +319,42 @@ Validation on Windows/MSVC with the pinned Rust 1.98.1:
 The existing `proc-macro-error2` future-compatibility notice remains. No Rust
 source changed, so the application test suites were not repeated for packaging.
 The compiler was prepared in silent portable mode under ignored `target/`;
-neither GPUI Note nor its installer was launched. Native install, upgrade,
+neither Mithril nor its installer was launched. Native install, upgrade,
 file-in-use, uninstall and shortcut behavior remain manual verification in a
 clean Windows account or VM, as listed in `packaging/windows/README.md`.
 GitHub Actions execution/upload was not tested locally. App and installer remain
 unsigned; automatic updates and custom Windows icon branding are not included.
+
+## Mithril rename — 2026-09-12
+
+Renamed the Rust package/library/executable, app titles and Help, diagnostic
+variables, notebook metadata and user configuration paths, macOS bundle,
+Windows installer script and shortcuts, release artifacts, repository links,
+and documentation to Mithril. The Windows installer AppId remains stable.
+Earlier entries above use the current names; the checks below verify this rename.
+
+Preferences now live in `.mithril/settings.json` and the platform configuration
+folder's `mithril/notebooks.json`. Existing installations must rename their
+previous settings directories before opening notebooks; README documents this
+step. On this workstation, the two registered notebooks and user configuration
+were renamed with SHA-256 verification that every existing settings file stayed
+unchanged. No note contents were changed.
+
+Verification on Windows/MSVC with pinned Rust 1.98.1:
+
+- `cargo check --locked --offline`: passed.
+- `cargo test --locked --offline --features editor-diagnostics`: 301 passed.
+- `cargo fmt --check`: passed.
+- `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`: passed.
+- `cargo build --release --locked --offline --bin mithril`: passed.
+- Inno Setup 6.7.3 compiled `packaging/windows/mithril.iss` with the renamed
+  release executable into `target/installer/mithril-0.1.0-windows-x86_64-setup.exe`.
+- actionlint on `.github/workflows/build.yml`, macOS plist XML parsing, and
+  `git diff --check`: passed.
+- Tracked source/content inspection found no previous project-name references.
+
+The existing `proc-macro-error2` future-compatibility notice remains. No desktop
+application or installer was launched. Native installation/upgrade behavior and
+other platform builds remain manual/CI validation. The GitHub repository was
+renamed to `travisluong/mithril`, its repository identity was verified, and the
+local origin was updated. Source changes were not pushed.

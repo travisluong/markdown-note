@@ -2412,7 +2412,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-note"
+name = "mithril"
 version = "0.1.0"
 dependencies = [
  "chrono",

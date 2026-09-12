@@ -247,8 +247,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(dir.path()).unwrap();
         fs::create_dir(root.join("nested")).unwrap();
-        fs::create_dir(root.join(".gpui-note")).unwrap();
-        fs::write(root.join(".gpui-note/hidden.md"), "hit").unwrap();
+        fs::create_dir(root.join(".mithril")).unwrap();
+        fs::write(root.join(".mithril/hidden.md"), "hit").unwrap();
         fs::write(root.join("other.txt"), "hit").unwrap();
         fs::write(root.join("bad.md"), [255]).unwrap();
         fs::write(root.join("nested/a.MD"), "\u{feff}first\r\nhit\rhit").unwrap();

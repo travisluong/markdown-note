@@ -5,15 +5,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>GPUI Note</string>
+    <string>Mithril</string>
     <key>CFBundleExecutable</key>
-    <string>gpui-note</string>
+    <string>mithril</string>
     <key>CFBundleIdentifier</key>
-    <string>org.gpui-note.GPUINote</string>
+    <string>org.mithril.Mithril</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>GPUI Note</string>
+    <string>Mithril</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>NSHighResolutionCapable</key>

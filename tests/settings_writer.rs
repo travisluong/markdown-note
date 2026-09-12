@@ -2,7 +2,7 @@
 
 use std::{fs, io, path::PathBuf};
 
-use gpui_note::notebook::{
+use mithril::notebook::{
     FlushStatus, Index, Notebook, Settings, SettingsWriter, WriteJob, load_index, save_book,
     save_index, settings_path,
 };

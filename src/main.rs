@@ -34,8 +34,8 @@ use gpui_component::{
     menu::PopupMenu,
     text::TextView,
 };
-use gpui_note::editor::{Editor, Event as EditorEvent};
-use gpui_note::{ViewMode, document, notebook, search, templates};
+use mithril::editor::{Editor, Event as EditorEvent};
+use mithril::{ViewMode, document, notebook, search, templates};
 
 actions!(
     notes,
@@ -254,9 +254,9 @@ impl Notes {
             .or(self.image_path())
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "GPUI Note".into());
+            .unwrap_or_else(|| "Mithril".into());
         window.set_window_title(&format!(
-            "{}{} — GPUI Note",
+            "{}{} — Mithril",
             if self.dirty_cached { "* " } else { "" },
             name
         ));
@@ -274,8 +274,8 @@ impl Notes {
         }
     }
 
-    fn capabilities(&self) -> gpui_note::capabilities::Capabilities {
-        gpui_note::capabilities::Capabilities {
+    fn capabilities(&self) -> mithril::capabilities::Capabilities {
+        mithril::capabilities::Capabilities {
             has_document: self.document().is_some(),
             mode: self.mode,
             busy: self.is_busy(),
@@ -685,7 +685,7 @@ impl Render for NotesWindow {
 fn main() {
     #[cfg(feature = "editor-diagnostics")]
     if let Some(output) =
-        std::env::var_os("GPUI_NOTE_BENCH").or_else(|| std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK"))
+        std::env::var_os("MITHRIL_BENCH").or_else(|| std::env::var_os("MITHRIL_NOTEBOOK_CHECK"))
     {
         let output = PathBuf::from(output);
         let _ = fs::write(
@@ -717,7 +717,7 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_min_size: Some(size(px(400.), px(300.))),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("GPUI Note".into()),
+                        title: Some("Mithril".into()),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -726,25 +726,25 @@ fn main() {
                     let notes = cx.new(|cx| Notes::new(window, cx));
                     notes.update(cx, |this, cx| this.apply_appearance(window, cx));
                     let diagnostic_run = cfg!(feature = "editor-diagnostics")
-                        && (std::env::var_os("GPUI_NOTE_BENCH").is_some()
-                            || std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK").is_some()
-                            || std::env::var_os("GPUI_NOTE_AUTOSAVE_CHECK").is_some());
+                        && (std::env::var_os("MITHRIL_BENCH").is_some()
+                            || std::env::var_os("MITHRIL_NOTEBOOK_CHECK").is_some()
+                            || std::env::var_os("MITHRIL_AUTOSAVE_CHECK").is_some());
                     if !diagnostic_run {
                         notes.update(cx, |this, cx| this.restore_notebooks(window, cx));
                     }
                     #[cfg(feature = "editor-diagnostics")]
-                    if let Some(output) = std::env::var_os("GPUI_NOTE_BENCH") {
+                    if let Some(output) = std::env::var_os("MITHRIL_BENCH") {
                         let notes = notes.clone();
                         window.on_next_frame(move |window, cx| {
                             benchmark::start(&notes, output.into(), window, cx)
                         });
                     }
                     #[cfg(feature = "editor-diagnostics")]
-                    if let Some(output) = std::env::var_os("GPUI_NOTE_NOTEBOOK_CHECK") {
+                    if let Some(output) = std::env::var_os("MITHRIL_NOTEBOOK_CHECK") {
                         notebook_ui::diagnostics::start(notes.clone(), output.into(), window, cx);
                     }
                     #[cfg(feature = "editor-diagnostics")]
-                    if let Some(output) = std::env::var_os("GPUI_NOTE_AUTOSAVE_CHECK") {
+                    if let Some(output) = std::env::var_os("MITHRIL_AUTOSAVE_CHECK") {
                         autosave::diagnostics::start(notes.clone(), output.into(), window, cx);
                     }
                     let view = cx.new(|cx| NotesWindow {
@@ -754,7 +754,7 @@ fn main() {
                     cx.new(|cx| Root::new(view, window, cx))
                 },
             )
-            .expect("Could not create the GPUI Note window");
+            .expect("Could not create the Mithril window");
             cx.activate(true);
         });
 }

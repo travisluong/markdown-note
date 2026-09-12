@@ -1,4 +1,4 @@
-use gpui_note::document::{self, Conflict, SaveError};
+use mithril::document::{self, Conflict, SaveError};
 use std::{fs, io, io::Write};
 
 fn fixture(bytes: &[u8]) -> (tempfile::TempDir, document::LoadedDocument) {

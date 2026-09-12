@@ -1,4 +1,4 @@
-# GPUI Note
+# Mithril
 
 A desktop Markdown notebook built with GPUI, with Windows as the primary
 platform. One window shows one note or image at a time. Notes are ordinary UTF-8
@@ -23,15 +23,15 @@ manually from **Actions**. Ordinary pushes, tag pushes and pull requests do not
 generate its release artifacts. A published release's tag must contain the
 workflow; manual **Run workflow** becomes available when it is on the default branch.
 
-For Windows, open [Releases](https://github.com/travisluong/gpui-note/releases)
-and download `gpui-note-<version>-windows-x86_64-setup.exe` under **Assets** once
+For Windows, open [Releases](https://github.com/travisluong/mithril/releases)
+and download `mithril-<version>-windows-x86_64-setup.exe` under **Assets** once
 the build finishes. Run it and choose **Install**. It installs for your Windows
-account without requiring administrator privileges, adds GPUI Note to the Start
+account without requiring administrator privileges, adds Mithril to the Start
 menu and **Settings → Apps → Installed apps**, and offers an optional desktop
 shortcut and launch on completion. The default location is
-`%LOCALAPPDATA%\Programs\GPUI Note`.
+`%LOCALAPPDATA%\Programs\Mithril`.
 
-To upgrade, save your notes, close GPUI Note, and run the newer installer.
+To upgrade, save your notes, close Mithril, and run the newer installer.
 Uninstall through Installed apps; your notebooks and preferences are retained.
 The app and installer are currently unsigned, so Windows may display a
 SmartScreen warning. Automatic updates are not included yet.
@@ -43,14 +43,14 @@ artifact ZIP first; the Windows installer inside can then be run directly:
 
 | Artifact | Contents |
 | --- | --- |
-| `gpui-note-windows-x86_64` | Setup EXE plus a portable ZIP containing `gpui-note.exe` |
-| `gpui-note-linux-x86_64` | tar.gz containing `gpui-note` |
-| `gpui-note-macos-apple-silicon` | ZIP containing `GPUI Note.app` for M-series Macs |
-| `gpui-note-macos-intel` | ZIP containing `GPUI Note.app` for Intel Macs |
+| `mithril-windows-x86_64` | Setup EXE plus a portable ZIP containing `mithril.exe` |
+| `mithril-linux-x86_64` | tar.gz containing `mithril` |
+| `mithril-macos-apple-silicon` | ZIP containing `Mithril.app` for M-series Macs |
+| `mithril-macos-intel` | ZIP containing `Mithril.app` for Intel Macs |
 
-For the portable Windows build, extract its ZIP and run `gpui-note.exe`.
-On Linux, extract the tar.gz and run `./gpui-note` from a terminal.
-On macOS, extract `GPUI Note.app`, move it to Applications if desired, and open it
+For the portable Windows build, extract its ZIP and run `mithril.exe`.
+On Linux, extract the tar.gz and run `./mithril` from a terminal.
+On macOS, extract `Mithril.app`, move it to Applications if desired, and open it
 from Finder or the Dock; Terminal is not needed. The app is not Developer
 ID-signed or notarized. If macOS blocks the first launch, follow
 [Apple's instructions to open an app from an unknown developer](https://support.apple.com/guide/mac-help/mh40616/mac)
@@ -277,7 +277,7 @@ Search refreshes after edits to the open note, discarding unsaved search content
 when navigating away, or changes to the query or case option. To pick up external
 file changes, change the query or toggle Match case.
 Scans run in the background and superseded queries are cancelled. Filesystem
-links and `.gpui-note` are excluded. Results are capped at 2,000 matches; files
+links and `.mithril` are excluded. Results are capped at 2,000 matches; files
 over 8 MiB and unreadable/non-UTF-8 files are skipped with a visible count.
 Changed matches are rechecked against the loaded text before navigation.
 
@@ -356,7 +356,7 @@ and Windows named streams, is not copied by the replacement policy. The Markdown
 file picker shows all files and rejects unsupported extensions. See the
 [storage contract](docs/document-storage.md) for conflict checks and their limits.
 
-Each notebook keeps settings in `.gpui-note/settings.json`, including appearance,
+Each notebook keeps settings in `.mithril/settings.json`, including appearance,
 autosave, view mode, sidebar options, the last selected file and expanded folders.
 File/folder paths there are notebook-relative; the internal directory is hidden
 from Explorer. The user configuration stores registered notebook paths and the
@@ -364,9 +364,16 @@ active notebook so they can be restored at startup:
 
 | Platform | User configuration |
 | --- | --- |
-| Windows | `%APPDATA%\gpui-note\notebooks.json` |
-| macOS | `~/Library/Application Support/gpui-note/notebooks.json` |
-| Linux | `$XDG_CONFIG_HOME/gpui-note/notebooks.json`, falling back to `~/.config/gpui-note/notebooks.json` if XDG_CONFIG_HOME is unset or not absolute |
+| Windows | `%APPDATA%\mithril\notebooks.json` |
+| macOS | `~/Library/Application Support/mithril/notebooks.json` |
+| Linux | `$XDG_CONFIG_HOME/mithril/notebooks.json`, falling back to `~/.config/mithril/notebooks.json` if XDG_CONFIG_HOME is unset or not absolute |
+
+If you used a build from before the Mithril rename, close the app and rename
+the previous notebook metadata folder to `.mithril` in each notebook. Rename
+the previous app folder in your platform's user configuration directory to
+`mithril` as well. Keep the JSON files unchanged; existing settings are not
+automatically migrated. If a destination already exists, back up both folders
+before reconciling them.
 
 Settings use atomic file replacements. There is no Save As, file watcher,
 multiple-document tab interface or database.
@@ -395,14 +402,14 @@ fixtures and an isolated notebook index:
 
 ```powershell
 cargo build --locked --features editor-diagnostics
-$env:GPUI_NOTE_NOTEBOOK_CHECK = Join-Path (Get-Location) 'target/notebook-smoke.txt'
-& ./target/debug/gpui-note.exe
-Remove-Item Env:GPUI_NOTE_NOTEBOOK_CHECK
+$env:MITHRIL_NOTEBOOK_CHECK = Join-Path (Get-Location) 'target/notebook-smoke.txt'
+& ./target/debug/mithril.exe
+Remove-Item Env:MITHRIL_NOTEBOOK_CHECK
 Get-Content target/notebook-smoke.txt
 ```
 
 It exits automatically and writes a result, progress file or panic report.
-`GPUI_NOTE_AUTOSAVE_CHECK` selects a separate disposable-fixture diagnostic for
+`MITHRIL_AUTOSAVE_CHECK` selects a separate disposable-fixture diagnostic for
 timers, save races, failure recovery, task autosave and settings validation.
 [Performance validation](benchmarks/README.md) documents the user-run release
 benchmark, fixtures, hardware, historical measurements, limitations and commands.
