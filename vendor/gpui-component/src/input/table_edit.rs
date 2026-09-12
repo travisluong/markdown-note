@@ -275,7 +275,12 @@ impl InputState {
 #[cfg(feature = "editor-diagnostics")]
 impl InputState {
     #[doc(hidden)]
-    pub fn diagnostic_table_checks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn diagnostic_table_checks(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        mut progress: impl FnMut(Command),
+    ) {
         use super::super::input::{Redo, Undo};
         use super::table::Alignment;
         use gpui::EntityInputHandler as _;
@@ -294,12 +299,7 @@ impl InputState {
             Command::Align(Alignment::Right),
             Command::DeleteTable,
         ] {
-            if let Some(path) = std::env::var_os("GPUI_NOTE_BENCH") {
-                let _ = std::fs::write(
-                    std::path::PathBuf::from(path).with_extension("progress.txt"),
-                    format!("table command {command:?}"),
-                );
-            }
+            progress(command);
             self.set_value(original, window, cx);
             self.diagnostic_settle_preview();
             self.history.clear();

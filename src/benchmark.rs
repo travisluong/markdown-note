@@ -28,7 +28,12 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
             "checking table behavior",
         )
         .unwrap();
-        editor.diagnostic_table_checks(window, cx);
+        editor.diagnostic_table_checks(window, cx, |command| {
+            let _ = fs::write(
+                output.with_extension("progress.txt"),
+                format!("table command {command:?}"),
+            );
+        });
         fs::write(
             output.with_extension("progress.txt"),
             "table behavior passed",
