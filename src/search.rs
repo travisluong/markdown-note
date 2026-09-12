@@ -1,5 +1,6 @@
 use super::*;
 use std::{
+    borrow::Cow,
     io::Read,
     ops::Range,
     sync::atomic::{AtomicBool, Ordering},
@@ -33,6 +34,14 @@ pub struct Results {
     pub limited: bool,
 }
 
+fn matching_text(text: &str, case_sensitive: bool) -> Cow<'_, str> {
+    if case_sensitive {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(text.to_ascii_lowercase())
+    }
+}
+
 // ASCII folding preserves byte offsets, matching the editor's Ctrl+F semantics.
 pub fn ranges(text: &str, query: &str, case_sensitive: bool) -> Vec<Range<usize>> {
     find_ranges(text, query, case_sensitive, MAX_RESULTS + 1)
@@ -48,16 +57,9 @@ pub fn find_ranges(
     if query.is_empty() {
         return Vec::new();
     }
-    let folded;
-    let needle;
-    let (text, query) = if case_sensitive {
-        (text, query)
-    } else {
-        folded = text.to_ascii_lowercase();
-        needle = query.to_ascii_lowercase();
-        (folded.as_str(), needle.as_str())
-    };
-    text.match_indices(query)
+    let text = matching_text(text, case_sensitive);
+    let query = matching_text(query, case_sensitive);
+    text.match_indices(query.as_ref())
         .take(limit)
         .map(|(start, s)| start..start + s.len())
         .collect()
@@ -194,8 +196,16 @@ pub fn scan(
 }
 
 pub fn revalidate(text: &str, destination: &Destination) -> Option<Range<usize>> {
-    ranges(text, &destination.query, destination.case_sensitive)
-        .into_iter()
+    if destination.query.is_empty() {
+        return None;
+    }
+    let text = matching_text(text, destination.case_sensitive);
+    let query = matching_text(&destination.query, destination.case_sensitive);
+    // A changed file can add matches before the original result. Search the
+    // complete text without allocating a result list or applying the scan cap.
+    // match_indices and min_by_key retain the earlier occurrence on a tie.
+    text.match_indices(query.as_ref())
+        .map(|(start, matched)| start..start + matched.len())
         .min_by_key(|range| range.start.abs_diff(destination.hit.range.start))
 }
 
@@ -274,5 +284,79 @@ mod tests {
         };
         assert_eq!(revalidate("moved x", &dest), Some(6..7));
         assert_eq!(revalidate("gone", &dest), None);
+    }
+
+    fn destination(query: &str, case_sensitive: bool, start: usize) -> Destination {
+        Destination {
+            path: "a.md".into(),
+            hit: super::Hit {
+                relative: "a.md".into(),
+                range: start..start + query.len(),
+                line: 1,
+                before: String::new(),
+                matched: query.into(),
+                after: String::new(),
+            },
+            query: query.into(),
+            case_sensitive,
+        }
+    }
+
+    #[test]
+    fn revalidation_finds_original_match_beyond_the_notebook_cap() {
+        let original = format!("{}hit", " ".repeat(10_000));
+        let mut result = Results::default();
+        collect(&original, Path::new("a.md"), "hit", true, &mut result);
+        let destination = Destination {
+            path: "a.md".into(),
+            hit: result.hits.remove(0),
+            query: "hit".into(),
+            case_sensitive: true,
+        };
+        let prefix = "hit ".repeat(MAX_RESULTS + 2);
+        let changed = format!("{prefix}{}hit", " ".repeat(10_000 - prefix.len()));
+
+        assert_eq!(ranges(&changed, "hit", true).len(), MAX_RESULTS + 1);
+        assert_eq!(revalidate(&changed, &destination), Some(10_000..10_003));
+    }
+
+    #[test]
+    fn revalidation_selects_nearest_start_and_the_earlier_tie() {
+        let text = "hit----hit----hit";
+        for (start, expected) in [(0, 0..3), (5, 7..10), (12, 14..17), (100, 14..17)] {
+            assert_eq!(
+                revalidate(text, &destination("hit", true, start)),
+                Some(expected)
+            );
+        }
+        assert_eq!(
+            revalidate("hit---hit", &destination("hit", true, 3)),
+            Some(0..3)
+        );
+        // Literal search retains non-overlapping matches, even when a later
+        // overlapping occurrence would be nearer to the previous position.
+        assert_eq!(revalidate("aaa", &destination("aa", true, 1)), Some(0..2));
+    }
+
+    #[test]
+    fn revalidation_preserves_ascii_case_and_unicode_byte_offsets() {
+        let text = "é Foo foo FOO É";
+        assert_eq!(revalidate(text, &destination("foo", false, 3)), Some(3..6));
+        assert_eq!(revalidate(text, &destination("foo", true, 3)), Some(7..10));
+        assert_eq!(revalidate(text, &destination("FOO", true, 12)), Some(11..14));
+        assert_eq!(revalidate("é É", &destination("é", false, 3)), Some(0..2));
+        assert_eq!(revalidate("é É", &destination("É", false, 0)), Some(3..5));
+        assert_eq!(
+            revalidate("你好 你好", &destination("你好", false, 8)),
+            Some(7..13)
+        );
+    }
+
+    #[test]
+    fn revalidation_rejects_empty_and_absent_queries() {
+        assert_eq!(revalidate("anything", &destination("", false, 0)), None);
+        assert_eq!(revalidate("", &destination("", true, 0)), None);
+        assert_eq!(revalidate("", &destination("hit", false, 0)), None);
+        assert_eq!(revalidate("gone", &destination("hit", true, 0)), None);
     }
 }
