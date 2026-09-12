@@ -482,3 +482,26 @@ restrictions. The user must provision/confirm the public repository and set
 `MITHRIL_RELEASES_TOKEN` using the packaging guide before pushing a release tag.
 Native Windows installation checks remain manual. The pre-existing Cargo.lock
 changes are outside this work and remain uncommitted.
+
+## Fix the first release's Windows file-drop test fixture (2026-09-12)
+
+The first release pipeline reported a failure in
+`mixed_drops_link_files_in_place_and_roll_back_only_imported_images`. The test
+passed locally with the normal TEMP path, but failed deterministically when
+TEMP/TMP used uppercase directory names: imported files had canonical paths,
+while the nonexistent fixture note retained the temporary directory's raw
+spelling. Relative URLs consequently traversed back through the differently
+spelled ancestors instead of matching the expected short links. Windows 8.3
+temporary-directory aliases can cause the same mismatch.
+
+The fixture now creates the note and opens it through `document::open`, just
+as production does, before generating links. No production path or file-drop
+behavior changed, and all link, mixed-order and rollback assertions remain.
+
+Verification passed: all nine image-import tests with uppercase TEMP/TMP,
+`cargo test --offline --locked --features editor-diagnostics` (full suite,
+including all 111 application tests), `cargo fmt --check`, and
+`git diff --check`. The linker initially could not replace cached test
+executables inside the sandbox; the headless checks succeeded with elevated
+tool permissions. No application or installer was launched. The existing
+proc-macro-error2 future-compatibility warning remains.

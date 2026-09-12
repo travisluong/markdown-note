@@ -293,6 +293,10 @@ mod tests {
         let root = fixture.path().join("notebook");
         fs::create_dir_all(root.join("nested")).unwrap();
         let note = root.join("current.md");
+        fs::write(&note, "").unwrap();
+        // Match the opened document's canonical path: Windows TEMP may use
+        // different casing or an 8.3 alias from the canonical import paths.
+        let note = crate::document::open(&note).unwrap().path;
         let other_note = root.join("nested/other.md");
         let attachment = fixture.path().join("report.pdf");
         let image = fixture.path().join("photo.png");
