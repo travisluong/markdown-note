@@ -140,3 +140,9 @@ diagnostics-enabled application target: **106 tests**, with no failures or ignor
 tests. That target includes real TestPlatform close/input, queued save/navigation,
 tree-retarget, conflict, move, preference and search cases. This records application
 integration scope; it does not claim a new full-platform suite or native UI result.
+
+
+The completed integration subsequently passed the full Windows and Linux suites,
+301 tests on each platform, plus default builds and strict all-target lint.
+See [final verification](architecture-progress.md#final-integrated-gates) for
+counts, logs and platform limits.

@@ -1,222 +1,188 @@
 # Architecture and change guide
 
-This maps the current implementation. The baseline review is recorded in
-[the architecture audit](docs/architecture-audit.md); implementation evidence and
-remaining milestones are tracked in [architecture progress](docs/architecture-progress.md).
-Update this map when ownership, lifecycle rules, or verification commands change.
-Read [AGENTS.md](AGENTS.md) before working, especially its vendor, commit, and
-desktop-testing rules.
+Start here for current ownership and extension points. Read [AGENTS.md](AGENTS.md)
+for repository rules. [The dated audit](docs/architecture-audit.md) explains the
+original defects and plan; [implementation progress](docs/architecture-progress.md)
+records verification and platform limits. Update this map when a contract moves.
 
 ## System shape
 
-GPUI Note is a desktop Markdown application with one window and one active
-document or image. It uses ordinary files, a per-user notebook index, and
-per-notebook JSON settings. Source and Live preview share the same editor and
-undo history. Reading view is a derived rendering of that editor's current text.
+GPUI Note is a single-window Markdown application with one active document,
+image, or empty view. Ordinary files hold notes, a per-user index lists notebooks,
+and each notebook has JSON preferences. Source and Live preview share one editor
+and undo history. Reading is derived from that editor's source.
 
 ```mermaid
 flowchart TD
-    Main[main.rs: startup and NotesWindow] --> Notes[Notes: application state and coordination]
-    Views[Feature UI modules: impl Notes] --> Notes
-    Notes --> Editor[Vendored InputState: rope, selection, history]
-    Notes --> Reading[Vendored TextView: Reading rendering and source maps]
-    Notes --> Saves[autosave.rs: save scheduling and completion]
-    Saves --> FileIO[document: file decoding and atomic replacement]
-    Notes --> Notebook[notebook.rs: explicit domain facade]
-    Notes --> Search[search.rs: notebook scans and literal matching]
-    Notes --> Imports[image_import.rs: asset import transaction]
-    Search --> Notebook
-    Imports --> Notebook
-    Editor --> Preview[Preview syntax queue, indexes and viewport layout]
+    Shell[main.rs: startup, NotesWindow, wiring] --> App[Notes: GPUI coordination]
+    App --> Session[app/session.rs: pure transitions and identities]
+    App --> Effects[app/session_ui.rs and I/O adapters]
+    Effects --> Editor[editor.rs: source, selection, isolated edits, events]
+    Editor --> Vendor[vendored InputState: rope, history, Live preview]
+    Effects --> Storage[document: disk versions and guarded replacement]
+    Effects --> Notebook[notebook: settings, paths, storage, bounded writer]
+    App --> Panels[SettingsPanel, SearchPanel, palette UI]
+    App --> Explorer[Explorer: directory cache, rows, cursor]
+    Panels --> Policies[commands, capabilities, search matching and scanning]
+    App --> Reading[vendored TextView: derived Reading rendering]
 ```
 
-The library entry point in `src/lib.rs` exposes document storage, notebook
-policies and date templates without importing the application root. `ViewMode`
-is a shared persisted value in `src/view_mode.rs`. The executable keeps the
-editor and saved rope; the storage API accepts captured text and returns file
-data. Other arrows remain runtime responsibilities, not enforced layers. Eleven
-application files contain `impl Notes`; most import the executable root with
-`use super::*`. A method living in a feature file can mutate shared root state.
-Follow its callers and completions before treating a file as an isolated module.
+`src/lib.rs` exposes storage, domain policies, shared values and the thin GPUI
+editor adapter. Pure modules do not import the application root or GPUI. The
+executable owns window coordination and feature adapters. `Notes` still wires
+features through `impl Notes`; moving a method to a feature file does not grant
+it ownership of another feature's state. Cross-feature changes use the named
+owners below, with explicit snapshots or intents at their boundaries.
 
-The library also exposes the command catalogue and capability/ranking policies
-in `src/commands` and `src/capabilities.rs`. Their application adapter migration is
-tracked separately; runtime ownership below describes the committed integration.
+## Ownership map
 
-## Where responsibilities live today
-
-| Responsibility | Starting points | Important coupling |
+| Responsibility | Start here | Contract |
 | --- | --- | --- |
-| Startup, actions, document state, save prompts, root rendering | [main.rs](src/main.rs): `Notes`, `Next`, `request`, `continue_with`, `NotesWindow` | `NotesWindow` renders modal layers outside `Notes::render` to avoid recursively borrowing the entity. |
-| Encoding, disk versions and guarded note replacement | [document/mod.rs](src/document/mod.rs): `open`, `DiskVersion`; [document/storage.rs](src/document/storage.rs): `save_file`, `WriteReceipt`, `SaveError`; [storage contract](docs/document-storage.md) | Storage has no GPUI dependencies. The application `Document` retains saved text/rope and opaque disk evidence; current text belongs to `InputState`. |
-| Debounced autosave and queued foreground operations | [autosave.rs](src/autosave.rs): `SaveState`, `schedule_autosave`, `start_write`; [app/operation.rs](src/app/operation.rs): `ForegroundOperation` | Background writes own a captured document baseline. Foreground prompts, navigation and saves own explicit operation tokens; queued actions carry their waiting token. |
-| Notebook schema, path policy, tree values and filesystem operations | [notebook.rs](src/notebook.rs) re-exports [settings](src/notebook/settings.rs), [paths](src/notebook/paths.rs), [tree](src/notebook/tree.rs) and [storage](src/notebook/storage.rs) | Storage depends on schema/path/tree policies; policies have no UI dependencies. Existing `notebook::` entry points are preserved. |
-| Settings scheduling and flush policy | [notebook/writer.rs](src/notebook/writer.rs): `SettingsWriter`, `WriteJob`, `FlushBarrier`; [tests/settings_writer.rs](tests/settings_writer.rs) | One running write and one latest snapshot per destination; the index depends on its submitted book revision. One worker loop and token-owned `SettingsWaiter` drive application persistence. |
-| Notebook activation, document installation, explorer and settings flush coordination | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`, `activate_notebook`, `install_document`, `pump_settings_writer`, `resolve_settings_waiter`, `drop_entry` | Owns document replacement as well as tree presentation. Activation and close retain foreground ownership while flushing settings. |
-| Sidebar visibility and width | [sidebar_ui.rs](src/sidebar_ui.rs) | Explorer and Search share sidebar geometry and visibility. |
-| Preferences and settings controls | [settings_ui.rs](src/settings_ui.rs), [settings_ui/panel.rs](src/settings_ui/panel.rs) | The panel privately owns controls, validation and subscriptions and emits typed preference intents. The adapter applies theme and notebook/session scope; dialog lifetime gates queued events. |
-| Quick open and command palette | [goto.rs](src/goto.rs): `Command`, `discover`, `ranked_entries` | Command catalogue, filesystem discovery, dispatch, focus and rendering are together. |
-| Notebook search | [search.rs](src/search.rs), [search_ui.rs](src/search_ui.rs) | Worker scans use a captured unsaved rope overlay; panel owns cancellation, results and navigation state. |
-| Reading find | [reading_search.rs](src/reading_search.rs) | Uses source byte ranges and `TextView::source_highlights`; hidden syntax can reveal a containing block. |
-| Link editing and navigation | [links.rs](src/links.rs) | Relative note links use notebook resolution and the normal save-before-navigation path. |
-| Image viewer and dropped assets | [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Import owns rollback until insertion into the matching document snapshot succeeds. |
-| Date formats and shortcuts | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply the Help listing; preserve platform modifier handling. |
+| Startup, root rendering and action bindings | [main.rs](src/main.rs): `Notes`, `Next`, `NotesWindow` | Wire owners and dispatch actions. `NotesWindow` renders modal layers outside `Notes::render` to avoid a recursive entity borrow. |
+| Content, foreground phase, writes, autosave and continuations | [app/session.rs](src/app/session.rs): `Session`; [session contract](docs/document-session.md) | Pure private state; transitions return ordered effects. No mutable content accessor or generic begin/finish bypass. |
+| Session effects and captured I/O | [app/session_ui.rs](src/app/session_ui.rs), [autosave.rs](src/autosave.rs), [notebook_ui.rs](src/notebook_ui.rs) | Own prompts, task handles, captured data and operation-tagged barriers. They apply policy returned by Session. |
+| Current source, selection, history and source edits | [editor.rs](src/editor.rs): `Editor` | One wrapped `InputState`, no second buffer. Features use semantic snapshot/edit/task/link/find methods. |
+| Encoding and file replacement | [document/mod.rs](src/document/mod.rs), [document/storage.rs](src/document/storage.rs); [storage contract](docs/document-storage.md) | Explicit paths, captured text and opaque disk versions; receipts describe committed writes. No UI mutation. |
+| Notebook schema, paths, tree values and filesystem operations | [notebook.rs](src/notebook.rs) facade; [notebook/](src/notebook) | Storage depends on schema/path/tree policies. Preserve migration and relative-path checks. |
+| Preference write ordering and flush outcomes | [notebook/writer.rs](src/notebook/writer.rs): `SettingsWriter`; notebook UI driver | One running write and latest pending snapshot per destination. Index revisions depend on their book revision. |
+| Active notebook, index, activation and preference scope | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`; [activation_preferences.rs](src/notebook_ui/activation_preferences.rs) | Retain canonical targets and explicit preference intents under the operation token. Never restore a stale settings clone after I/O. |
+| Explorer cache, row projection and selection | [explorer.rs](src/explorer.rs): `Explorer` | Pure owner accepts settings and captured directory results. UI owns scroll/focus/workers, settings own persisted expansion and sort. |
+| Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; dialog lifetime rejects stale events. |
+| Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
+| Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies current overlay and approves navigation. |
+| Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
+| Links and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. An image import retains rollback until insertion into its captured document/source succeeds. |
+| Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
-## Document lifecycle and invariants
+## Lifecycle rules
 
-1. **Edit:** `InputState` emits `InputEvent::Change`. `Notes::subscribe_editor`
-   schedules dirty comparison, autosave and notebook search; in Reading mode it
-   also refreshes the derived text and find state. Features must use editor edit
-   APIs that participate in change events and undo, rather than replace a second
-   copy of the document.
-2. **Save:** the coordinator captures document identity, path, encoding and an
-   immutable rope snapshot. Background work converts and writes that snapshot.
-   Storage compares raw disk bytes and available file identity with the expected
-   `DiskVersion` before replacement. Success advances the saved baseline and
-   receipt version to the captured snapshot, not whatever happens to be in the
-   editor at completion. Later typing must remain dirty. A conflict retains the
-   editor and pauses autosave until an explicit successful Save or fresh install;
-   an intervening ordinary retry failure must not clear that pause.
-3. **Navigate:** `request(Next)` serializes against an active save and runs the
-   Save/Discard/Cancel decision. `continue_with` dispatches the approved action.
-   Failed loads retain the current document. Cancelled pickers, failed activation,
-   error dismissal and tree loads abandoned for the current note or a folder use
-   `resume_document` to rearm autosave for retained text.
-   Autosave debounce uses the GPUI executor timer, allowing deterministic tests.
-4. **Install:** `install_document` creates a fresh editor, replaces its
-   subscription, advances document identity, clears Reading find and resets the
-   dirty baseline. A view-mode switch keeps the existing editor. This distinction
-   prevents cross-document undo while preserving history across views.
-5. **Move:** notebook moves update paths for the open buffer and persisted
-   selection/expansion. Account for saves, image document paths and search state
-   when changing this flow. Move completion remaps paths in the current settings;
-   it must not restore a settings clone captured before asynchronous filesystem
-   work, since view preferences can change while that work runs. A moved open note
-   revalidates its saved bytes with `version_after_move` before using the new file
-   identity. A failed revalidation keeps the actual moved path and buffer but
-   pauses automatic saving. Exact path remaps must not append a separator.
-6. **Persist preferences:** one persistent `SettingsWriter` coalesces queued
-   notebook settings by destination and keeps a separate latest index with its
-   book-revision dependency. One worker drains eligible writes. Activation flushes
-   the canonical target notebook before reading it; unrelated failures remain
-   retryable. Close drains all queued destinations, refreshes its requirements
-   for late preference changes, and handles Retry, Cancel, or Close without saving
-   preferences explicitly. Cancel resumes the retained document's autosave.
-   Book and index replacements remain independently atomic, not one transaction.
-   Reloading a notebook records explicit mode, sidebar-width and notebook-scoped
-   autosave choices under the activation token and canonical root. Only those
-   fields replay into the matching loaded book, including unchanged reselection;
-   untouched externally loaded preferences retain their loaded values. Autosave
-   choices for a standalone document remain session preferences.
+The complete transition/effect rules are in the [session contract](docs/document-session.md).
+These are the invariants most likely to matter when changing a feature:
 
-Additional contracts to preserve:
+1. **Edit:** `Editor` forwards Change and OpenLink events. Change schedules the
+   dirty-display comparison, autosave and search; Reading updates its derived
+   source. `Session::edit_notice` does not compare or copy the whole source on
+   every keystroke. Actual save/navigation decisions compare an immutable rope
+   with the saved baseline, so Undo can make a document clean again.
+2. **Save:** capture document/write identities, path, format, disk version and
+   one rope. Success accepts that captured baseline exactly once, even if newer
+   edits exist or an old navigation continuation has gone away. Newer text stays
+   dirty. Disk conflicts retain editor/history and pause automatic retries until
+   successful explicit Save or fresh installation. Ordinary failures do not loop.
+3. **Navigate:** request an action through Session. It owns waiting for an active
+   write, Save/Discard/Cancel, dispatch and picker/load phases. Stale completions
+   cannot release newer ownership. Retained-content exits rearm eligible autosave;
+   error presentation must not recursively schedule another timer over the model's
+   returned ArmAutosave effect. The runtime also rejects stale timer tickets.
+4. **Install:** accepted installation replaces the editor and its subscription,
+   advances content identity, resets dirty-display work and Reading find, and
+   notifies search. Switching view modes preserves the editor and undo history.
+   Exactly one of Empty, Document or Image is active.
+5. **Move:** keep the content identity and current buffer/history; remap the
+   actual moved path and current settings after completion. Revalidate saved
+   bytes before accepting the new disk identity. Failed revalidation keeps the
+   new path but pauses automatic saving. A path-sensitive callback needs its captured path
+   guard in addition to DocumentId, since moves can preserve both that ID and source.
+6. **Activate/close:** activation flushes the canonical target's preferences
+   before loading it. Close drains all pending destinations and refreshes its
+   requirements for late edits. Retry, Cancel and explicit preference discard
+   are distinct model outcomes; discard permits failed jobs, never abandoned
+   pending jobs. StateChanged must disable editor input while close is waiting.
 
-- Original Markdown is authoritative for edits and saves. Source and Live
-  preview copy source selections; Reading copies rendered selection text.
-  Rendered glyphs are projections, including hidden syntax, checkboxes, tables,
-  fences and images.
-- Source ranges use UTF-8 byte offsets; display geometry and IME UTF-16 offsets
-  are different coordinate systems. Name conversions and validate boundaries.
-- A changed document edit after Undo abandons the old redo branch. Selection
-  changes and identical-text replacements preserve redo. Generic component
-  History has separate semantics; the editor applies its policy explicitly.
-- Background results need an identity/revision or cancellation check before
-  applying. Inspect each subsystem's actual check; they are not interchangeable.
-- Foreground operations acquire a token from the session's persistent
-  `ForegroundOperation` gate. Only a matching completion releases that token;
-  stale and duplicate completions cannot install content or unlock another
-  operation. Background autosave owns no foreground token. Successful writes
-  advance a matching document's saved baseline even when their navigation
-  continuation is obsolete. A queued save/navigation releases its waiting token
-  before dispatching the next operation. Tree arrows may retarget the current
-  load without acquiring another token.
-- Acquiring foreground ownership must notify the view so rendered controls and
-  the editor apply their disabled state. In particular, clean close disables
-  input while awaiting settings persistence; it cannot accept a new unsaved edit
-  after the close decision. `notebook_ui::close_tests` exercises the registered
-  close callback, delayed persistence, ordinary text input and final removal.
-- Live-preview parsing maintains one running job and one latest pending
-  snapshot. Safe offset edits can rebase some results; context-changing edits
-  invalidate them. Fenced-code tokens require their stricter revision checks.
-  A queued mixed request converts its rope once and builds at most one GFM
-  tree, borrowed by link/table/code/image visitors and dropped on the worker.
-  Independent guards preserve plain-text fast paths. Standalone and incremental
-  parsers remain available; no persistent AST cache replaces the existing indexes.
-- Reading `TextView` also uses one running parse and one latest pending request,
-  including initial layout. Requests are keyed by exact source and Markdown/HTML
-  type; generations reject stale successes and errors. Presentation props refresh
-  without reparsing, while a retained tree keeps its own source for callbacks.
-  Find waits for that exact tree snapshot; the existing ListState survives updates.
-- Preserve BOM and newline conventions; mixed endings normalize to the first
-  observed convention. Conflict checks do not recreate missing files or replace
-  a newly introduced link. Receipts describe the committed file handle, never
-  a reread that could adopt an external edit. The [storage contract](docs/document-storage.md)
-  defines optimistic race limits, Unix permission preservation and metadata that
-  is not copied; atomic replacement alone does not promise crash durability.
-- Notebook-relative paths pass through the notebook path helpers. Preserve
-  rejection of traversal, reserved internal paths and filesystem links. These
-  checks do not establish protection against every concurrent filesystem race.
-- Corrupt or unsupported settings are reported and preserved. Retain legacy
-  migration and each preference's scope: autosave uses session settings for an
-  open file outside the active notebook; appearance, date and sidebar preferences
-  use the active notebook whenever one exists, otherwise session settings. Do
-  not accidentally unify these different policies during extraction.
-- Notebook search intentionally preserves the result list, selection and scroll
-  when opening a result. Document installation explicitly invalidates a matching
-  discarded unsaved overlay, while clean navigation retains its search state.
-  Query matching currently folds ASCII only; revalidation scans all occurrences
-  even though notebook result collection is capped.
+Preference scope is intentional. Appearance, date and sidebar choices use the
+active notebook whenever one exists, otherwise session defaults. Autosave for a
+standalone file outside that notebook uses session settings. Same-book reloads
+replay only explicit mode, width and notebook-autosave choices made during the
+operation, including unchanged re-selection; untouched loaded settings survive.
+Removing an inactive notebook is an index edit and does not navigate or save the
+active document.
 
-## Vendored editor boundary
+## Snapshot and coordinate rules
 
-The root Cargo patch selects `vendor/gpui-component`, based on upstream 0.5.1 at
-`0f0ab35233212f8f3277028995caf0c41e13ee6c`. Its license and
-[EDITOR-PATCH.md](vendor/gpui-component/EDITOR-PATCH.md) must remain. The
-[file-level inventory](vendor/gpui-component/EDITOR-PATCH-INVENTORY.md) records
-all patches against the verified published package and their regression entry
-points. Edit this checked-in source, never Cargo's registry cache.
+- Markdown source is authoritative. Source/Live copy source selections; Reading
+  copies rendered selection text. Glyphs, hidden syntax, checkboxes and images
+  are projections, not a second editable document.
+- Edit and search ranges use **UTF-8 source bytes**. IME uses UTF-16 and layout
+  uses display coordinates. Name conversions and validate character boundaries.
+  Date/link/task edits must preserve Change events and isolated undo behavior.
+- A real edit after Undo abandons the old redo branch. Selection changes and
+  identical-text replacements preserve redo. Generic component History has a
+  separate policy; keep the editor-specific rule at the editor boundary.
+- Background work needs its owner's exact identity, snapshot or cancellation
+  check. DocumentId, operation tokens, directory generations and search query
+  cancellation have different meanings; none substitutes for all the others.
+- `Explorer` persists across notebook changes. Clear advances its generation.
+  Refresh retains visible rows/selection and completed caches, but invalidates
+  obsolete Loading markers so reopening a folder can request a current worker.
+- Search scans capture an unsaved rope overlay. Installation updates that overlay
+  even during clean navigation; explicit discarded-document signals invalidate
+  stale dirty overlays. Opening a result preserves results, selection and scroll.
+  Navigation proposals are approved in order and cannot outlive their query.
+  Matching folds ASCII only; revalidation scans all occurrences despite result caps.
+- File writes preserve BOM/newline conventions, reject missing/link/conflicting
+  targets and preserve Unix mode bits. They are optimistic guarded replacements,
+  not filesystem compare-and-swap or a complete crash-durability guarantee. See
+  the storage contract for race and metadata limits.
 
-| Concern | Vendor files under `src/` |
+## Editor and analysis boundary
+
+Production features use `Editor` rather than updating `InputState` directly.
+Its snapshot is cheap and immutable; it does not own document identity, saved
+text or another view mode. `diagnostic_input` is an explicitly documented escape
+hatch for TestPlatform and opt-in diagnostic harnesses, available so ordinary
+binary tests can compile without requiring a diagnostics feature. Do not use it
+for production feature edits. Form/search-query inputs are separate controls and
+are not document editors.
+
+The Cargo patch selects checked-in `vendor/gpui-component`, based on upstream
+0.5.1 at `0f0ab35233212f8f3277028995caf0c41e13ee6c`. Preserve its license,
+[EDITOR-PATCH.md](vendor/gpui-component/EDITOR-PATCH.md) and
+[file-level inventory](vendor/gpui-component/EDITOR-PATCH-INVENTORY.md). Never
+edit Cargo's registry cache. Before upgrading, reconcile each recorded patch
+against upstream and rerun its associated regression coverage.
+
+| Vendor concern | Starting points under `vendor/gpui-component/src/` |
 | --- | --- |
-| Editor buffer, selection, input and history integration | `input/state.rs`, `input/input.rs`, `input/element.rs`, `history.rs` |
-| Line presentation and source/display mappings | `input/live_preview.rs`, `input/text_wrapper.rs`, `input/line_index.rs`, `input/scroll.rs` |
-| Background full-document analysis and safe rebasing | `input/preview_syntax.rs`, `input/markdown_links.rs`, `input/fenced_code.rs` |
-| Table model and edit transactions | `input/table.rs`, `input/table_edit.rs` |
-| Image recognition and resource resolution | `markdown_images.rs` |
-| Reading parsing, source maps and rendering | `text/text_view.rs`, `text/source_map.rs`, `text/` |
+| Buffer, selection, input and history | `input/state.rs`, `input/input.rs`, `input/element.rs`, `history.rs` |
+| Live presentation and source/display mapping | `input/live_preview.rs`, `input/text_wrapper.rs`, `input/line_index.rs`, `input/scroll.rs` |
+| Background analysis, rebasing and work bounds | `input/preview_syntax.rs`, `input/markdown_links.rs`, `input/fenced_code.rs` |
+| Table edit transactions and image recognition | `input/table.rs`, `input/table_edit.rs`, `markdown_images.rs` |
+| Reading parsing and source maps | `text/text_view.rs`, `text/source_map.rs`, `text/` |
 
-Keep application filesystem operations, notebook preferences and system URL
-opening in the application. Editor changes should expose a narrow operation or
-event for these integrations. Some diagnostic APIs are intentionally hidden or
-feature-gated; they are not promises of upstream API compatibility.
+Live analysis keeps one running job and one latest pending snapshot. A queued
+mixed request converts its rope once and borrows one worker-local GFM tree for
+link/table/code/image visitors. Plain-text fast paths and independent incremental
+parsers remain. Safe offset edits can rebase results; context changes invalidate
+them, and fenced-code tokens have stricter revision checks.
 
-Before a vendor upgrade, inventory local modified/new files against the recorded
-upstream source, reconcile each patch area, then rerun its regression coverage.
-Do not assume a dependency upgrade preserves the custom editor behavior.
+Reading also keeps one running parse and one latest source/type request,
+including initial layout. Generations reject stale successes and errors.
+Presentation props update without reparsing, retained trees keep their own
+source for callbacks, and find waits for the exact tree snapshot. Preserve its
+ListState across updates. These changes reduce parser and queued work; headless
+tests do not establish native frame latency.
 
 ## How to extend a feature
 
-| Change | Trace and validate |
+| Change | Entry point and focused verification |
 | --- | --- |
-| Add an editor command | Start with `goto::Command` and/or `help_ui::app_shortcuts`; resolve capability and focus; call an isolated editor edit API. Verify selection direction, Unicode, one-step undo/redo and dirty/autosave events. |
-| Add a preference | Add a default/migration/normalization in `notebook/settings.rs` (`Settings` or `Appearance`); implement settings controls and session fallback; verify JSON round trips and notebook switching. |
-| Add Markdown presentation | Decide Source/Live/Reading behavior explicitly; preserve original ranges; extend analysis, layout and hit mapping where needed. Test delayed/stale results, Unicode, undo and viewport bounds. |
-| Change opening, moving or saving | Trace `Next`, autosave pending operations and document installation together. Test success, failure, cancellation, delayed completion and retained edits. |
-| Change search | Separate matching from scan lifecycle and result navigation. Verify unsaved overlays, cancellation, limits, Reading mappings and result-list retention. |
+| Add a command | Add identity/metadata in `commands/catalogue.rs`, capability policy if needed and dispatch in `goto.rs`. Add shortcut/Help bindings when appropriate. Test catalogue/ranking and actual editor transaction behavior. |
+| Add a preference | Define default/migration in `notebook/settings.rs`; add a typed SettingsPanel value/intent and apply its intended scope in the adapter. Test invalid values, scope, stale dialog events and JSON round trips. |
+| Change opening/saving/close | Add a named Session transition/effect and pure stale/failure/cancel tests. Use TestPlatform when prompts, timers, buffers or preference barriers matter. Read the storage contract before changing writes. |
+| Change the explorer | Change `Explorer` policy and its tests; keep filesystem workers and GPUI scroll/focus in the adapter. Test delayed refresh, selection by path and notebook switches. |
+| Change search | Keep scan policy, panel lifecycle and app navigation distinct. Test captured overlays, cancellation, delayed results, navigation ordering and Reading mappings. |
+| Extend Markdown behavior | State Source/Live/Reading semantics and coordinate conversions. Test Unicode, source preservation, one-step undo, stale parses and viewport/queue work bounds. Update the vendor inventory when appropriate. |
 
-Prefer explicit imports and a named owner for new state. A new file containing
-another unrestricted `impl Notes` is organizational help, but does not create a
-new ownership boundary. Add abstractions where two responsibilities actually
-need a contract; retain cheap rope snapshots and the current incremental paths.
+Prefer explicit imports, named input values and one authoritative state owner.
+Introduce abstractions for real ownership/testing boundaries, not a trait per
+function or a maximum file-length rule. Keep capability snapshots fresh and use
+semantic edit/save/search queries instead of repurposing a command's predicate.
 
 ## Verification without desktop interaction
 
-From the repository root:
-
-[`rust-toolchain.toml`](rust-toolchain.toml) pins Rust 1.98.1, rustfmt and Clippy.
-The separate [validation workflow](.github/workflows/check.yml) checks the default
-application and headless tests on Windows, Linux and macOS; Windows also checks
-formatting and strict lint. The release/manual packaging workflow is separate.
+[Rust 1.98.1](rust-toolchain.toml) is pinned. The separate
+[validation workflow](.github/workflows/check.yml) checks Windows, Linux and
+macOS; Windows also enforces format and strict lint. Packaging is separate.
 
 ```powershell
 cargo check --locked
@@ -225,18 +191,17 @@ cargo fmt --check
 cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings
 ```
 
-`--offline` can be added when the locked dependencies are already cached.
-The audit records the original pass/fail baseline. The current baseline passes
-all four commands on Windows; Linux also passes the default check and headless
-suite. See [architecture progress](docs/architecture-progress.md) for counts and
-platform limits. GPUI tests use `TestAppContext`/TestPlatform, not native desktop
-windows. Some editor tests
-include vendor source files with `#[path]`; this is why root formatting/lint
-checks can also report those vendor files.
+Add `--offline` when locked dependencies are cached. Use focused filters while
+editing, then run the integrated gates. Relevant suites include `app::session`,
+`notebook_ui`, `settings_ui`, `search_ui`, library `commands`/`explorer`/`editor`,
+public document/settings-writer tests, and editor/history/transaction/Reading
+integration tests. Some tests include vendor source through `#[path]`, so root
+format/lint checks can report those files.
 
-The `GPUI_NOTE_BENCH`, `GPUI_NOTE_NOTEBOOK_CHECK` and `GPUI_NOTE_AUTOSAVE_CHECK`
-application harnesses require a real application/window. Agents must not launch
-them, even hidden. Leave physical input, native dialogs, rendered performance
-benchmarks and platform UI validation to the user. Existing recorded benchmark
-results in [benchmarks/README.md](benchmarks/README.md) are historical evidence,
-not results of the architecture audit.
+GPUI tests use TestPlatform, not native desktop windows. Agents must not launch
+`GPUI_NOTE_BENCH`, `GPUI_NOTE_NOTEBOOK_CHECK`, `GPUI_NOTE_AUTOSAVE_CHECK` or other
+native application harnesses, even hidden. Leave physical input, native pickers,
+rendered benchmarks and platform UI validation to the user. Historical results
+in [benchmarks/README.md](benchmarks/README.md) are not current verification.
+Current test counts, platform execution and remaining limits belong in
+[implementation progress](docs/architecture-progress.md).

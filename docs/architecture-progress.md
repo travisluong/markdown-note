@@ -6,16 +6,22 @@ behavior, prioritizing Windows. Completion requires current implementation and
 verification evidence for every milestone; passing a subset is not completion.
 Native desktop tests remain user-run under AGENTS.md.
 
+All eight implementation milestones are complete. Final source gates pass on
+Windows and Linux: **301 tests per platform**, no failures or ignored tests,
+default builds, strict all-target diagnostics Clippy, and repository formatting.
+macOS validation is configured in CI but has not been executed in this workspace.
+These checks do not claim physical-input or native frame-latency results.
+
 | Milestone | Status | Evidence / remaining work |
 | --- | --- | --- |
 | 1. Editor redo policy | Implemented and verified | `tests/editor_history.rs`: 11 headless tests passed, including divergent typing/commands/IME, no-op replacements and generic History compatibility; complete Windows/Linux suites passed. |
-| 2. Reliable baseline | Windows/Linux verified; macOS execution pending | Feature docs corrected; dedicated formatting commit; strict Clippy passes without added suppressions; Rust 1.98.1 pinned; separate three-platform validation CI configured. Release packaging unchanged. |
+| 2. Reliable baseline | Implemented; Windows/Linux verified | Rust 1.98.1 pinned; default builds, headless suites, format and strict lint pass. Three-platform validation CI is configured; macOS execution remains unverified. Release packaging is unchanged. |
 | 3. Lifecycle/edit fixes and integration coverage | Implemented and verified | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. A separately reproduced close-time input loss was repaired; all 91 application tests passed afterward. |
 | 4. Data/storage boundaries and file policy | Implemented and verified on Windows/Linux | Library exposes format/I/O, notebook domain owners and shared values. Disk versions guard saves; conflict pause retains editor/history; app-owned moves revalidate saved bytes. Metadata and optimistic race limits are explicit in `document-storage.md`. Both full headless suites passed. |
-| 5. Document-session transition owner | Implemented and verified on Windows; combined cross-platform gates pending | Private pure Session owns content, identities, foreground phase, writes, queued actions and retry policy. 29 pure transitions and the complete 106-test diagnostics application target passed. See `document-session.md`; delayed failure and stale timer-arm regressions verify retained edits reach disk. |
+| 5. Document-session transition owner | Implemented and verified on Windows/Linux | Private Session owns content, foreground phases, writes, continuations and autosave identities. Twenty-nine pure tests plus actual delayed/failure/cancel/move/close cases pass. See the session contract and final integrated gates below. |
 | 6. Bounded settings writer | Implemented and verified on Windows/Linux | Pure one-running/latest-per-destination model and one GPUI worker loop replace the task chain. Ten model/disk tests and six actual lifecycle tests pass, including 20,000 submissions, target-book flush, unrelated failures, close retry/cancel/explicit discard and late preference changes. |
-| 7. UI and command ownership | In progress | Pure command catalogue, named capability snapshots and palette selection/ranking owner are exposed by the library; ten focused tests pass on Linux. Settings, Explorer, Search and application integration are being verified separately. |
-| 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Shared GFM analysis verified: mixed queued requests use one parse, plain requests use zero; 67 editor tests passed, preserving incremental/cache/work bounds. Initial Reading parse moved off layout; 8 controlled lifecycle tests passed. Thin editor adapter remains. |
+| 7. UI and command ownership | Implemented and verified on Windows/Linux | SettingsPanel, SearchPanel, Explorer and PaletteModel own private feature state. Explicit catalogue/capability policies and typed preference/navigation intents connect them to the application. Existing tests were retained, with actual adapter, stale-result and dialog-lifetime regressions added. |
+| 8. Editor boundary and analysis performance | Implemented and verified on Windows/Linux | Production features use a thin Editor adapter; four actual adapter tests cover transactions, events and guarded selection. Vendor inventory is complete. Shared GFM analysis uses one parse for mixed queued work and zero for plain requests; initial Reading parsing runs off layout with bounded pending work. |
 
 ## Verification rules
 
@@ -210,3 +216,78 @@ results, and exposes rows and missing-directory requests to the UI adapter. Four
 Linux owner tests pass. A new collapse/refresh/re-expand regression failed before
 invalidating obsolete Loading entries at refresh start; current workers and
 completed caches remain valid. Live explorer integration follows separately.
+
+## Completed feature and editor integrations
+
+The Session integration removes the old foreground gate and save-policy flags.
+Its isolated Linux application suite passed 114 tests, including the retained old
+palette tests before that later extraction; strict lint also passed. Independent
+review found and repaired a nested error-effect autosave rearm and unnecessary
+save prompting when removing an inactive notebook. Regressions verify eventual
+retained-text saving, stale-timer rejection and unchanged active-document policy.
+
+The Search owner passed 11 actual panel/lifecycle tests and strict lint in an
+isolated Windows checkout before Session integration. Its FIFO navigation
+proposals preserve consecutive key actions while rejecting obsolete queries or
+operations. The current overlay updates on every accepted content installation.
+SettingsPanel separately passed 13 tests and strict lint, including programmatic
+closure rejecting queued preference events.
+
+Explorer keeps cache, row and cursor state behind one persistent generation
+owner. Its isolated Linux integration passed five pure owner tests, all 21
+notebook adapter tests and strict lint. The former extension-row regression moved
+with its policy without losing assertions. Actual directory completion also
+checks that an unresolved folder target cannot erase another visible selection.
+Palette policy retains ten library tests; two new TestPlatform cases verify
+query filtering, fresh command availability, date-command Undo/Redo and rejection
+of a stale file scan after opening another palette. Those adapter tests passed
+independently on Linux and in the integrated Windows application suite.
+
+The Editor adapter wraps one InputState and exposes cheap rope snapshots,
+source-byte selection, isolated edits, task/link events, find and image insertion.
+It adds no saved/current buffer or separate view-mode state. Existing native
+benchmark inputs keep their original configuration through a feature-gated
+constructor; the harnesses were compiled but not launched. Four actual adapter
+tests include rejected disabled edits preserving selection and history. The
+vendor patch inventory documents the new read-only disabled-state accessor.
+
+Isolated validation uses immutable source snapshots and application-package
+cache cleanup before returning to the live checkout; the final integration also
+refreshes the vendored component artifacts. Windows occasionally required the
+previously authorized rebuild after generated-output LNK1104 errors. These were
+build-environment errors; no compiler/linker error was counted as a passing run.
+
+## Final integrated gates
+
+The completed source at `e921c4f` passed the following checks. The subsequent
+architecture-guide commit changes documentation only.
+
+| Platform | Default build | Diagnostics-enabled tests | Strict all-target diagnostics Clippy | Formatting |
+| --- | --- | --- | --- | --- |
+| Windows/MSVC, Rust 1.98.1 | Passed | **301 passed**: 62 library + 109 application + 130 integration | Passed with `-D warnings` | Passed |
+| Ubuntu 26.04 WSL x86_64, Rust 1.98.1 | Passed | **301 passed**: 62 library + 107 application + 132 integration | Passed with `-D warnings` | Same checked source |
+| macOS | Not run locally | Not run locally | Not run locally | CI configured |
+
+Every executed suite had zero failures and zero ignored tests. Platform-specific
+file identity, sharing, junction, permission and path tests account for the
+Windows/Linux target-count differences. The dependency's existing
+`proc-macro-error2 2.0.1` future-compatibility notice remains; strict project lint
+passes without introducing warning suppressions.
+
+Final local logs are retained in ignored `target/`: `editor-integration-tests.log`,
+`editor-integration-clippy.log`, `architecture-final-check.log`,
+`architecture-final-format.log`, `linux-architecture-final-test.log`,
+`linux-architecture-final-check.log` and `linux-architecture-final-clippy.log`.
+Independent intermediate snapshot manifests and logs are retained there too.
+
+Performance evidence is structural and test-observed: bounded preference writes,
+one GFM parse for mixed queued analysis, plain-text fast paths, bounded Reading
+work including initial parsing, and no new per-keystroke source materialization
+in the session/editor boundaries. Native rendering latency and physical input
+remain manual validation under AGENTS.md. Automated regression checks passed;
+they cannot establish the absence of every possible regression.
+
+The current extension map is [ARCHITECTURE.md](../ARCHITECTURE.md), supplemented
+by the [session contract](document-session.md), [storage contract](document-storage.md)
+and vendored patch inventory. Improvements are committed separately; no source
+was pushed and no native application or desktop automation was launched.
