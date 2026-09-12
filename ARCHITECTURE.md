@@ -140,11 +140,12 @@ binary tests can compile without requiring a diagnostics feature. Do not use it
 for production feature edits. Form/search-query inputs are separate controls and
 are not document editors.
 
-On Windows, `Notes::render` owns an icon-free `gpui_component::TitleBar` and
-startup requests a transparent native title bar. `Notes::window_title` supplies
-both its text and the native window title, including the unsaved marker. Keep
-the component's drag and window-control regions, and the existing close barrier.
-Other platforms retain their native title bars.
+All platforms retain their native title bars and window controls.
+`Notes::window_title` supplies the native title, including the unsaved marker.
+On Windows, keep `TitlebarOptions::appears_transparent` false: the custom title
+bar introduced in `c2ab535` was rolled back after reported close failures and
+hangs. TestPlatform covers the close barrier, but cannot validate Windows
+non-client hit testing, control clicks or native dragging.
 
 The Cargo patch selects checked-in `vendor/gpui-component`, based on upstream
 0.5.1 at `0f0ab35233212f8f3277028995caf0c41e13ee6c`. Preserve its license,
@@ -197,7 +198,7 @@ and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
 marketing site's exact SVG mark. `build.rs` embeds Windows icon resource 1;
 release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
 launcher identity matches `WindowOptions::app_id` (`org.mithril.Mithril`).
-These shell icons are independent of the icon-free Windows title bar.
+Windows also uses the embedded icon in its native title bar.
 
 Windows distribution is owned by
 [`packaging/windows/mithril.iss`](packaging/windows/mithril.iss) and the

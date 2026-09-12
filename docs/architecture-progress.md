@@ -399,3 +399,27 @@ Verification on Windows/MSVC:
 
 Native shell/taskbar/title-bar appearance and macOS/Linux builds remain manual
 or CI validation. The pre-existing proc-macro-error2 compatibility notice remains.
+
+## Restore native Windows window controls (2026-09-12)
+
+The user reported inability to close the app and hangs after the two most recent
+commits. Inspection identified `c2ab535` as the behavioral change: removing the
+icon also hid the native title bar and installed `gpui_component::TitleBar`.
+Its Windows controls rely on GPUI non-client hit testing and mouse messages,
+which the existing TestPlatform close tests do not exercise. The later branding
+commit adds resources and an app ID without changing session shutdown.
+
+Rolled back the custom title bar and explicitly disabled transparent title-bar
+mode, restoring native controls and dragging. The native small icon returns;
+the branded executable resources and title/unsaved-marker helper remain. The
+save/discard/cancel and preference-flush barriers are unchanged. This is a
+rollback of the suspected regression, not a reproduced diagnosis of the exact
+native event failure. Native close, dragging and hang behavior still require
+manual validation; no desktop application or native harness was launched.
+
+Windows/MSVC validation passed: `cargo check --offline --locked`,
+`cargo test --offline --locked --features editor-diagnostics` (complete suite,
+including session close and all four GPUI preference-close tests),
+`cargo fmt --check`,
+`cargo clippy --offline --locked --all-targets --features editor-diagnostics -- -D warnings`,
+and `cargo build --offline --locked --bin mithril`.

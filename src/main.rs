@@ -547,21 +547,6 @@ impl Render for Notes {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .when(
-                cfg!(target_os = "windows") && !window.is_fullscreen(),
-                |view| {
-                    view.child(
-                        gpui_component::TitleBar::new().child(
-                            div()
-                                .min_w_0()
-                                .overflow_hidden()
-                                .text_ellipsis()
-                                .text_sm()
-                                .child(self.window_title()),
-                        ),
-                    )
-                },
-            )
             .child(
                 div()
                     .flex()
@@ -738,8 +723,9 @@ fn main() {
                     app_id: Some("org.mithril.Mithril".into()),
                     titlebar: Some(TitlebarOptions {
                         title: Some("Mithril".into()),
-                        // The Windows client title bar contains text and controls only.
-                        appears_transparent: cfg!(target_os = "windows"),
+                        // Keep native controls after reported close failures and
+                        // hangs with the custom title bar; TestPlatform cannot verify it.
+                        appears_transparent: false,
                         ..Default::default()
                     }),
                     ..Default::default()
