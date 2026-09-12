@@ -1,5 +1,24 @@
-use super::*;
-use gpui_component::dialog::Dialog;
+//! Palette UI adapter. Command policy, ranking and selection belong to `commands`.
+use crate::{Next, Notes};
+use gpui::{
+    App, Context, Entity, FocusHandle, ScrollStrategy, Subscription, UniformListScrollHandle,
+    Window, div, prelude::*, px, uniform_list,
+};
+#[cfg(feature = "editor-diagnostics")]
+use gpui::{AsyncWindowContext, Focusable, Keystroke, Timer};
+use gpui_component::{
+    ActiveTheme, WindowExt,
+    dialog::Dialog,
+    input::{Input, InputEvent, InputState},
+};
+#[cfg(feature = "editor-diagnostics")]
+use gpui_note::ViewMode;
+use gpui_note::{
+    commands::{Command, PaletteEntry, PaletteModel, discover},
+    notebook, templates,
+};
+#[cfg(feature = "editor-diagnostics")]
+use std::{fs, path::Path};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PaletteMode {
@@ -8,200 +27,19 @@ enum PaletteMode {
     Notebooks,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Command {
-    InsertDate,
-    EditLink,
-    ToggleTheme,
-    ChangeNotebook,
-    NewNote,
-    SearchFile,
-    SearchAllFiles,
-    ReplaceFile,
-}
-
-impl Command {
-    const ALL: &[Self] = &[
-        Self::InsertDate,
-        Self::EditLink,
-        Self::ToggleTheme,
-        Self::ChangeNotebook,
-        Self::NewNote,
-        Self::SearchFile,
-        Self::SearchAllFiles,
-        Self::ReplaceFile,
-    ];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::InsertDate => "Templates: Insert current date",
-            Self::EditLink => "Text: Insert or edit link",
-            Self::ToggleTheme => "Appearance: Toggle light/dark mode",
-            Self::ChangeNotebook => "Notebook: Change notebook",
-            Self::NewNote => "Notebook: Create new note",
-            Self::SearchFile => "Search: Search current file",
-            Self::SearchAllFiles => "Search: Search in all files",
-            Self::ReplaceFile => "Search: Search and replace in current file",
-        }
-    }
-
-    fn description(self) -> &'static str {
-        match self {
-            Self::InsertDate => "Insert at the editor selection",
-            Self::EditLink => "Insert a link or edit the selected link",
-            Self::ToggleTheme => "Switch between your Light and Dark themes",
-            Self::ChangeNotebook => "Choose a registered notebook",
-            Self::NewNote => "Create an Untitled note in the notebook root",
-            Self::SearchFile => "Find text in the current document",
-            Self::SearchAllFiles => "Search Markdown files in the active notebook",
-            Self::ReplaceFile => "Find and replace text in the current document",
-        }
-    }
-
-    fn unavailable(
-        self,
-        document: bool,
-        reading: bool,
-        busy: bool,
-        notebook: bool,
-    ) -> Option<&'static str> {
-        if busy {
-            return Some("Wait for the current operation to finish");
-        }
-        match self {
-            Self::SearchFile if !document => Some("Open a document to search"),
-            Self::SearchAllFiles if !notebook => {
-                Some("Open a notebook to search all Markdown files")
-            }
-            Self::NewNote if !notebook => Some("Open a notebook to create a note"),
-            Self::InsertDate | Self::EditLink | Self::ReplaceFile if !document || reading => {
-                Some("Open an editable document in Source or Live preview")
-            }
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone)]
-enum PaletteEntry {
-    Command(Command),
-    File(notebook::Entry),
-    Notebook { path: PathBuf, active: bool },
-}
-
-impl PaletteEntry {
-    fn label(&self) -> String {
-        match self {
-            Self::Command(command) => command.label().into(),
-            Self::Notebook { path, active } => format!(
-                "{}{}",
-                notebook::name(path),
-                if *active { " (active)" } else { "" }
-            ),
-            Self::File(entry) => format!(
-                "{}{}",
-                if entry.directory { "▸ " } else { "" },
-                notebook::name(&entry.relative)
-            ),
-        }
-    }
-
-    fn search_name(&self) -> String {
-        match self {
-            Self::Command(command) => command.label().into(),
-            Self::Notebook { path, .. } => notebook::name(path),
-            Self::File(entry) => notebook::name(&entry.relative),
-        }
-    }
-
-    fn detail(&self) -> String {
-        match self {
-            Self::Command(command) => command.description().into(),
-            Self::Notebook { path, .. } => path.display().to_string(),
-            Self::File(entry) => entry.relative.display().to_string(),
-        }
-    }
-
-    fn rank(&self, query: &str) -> Option<(u8, usize)> {
-        score(&self.search_name().to_lowercase(), query).or_else(|| match self {
-            Self::File(_) | Self::Notebook { .. } => {
-                score(&self.detail().to_lowercase(), query).map(|(_, cost)| (4, cost))
-            }
-            _ => None,
-        })
-    }
-}
-
 pub(super) struct Palette {
     mode: PaletteMode,
     query: Entity<InputState>,
     _subscription: Subscription,
-    entries: Vec<PaletteEntry>,
-    results: Vec<PaletteEntry>,
-    selected: usize,
+    model: PaletteModel,
     scroll: UniformListScrollHandle,
     status: Option<String>,
     focus: Option<FocusHandle>,
 }
 
-pub fn discover(root: &Path) -> io::Result<Vec<notebook::Entry>> {
-    if notebook::is_link(&fs::symlink_metadata(root)?) {
-        return Err(io::Error::other("Notebook links are not traversed."));
-    }
-    let mut pending = vec![PathBuf::new()];
-    let mut found = Vec::new();
-    while let Some(path) = pending.pop() {
-        for entry in notebook::read_directory(root, &path)? {
-            if entry.link {
-                continue;
-            }
-            if entry.directory {
-                pending.push(entry.relative.clone());
-            }
-            if entry.directory || notebook::markdown(&entry.relative) {
-                found.push(entry);
-            }
-        }
-    }
-    Ok(found)
-}
-
-fn score(name: &str, query: &str) -> Option<(u8, usize)> {
-    if name == query {
-        return Some((0, 0));
-    }
-    if name.starts_with(query) {
-        return Some((1, name.len()));
-    }
-    if let Some(i) = name.find(query) {
-        return Some((2, i));
-    }
-    let mut chars = name.chars().enumerate();
-    let mut cost = 0;
-    for wanted in query.chars() {
-        cost += chars.find(|(_, c)| *c == wanted)?.0;
-    }
-    Some((3, cost))
-}
-
-fn ranked_entries(entries: &[PaletteEntry], query: &str) -> Vec<PaletteEntry> {
-    let query = query.trim().to_lowercase();
-    let mut ranked: Vec<_> = entries
-        .iter()
-        .filter_map(|entry| entry.rank(&query).map(|rank| (rank, entry.clone())))
-        .collect();
-    ranked.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then_with(|| a.1.search_name().cmp(&b.1.search_name()))
-            .then_with(|| a.1.detail().cmp(&b.1.detail()))
-    });
-    ranked.into_iter().map(|(_, entry)| entry).collect()
-}
-
 impl Palette {
     fn filter(&mut self, cx: &App) {
-        self.results = ranked_entries(&self.entries, &self.query.read(cx).value());
-        self.selected = 0;
+        self.model.filter(&self.query.read(cx).value());
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
     }
 }
@@ -250,14 +88,11 @@ impl Notes {
             mode,
             query: query.clone(),
             _subscription: subscription,
-            entries,
-            results: Vec::new(),
-            selected: 0,
+            model: PaletteModel::new(entries),
             scroll: UniformListScrollHandle::new(),
             status,
             focus: window.focused(cx),
         });
-        self.palette.as_mut().unwrap().filter(cx);
         let owner = cx.weak_entity();
         window.open_dialog(cx, move |dialog, window, cx| {
             owner
@@ -296,9 +131,12 @@ impl Notes {
                     }
                     match result {
                         Ok(entries) => {
-                            palette.entries = entries.into_iter().map(PaletteEntry::File).collect();
+                            palette.model.replace_entries(
+                                entries.into_iter().map(PaletteEntry::File).collect(),
+                                &palette.query.read(cx).value(),
+                            );
                             palette.status = None;
-                            palette.filter(cx);
+                            palette.scroll.scroll_to_item(0, ScrollStrategy::Top);
                         }
                         Err(error) => {
                             palette.status = Some(format!("Could not scan notebook: {error}"))
@@ -327,7 +165,7 @@ impl Notes {
         let entry = self
             .palette
             .as_ref()
-            .and_then(|p| p.results.get(p.selected))
+            .and_then(|p| p.model.selected_entry())
             .cloned();
         let Some(entry) = entry else {
             return;
@@ -365,12 +203,7 @@ impl Notes {
     }
 
     fn command_unavailable(&self, command: Command) -> Option<&'static str> {
-        command.unavailable(
-            self.document().is_some(),
-            self.mode == ViewMode::Reading,
-            self.is_busy(),
-            self.notebooks.active.is_some(),
-        )
+        command.unavailable(self.capabilities())
     }
 
     fn run_command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
@@ -425,12 +258,8 @@ impl Notes {
 
     fn move_palette(&mut self, down: bool, cx: &mut Context<Self>) {
         if let Some(p) = &mut self.palette {
-            p.selected = if down {
-                (p.selected + 1).min(p.results.len().saturating_sub(1))
-            } else {
-                p.selected.saturating_sub(1)
-            };
-            p.scroll.scroll_to_item(p.selected, ScrollStrategy::Top);
+            let selected = p.model.move_selection(down);
+            p.scroll.scroll_to_item(selected, ScrollStrategy::Top);
         }
         cx.notify();
     }
@@ -486,7 +315,7 @@ impl Notes {
             .child(Input::new(&palette.query))
             .child(if let Some(status) = &palette.status {
                 div().child(status.clone()).into_any_element()
-            } else if palette.results.is_empty() {
+            } else if palette.model.results().is_empty() {
                 div()
                     .child(match palette.mode {
                         PaletteMode::Commands => "No matching commands",
@@ -497,12 +326,12 @@ impl Notes {
             } else {
                 uniform_list(
                     "goto-results",
-                    palette.results.len(),
+                    palette.model.results().len(),
                     cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
                         let p = this.palette.as_ref().unwrap();
                         range
                             .map(|i| {
-                                let entry = &p.results[i];
+                                let entry = &p.model.results()[i];
                                 let unavailable = match entry {
                                     PaletteEntry::Command(command) => {
                                         this.command_unavailable(*command)
@@ -518,7 +347,9 @@ impl Notes {
                                     .px_2()
                                     .flex()
                                     .flex_col()
-                                    .when(i == p.selected, |v| v.bg(cx.theme().accent))
+                                    .when(i == p.model.selected_index(), |v| {
+                                        v.bg(cx.theme().accent)
+                                    })
                                     .when(unavailable.is_some(), |v| {
                                         v.text_color(cx.theme().muted_foreground)
                                     })
@@ -536,10 +367,11 @@ impl Notes {
                                             ),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
-                                        if let Some(p) = &mut this.palette {
-                                            p.selected = i;
+                                        if let Some(p) = &mut this.palette
+                                            && p.model.select(i)
+                                        {
+                                            this.activate_palette(window, cx);
                                         }
-                                        this.activate_palette(window, cx);
                                     }))
                             })
                             .collect::<Vec<_>>()
@@ -592,7 +424,7 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                 .unwrap()
                 .query
                 .update(cx, |q, cx| q.set_value("current date", window, cx));
-            assert_eq!(this.palette.as_ref().unwrap().results.len(), 1);
+            assert_eq!(this.palette.as_ref().unwrap().model.results().len(), 1);
             window.close_dialog(cx);
             this.close_palette(window, cx);
             assert!(this.editor.focus_handle(cx).is_focused(window));
@@ -651,7 +483,9 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                 0 => this.set_mode(ViewMode::Source, window, cx),
                 2 => {
                     assert!(
-                        this.palette.as_ref().is_some_and(|p| p.results.len() >= 3),
+                        this.palette
+                            .as_ref()
+                            .is_some_and(|p| p.model.results().len() >= 3),
                         "Ctrl+O opens recursive palette"
                     );
                 }
@@ -759,174 +593,4 @@ pub(super) async fn diagnostic_task_shortcut(notes: &Entity<Notes>, cx: &mut Asy
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Command, PaletteEntry, discover, ranked_entries, score};
-    use std::{fs, path::Path};
-    #[test]
-    fn commands_filter_by_full_label_and_check_editability() {
-        let entries: Vec<_> = Command::ALL
-            .iter()
-            .copied()
-            .map(PaletteEntry::Command)
-            .collect();
-        let results = ranked_entries(&entries, "  CURRENT DATE  ");
-        assert_eq!(results.len(), 1);
-        assert!(matches!(
-            results[0],
-            PaletteEntry::Command(Command::InsertDate)
-        ));
-        assert!(ranked_entries(&entries, "no such command xyz").is_empty());
-        for command in [Command::InsertDate, Command::EditLink] {
-            assert!(command.unavailable(true, false, false, false).is_none());
-            assert!(command.unavailable(false, false, false, false).is_some());
-            assert!(command.unavailable(true, true, false, false).is_some());
-            assert!(command.unavailable(true, false, true, false).is_some());
-        }
-    }
-
-    #[test]
-    fn theme_command_works_without_an_editable_document() {
-        assert!(
-            Command::ToggleTheme
-                .unavailable(false, true, false, false)
-                .is_none()
-        );
-        assert!(
-            Command::ToggleTheme
-                .unavailable(true, false, true, true)
-                .is_some()
-        );
-        assert_eq!(
-            ranked_entries(&[PaletteEntry::Command(Command::ToggleTheme)], "light/dark").len(),
-            1
-        );
-    }
-
-    #[test]
-    fn notebook_results_distinguish_duplicate_names_and_search_paths() {
-        let entries = vec![
-            PaletteEntry::Notebook {
-                path: "one/Notes".into(),
-                active: false,
-            },
-            PaletteEntry::Notebook {
-                path: "two/Notes".into(),
-                active: true,
-            },
-        ];
-        assert_eq!(ranked_entries(&entries, "notes").len(), 2);
-        let results = ranked_entries(&entries, "two/notes");
-        assert_eq!(results.len(), 1);
-        assert!(results[0].label().contains("(active)"));
-        assert_eq!(results[0].detail(), "two/Notes");
-        assert_ne!(entries[0].detail(), entries[1].detail());
-        assert!(
-            Command::ChangeNotebook
-                .unavailable(false, true, false, false)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn new_note_requires_a_notebook_but_not_an_editable_document() {
-        assert!(
-            Command::NewNote
-                .unavailable(false, true, false, true)
-                .is_none()
-        );
-        assert!(
-            Command::NewNote
-                .unavailable(true, false, false, false)
-                .is_some()
-        );
-        assert!(
-            Command::NewNote
-                .unavailable(true, false, true, true)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn current_file_search_supports_reading_and_standalone_documents() {
-        assert!(
-            Command::SearchFile
-                .unavailable(true, true, false, false)
-                .is_none()
-        );
-        assert!(
-            Command::SearchFile
-                .unavailable(false, false, false, true)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn all_files_search_requires_only_an_active_notebook() {
-        assert!(
-            Command::SearchAllFiles
-                .unavailable(false, true, false, true)
-                .is_none()
-        );
-        assert!(
-            Command::SearchAllFiles
-                .unavailable(true, false, false, false)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn replacement_requires_an_editable_document() {
-        assert!(
-            Command::ReplaceFile
-                .unavailable(true, false, false, false)
-                .is_none()
-        );
-        assert!(
-            Command::ReplaceFile
-                .unavailable(true, true, false, true)
-                .is_some()
-        );
-        assert!(
-            Command::ReplaceFile
-                .unavailable(false, false, false, true)
-                .is_some()
-        );
-        assert!(
-            Command::ReplaceFile
-                .unavailable(true, false, true, true)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn ranking() {
-        assert!(score("note", "note") < score("notebook", "note"));
-        assert!(score("notebook", "note") < score("a note", "note"));
-        assert!(score("a note", "note") < score("n o t e", "note"));
-        assert_eq!(score("note", "xyz"), None);
-        assert!(score("日本語", "日語").is_some());
-    }
-    #[test]
-    fn recursive_duplicates_and_settings() {
-        let temp = tempfile::tempdir().unwrap();
-        for folder in ["a/deep", "b", ".gpui-note"] {
-            fs::create_dir_all(temp.path().join(folder)).unwrap();
-        }
-        for file in [
-            "a/deep/Note.md",
-            "b/Note.md",
-            "b/ignore.txt",
-            ".gpui-note/private.md",
-        ] {
-            fs::write(temp.path().join(file), "").unwrap();
-        }
-        let entries = discover(temp.path()).unwrap();
-        assert_eq!(entries.iter().filter(|e| !e.directory).count(), 2);
-        assert!(
-            entries
-                .iter()
-                .any(|e| e.relative == Path::new("a/deep/Note.md"))
-        );
-        assert!(discover(&temp.path().join("missing")).is_err());
-    }
-}
+mod tests;
