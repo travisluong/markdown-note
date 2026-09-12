@@ -1,8 +1,14 @@
-use super::*;
+//! Literal matching and bounded notebook scans over captured source text.
+//! Matching uses ASCII folding to preserve UTF-8 byte ranges; file traversal
+//! retains notebook link guards and scan limits, independently of any window.
+use crate::{document, notebook};
+use gpui_component::input::Rope;
 use std::{
     borrow::Cow,
-    io::Read,
+    fs,
+    io::{self, Read},
     ops::Range,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
 };
 

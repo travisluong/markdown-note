@@ -1,0 +1,463 @@
+//! Owns notebook-search interaction and background work without the application
+//! root. Captured overlay/lifecycle inputs enter; navigation and focus intents
+//! leave. Current overlay input is distinct from each job's captured path.
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement,
+    Render, ScrollStrategy, StatefulInteractiveElement, Styled, Subscription, Task,
+    UniformListScrollHandle, Window, div, px, uniform_list,
+};
+use gpui_component::{
+    ActiveTheme, Sizable,
+    button::{Button, ButtonVariants},
+    input::{Input, InputEvent, InputState, Rope},
+};
+use gpui_note::search;
+use std::{
+    collections::{BTreeSet, VecDeque},
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
+
+#[cfg(feature = "editor-diagnostics")]
+pub(super) mod diagnostics;
+#[cfg(test)]
+mod lifecycle_tests;
+#[cfg(test)]
+mod owner_tests;
+
+/// Immutable editor snapshot supplied by the application for future scans.
+#[derive(Clone)]
+pub(super) struct Overlay {
+    pub(super) path: PathBuf,
+    pub(super) source: Rope,
+}
+
+pub(super) enum SearchIntent {
+    Open(search::Destination),
+    FocusEditor,
+}
+
+struct OpenRequest {
+    destination: search::Destination,
+    selected: usize,
+    arrow: bool,
+}
+
+pub(crate) struct SearchPanel {
+    visible: bool,
+    root: PathBuf,
+    query: Entity<InputState>,
+    _subscription: Subscription,
+    case_sensitive: bool,
+    hits: Vec<search::Hit>,
+    selected: usize,
+    navigation: Option<usize>,
+    pending_opens: VecDeque<OpenRequest>,
+    status: String,
+    scroll: UniformListScrollHandle,
+    cancelled: Arc<AtomicBool>,
+    task: Option<Task<()>>,
+    overlay: Option<Overlay>,
+    overlay_path: Option<PathBuf>,
+    #[cfg(test)]
+    completion_delay: Duration,
+}
+
+impl EventEmitter<SearchIntent> for SearchPanel {}
+
+impl Drop for SearchPanel {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+}
+
+impl SearchPanel {
+    pub(super) fn new(
+        root: PathBuf,
+        overlay: Option<Overlay>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search notebook text"));
+        let subscription = cx.subscribe(&query, |this, _, event, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.schedule(cx);
+            }
+        });
+        Self {
+            visible: true,
+            root,
+            query,
+            _subscription: subscription,
+            case_sensitive: false,
+            hits: Vec::new(),
+            selected: 0,
+            navigation: None,
+            pending_opens: VecDeque::new(),
+            status: String::new(),
+            scroll: UniformListScrollHandle::new(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            task: None,
+            overlay,
+            overlay_path: None,
+            #[cfg(test)]
+            completion_delay: Duration::ZERO,
+        }
+    }
+
+    pub(super) fn visible(&self) -> bool {
+        self.visible
+    }
+
+    pub(super) fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.visible = true;
+        self.query.update(cx, |query, cx| query.focus(window, cx));
+        cx.notify();
+    }
+
+    pub(super) fn hide(&mut self, cx: &mut Context<Self>) {
+        self.visible = false;
+        cx.notify();
+    }
+
+    pub(super) fn document_installed(
+        &mut self,
+        overlay: Option<Overlay>,
+        discarded: Option<&Path>,
+        cx: &mut Context<Self>,
+    ) {
+        self.overlay = overlay;
+        if discarded.is_some_and(|path| {
+            path.starts_with(&self.root) && self.overlay_path.as_deref() == Some(path)
+        }) {
+            self.schedule(cx);
+        }
+    }
+
+    pub(super) fn rescan(&mut self, overlay: Option<Overlay>, cx: &mut Context<Self>) {
+        self.overlay = overlay;
+        self.schedule(cx);
+    }
+
+    fn schedule(&mut self, cx: &mut Context<Self>) {
+        self.cancelled.store(true, Ordering::Relaxed);
+        self.task = None;
+        self.cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled = self.cancelled.clone();
+        let root = self.root.clone();
+        let query = self.query.read(cx).value().to_string();
+        let case_sensitive = self.case_sensitive;
+        let previous = self
+            .hits
+            .get(self.selected)
+            .map(|hit| (hit.relative.clone(), hit.range.clone()));
+        self.hits.clear();
+        self.pending_opens.clear();
+        self.overlay_path = None;
+        self.selected = 0;
+        self.scroll.scroll_to_item(0, ScrollStrategy::Top);
+        if query.is_empty() {
+            self.status.clear();
+            cx.notify();
+            return;
+        }
+        self.status = "Searching…".into();
+        let buffer = self
+            .overlay
+            .clone()
+            .filter(|overlay| overlay.path.starts_with(&root))
+            .map(|overlay| (overlay.path, overlay.source));
+        self.overlay_path = buffer.as_ref().map(|(path, _)| path.clone());
+        let debounce = cx.background_executor().timer(Duration::from_millis(200));
+        #[cfg(test)]
+        let completion_delay = std::mem::take(&mut self.completion_delay);
+        self.task = Some(cx.spawn(async move |this, cx| {
+            debounce.await;
+            let worker_cancel = cancelled.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    search::scan(&root, &query, case_sensitive, buffer, &worker_cancel)
+                })
+                .await;
+            #[cfg(test)]
+            cx.background_executor().timer(completion_delay).await;
+            let _ = this.update(cx, |this, cx| {
+                if cancelled.load(Ordering::Relaxed) || !Arc::ptr_eq(&cancelled, &this.cancelled) {
+                    return;
+                }
+                let files = result
+                    .hits
+                    .iter()
+                    .map(|hit| &hit.relative)
+                    .collect::<BTreeSet<_>>()
+                    .len();
+                this.status = format!(
+                    "{} matches in {} files{}{}",
+                    result.hits.len(),
+                    files,
+                    if result.limited {
+                        " • first 2,000 shown"
+                    } else {
+                        ""
+                    },
+                    if result.skipped > 0 {
+                        format!(
+                            " • {} files/folders skipped (unreadable or over 8 MiB)",
+                            result.skipped
+                        )
+                    } else {
+                        String::new()
+                    }
+                );
+                this.hits = result.hits;
+                this.selected = previous
+                    .and_then(|(path, range)| {
+                        this.hits
+                            .iter()
+                            .position(|hit| hit.relative == path && hit.range == range)
+                    })
+                    .unwrap_or(0);
+                this.scroll
+                    .scroll_to_item(this.selected, ScrollStrategy::Top);
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn projected_selection(&self) -> usize {
+        self.pending_opens
+            .back()
+            .map_or(self.selected, |request| request.selected)
+    }
+
+    fn request_adjacent(&mut self, down: bool, cx: &mut Context<Self>) {
+        let selected = adjacent_result(self.projected_selection(), self.hits.len(), down);
+        self.request_open(selected, true, cx);
+    }
+
+    fn request_selected(&mut self, cx: &mut Context<Self>) {
+        self.request_open(self.projected_selection(), false, cx);
+    }
+
+    fn request_open(&mut self, selected: usize, arrow: bool, cx: &mut Context<Self>) {
+        let Some(hit) = self.hits.get(selected).cloned() else {
+            return;
+        };
+        let destination = search::Destination {
+            path: self.root.join(&hit.relative),
+            hit,
+            query: self.query.read(cx).value().to_string(),
+            case_sensitive: self.case_sensitive,
+        };
+        self.pending_opens.push_back(OpenRequest {
+            destination: destination.clone(),
+            selected,
+            arrow,
+        });
+        cx.emit(SearchIntent::Open(destination));
+    }
+
+    // GPUI delivers emitted intents in order. Keep one proposal per undelivered
+    // input event so repeated arrows advance through the same file, while a
+    // foreground load can reject later proposals without changing selection.
+    // Query changes discard this transient queue. Identical destinations remain
+    // distinct sequential inputs; matching uses their source/query identity.
+    pub(super) fn accept_open(
+        &mut self,
+        destination: &search::Destination,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.pending_matches(destination) {
+            return false;
+        }
+        let request = self.pending_opens.pop_front().unwrap();
+        if request.arrow {
+            self.navigation = Some(self.selected);
+        }
+        self.selected = request.selected;
+        if request.arrow {
+            self.scroll
+                .scroll_to_item(self.selected, ScrollStrategy::Top);
+        }
+        cx.notify();
+        true
+    }
+
+    pub(super) fn reject_open(&mut self, destination: &search::Destination) {
+        if self.pending_matches(destination) {
+            self.pending_opens.pop_front();
+        }
+    }
+
+    fn pending_matches(&self, destination: &search::Destination) -> bool {
+        self.pending_opens.front().is_some_and(|request| {
+            let pending = &request.destination;
+            pending.path == destination.path
+                && pending.query == destination.query
+                && pending.case_sensitive == destination.case_sensitive
+                && pending.hit.relative == destination.hit.relative
+                && pending.hit.range == destination.hit.range
+        })
+    }
+
+    pub(super) fn navigation_finished(
+        &mut self,
+        success: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(previous) = self.navigation.take() {
+            if !success {
+                self.selected = previous.min(self.hits.len().saturating_sub(1));
+            }
+            self.scroll
+                .scroll_to_item(self.selected, ScrollStrategy::Top);
+            if self.visible {
+                self.query.update(cx, |query, cx| query.focus(window, cx));
+            }
+            cx.notify();
+        }
+    }
+}
+
+impl Render for SearchPanel {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let panel = &*self;
+        div()
+            .id("notebook-search")
+            .flex()
+            .flex_col()
+            .w_full()
+            .min_w_0()
+            .h_full()
+            .min_h_0()
+            .gap_2()
+            .p_2()
+            .capture_action(cx.listener(
+                |this, _: &gpui_component::input::MoveDown, _window, cx| {
+                    this.request_adjacent(true, cx);
+                    cx.stop_propagation();
+                },
+            ))
+            .capture_action(
+                cx.listener(|this, _: &gpui_component::input::MoveUp, _window, cx| {
+                    this.request_adjacent(false, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .capture_action(
+                cx.listener(|this, _: &gpui_component::input::Enter, _window, cx| {
+                    this.request_selected(cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .capture_action(
+                cx.listener(|_this, _: &gpui_component::input::Escape, _window, cx| {
+                    cx.emit(SearchIntent::FocusEditor);
+                    cx.stop_propagation();
+                }),
+            )
+            .child(Input::new(&panel.query))
+            .child(
+                div().flex().flex_wrap().gap_1().child(
+                    Button::new("search-case")
+                        .small()
+                        .ghost()
+                        .label(if panel.case_sensitive {
+                            "Match case: on"
+                        } else {
+                            "Match case: off"
+                        })
+                        .on_click(cx.listener(|this, _, _window, cx| {
+                            this.case_sensitive = !this.case_sensitive;
+                            this.schedule(cx);
+                        })),
+                ),
+            )
+            .when(!panel.status.is_empty(), |view| {
+                view.child(div().text_xs().child(panel.status.clone()))
+            })
+            .child(
+                uniform_list(
+                    "search-results",
+                    panel.hits.len(),
+                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                        let panel = &*this;
+                        range
+                            .map(|i| {
+                                let hit = &panel.hits[i];
+                                let first = i == 0 || panel.hits[i - 1].relative != hit.relative;
+                                div()
+                                    .id(i)
+                                    .h(px(54.))
+                                    .w_full()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .px_1()
+                                    .when(i == panel.selected, |view| view.bg(cx.theme().accent))
+                                    .child(div().text_xs().truncate().child(if first {
+                                        hit.relative.display().to_string()
+                                    } else {
+                                        String::new()
+                                    }))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .overflow_hidden()
+                                            .text_sm()
+                                            .child(
+                                                div()
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .child(format!("{}: {}", hit.line, hit.before)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .bg(cx.theme().secondary)
+                                                    .child(hit.matched.clone()),
+                                            )
+                                            .child(div().child(hit.after.clone())),
+                                    )
+                                    .on_click(cx.listener(move |this, _, _window, cx| {
+                                        this.request_open(i, false, cx);
+                                    }))
+                            })
+                            .collect::<Vec<_>>()
+                    }),
+                )
+                .track_scroll(panel.scroll.clone())
+                .flex_1()
+                .min_h_0()
+                .w_full(),
+            )
+    }
+}
+
+fn adjacent_result(selected: usize, count: usize, down: bool) -> usize {
+    if down {
+        selected.saturating_add(1).min(count.saturating_sub(1))
+    } else {
+        selected.saturating_sub(1)
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::adjacent_result;
+    #[test]
+    fn arrows_clamp_and_repeat() {
+        assert_eq!(adjacent_result(0, 0, true), 0);
+        assert_eq!(adjacent_result(0, 3, false), 0);
+        let next = adjacent_result(0, 3, true);
+        assert_eq!(next, 1);
+        assert_eq!(adjacent_result(next, 3, true), 2);
+        assert_eq!(adjacent_result(2, 3, true), 2);
+        assert_eq!(adjacent_result(2, 3, false), 1);
+    }
+}

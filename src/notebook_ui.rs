@@ -557,6 +557,7 @@ impl Notes {
         {
             self.notebooks.active = None;
             self.search = None;
+            self.search_subscription = None;
             self.apply_appearance(window, cx);
             self.notebooks.generation += 1;
             self.notebooks.directories.clear();
@@ -768,6 +769,7 @@ impl Notes {
                             preferences.replay(operation, &mut book);
                         }
                         this.search = None;
+                        this.search_subscription = None;
                         this.reset_sidebar_resize(cx);
                         this.notebooks.index.register(book.root.clone());
                         this.mode = book.settings.view_mode;
@@ -932,9 +934,7 @@ impl Notes {
         } else {
             self.focus.focus(window);
         }
-        if let Some(path) = discarded_path {
-            self.invalidate_discarded_search_overlay(&path, window, cx);
-        }
+        self.search_document_installed(discarded_path.as_deref(), window, cx);
     }
 
     pub(super) fn open_path(

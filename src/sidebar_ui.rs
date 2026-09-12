@@ -19,14 +19,14 @@ impl Notes {
         }
         if self.sidebar_collapsed {
             self.reveal_sidebar(cx);
-            if self.search.as_ref().is_some_and(|panel| panel.visible) {
+            if self.search_visible(cx) {
                 self.open_search_all(window, cx);
             } else {
                 self.show_explorer(window, cx);
             }
         } else {
             self.sidebar_collapsed = true;
-            if self.mode == ViewMode::Reading || self.document.is_none() {
+            if self.mode == ViewMode::Reading || self.document().is_none() {
                 self.focus.focus(window);
             } else {
                 self.editor
@@ -41,15 +41,13 @@ impl Notes {
             return;
         }
         self.reveal_sidebar(cx);
-        if let Some(panel) = &mut self.search {
-            panel.visible = false;
-        }
+        self.hide_search(cx);
         self.notebooks.tree_focus.focus(window);
         cx.notify();
     }
 
     fn render_sidebar_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let searching = self.search.as_ref().is_some_and(|panel| panel.visible);
+        let searching = self.search_visible(cx);
         let owner = cx.weak_entity();
         div()
             .id("sidebar-toolbar")
@@ -154,7 +152,7 @@ impl Notes {
         };
         let max_width = (window.viewport_size().width.as_f32() - 200.).clamp(160., 600.);
         let width = notebook::normalize_sidebar_width(book.settings.sidebar_width).min(max_width);
-        let sidebar = if self.search.as_ref().is_some_and(|panel| panel.visible) {
+        let sidebar = if self.search_visible(cx) {
             self.render_search_panel(cx).into_any_element()
         } else {
             self.render_sidebar(window, cx).into_any_element()

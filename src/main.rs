@@ -15,7 +15,6 @@ mod lifecycle_tests;
 mod links;
 mod notebook_ui;
 mod reading_search;
-mod search;
 mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
@@ -34,7 +33,7 @@ use gpui_component::{
     menu::PopupMenu,
     text::TextView,
 };
-use gpui_note::{ViewMode, document, notebook, templates};
+use gpui_note::{ViewMode, document, notebook, search, templates};
 
 actions!(
     notes,
@@ -122,7 +121,8 @@ struct Notes {
     installed_fonts: Vec<String>,
     saves: autosave::SaveState,
     palette: Option<goto::Palette>,
-    search: Option<search_ui::SearchPanel>,
+    search: Option<Entity<search_ui::SearchPanel>>,
+    search_subscription: Option<Subscription>,
     search_destination: Option<search::Destination>,
     image_path: Option<PathBuf>,
     document: Option<Document>,
@@ -178,6 +178,7 @@ impl Notes {
             saves: autosave::SaveState::default(),
             palette: None,
             search: None,
+            search_subscription: None,
             search_destination: None,
             image_path: None,
             document: None,

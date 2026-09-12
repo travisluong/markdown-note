@@ -8,6 +8,7 @@ pub mod commands;
 pub mod document;
 pub mod explorer;
 pub mod notebook;
+pub mod search;
 pub mod templates;
 mod view_mode;
 
