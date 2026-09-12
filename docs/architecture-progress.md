@@ -441,3 +441,44 @@ file/image drops, nested relative links, Unicode and special filenames, and
 rollback preserving linked files. The full integration command could not finish:
 Windows denied replacement of `target/debug/mithril.exe`; a Mithril process was
 running and was left untouched. No desktop validation was performed.
+
+## Publish Windows downloads in a public release repository (2026-09-12)
+
+The build workflow now accepts stable `vMAJOR.MINOR.PATCH` tag pushes, requires
+the Cargo package version to match, and runs Windows headless tests and release
+packaging using the pinned Rust toolchain. Manual runs retain Actions artifacts
+without publishing. Cross-platform validation remains in the separate check
+workflow. The Windows installer updates link and main download documentation
+now point to `travisluong/mithril-releases`.
+
+The release helper owns tag/version validation, versioned filenames, SHA-256
+checksums, and draft creation/recovery. The publisher's separate credential is
+exposed only to its publishing step; all built-in job tokens remain read-only.
+It verifies the three uploaded assets by downloading and comparing them before
+publishing. Published releases are never overwritten, mismatched drafts fail
+for inspection, and runs for a source ref are serialized. The destination tag
+targets its own `main`; source identity is recorded in release notes without
+copying source or binaries into public Git history.
+
+Local verification passed:
+
+- `node --test .github/scripts/release.test.mjs`: 10 tests, using mocked GitHub
+  CLI calls for creation, interrupted upload recovery, existing publication,
+  corrupt/unexpected assets, credential/network failure, and source mismatch.
+- `actionlint .github/workflows/build.yml` and `git diff --check`.
+- Actual eligibility and Cargo metadata CLI commands produced `build=true`
+  and `version=0.1.0` for `v0.1.0`.
+- Inno Setup 6.7.3 compiled the updated script using the existing local release
+  executable into `target/public-release-check/dist`. The portable ZIP contains
+  only `mithril.exe`; checksum generation and verification passed. This checks
+  packaging against an existing binary, not a fresh CI release build.
+- `cargo test --offline --locked --features editor-diagnostics`: full headless
+  suite passed. The existing proc-macro-error2 future-compatibility warning remains.
+
+No application or installer was launched. Live GitHub publication and manual
+workflow dispatch were not performed: no GitHub CLI, connector or token is
+available in this session, and public API lookup was blocked by local network
+restrictions. The user must provision/confirm the public repository and set
+`MITHRIL_RELEASES_TOKEN` using the packaging guide before pushing a release tag.
+Native Windows installation checks remain manual. The pre-existing Cargo.lock
+changes are outside this work and remain uncommitted.

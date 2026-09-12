@@ -2,8 +2,71 @@
 
 `mithril.iss` packages the Windows x86-64 executable with Inno Setup 6.3 or
 newer. GitHub's `windows-2022` runner includes Inno Setup 6. The release workflow
-compiles this script, retains the portable ZIP, and attaches the downloads to a
-published GitHub Release. A manual workflow run only uploads Actions artifacts.
+compiles this script and publishes the installer, a versioned portable ZIP and
+`SHA256SUMS.txt` to `travisluong/mithril-releases`. Only pushed stable tags such
+as `v0.1.0` publish. A manual workflow run only uploads Actions artifacts.
+
+## One-time GitHub setup
+
+1. Create the public repository `travisluong/mithril-releases`, initialized with
+   a README on `main`. This repository holds public Release assets; no application
+   source or binaries are committed to its Git history. It needs no workflow.
+2. In GitHub account Settings > Developer settings > Personal access tokens >
+   Fine-grained tokens, create a token with resource owner `travisluong`, access
+   only to `mithril-releases`, and repository **Contents: Read and write**.
+   Choose an expiration and renew the secret before the token expires.
+3. In the source `mithril` repository, open Settings > Secrets and variables >
+   Actions and create the repository secret `MITHRIL_RELEASES_TOKEN` with that
+   token. Never put its value in the repository, logs or release notes.
+
+The built-in `GITHUB_TOKEN` stays read-only and is scoped to the source
+repository. The separate credential is available only in the publishing step.
+See GitHub's [token scope documentation](https://docs.github.com/en/actions/concepts/security/github_token)
+and [release API permissions](https://docs.github.com/en/rest/releases/releases#create-a-release).
+
+## Publish a version
+
+1. Bump the package version in `Cargo.toml` and update its entry in `Cargo.lock`.
+   Commit the version changes and release workflow, then push the source commit.
+2. Tag that commit with its matching version and push that one tag:
+
+   ```powershell
+   git tag -a v0.1.0 -m "Mithril 0.1.0"
+   git push origin v0.1.0
+   ```
+
+The workflow accepts exactly `vMAJOR.MINOR.PATCH` with no leading zeroes (except
+zero itself). Prereleases, build metadata, unprefixed and malformed tags do not
+build or publish automatically. A qualifying tag must match Cargo metadata or
+the build fails. Pushing an existing tag again does not trigger a new release;
+use Actions' rerun controls for a failed run.
+
+The pinned Rust toolchain runs Windows headless tests, builds the x86-64 MSVC
+release executable, then packages these assets:
+
+- `mithril-<version>-windows-x86_64-setup.exe`
+- `mithril-<version>-windows-x86_64.zip` containing `mithril.exe`
+- `SHA256SUMS.txt` containing the SHA-256 hashes of both downloads
+
+Publication creates a draft in the public repository with the source tag and
+commit SHA recorded in its notes. Its tag targets the public repository's own
+`main`, not the source commit. GitHub's automatic source archives therefore
+contain the public repository's README, not Mithril source code.
+
+The publisher uploads all three assets, downloads them again, and verifies the
+exact filenames and bytes before publishing. An upload/verification failure
+leaves a draft. Reruns replace assets only within a matching unpublished draft;
+a draft with different source metadata fails for inspection. A published
+release is left unchanged and the rerun succeeds. Runs for the same source ref
+are serialized without cancelling an active run. Do not manually publish or
+edit a draft while its workflow is running.
+
+Use Actions > Build Windows release > Run workflow for a build without
+publication, including when selecting a tag. Download its Actions artifact to
+check the installer and ZIP. Release downloads are at
+[mithril-releases](https://github.com/travisluong/mithril-releases/releases).
+Other platforms retain their separate validation workflow but have no release
+builds. Signing and automatic application updates remain separate work.
 
 ## Installation contract
 
@@ -50,14 +113,19 @@ if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
 
 The result is `target/installer/mithril-<version>-windows-x86_64-setup.exe`.
 CI uses the explicit MSVC target's release directory instead, and writes to
-`dist/`. Only the publish job has `contents: write`; compilation jobs stay
-read-only. Release tags enter the upload command through an environment variable.
-Rerunning a release workflow replaces matching assets with `--clobber`.
+`dist/`. All jobs keep the built-in token at `contents: read`. The publish step
+uses `MITHRIL_RELEASES_TOKEN` to write to the destination repository. Release
+metadata enters the script through environment variables and is passed to
+GitHub CLI as argument arrays, without shell interpolation.
 
 ## Verification
 
-Compile the actual script with ISCC and check its exit status. Check workflow
-syntax with actionlint. Compilation establishes valid packaging, but not native
+Run `node --test .github/scripts/release.test.mjs` for tag/version validation,
+draft creation/recovery, published-release preservation, and failed or corrupt
+uploads. The tests mock GitHub CLI and never access GitHub. They also run in the
+workflow's prepare job. Compile the actual installer script with ISCC and check
+its exit status. Check workflow syntax with `actionlint .github/workflows/build.yml`.
+Compilation establishes valid packaging, but not native
 Windows behavior. Agents must not install the application or launch desktop UI
 for these checks under the repository's testing rules.
 

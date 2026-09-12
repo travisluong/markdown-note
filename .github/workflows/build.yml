@@ -1,157 +1,105 @@
-name: Build desktop binaries
+name: Build Windows release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: Check release eligibility
+    runs-on: ubuntu-22.04
+    outputs:
+      build: ${{ steps.eligibility.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test release automation
+        run: node --test .github/scripts/release.test.mjs
+      - name: Accept stable version tags or manual builds
+        id: eligibility
+        run: node .github/scripts/release.mjs eligibility
+
   build:
-    name: Build ${{ matrix.platform }}
-    runs-on: ${{ matrix.runner }}
+    name: Build Windows x86-64
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: windows-2022
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-x86_64
-            runner: windows-2022
-            target: x86_64-pc-windows-msvc
-          - platform: linux-x86_64
-            runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - platform: macos-apple-silicon
-            runner: macos-15
-            target: aarch64-apple-darwin
-          - platform: macos-intel
-            runner: macos-15-intel
-            target: x86_64-apple-darwin
     defaults:
       run:
-        shell: bash
+        shell: pwsh
     env:
       CARGO_TERM_COLOR: always
-      BUILD_TARGET: ${{ matrix.target }}
-      ARCHIVE_NAME: mithril-${{ matrix.platform }}
-
+      BUILD_TARGET: x86_64-pc-windows-msvc
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out source and vendored components
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+      - name: Install and report pinned Rust
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential clang cmake pkg-config libssl-dev \
-            libfontconfig1-dev libfreetype6-dev libwayland-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
-            libxcb1-dev libxcb-composite0-dev libxcb-randr0-dev \
-            libxcb-shape0-dev libxcb-xfixes0-dev libvulkan-dev
-
-      - name: Check Xcode and Metal tools
-        if: runner.os == 'macOS'
-        run: |
-          xcodebuild -version
-          if ! xcrun metal --version; then
-            xcodebuild -downloadComponent MetalToolchain
-          fi
-          xcrun metal --version
-
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup target add "$BUILD_TARGET" --toolchain stable
-          rustc +stable --version
-
+          rustup show active-toolchain
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust toolchain is unavailable' }
+          rustup target add $env:BUILD_TARGET
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Windows target' }
+          rustc --version
+      - name: Validate package version
+        id: version
+        run: node .github/scripts/release.mjs version
+      - name: Run Windows headless tests
+        run: cargo test --locked --features editor-diagnostics
       - name: Build release executable
-        run: cargo +stable build --release --locked --target "$BUILD_TARGET" --bin mithril
-
-      - name: Package macOS application
-        if: runner.os == 'macOS'
-        run: |
-          APP_BUNDLE="target/$BUILD_TARGET/release/Mithril.app"
-          mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" dist
-          cp assets/brand/mithril.icns "$APP_BUNDLE/Contents/Resources/mithril.icns"
-          cp "target/$BUILD_TARGET/release/mithril" "$APP_BUNDLE/Contents/MacOS/mithril"
-          chmod 755 "$APP_BUNDLE/Contents/MacOS/mithril"
-          cp packaging/macos/Info.plist "$APP_BUNDLE/Contents/Info.plist"
-          APP_VERSION=$(cargo +stable metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "mithril"))')
-          plutil -insert CFBundleShortVersionString -string "$APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
-          plutil -insert CFBundleVersion -string "$APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
-          plutil -lint "$APP_BUNDLE/Contents/Info.plist"
-          test -x "$APP_BUNDLE/Contents/MacOS/mithril"
-          # Preserve the bundle directory and executable permissions in a Finder-friendly ZIP.
-          ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "dist/$ARCHIVE_NAME.zip"
-
-      # A tar archive preserves the executable bit on Linux.
-      - name: Package Linux executable
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p dist
-          tar -czf "dist/$ARCHIVE_NAME.tar.gz" -C "target/$BUILD_TARGET/release" mithril \
-            -C "$GITHUB_WORKSPACE" assets/brand/mithril.png packaging/linux/org.mithril.Mithril.desktop packaging/linux/README.md
-
-      - name: Package Windows executable
-        if: runner.os == 'Windows'
-        shell: pwsh
+        run: cargo build --release --locked --target $env:BUILD_TARGET --bin mithril
+      - name: Package Windows executable and installer
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -LiteralPath "target/$env:BUILD_TARGET/release/mithril.exe" -DestinationPath "dist/$env:ARCHIVE_NAME.zip"
-
-      - name: Build Windows installer
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $metadata = cargo +stable metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo package metadata' }
-          $version = ($metadata.packages | Where-Object name -eq 'mithril').version
-          if (-not $version) { throw 'Missing mithril package version' }
+          Compress-Archive -LiteralPath "target/$env:BUILD_TARGET/release/mithril.exe" -DestinationPath "dist/mithril-$env:APP_VERSION-windows-x86_64.zip"
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup 6 compiler is missing from the runner' }
           $sourceDir = (Resolve-Path "target/$env:BUILD_TARGET/release").Path
           $outputDir = (Resolve-Path dist).Path
-          & $compiler "/DAppVersion=$version" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/mithril.iss
+          & $compiler "/DAppVersion=$env:APP_VERSION" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/mithril.iss
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
-          $installer = Join-Path $outputDir "mithril-$version-windows-x86_64-setup.exe"
-          if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer output is missing' }
-
+          node .github/scripts/release.mjs checksums
       - name: Upload build
         uses: actions/upload-artifact@v7
         with:
-          name: mithril-${{ matrix.platform }}
+          name: mithril-windows-x86_64
           path: dist/*
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
 
   publish:
-    name: Attach downloads to GitHub Release
-    if: github.event_name == 'release'
+    name: Publish public Windows downloads
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
+    timeout-minutes: 15
     steps:
-      - name: Download packaged builds
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download packaged build
         uses: actions/download-artifact@v8
         with:
-          pattern: mithril-*
-          merge-multiple: true
+          name: mithril-windows-x86_64
           path: dist
-
-      - name: Upload release assets
+      - name: Upload, verify and publish release
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+          GH_TOKEN: ${{ secrets.MITHRIL_RELEASES_TOKEN }}
+          APP_VERSION: ${{ needs.build.outputs.version }}
+        run: node .github/scripts/release.mjs publish

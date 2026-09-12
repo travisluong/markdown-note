@@ -16,14 +16,15 @@ cargo run --locked
 
 ## Download a desktop build
 
-The **Build desktop binaries** GitHub Actions workflow builds release executables
-for Windows x86-64, Linux x86-64, and macOS Apple Silicon and Intel. This release
-workflow runs when a GitHub release is published, including pre-releases, or
-manually from **Actions**. Ordinary pushes, tag pushes and pull requests do not
-generate its release artifacts. A published release's tag must contain the
-workflow; manual **Run workflow** becomes available when it is on the default branch.
+The **Build Windows release** GitHub Actions workflow tests and builds Windows
+x86-64 when a stable `vMAJOR.MINOR.PATCH` tag is pushed. The tag must match the
+Cargo package version. Prereleases, unprefixed versions and malformed tags do
+not publish. The tagged commit must contain the workflow; manual **Run workflow**
+becomes available when it is on the default branch. See the
+[release setup and procedure](packaging/windows/README.md) for credentials and
+versioning. Other platforms currently have validation checks but no releases.
 
-For Windows, open [Releases](https://github.com/travisluong/mithril/releases)
+For Windows, open [Releases](https://github.com/travisluong/mithril-releases/releases)
 and download `mithril-<version>-windows-x86_64-setup.exe` under **Assets** once
 the build finishes. Run it and choose **Install**. It installs for your Windows
 account without requiring administrator privileges, adds Mithril to the Start
@@ -36,36 +37,25 @@ Uninstall through Installed apps; your notebooks and preferences are retained.
 The app and installer are currently unsigned, so Windows may display a
 SmartScreen warning. Automatic updates are not included yet.
 
-The release also includes the portable Windows ZIP and the other platforms'
-archives. For manual builds, open **Actions → Build desktop binaries**, choose a
-successful run, and download the artifact for your computer. Extract the Actions
-artifact ZIP first; the Windows installer inside can then be run directly:
+The release also includes `mithril-<version>-windows-x86_64.zip` and
+`SHA256SUMS.txt` with SHA-256 checksums for the installer and portable ZIP.
+For manual builds, open **Actions → Build Windows release**, choose a
+successful run, and download its artifact. Manual runs never publish a release.
+Extract the Actions artifact ZIP first; the Windows installer inside can then
+be run directly:
 
 | Artifact | Contents |
 | --- | --- |
-| `mithril-windows-x86_64` | Setup EXE plus a portable ZIP containing `mithril.exe` |
-| `mithril-linux-x86_64` | tar.gz containing `mithril` |
-| `mithril-macos-apple-silicon` | ZIP containing `Mithril.app` for M-series Macs |
-| `mithril-macos-intel` | ZIP containing `Mithril.app` for Intel Macs |
+| `mithril-windows-x86_64` | Setup EXE, portable ZIP containing `mithril.exe`, and SHA-256 checksums |
 
 For the portable Windows build, extract its ZIP and run `mithril.exe`.
-On Linux, extract the tar.gz and run `./mithril` from a terminal.
-On macOS, extract `Mithril.app`, move it to Applications if desired, and open it
-from Finder or the Dock; Terminal is not needed. The app is not Developer
-ID-signed or notarized. If macOS blocks the first launch, follow
-[Apple's instructions to open an app from an unknown developer](https://support.apple.com/guide/mac-help/mh40616/mac)
-using System Settings → Privacy & Security → Open Anyway.
-
-Actions artifacts are retained for 14 days. Published-release builds attach all
-downloads directly to that GitHub Release after all platform builds succeed;
-manual workflow runs only produce Actions artifacts. macOS `.dmg` images are
-not included. Windows installer build instructions and manual checks are in
-[`packaging/windows/README.md`](packaging/windows/README.md).
-The Linux build uses Ubuntu 22.04 and needs compatible system libraries and a
-working graphics driver; it is not a self-contained AppImage. The release
-workflow checks application and installer compilation and the macOS bundle's
-property list and executable permissions. It does not establish interactive UI
-or install/upgrade/uninstall behavior on each platform.
+Actions artifacts are retained for 14 days. Tagged builds create a draft release
+in the public downloads repository, verify every uploaded asset, and publish
+only after verification succeeds. Reruns resume matching drafts and leave
+published releases unchanged. Windows installer build instructions and manual
+checks are in [`packaging/windows/README.md`](packaging/windows/README.md).
+Headless tests and packaging checks do not establish interactive UI or
+install/upgrade/uninstall behavior.
 
 ## Get started
 

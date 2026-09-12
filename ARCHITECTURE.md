@@ -205,8 +205,17 @@ Windows distribution is owned by
 [`build.yml`](.github/workflows/build.yml) release workflow. The installer owns
 only app binaries, shortcuts and its per-user uninstall registration; notebook
 files and preferences remain application/user-owned. Keep its AppId stable for
-upgrades. Only the separate release-asset upload job has repository write
-permission. See the [packaging guide](packaging/windows/README.md) for compiler
+upgrades. Stable `vMAJOR.MINOR.PATCH` tag pushes build and test Windows x86-64
+using the pinned Rust toolchain; the tag must match Cargo metadata. Manual runs
+retain Actions artifacts without publishing. The separate publish job uses
+`MITHRIL_RELEASES_TOKEN` only in its publishing step to write Release assets to
+`travisluong/mithril-releases`; the built-in token stays read-only in all jobs.
+[`release.mjs`](.github/scripts/release.mjs) owns tag/version validation,
+checksums and draft publication. It downloads and verifies assets before making
+a draft public, resumes matching drafts, and leaves published releases unchanged.
+The public tag targets that repository's `main`; source identity lives in the
+release notes. No source or binaries are copied into public Git history.
+See the [packaging guide](packaging/windows/README.md) for setup, compiler
 verification and manual installation checks; agents must not run the installer
 or application to validate desktop behavior.
 
