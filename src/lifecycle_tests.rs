@@ -369,3 +369,50 @@ fn stale_and_duplicate_foreground_completions_cannot_install_documents(cx: &mut 
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
 }
+
+#[gpui::test]
+fn moving_a_note_preserves_preferences_changed_while_the_move_is_pending(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut book = notebook::Notebook::open(&directory.path().join("Book"), true).unwrap();
+    book.settings.autosave.enabled = false;
+    let root = book.root.clone();
+    let path = root.join("note.md");
+    fs::write(&path, "original").unwrap();
+    fs::create_dir(root.join("Archive")).unwrap();
+    let (notes, cx) = fixture(cx, &path);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            this.drop_entry(
+                &super::notebook_ui::EntryDrag {
+                    root: root.clone(),
+                    path: "note.md".into(),
+                },
+                "Archive".into(),
+                window,
+                cx,
+            );
+            assert!(this.is_busy());
+            // The View menu remains usable while the filesystem worker runs.
+            this.set_mode(super::ViewMode::Source, window, cx);
+            assert_eq!(
+                this.notebooks.active.as_ref().unwrap().settings.view_mode,
+                super::ViewMode::Source
+            );
+        });
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let notes = notes.read(cx);
+        assert!(!notes.is_busy());
+        assert_eq!(
+            notes.document.as_ref().unwrap().path,
+            root.join("Archive/note.md")
+        );
+        assert_eq!(notes.mode, super::ViewMode::Source);
+        assert_eq!(
+            notes.notebooks.active.as_ref().unwrap().settings.view_mode,
+            notes.mode
+        );
+    });
+}

@@ -1365,7 +1365,6 @@ impl Notes {
         }
         let root = book.root.clone();
         let from = drag.path.clone();
-        let mut settings = book.settings.clone();
         self.saves.timer = None;
         let Some(operation) = self.foreground.begin() else {
             return;
@@ -1378,8 +1377,7 @@ impl Notes {
                 .background_executor()
                 .spawn(async move {
                     let to = notebook::move_entry(&worker_root, &worker_from, &parent)?;
-                    settings.remap_entry(&worker_from, &to);
-                    Ok::<_, io::Error>((to, settings))
+                    Ok::<_, io::Error>(to)
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -1387,7 +1385,7 @@ impl Notes {
                     return;
                 }
                 match result {
-                    Ok((to, settings)) => {
+                    Ok(to) => {
                         if let Some(document) = &mut this.document {
                             document.path = notebook::remap_path(
                                 &document.path,
@@ -1404,8 +1402,10 @@ impl Notes {
                                 cx,
                             );
                         });
-                        if let Some(book) = &mut this.notebooks.active {
-                            book.settings = settings;
+                        if let Some(book) = &mut this.notebooks.active
+                            && book.root == root
+                        {
+                            book.settings.remap_entry(&from, &to);
                         }
                         this.notebooks.notice = None;
                         this.persist_notebooks(cx);

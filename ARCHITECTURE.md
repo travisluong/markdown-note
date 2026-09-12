@@ -81,7 +81,9 @@ Follow its callers and completions before treating a file as an isolated module.
    prevents cross-document undo while preserving history across views.
 5. **Move:** notebook moves update paths for the open buffer and persisted
    selection/expansion. Account for saves, image document paths and search state
-   when changing this flow.
+   when changing this flow. Move completion remaps paths in the current settings;
+   it must not restore a settings clone captured before asynchronous filesystem
+   work, since view preferences can change while that work runs.
 6. **Persist preferences:** notebook settings and the user index are separate
    atomic JSON replacements. The current task chain preserves write ordering;
    switch/close await it. Two file replacements are not one transaction.

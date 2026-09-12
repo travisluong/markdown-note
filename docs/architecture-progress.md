@@ -116,3 +116,10 @@ a newer active index. Ten Windows tests passed, including 20,000 submissions,
 fair scheduling, stale completions, failure/retry paths, both notebooks reaching
 disk and corrupt/unsupported JSON preservation. The application driver is being
 integrated separately; this model commit alone does not replace the old UI chain.
+
+## Preference changes during a move
+
+A new TestPlatform regression reproduced a mode mismatch: changing to Source
+while a note moved left the editor in Source but restored Live-preview settings
+from the worker's older snapshot. Move completion now remaps only paths in the
+current settings. The regression failed before the fix and passed afterward.
