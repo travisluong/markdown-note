@@ -5,6 +5,15 @@ use gpui_component::{
 };
 use gpui_component::{Disableable, Theme, ThemeMode, dialog::Dialog, switch::Switch};
 
+// Match gpui-component's platform defaults for both source text and code blocks.
+const DEFAULT_MONOSPACE_FONT: &str = if cfg!(target_os = "macos") {
+    "Menlo"
+} else if cfg!(target_os = "windows") {
+    "Consolas"
+} else {
+    "DejaVu Sans Mono"
+};
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsSection {
     General,
@@ -97,7 +106,7 @@ impl Notes {
         let theme = Theme::global_mut(cx);
         apply_theme_colors(theme, appearance.clone(), self.startup_dark);
         theme.font_family = resolve_font(appearance.interface_font.as_deref(), &self.installed_fonts, ".SystemUIFont");
-        theme.mono_font_family = resolve_font(appearance.monospace_font.as_deref(), &self.installed_fonts, "Consolas");
+        theme.mono_font_family = resolve_font(appearance.monospace_font.as_deref(), &self.installed_fonts, DEFAULT_MONOSPACE_FONT);
         theme.font_size = px(appearance.ui_font_size as f32);
         theme.mono_font_size = px(appearance.content_font_size as f32);
         window.set_rem_size(px(appearance.ui_font_size as f32));
@@ -743,7 +752,7 @@ impl Notes {
     pub(super) fn content_font(&self, _cx: &App) -> SharedString {
         let appearance = self.appearance();
         if self.mode == ViewMode::Source {
-            resolve_font(appearance.monospace_font.as_deref(), &self.installed_fonts, "Consolas")
+            resolve_font(appearance.monospace_font.as_deref(), &self.installed_fonts, DEFAULT_MONOSPACE_FONT)
         } else {
             resolve_font(appearance.text_font.as_deref(), &self.installed_fonts, ".SystemUIFont")
         }
