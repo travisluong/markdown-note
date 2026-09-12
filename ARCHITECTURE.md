@@ -156,6 +156,11 @@ need a contract; retain cheap rope snapshots and the current incremental paths.
 
 From the repository root:
 
+[`rust-toolchain.toml`](rust-toolchain.toml) pins Rust 1.98.1, rustfmt and Clippy.
+The separate [validation workflow](.github/workflows/check.yml) checks the default
+application and headless tests on Windows, Linux and macOS; Windows also checks
+formatting and strict lint. The release/manual packaging workflow is separate.
+
 ```powershell
 cargo check --locked
 cargo test --locked --features editor-diagnostics

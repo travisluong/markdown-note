@@ -6,8 +6,9 @@ files; Source, Live preview and Reading provide three ways to work with them.
 
 ## Run on Windows
 
-Use stable Rust with the Windows MSVC toolchain, Visual Studio C++ Build Tools,
-and a Windows SDK installed:
+Install Rust through rustup, Visual Studio C++ Build Tools, and a Windows SDK.
+Use the Windows MSVC toolchain. The repository selects Rust 1.98.1 through
+[`rust-toolchain.toml`](rust-toolchain.toml):
 
 ```powershell
 cargo run --locked
@@ -348,6 +349,11 @@ and current verification; the [dated audit](docs/architecture-audit.md) records
 the original findings and plan. The component is patched in
 `vendor/gpui-component`; its [patch notes](vendor/gpui-component/EDITOR-PATCH.md)
 record the upstream source and local changes.
+
+The separate **Validate code** workflow checks the default application and runs
+headless tests on Windows, Linux and macOS for pull requests, pushes to `main`
+or `dev`, and manual runs. Windows also runs formatting and strict Clippy checks.
+It uses the repository's pinned Rust toolchain and does not publish artifacts.
 
 ### User-run native diagnostics
 

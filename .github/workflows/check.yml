@@ -1,0 +1,82 @@
+name: Validate code
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-2022
+          - platform: linux-x86_64
+            runner: ubuntu-22.04
+          - platform: macos-apple-silicon
+            runner: macos-15
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Check out source and vendored components
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang cmake pkg-config libssl-dev \
+            libfontconfig1-dev libfreetype6-dev libwayland-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-composite0-dev libxcb-randr0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libvulkan-dev
+
+      - name: Check Xcode and Metal tools
+        if: runner.os == 'macOS'
+        run: |
+          xcodebuild -version
+          if ! xcrun metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun metal --version
+
+      - name: Install and report pinned Rust
+        # rustup reads rust-toolchain.toml, including rustfmt and clippy.
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+
+      - name: Check formatting
+        if: runner.os == 'Windows'
+        run: cargo fmt --check
+
+      - name: Check default application
+        run: cargo check --locked
+
+      - name: Check strict lint baseline
+        if: runner.os == 'Windows'
+        run: cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings
+
+      - name: Run headless regression tests
+        run: cargo test --locked --features editor-diagnostics
