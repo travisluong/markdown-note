@@ -1,5 +1,4 @@
 //! Retained-buffer autosave checks on GPUI's in-memory TestPlatform.
-use super::DirectoryState;
 use crate::{Document, Next, Notes, notebook};
 use gpui::{Entity, TestAppContext, VisualTestContext, prelude::*};
 use gpui_component::Root;
@@ -25,12 +24,16 @@ fn fixture<'a>(
             };
             let mut entries = notebook::read_directory(&book.root, Path::new("")).unwrap();
             book.settings.sort_entries(&mut entries);
-            notes.notebooks.active = Some(book);
+            let generation = notes
+                .notebooks
+                .explorer
+                .begin_directory(PathBuf::new(), &book.settings);
             notes
                 .notebooks
-                .directories
-                .insert(PathBuf::new(), DirectoryState::Ready(entries));
-            notes.notebooks.rebuild_rows();
+                .explorer
+                .complete_directory(generation, PathBuf::new(), Ok(entries), &book.settings)
+                .unwrap();
+            notes.notebooks.active = Some(book);
             // Notes::new leaves index persistence disabled; all document writes
             // and the notebook's initial settings stay inside this temp root.
             notes
@@ -69,11 +72,13 @@ fn retained_document_autosaves_after_discarded_navigation(
             assert!(this.dirty(cx));
             assert!(this.saves.timer.is_some());
             let book_root = this.notebooks.active.as_ref().unwrap().root.clone();
-            this.notebooks.cursor = this
+            let selection = this
                 .notebooks
-                .rows
+                .explorer
+                .rows()
                 .iter()
                 .position(|row| row.path == Path::new("b.md"));
+            this.notebooks.explorer.select(selection);
             this.request(Next::TreeFile(book_root.join("b.md")), window, cx);
             assert!(
                 this.saves.timer.is_none(),
@@ -104,7 +109,13 @@ fn retained_document_autosaves_after_discarded_navigation(
             assert_eq!(this.document_id(), identity);
             assert_eq!(this.editor.read(cx).value().as_ref(), "retained A");
             if select_folder {
-                this.notebooks.cursor = this.notebooks.rows.iter().position(|row| row.directory);
+                let selection = this
+                    .notebooks
+                    .explorer
+                    .rows()
+                    .iter()
+                    .position(|row| row.directory);
+                this.notebooks.explorer.select(selection);
                 this.open_selected_row(window, cx);
             } else {
                 this.tree_move(false, window, cx);

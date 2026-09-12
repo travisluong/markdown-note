@@ -230,3 +230,83 @@ fn refresh_releases_obsolete_loads_for_reexpanded_directories() {
     );
     assert!(!explorer.rows().iter().any(|row| row.label == "Loading…"));
 }
+
+#[cfg(test)]
+mod extension_row_tests {
+    use super::super::{DirectoryState, Explorer};
+    use crate::notebook;
+    use std::{
+        collections::BTreeMap,
+        path::{Path, PathBuf},
+    };
+
+    #[test]
+    fn extension_changes_preserve_row_identity_and_status() {
+        let mut settings = notebook::Settings::default();
+        let entries = [
+            ("note.md", false, false),
+            ("note.png", false, false),
+            ("data.txt", false, false),
+            ("folder.md", true, false),
+            ("linked.md", false, true),
+            ("empty", true, false),
+            ("pending", true, false),
+            ("failed", true, false),
+        ];
+        let mut directories = BTreeMap::new();
+        directories.insert(
+            PathBuf::new(),
+            DirectoryState::Ready(
+                entries
+                    .iter()
+                    .map(|(path, directory, link)| notebook::Entry {
+                        relative: PathBuf::from(path),
+                        directory: *directory,
+                        link: *link,
+                        modified: None,
+                        created: None,
+                    })
+                    .collect(),
+            ),
+        );
+        directories.insert("empty".into(), DirectoryState::Ready(vec![]));
+        directories.insert("pending".into(), DirectoryState::Loading);
+        directories.insert(
+            "failed".into(),
+            DirectoryState::Failed("unavailable".into()),
+        );
+        settings
+            .expanded
+            .extend([PathBuf::from("empty"), "pending".into(), "failed".into()]);
+        let mut explorer = Explorer::new(super::image);
+        explorer.directories = directories;
+        explorer.rebuild(Some(&settings));
+        let before = explorer.rows().to_vec();
+        explorer.select(Some(1));
+        settings.show_file_extensions = false;
+        explorer.rebuild(Some(&settings));
+        let rows = explorer.rows();
+        assert_eq!(explorer.cursor(), Some(1));
+        assert_eq!(rows[1].path, Path::new("note.png"));
+        assert_eq!(rows[0].label, "note");
+        assert_eq!(rows[1].label, "note");
+        assert_eq!(rows[1].filename.as_deref(), Some("note.png"));
+        assert_eq!(rows[2].label, "data");
+        assert!(rows[2].disabled);
+        assert_eq!(rows[3].label, "folder.md");
+        assert_eq!(rows[4].label, "linked (link)");
+        for (old, new) in before.iter().zip(rows) {
+            assert_eq!(old.path, new.path);
+            assert_eq!(old.directory, new.directory);
+            assert_eq!(old.draggable, new.draggable);
+            assert_eq!(old.disabled, new.disabled);
+            assert_eq!(old.retry, new.retry);
+            if old.filename.is_none() {
+                assert_eq!(old.label, new.label);
+            }
+        }
+        assert!(rows.iter().any(|row| row.label == "Empty folder"));
+        assert!(rows.iter().any(|row| row.label == "Loading…"));
+        assert!(rows.iter().any(|row| row.label == "Retry: unavailable"));
+    }
+}

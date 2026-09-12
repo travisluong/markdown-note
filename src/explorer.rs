@@ -64,6 +64,12 @@ impl Explorer {
     pub fn selected(&self) -> Option<&Row> {
         self.cursor.and_then(|index| self.row(index))
     }
+    /// Whether any current directory worker is still pending.
+    pub fn is_loading(&self) -> bool {
+        self.directories
+            .values()
+            .any(|state| matches!(state, DirectoryState::Loading))
+    }
     pub fn contains_directory(&self, path: &Path) -> bool {
         self.directories.contains_key(path)
     }

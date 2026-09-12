@@ -1,6 +1,6 @@
 use super::*;
 use gpui_component::{Disableable, dialog::Dialog, menu::PopupMenuItem};
-use std::collections::BTreeMap;
+use gpui_note::explorer::Explorer;
 #[cfg(test)]
 use std::time::Duration;
 
@@ -13,6 +13,9 @@ pub(super) mod diagnostics;
 
 #[cfg(test)]
 mod operation_tests;
+
+#[cfg(test)]
+mod explorer_tests;
 
 #[cfg(test)]
 mod session_tests;
@@ -40,35 +43,13 @@ struct SettingsWaiter {
     after: SettingsAfterFlush,
 }
 
-#[derive(Clone)]
-enum DirectoryState {
-    Loading,
-    Ready(Vec<notebook::Entry>),
-    Failed(String),
-}
-
-#[derive(Clone)]
-struct Row {
-    path: PathBuf,
-    depth: usize,
-    directory: bool,
-    disabled: bool,
-    label: String,
-    filename: Option<String>,
-    retry: bool,
-    draggable: bool,
-}
-
 pub(super) struct NotebookState {
     pub active: Option<notebook::Notebook>,
     index: notebook::Index,
     index_path: Option<PathBuf>,
     index_writable: bool,
     owner: WeakEntity<Notes>,
-    directories: BTreeMap<PathBuf, DirectoryState>,
-    generation: u64,
-    rows: Vec<Row>,
-    cursor: Option<usize>,
+    explorer: Explorer,
     scroll: UniformListScrollHandle,
     pub(super) tree_focus: FocusHandle,
     persistence: Option<Task<()>>,
@@ -104,10 +85,7 @@ impl NotebookState {
             index_path: None,
             index_writable: false,
             owner: cx.weak_entity(),
-            directories: BTreeMap::new(),
-            generation: 0,
-            rows: Vec::new(),
-            cursor: None,
+            explorer: Explorer::new(images::supported),
             scroll: UniformListScrollHandle::new(),
             tree_focus: cx.focus_handle(),
             persistence: None,
@@ -131,93 +109,8 @@ impl NotebookState {
     }
 
     pub(super) fn rebuild_rows(&mut self) {
-        let mut rows = Vec::new();
-        if let Some(book) = &self.active {
-            Self::append_rows(
-                &self.directories,
-                Path::new(""),
-                0,
-                &book.settings,
-                &mut rows,
-            );
-        }
-        replace_rows(&mut self.rows, &mut self.cursor, rows);
-    }
-
-    fn append_rows(
-        directories: &BTreeMap<PathBuf, DirectoryState>,
-        path: &Path,
-        depth: usize,
-        settings: &notebook::Settings,
-        rows: &mut Vec<Row>,
-    ) {
-        match directories.get(path) {
-            Some(DirectoryState::Ready(entries)) => {
-                if entries.is_empty() {
-                    rows.push(Row {
-                        path: path.to_path_buf(),
-                        depth,
-                        directory: false,
-                        disabled: true,
-                        label: "Empty folder".into(),
-                        filename: None,
-                        retry: false,
-                        draggable: false,
-                    });
-                }
-                for entry in entries {
-                    rows.push(Row {
-                        path: entry.relative.clone(),
-                        depth,
-                        directory: entry.directory,
-                        disabled: entry.link
-                            || (!entry.directory
-                                && !(notebook::markdown(&entry.relative)
-                                    || images::supported(&entry.relative))),
-                        filename: (!entry.directory).then(|| notebook::name(&entry.relative)),
-                        label: format!(
-                            "{}{}",
-                            if entry.directory {
-                                notebook::name(&entry.relative)
-                            } else {
-                                notebook::sidebar_file_name(
-                                    &entry.relative,
-                                    settings.show_file_extensions,
-                                    &settings.always_hide_extensions,
-                                )
-                            },
-                            if entry.link { " (link)" } else { "" }
-                        ),
-                        retry: false,
-                        draggable: !entry.link,
-                    });
-                    if entry.directory && !entry.link && settings.expanded.contains(&entry.relative)
-                    {
-                        Self::append_rows(directories, &entry.relative, depth + 1, settings, rows);
-                    }
-                }
-            }
-            Some(DirectoryState::Failed(error)) => rows.push(Row {
-                path: path.to_path_buf(),
-                depth,
-                directory: false,
-                disabled: false,
-                label: format!("Retry: {error}"),
-                filename: None,
-                retry: true,
-                draggable: false,
-            }),
-            _ => rows.push(Row {
-                path: path.to_path_buf(),
-                depth,
-                directory: false,
-                disabled: true,
-                label: "Loading…".into(),
-                filename: None,
-                retry: false,
-                draggable: false,
-            }),
-        }
+        self.explorer
+            .rebuild(self.active.as_ref().map(|book| &book.settings));
     }
 }
 
@@ -607,10 +500,7 @@ impl Notes {
                     self.search = None;
                     self.search_subscription = None;
                     self.apply_appearance(window, cx);
-                    self.notebooks.generation += 1;
-                    self.notebooks.directories.clear();
-                    self.notebooks.rows.clear();
-                    self.notebooks.cursor = None;
+                    self.notebooks.explorer.clear();
                     self.complete_content_load(
                         operation,
                         Ok(app::session::Loaded::Empty),
@@ -1424,9 +1314,7 @@ impl Notes {
     }
 
     fn refresh_tree(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.notebooks.generation += 1;
-        self.notebooks.directories.clear();
-        self.notebooks.cursor = None;
+        self.notebooks.explorer.clear();
         self.load_directory(PathBuf::new(), window, cx);
     }
 
@@ -1435,11 +1323,10 @@ impl Notes {
             return;
         };
         let root = book.root.clone();
-        let generation = self.notebooks.generation;
-        self.notebooks
-            .directories
-            .insert(relative.clone(), DirectoryState::Loading);
-        self.notebooks.rebuild_rows();
+        let generation = self
+            .notebooks
+            .explorer
+            .begin_directory(relative.clone(), &book.settings);
         cx.spawn_in(window, async move |this, cx| {
             let path = relative.clone();
             let result = cx
@@ -1447,45 +1334,29 @@ impl Notes {
                 .spawn(async move { notebook::read_directory(&root, &path) })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if this.notebooks.generation != generation {
+                let Some(book) = &this.notebooks.active else {
                     return;
-                }
-                let mut children = Vec::new();
-                if let (Ok(entries), Some(book)) = (&result, &this.notebooks.active) {
-                    children = entries
-                        .iter()
-                        .filter(|e| {
-                            e.directory && !e.link && book.settings.expanded.contains(&e.relative)
-                        })
-                        .map(|e| e.relative.clone())
-                        .collect();
-                }
-                this.notebooks.directories.insert(
+                };
+                let Some(children) = this.notebooks.explorer.complete_directory(
+                    generation,
                     relative,
-                    match result {
-                        Ok(mut entries) => {
-                            if let Some(book) = &this.notebooks.active {
-                                book.settings.sort_entries(&mut entries);
-                            }
-                            DirectoryState::Ready(entries)
-                        }
-                        Err(error) => DirectoryState::Failed(error.to_string()),
-                    },
-                );
+                    result.map_err(|error| error.to_string()),
+                    &book.settings,
+                ) else {
+                    return;
+                };
                 for path in children {
-                    if !this.notebooks.directories.contains_key(&path) {
-                        this.load_directory(path, window, cx);
-                    }
+                    this.load_directory(path, window, cx);
                 }
-                this.notebooks.rebuild_rows();
                 if let Some(target) = &this.notebooks.folder_target
                     && let Some(index) = this
                         .notebooks
-                        .rows
+                        .explorer
+                        .rows()
                         .iter()
                         .position(|row| row.directory && &row.path == target)
                 {
-                    this.notebooks.cursor = Some(index);
+                    this.notebooks.explorer.select(Some(index));
                     this.notebooks
                         .scroll
                         .scroll_to_item(index, ScrollStrategy::Top);
@@ -1502,10 +1373,10 @@ impl Notes {
         if self.is_busy() {
             return;
         }
-        let Some(row) = self.notebooks.rows.get(index).cloned() else {
+        let Some(row) = self.notebooks.explorer.rows().get(index).cloned() else {
             return;
         };
-        self.notebooks.cursor = Some(index);
+        self.notebooks.explorer.select(Some(index));
         if row.disabled {
             cx.notify();
             return;
@@ -1521,7 +1392,7 @@ impl Notes {
             if !book.settings.expanded.remove(&row.path) {
                 book.settings.expanded.insert(row.path.clone());
             }
-            if !self.notebooks.directories.contains_key(&row.path) {
+            if !self.notebooks.explorer.contains_directory(&row.path) {
                 self.load_directory(row.path, window, cx);
             }
             self.notebooks.rebuild_rows();
@@ -1542,16 +1413,12 @@ impl Notes {
     }
 
     fn tree_move(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let len = self.notebooks.rows.len();
-        if len == 0 || (self.is_busy() && !self.tree_loading()) {
+        if self.is_busy() && !self.tree_loading() {
             return;
         }
-        let next = match self.notebooks.cursor {
-            Some(i) if down => (i + 1).min(len - 1),
-            Some(i) => i.saturating_sub(1),
-            None => 0,
+        let Some(next) = self.notebooks.explorer.move_cursor(down) else {
+            return;
         };
-        self.notebooks.cursor = Some(next);
         self.notebooks.scroll.scroll_to_item(
             next,
             if down {
@@ -1565,7 +1432,7 @@ impl Notes {
     }
 
     pub(super) fn restore_tree_cursor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.notebooks.cursor = self
+        let selection = self
             .notebooks
             .active
             .as_ref()
@@ -1576,11 +1443,13 @@ impl Notes {
             )
             .and_then(|(book, path)| {
                 self.notebooks
-                    .rows
+                    .explorer
+                    .rows()
                     .iter()
                     .position(|row| !row.directory && book.root.join(&row.path) == path)
             });
-        if let Some(index) = self.notebooks.cursor {
+        self.notebooks.explorer.select(selection);
+        if let Some(index) = self.notebooks.explorer.cursor() {
             self.notebooks
                 .scroll
                 .scroll_to_item(index, ScrollStrategy::Top);
@@ -1592,8 +1461,8 @@ impl Notes {
     fn open_selected_row(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let target = self
             .notebooks
-            .cursor
-            .and_then(|index| self.notebooks.rows.get(index))
+            .explorer
+            .selected()
             .filter(|row| !row.directory && !row.disabled && !row.retry)
             .and_then(|row| {
                 self.notebooks
@@ -1620,10 +1489,10 @@ impl Notes {
         if self.is_busy() && !self.tree_loading() {
             return;
         }
-        let Some(index) = self.notebooks.cursor else {
+        let Some(index) = self.notebooks.explorer.cursor() else {
             return;
         };
-        let Some(row) = self.notebooks.rows.get(index) else {
+        let Some(row) = self.notebooks.explorer.rows().get(index) else {
             return;
         };
         let expanded = self
@@ -1637,12 +1506,12 @@ impl Notes {
             self.tree_move(true, window, cx);
         } else if !right {
             let parent = row.path.parent().map(Path::to_path_buf);
-            self.notebooks.cursor = self
-                .notebooks
-                .rows
-                .iter()
-                .position(|r| r.directory && Some(&r.path) == parent.as_ref());
-            if let Some(i) = self.notebooks.cursor {
+            if let Some(parent) = parent {
+                self.notebooks.explorer.select_path(&parent, true);
+            } else {
+                self.notebooks.explorer.select(None);
+            }
+            if let Some(i) = self.notebooks.explorer.cursor() {
                 self.notebooks.scroll.scroll_to_item(i, ScrollStrategy::Top);
             }
             self.open_selected_row(window, cx);
@@ -1686,7 +1555,7 @@ impl Notes {
                 }),
             )
             .on_action(cx.listener(|this, _: &TreeOpen, window, cx| {
-                if let Some(i) = this.notebooks.cursor {
+                if let Some(i) = this.notebooks.explorer.cursor() {
                     this.activate_row(i, window, cx);
                 }
             }))
@@ -1715,11 +1584,11 @@ impl Notes {
             .child(
                 uniform_list(
                     "notebook-files",
-                    self.notebooks.rows.len(),
+                    self.notebooks.explorer.rows().len(),
                     cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
                         range
                             .map(|index| {
-                                let row = &this.notebooks.rows[index];
+                                let row = &this.notebooks.explorer.rows()[index];
                                 let selected = this
                                     .notebooks
                                     .active
@@ -1764,7 +1633,7 @@ impl Notes {
                                     .border_1()
                                     .border_color(gpui::transparent_black())
                                     .when(selected, |view| view.bg(cx.theme().accent))
-                                    .when(this.notebooks.cursor == Some(index), |view| {
+                                    .when(this.notebooks.explorer.cursor() == Some(index), |view| {
                                         view.border_color(cx.theme().foreground.opacity(0.55))
                                     })
                                     .when(row.disabled, |view| {
@@ -1940,9 +1809,7 @@ impl Notes {
                             }
                             this.notebooks.notice = None;
                             this.persist_notebooks(cx);
-                            for row in &mut this.notebooks.rows {
-                                row.path = notebook::remap_path(&row.path, &from, &to);
-                            }
+                            this.notebooks.explorer.remap_visible_paths(&from, &to);
                             this.refresh_sorted_tree(window, cx);
                             this.schedule_search(window, cx);
                             for effect in effects {
@@ -1994,12 +1861,7 @@ impl Notes {
             return;
         }
         book.settings.file_sort = sort;
-        for state in self.notebooks.directories.values_mut() {
-            if let DirectoryState::Ready(entries) = state {
-                sort.sort_entries(entries);
-            }
-        }
-        self.notebooks.rebuild_rows();
+        self.notebooks.explorer.resort(&book.settings);
         self.persist_notebooks(cx);
         cx.notify();
     }
@@ -2013,8 +1875,7 @@ impl Notes {
         let root = book.root.clone();
         let mut paths = book.settings.expanded.clone();
         paths.insert(PathBuf::new());
-        self.notebooks.generation += 1;
-        let generation = self.notebooks.generation;
+        let generation = self.notebooks.explorer.begin_refresh();
         cx.spawn_in(window, async move |this, cx| {
             let directories = cx
                 .background_executor()
@@ -2023,50 +1884,22 @@ impl Notes {
                         .into_iter()
                         .map(|path| {
                             let result = notebook::read_directory(&root, &path);
-                            (path, result)
+                            (path, result.map_err(|error| error.to_string()))
                         })
                         .collect::<Vec<_>>()
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if this.notebooks.generation != generation {
-                    return;
-                }
                 let Some(book) = &this.notebooks.active else {
                     return;
                 };
-                let mut refreshed: BTreeMap<_, _> = directories
-                    .into_iter()
-                    .map(|(path, result)| {
-                        let state = match result {
-                            Ok(mut entries) => {
-                                book.settings.sort_entries(&mut entries);
-                                DirectoryState::Ready(entries)
-                            }
-                            Err(error) => DirectoryState::Failed(error.to_string()),
-                        };
-                        (path, state)
-                    })
-                    .collect();
-                // Preserve directories loaded after this refresh started, including
-                // their selected rows, rather than replacing them with loading rows.
-                for path in &book.settings.expanded {
-                    if !refreshed.contains_key(path)
-                        && let Some(state) = this.notebooks.directories.remove(path)
-                    {
-                        refreshed.insert(path.clone(), state);
-                    }
-                }
-                this.notebooks.directories = refreshed;
-                // A user may have expanded another folder while metadata was read.
-                let missing: Vec<_> = book
-                    .settings
-                    .expanded
-                    .iter()
-                    .filter(|path| !this.notebooks.directories.contains_key(*path))
-                    .cloned()
-                    .collect();
-                this.notebooks.rebuild_rows();
+                let Some(missing) = this.notebooks.explorer.complete_refresh(
+                    generation,
+                    directories,
+                    &book.settings,
+                ) else {
+                    return;
+                };
                 for path in missing {
                     this.load_directory(path, window, cx);
                 }
@@ -2074,90 +1907,5 @@ impl Notes {
             });
         })
         .detach();
-    }
-}
-
-fn replace_rows(rows: &mut Vec<Row>, cursor: &mut Option<usize>, next: Vec<Row>) {
-    let old_path = cursor.and_then(|i| rows.get(i)).map(|row| row.path.clone());
-    *rows = next;
-    *cursor = old_path.and_then(|path| rows.iter().position(|row| row.path == path));
-}
-
-#[cfg(test)]
-mod extension_row_tests {
-    use super::{DirectoryState, NotebookState, notebook, replace_rows};
-    use std::{
-        collections::BTreeMap,
-        path::{Path, PathBuf},
-    };
-
-    #[test]
-    fn extension_changes_preserve_row_identity_and_status() {
-        let mut settings = notebook::Settings::default();
-        let entries = [
-            ("note.md", false, false),
-            ("note.png", false, false),
-            ("data.txt", false, false),
-            ("folder.md", true, false),
-            ("linked.md", false, true),
-            ("empty", true, false),
-            ("pending", true, false),
-            ("failed", true, false),
-        ];
-        let mut directories = BTreeMap::new();
-        directories.insert(
-            PathBuf::new(),
-            DirectoryState::Ready(
-                entries
-                    .iter()
-                    .map(|(path, directory, link)| notebook::Entry {
-                        relative: PathBuf::from(path),
-                        directory: *directory,
-                        link: *link,
-                        modified: None,
-                        created: None,
-                    })
-                    .collect(),
-            ),
-        );
-        directories.insert("empty".into(), DirectoryState::Ready(vec![]));
-        directories.insert("pending".into(), DirectoryState::Loading);
-        directories.insert(
-            "failed".into(),
-            DirectoryState::Failed("unavailable".into()),
-        );
-        settings
-            .expanded
-            .extend([PathBuf::from("empty"), "pending".into(), "failed".into()]);
-        let mut rows = Vec::new();
-        NotebookState::append_rows(&directories, Path::new(""), 0, &settings, &mut rows);
-        let before = rows.clone();
-        let mut cursor = Some(1);
-        settings.show_file_extensions = false;
-        let mut next = Vec::new();
-        NotebookState::append_rows(&directories, Path::new(""), 0, &settings, &mut next);
-        replace_rows(&mut rows, &mut cursor, next);
-        assert_eq!(cursor, Some(1));
-        assert_eq!(rows[1].path, Path::new("note.png"));
-        assert_eq!(rows[0].label, "note");
-        assert_eq!(rows[1].label, "note");
-        assert_eq!(rows[1].filename.as_deref(), Some("note.png"));
-        assert_eq!(rows[2].label, "data");
-        assert!(rows[2].disabled);
-        assert_eq!(rows[3].label, "folder.md");
-        assert_eq!(rows[4].label, "linked (link)");
-        for (old, new) in before.iter().zip(&rows) {
-            assert_eq!(old.path, new.path);
-            assert_eq!(old.directory, new.directory);
-            assert_eq!(old.draggable, new.draggable);
-            assert_eq!(old.disabled, new.disabled);
-            assert_eq!(old.retry, new.retry);
-            if old.filename.is_none() {
-                assert_eq!(old.label, new.label);
-            }
-        }
-        assert!(rows.iter().any(|row| row.label == "Empty folder"));
-        assert!(rows.iter().any(|row| row.label == "Loading…"));
-        assert!(rows.iter().any(|row| row.label == "Retry: unavailable"));
     }
 }
