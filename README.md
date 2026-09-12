@@ -315,15 +315,25 @@ after 1,000 ms without edits. Settings offers an enable switch and a delay from
 100 to 60,000 ms; invalid input retains the previous setting. Autosave preferences
 persist per notebook, while notes outside the active notebook use session
 preferences. Writes allow continued typing and serialize with manual saves and
-navigation. Failures retain dirty changes with a nonmodal error; edit again or
-use **Save** to retry.
+navigation. Ordinary write failures retain changes with a nonmodal error; edit
+again or use **Save** to retry.
+
+If the file changes, is replaced, or disappears on disk, saving reports a conflict
+and pauses autosave for that document. Your text and undo history remain in the
+editor. Copy any changes you want to keep before reopening the file, then merge
+them with the disk version. **Save** explicitly retries the same version check;
+it does not force an overwrite. Opening a fresh baseline or a successful explicit
+save clears the pause.
 
 Opening another file, switching notebooks or closing prompts to Save, Discard or
 Cancel when needed. Failed opens/saves preserve the current buffer. Saves write
 a temporary file beside the original and then replace it. UTF-8 BOM and
 LF/CRLF/CR conventions are preserved. Mixed line endings normalize to the first
-observed convention on save; files without line endings use LF. The Markdown
-file picker shows all files and rejects unsupported extensions.
+observed convention on save; files without line endings use LF. Unix permission
+bits are preserved. Other metadata, including ownership, ACLs, extended attributes
+and Windows named streams, is not copied by the replacement policy. The Markdown
+file picker shows all files and rejects unsupported extensions. See the
+[storage contract](docs/document-storage.md) for conflict checks and their limits.
 
 Each notebook keeps settings in `.gpui-note/settings.json`, including appearance,
 autosave, view mode, sidebar options, the last selected file and expanded folders.

@@ -92,6 +92,9 @@ struct Document {
     saved: String,
     saved_rope: Rope,
     format: document::TextFormat,
+    version: document::DiskVersion,
+    #[cfg(feature = "editor-diagnostics")]
+    _diagnostic_fixture: Option<tempfile::TempDir>,
 }
 
 impl Document {
@@ -102,6 +105,9 @@ impl Document {
             saved_rope: Rope::from(loaded.text.as_str()),
             saved: loaded.text,
             format: loaded.format,
+            version: loaded.version,
+            #[cfg(feature = "editor-diagnostics")]
+            _diagnostic_fixture: None,
         })
     }
 }

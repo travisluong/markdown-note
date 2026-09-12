@@ -1,6 +1,5 @@
 //! Opt-in, in-app release benchmark. No user files are opened or saved.
 use super::*;
-use gpui_note::document::{Newline, TextFormat};
 mod burst;
 use gpui_component::input::{Position, editor_work};
 use std::time::Instant;
@@ -53,15 +52,7 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
         notes.saves.session.enabled = false;
         notes.editor_subscription = Notes::subscribe_editor(&diagnostic, window, cx);
         notes.editor = diagnostic;
-        notes.document = Some(Document {
-            path: "diagnostics.md".into(),
-            saved_rope: Rope::from(fixture.as_str()),
-            saved: fixture,
-            format: TextFormat {
-                bom: false,
-                newline: Newline::Lf,
-            },
-        });
+        notes.document = Some(document_fixture("diagnostics.md", &fixture));
         notes.set_mode(ViewMode::LivePreview, window, cx);
     });
     geometry_round(notes.clone(), output, 0, window);
@@ -101,6 +92,17 @@ fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &
         table_round(notes,output,0,window);
     });
 }
+// Benchmarks use real disposable baselines, so conflict detection never needs
+// a fabricated disk version. The fixture lives as long as its active document.
+fn document_fixture(name: &str, text: &str) -> Document {
+    let directory = tempfile::tempdir().expect("benchmark fixture directory");
+    let path = directory.path().join(name);
+    fs::write(&path, text).expect("benchmark fixture file");
+    let mut document = Document::open(path).expect("benchmark fixture document");
+    document._diagnostic_fixture = Some(directory);
+    document
+}
+
 fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<Notes>) {
     let line = "Paragraph **bold** and _italic_ café 你好. The quick brown fox jumps over the lazy dog. More text here.\n";
     let text = if long {
@@ -115,15 +117,7 @@ fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<
     });
     notes.editor_subscription = Notes::subscribe_editor(&editor, window, cx);
     notes.editor = editor;
-    notes.document = Some(Document {
-        path: "benchmark.md".into(),
-        saved_rope: Rope::from(text.as_str()),
-        saved: text,
-        format: TextFormat {
-            bom: false,
-            newline: Newline::Lf,
-        },
-    });
+    notes.document = Some(document_fixture("benchmark.md", &text));
     notes.set_mode(ViewMode::LivePreview, window, cx);
 }
 

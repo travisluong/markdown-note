@@ -22,11 +22,13 @@ fn bom_and_newline_round_trip_through_the_public_storage_api() {
             let loaded = document::open(&path).unwrap();
             assert_eq!(loaded.path, fs::canonicalize(&path).unwrap());
             assert_eq!(loaded.format, TextFormat { bom, newline });
-            document::save_file(&loaded.path, &loaded.text, loaded.format).unwrap();
+            let receipt =
+                document::save_file(&loaded.path, &loaded.text, loaded.format, &loaded.version)
+                    .unwrap();
             assert_eq!(fs::read(&path).unwrap(), original);
 
             let edited = format!("{}edit\n", loaded.text);
-            document::save_file(&loaded.path, &edited, loaded.format).unwrap();
+            document::save_file(&loaded.path, &edited, loaded.format, &receipt.version).unwrap();
             assert_eq!(document::open(&path).unwrap().text, edited);
         }
     }
@@ -45,7 +47,7 @@ fn mixed_endings_use_the_first_observed_convention() {
         let loaded = document::open(&path).unwrap();
         assert_eq!(loaded.text, "a\nb\nc\n");
         assert_eq!(loaded.format.newline, newline);
-        document::save_file(&loaded.path, &loaded.text, loaded.format).unwrap();
+        document::save_file(&loaded.path, &loaded.text, loaded.format, &loaded.version).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), expected);
     }
 }
@@ -81,6 +83,7 @@ fn sharing_locked_save_preserves_original_and_cleans_up_temporary_file() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("note.md");
     fs::write(&path, "original").unwrap();
+    let loaded = document::open(&path).unwrap();
     let lock = fs::OpenOptions::new()
         .read(true)
         .share_mode(1)
@@ -93,7 +96,8 @@ fn sharing_locked_save_preserves_original_and_cleans_up_temporary_file() {
             TextFormat {
                 bom: false,
                 newline: Newline::Lf
-            }
+            },
+            &loaded.version,
         )
         .is_err()
     );

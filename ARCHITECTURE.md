@@ -44,7 +44,7 @@ Follow its callers and completions before treating a file as an isolated module.
 | Responsibility | Starting points | Important coupling |
 | --- | --- | --- |
 | Startup, actions, document state, save prompts, root rendering | [main.rs](src/main.rs): `Notes`, `Next`, `request`, `continue_with`, `NotesWindow` | `NotesWindow` renders modal layers outside `Notes::render` to avoid recursively borrowing the entity. |
-| Encoding and atomic note replacement | [document/mod.rs](src/document/mod.rs): `open`, `LoadedDocument`, `TextFormat`, `save_file`; [tests/document.rs](tests/document.rs) | Storage has no GPUI dependencies. The application `Document` retains saved text/rope; current text belongs to `InputState`. |
+| Encoding, disk versions and guarded note replacement | [document/mod.rs](src/document/mod.rs): `open`, `DiskVersion`; [document/storage.rs](src/document/storage.rs): `save_file`, `WriteReceipt`, `SaveError`; [storage contract](docs/document-storage.md) | Storage has no GPUI dependencies. The application `Document` retains saved text/rope and opaque disk evidence; current text belongs to `InputState`. |
 | Debounced autosave and queued foreground operations | [autosave.rs](src/autosave.rs): `SaveState`, `schedule_autosave`, `start_write`; [app/operation.rs](src/app/operation.rs): `ForegroundOperation` | Background writes own a captured document baseline. Foreground prompts, navigation and saves own explicit operation tokens; queued actions carry their waiting token. |
 | Notebook schema, path policy, tree values and filesystem operations | [notebook.rs](src/notebook.rs) re-exports [settings](src/notebook/settings.rs), [paths](src/notebook/paths.rs), [tree](src/notebook/tree.rs) and [storage](src/notebook/storage.rs) | Storage depends on schema/path/tree policies; policies have no UI dependencies. Existing `notebook::` entry points are preserved. |
 | Settings scheduling policy | [notebook/writer.rs](src/notebook/writer.rs): `SettingsWriter`, `WriteJob`, `FlushBarrier`; [tests/settings_writer.rs](tests/settings_writer.rs) | Pure one-running/latest-per-destination model with index dependencies and revision-scoped flush/error results. Application driver integration is still in progress. |
@@ -67,8 +67,12 @@ Follow its callers and completions before treating a file as an isolated module.
    copy of the document.
 2. **Save:** the coordinator captures document identity, path, encoding and an
    immutable rope snapshot. Background work converts and writes that snapshot.
-   Success advances the saved baseline to the captured snapshot, not whatever
-   happens to be in the editor at completion. Later typing must remain dirty.
+   Storage compares raw disk bytes and available file identity with the expected
+   `DiskVersion` before replacement. Success advances the saved baseline and
+   receipt version to the captured snapshot, not whatever happens to be in the
+   editor at completion. Later typing must remain dirty. A conflict retains the
+   editor and pauses autosave until an explicit successful Save or fresh install;
+   an intervening ordinary retry failure must not clear that pause.
 3. **Navigate:** `request(Next)` serializes against an active save and runs the
    Save/Discard/Cancel decision. `continue_with` dispatches the approved action.
    Failed loads retain the current document. Cancelled pickers, failed activation,
@@ -83,7 +87,10 @@ Follow its callers and completions before treating a file as an isolated module.
    selection/expansion. Account for saves, image document paths and search state
    when changing this flow. Move completion remaps paths in the current settings;
    it must not restore a settings clone captured before asynchronous filesystem
-   work, since view preferences can change while that work runs.
+   work, since view preferences can change while that work runs. A moved open note
+   revalidates its saved bytes with `version_after_move` before using the new file
+   identity. A failed revalidation keeps the actual moved path and buffer but
+   pauses automatic saving. Exact path remaps must not append a separator.
 6. **Persist preferences:** notebook settings and the user index are separate
    atomic JSON replacements. The current task chain preserves write ordering;
    switch/close await it. Two file replacements are not one transaction.
@@ -127,7 +134,11 @@ Additional contracts to preserve:
   without reparsing, while a retained tree keeps its own source for callbacks.
   Find waits for that exact tree snapshot; the existing ListState survives updates.
 - Preserve BOM and newline conventions; mixed endings normalize to the first
-  observed convention. Failed replacement must leave the original file intact.
+  observed convention. Conflict checks do not recreate missing files or replace
+  a newly introduced link. Receipts describe the committed file handle, never
+  a reread that could adopt an external edit. The [storage contract](docs/document-storage.md)
+  defines optimistic race limits, Unix permission preservation and metadata that
+  is not copied; atomic replacement alone does not promise crash durability.
 - Notebook-relative paths pass through the notebook path helpers. Preserve
   rejection of traversal, reserved internal paths and filesystem links. These
   checks do not establish protection against every concurrent filesystem race.

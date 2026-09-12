@@ -760,6 +760,7 @@ impl Notes {
         self.saves.timer = None;
         self.saves.identity += 1;
         self.saves.error = None;
+        self.saves.conflict = false;
         // A fresh editor prevents undo from restoring another document.
         let text = document
             .as_ref()
@@ -1365,6 +1366,10 @@ impl Notes {
         }
         let root = book.root.clone();
         let from = drag.path.clone();
+        let document_version = self
+            .document
+            .as_ref()
+            .map(|document| (document.path.clone(), document.version.clone()));
         self.saves.timer = None;
         let Some(operation) = self.foreground.begin() else {
             return;
@@ -1377,7 +1382,18 @@ impl Notes {
                 .background_executor()
                 .spawn(async move {
                     let to = notebook::move_entry(&worker_root, &worker_from, &parent)?;
-                    Ok::<_, io::Error>(to)
+                    let moved_version = document_version.and_then(|(old_path, version)| {
+                        let path = notebook::remap_path(
+                            &old_path,
+                            &worker_root.join(&worker_from),
+                            &worker_root.join(&to),
+                        );
+                        (path != old_path).then(|| {
+                            let result = document::version_after_move(&path, &version);
+                            (path, result)
+                        })
+                    });
+                    Ok::<_, io::Error>((to, moved_version))
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -1385,13 +1401,27 @@ impl Notes {
                     return;
                 }
                 match result {
-                    Ok(to) => {
+                    Ok((to, moved_version)) => {
                         if let Some(document) = &mut this.document {
                             document.path = notebook::remap_path(
                                 &document.path,
                                 &root.join(&from),
                                 &root.join(&to),
                             );
+                        }
+                        if let Some((path, result)) = moved_version
+                            && let Some(document) = &mut this.document
+                            && document.path == path
+                        {
+                            match result {
+                                Ok(version) => document.version = version,
+                                Err(error) => {
+                                    // The move succeeded. Retain its new path and the
+                                    // buffer, but require explicit conflict recovery.
+                                    this.saves.conflict = true;
+                                    this.record_save_error(error);
+                                }
+                            }
                         }
                         if let Some(path) = &mut this.image_path {
                             *path = notebook::remap_path(path, &root.join(&from), &root.join(&to));

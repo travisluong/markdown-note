@@ -79,6 +79,9 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(this.dirty(cx));
                         assert!(!this.is_busy());
                         fs::remove_dir(&path).unwrap();
+                        fs::rename(fixture.path().join("backup.md"), &path).unwrap();
+                        let document = this.document.as_mut().unwrap();
+                        document.version = document::version_after_move(&path, &document.version).unwrap();
                         this.save(Next::Nothing, window, cx);
                     }
                     7 => {

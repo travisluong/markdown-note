@@ -11,7 +11,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | 1. Editor redo policy | Implemented and verified | `tests/editor_history.rs`: 11 headless tests passed, including divergent typing/commands/IME, no-op replacements and generic History compatibility; complete Windows/Linux suites passed. |
 | 2. Reliable baseline | Windows/Linux verified; macOS execution pending | Feature docs corrected; dedicated formatting commit; strict Clippy passes without added suppressions; Rust 1.98.1 pinned; separate three-platform validation CI configured. Release packaging unchanged. |
 | 3. Lifecycle/edit fixes and integration coverage | Implemented and verified | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. A separately reproduced close-time input loss was repaired; all 91 application tests passed afterward. |
-| 4. Data/storage boundaries and file policy | In progress | Library entry point exposes document format/I/O, notebook domain owners and shared view preference. Public storage regression tests cover BOM, newline conventions, invalid files and failed replacement. Conflict detection and metadata policy remain. |
+| 4. Data/storage boundaries and file policy | Implemented and verified on Windows/Linux | Library exposes format/I/O, notebook domain owners and shared values. Disk versions guard saves; conflict pause retains editor/history; app-owned moves revalidate saved bytes. Metadata and optimistic race limits are explicit in `document-storage.md`. Both full headless suites passed. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | In progress | Pure writer model and independent guarded book/index storage operations implemented; 10 tests passed, including 20,000-submission stress and actual disk outcomes. Application switch/close integration remains. |
 | 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
@@ -133,3 +133,23 @@ the destination unchanged for an exact match. A regression comparing the OS
 spelling and opening the file failed before the fix on Windows and passed on
 Windows and Linux afterward; the actual Linux moved-buffer save/history test
 also passed. Nested and unrelated paths keep their existing mapping behavior.
+
+## Conflict-aware document saves
+
+The storage boundary now returns raw-byte/file-identity disk versions and
+write receipts. Saves check the captured version before staging and replacement,
+refuse missing/read-only/link targets, preserve Unix mode bits, and retain an
+accurate committed baseline even when receipt identity observation fails.
+Application conflicts retain text/history and suspend automatic retries until
+an explicit successful Save or fresh installation. App-owned moves revalidate
+saved bytes and preserve the active buffer and undo history. The complete
+[storage contract](document-storage.md) documents metadata and race limitations.
+
+After the Windows sharing-handle repair and exact-path fix, full diagnostics
+suites passed on **Windows (240 tests)** and **Linux (240 tests)**, with no failures
+or ignored tests. Counts are 35 library + 75 application + 130 integration on
+Windows, and 35 + 73 + 132 on Linux. Windows storage-specific coverage includes
+sharing/readonly failures, actual junction rejection and open-file rename
+restrictions; Linux adds Unix mode bits, parent link/rename and concurrent receipt
+interference. The suites also include the separately integrated settings driver.
+No native desktop was launched; macOS execution remains pending.
