@@ -118,24 +118,9 @@ struct Notes {
     session_date_format: String,
     session_show_file_extensions: bool,
     session_always_hide_extensions: Vec<String>,
-    hidden_extensions_input: Option<Entity<InputState>>,
-    hidden_extensions_subscription: Option<Subscription>,
-    hidden_extensions_validation: Option<String>,
-    date_input: Option<Entity<InputState>>,
-    date_subscription: Option<Subscription>,
-    date_validation: Option<String>,
-    settings_section: settings_ui::SettingsSection,
-    theme_pickers: Vec<Entity<gpui_component::color_picker::ColorPickerState>>,
-    theme_subscriptions: Vec<Subscription>,
-    font_pickers: Vec<
-        Entity<gpui_component::select::SelectState<gpui_component::select::SearchableVec<String>>>,
-    >,
-    font_subscriptions: Vec<Subscription>,
+    settings_panel: Option<settings_ui::SettingsDialog>,
     installed_fonts: Vec<String>,
     saves: autosave::SaveState,
-    autosave_delay: Option<Entity<InputState>>,
-    autosave_subscription: Option<Subscription>,
-    autosave_validation: Option<String>,
     palette: Option<goto::Palette>,
     search: Option<search_ui::SearchPanel>,
     search_destination: Option<search::Destination>,
@@ -188,22 +173,9 @@ impl Notes {
             session_date_format: templates::default_format(),
             session_show_file_extensions: notebook::default_show_file_extensions(),
             session_always_hide_extensions: notebook::default_always_hide_extensions(),
-            hidden_extensions_input: None,
-            hidden_extensions_subscription: None,
-            hidden_extensions_validation: None,
-            date_input: None,
-            date_subscription: None,
-            date_validation: None,
-            settings_section: settings_ui::SettingsSection::General,
-            theme_pickers: Vec::new(),
-            theme_subscriptions: Vec::new(),
-            font_pickers: Vec::new(),
-            font_subscriptions: Vec::new(),
+            settings_panel: None,
             installed_fonts: cx.text_system().all_font_names(),
             saves: autosave::SaveState::default(),
-            autosave_delay: None,
-            autosave_subscription: None,
-            autosave_validation: None,
             palette: None,
             search: None,
             search_destination: None,
@@ -581,7 +553,8 @@ impl Render for Notes {
                 div()
                     .key_context("DocumentEditor")
                     .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {
-                        if this.can_insert_date() && this.editor.focus_handle(cx).is_focused(window)
+                        if this.can_edit_document()
+                            && this.editor.focus_handle(cx).is_focused(window)
                         {
                             this.editor
                                 .update(cx, |editor, cx| editor.toggle_selected_tasks(window, cx));
@@ -964,4 +937,21 @@ fn main() {
             .expect("Could not create the GPUI Note window");
             cx.activate(true);
         });
+}
+
+impl Notes {
+    fn document(&self) -> Option<&Document> {
+        self.document.as_ref()
+    }
+    fn capabilities(&self) -> gpui_note::capabilities::Capabilities {
+        gpui_note::capabilities::Capabilities {
+            has_document: self.document().is_some(),
+            mode: self.mode,
+            busy: self.is_busy(),
+            has_notebook: self.notebooks.active.is_some(),
+        }
+    }
+    fn can_edit_document(&self) -> bool {
+        self.capabilities().can_edit_document()
+    }
 }

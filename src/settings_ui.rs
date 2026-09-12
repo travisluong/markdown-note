@@ -1,11 +1,17 @@
-use super::*;
-use gpui_component::{
-    Colorize,
-    color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
+use crate::{Notes, ViewMode, notebook, templates};
+use gpui::{
+    App, Context, EntityId, SharedString, Subscription, WeakEntity, Window, prelude::*, px, rgb,
 };
-use gpui_component::{Disableable, Theme, ThemeMode, dialog::Dialog, switch::Switch};
+use gpui_component::{Theme, ThemeMode, WindowExt, dialog::Dialog};
+use std::{
+    path::PathBuf,
+    rc::{Rc, Weak},
+};
 
-// Match gpui-component's platform defaults for both source text and code blocks.
+mod panel;
+use panel::{ColorRole, FontRole, FontSizeRole, SettingsIntent, SettingsPanel, SettingsValues};
+
+// Match gpui-component's platform defaults for source text and code blocks.
 const DEFAULT_MONOSPACE_FONT: &str = if cfg!(target_os = "macos") {
     "Menlo"
 } else if cfg!(target_os = "windows") {
@@ -13,15 +19,6 @@ const DEFAULT_MONOSPACE_FONT: &str = if cfg!(target_os = "macos") {
 } else {
     "DejaVu Sans Mono"
 };
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum SettingsSection {
-    General,
-    Font,
-    Templates,
-    Theme,
-}
-
 impl Notes {
     fn show_file_extensions(&self) -> bool {
         self.notebooks
@@ -60,10 +57,6 @@ impl Notes {
             self.session_always_hide_extensions = extensions;
         }
         cx.notify();
-    }
-
-    pub(super) fn can_insert_date(&self) -> bool {
-        self.document.is_some() && !self.is_busy() && self.mode != ViewMode::Reading
     }
 
     pub(super) fn date_format(&self) -> &str {
@@ -142,13 +135,70 @@ impl Notes {
             self.session_appearance = appearance;
         }
         self.apply_appearance(window, cx);
-        let colors = [
-            cx.theme().background,
-            cx.theme().foreground,
-            cx.theme().primary,
-        ];
-        for (picker, color) in self.theme_pickers.iter().zip(colors) {
-            picker.update(cx, |picker, cx| picker.set_value(color, window, cx));
+        self.sync_settings_panel(window, cx);
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum PreferenceTarget {
+    Session,
+    Notebook(PathBuf),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct SettingsScope {
+    preferences: PreferenceTarget,
+    autosave: PreferenceTarget,
+}
+
+/// The dialog builder owns the form; this handle only observes its authority.
+pub(super) struct SettingsDialog {
+    panel: WeakEntity<SettingsPanel>,
+    lifetime: Weak<()>,
+    scope: SettingsScope,
+    _subscription: Subscription,
+}
+
+impl Notes {
+    fn settings_scope(&self) -> SettingsScope {
+        let preferences = self
+            .notebooks
+            .active
+            .as_ref()
+            .map_or(PreferenceTarget::Session, |book| {
+                PreferenceTarget::Notebook(book.root.clone())
+            });
+        let autosave = self
+            .notebooks
+            .active
+            .as_ref()
+            .filter(|book| {
+                self.document()
+                    .is_none_or(|document| document.path.starts_with(&book.root))
+            })
+            .map_or(PreferenceTarget::Session, |book| {
+                PreferenceTarget::Notebook(book.root.clone())
+            });
+        SettingsScope {
+            preferences,
+            autosave,
+        }
+    }
+
+    fn settings_values(&self) -> SettingsValues {
+        SettingsValues {
+            appearance: self.appearance(),
+            autosave: self.autosave_settings(),
+            date_format: self.date_format().to_owned(),
+            show_extensions: self.show_file_extensions(),
+            hidden_extensions: self.hidden_extensions().to_vec(),
+            startup_dark: self.startup_dark,
+            busy: self.is_busy(),
+            subtitle: self.notebooks.active.as_ref().map_or_else(
+                || "Changes apply immediately for this session.".to_owned(),
+                |book| format!("Changes are saved for {}.", notebook::name(&book.root)),
+            ),
+            notice: self.notebooks.notice.clone(),
         }
     }
 
@@ -157,114 +207,31 @@ impl Notes {
             return;
         }
         self.menu = None;
-        self.settings_section = SettingsSection::General;
-        self.theme_pickers.clear();
-        self.theme_subscriptions.clear();
-        for (index, color) in [
-            cx.theme().background,
-            cx.theme().foreground,
-            cx.theme().primary,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(color));
-            self.theme_subscriptions.push(cx.subscribe_in(
-                &picker,
-                window,
-                move |this, _, event: &ColorPickerEvent, window, cx| {
-                    let ColorPickerEvent::Change(color) = event;
-                    let value =
-                        color.and_then(|color| u32::from_str_radix(&color.to_hex()[1..7], 16).ok());
-                    let mut appearance = this.appearance();
-                    let Some(value) = value else {
-                        return;
-                    };
-                    let mut palette = appearance.palette(this.startup_dark);
-                    match index {
-                        0 => palette.background = value,
-                        1 => palette.font = value,
-                        _ => palette.primary = value,
-                    }
-                    appearance.set_palette(this.startup_dark, palette);
-                    this.update_appearance(appearance, window, cx);
-                },
-            ));
-            self.theme_pickers.push(picker);
-        }
-        self.initialize_font_pickers(window, cx);
-        self.hidden_extensions_validation = None;
-        let extensions = self.hidden_extensions().join(", ");
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(extensions));
-        self.hidden_extensions_subscription =
-            Some(cx.subscribe(&input, |this, input, event, cx| {
-                if !matches!(event, InputEvent::Change)
-                    || this.is_busy()
-                    || !this.show_file_extensions()
-                {
-                    return;
-                }
-                match notebook::parse_hidden_extensions(&input.read(cx).value()) {
-                    Ok(extensions) => {
-                        this.hidden_extensions_validation = None;
-                        this.update_sidebar_extensions(this.show_file_extensions(), extensions, cx);
-                    }
-                    Err(error) => this.hidden_extensions_validation = Some(error),
-                }
-                cx.notify();
-            }));
-        self.hidden_extensions_input = Some(input);
-        self.date_validation = None;
-        let date = self.date_format().to_owned();
-        let date_input = cx.new(|cx| InputState::new(window, cx).default_value(date));
-        self.date_subscription = Some(cx.subscribe(&date_input, |this, input, event, cx| {
-            if !matches!(event, InputEvent::Change) {
-                return;
-            }
-            let value = input.read(cx).value().to_string();
-            match templates::current(&value) {
-                Ok(_) if !this.is_busy() => {
-                    this.date_validation = None;
-                    if let Some(book) = &mut this.notebooks.active {
-                        book.settings.date_format = value;
-                        this.persist_notebooks(cx);
-                    } else {
-                        this.session_date_format = value;
-                    }
-                }
-                Err(error) => this.date_validation = Some(error),
-                _ => {}
-            }
-            cx.notify();
-        }));
-        self.date_input = Some(date_input);
-        let delay = self.autosave_settings().delay_ms.to_string();
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(delay));
-        self.autosave_validation = None;
-        self.autosave_subscription =
-            Some(
-                cx.subscribe_in(&input, window, |this, input, event, window, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        return;
-                    }
-                    let value = input.read(cx).value();
-                    if let Some(delay_ms) = notebook::Autosave::parse_delay(&value) {
-                        this.autosave_validation = None;
-                        let mut settings = this.autosave_settings();
-                        settings.delay_ms = delay_ms;
-                        this.update_autosave(settings, window, cx);
-                    } else {
-                        this.autosave_validation =
-                            Some("Enter a whole number from 100 to 60,000 ms.".into());
-                    }
-                    cx.notify();
-                }),
-            );
-        self.autosave_delay = Some(input);
+        let scope = self.settings_scope();
+        let values = self.settings_values();
+        let panel = cx.new(|cx| SettingsPanel::new(values, &self.installed_fonts, window, cx));
+        let subscription = cx.subscribe_in(
+            &panel,
+            window,
+            |this, sender, intent: &SettingsIntent, window, cx| {
+                this.handle_settings_intent(sender.entity_id(), intent.clone(), window, cx);
+            },
+        );
+        let id = panel.entity_id();
+        let lifetime = Rc::new(());
+        self.settings_panel = Some(SettingsDialog {
+            panel: panel.downgrade(),
+            lifetime: Rc::downgrade(&lifetime),
+            scope,
+            _subscription: subscription,
+        });
         let owner = cx.weak_entity();
         window.open_dialog(cx, move |dialog, window, cx| {
+            // The dialog builder owns the form and its authority, including when
+            // Root::close_dialog bypasses the optional on_close callback.
+            let _keep_alive = (&panel, &lifetime);
             owner
-                .update(cx, |this, cx| this.settings_dialog(dialog, window, cx))
+                .update(cx, |this, cx| this.settings_dialog(id, dialog, window, cx))
                 .unwrap_or_else(|_| Dialog::new(window, cx))
         });
         cx.notify();
@@ -272,255 +239,220 @@ impl Notes {
 
     fn settings_dialog(
         &mut self,
+        id: EntityId,
         dialog: Dialog,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Dialog {
-        let appearance = self.appearance();
-        let subtitle = self.notebooks.active.as_ref().map_or_else(
-            || "Changes apply immediately for this session.".to_owned(),
-            |book| format!("Changes are saved for {}.", notebook::name(&book.root)),
-        );
-        let mut body = div().flex().flex_col().gap_3().child(
-            div()
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child(subtitle),
-        );
-        let mut font_body = div().flex().flex_col().gap_3();
-        for (index, label) in ["Interface font", "Text font", "Monospace font"]
-            .into_iter()
-            .enumerate()
-        {
-            if let Some(picker) = self.font_pickers.get(index) {
-                font_body = font_body
-                    .child(label)
-                    .child(gpui_component::select::Select::new(picker));
+        let Some(open) = &self.settings_panel else {
+            return dialog;
+        };
+        if open.panel.entity_id() != id {
+            return dialog;
+        }
+        if open.scope != self.settings_scope() {
+            cx.defer_in(window, move |this, window, cx| {
+                this.close_settings_panel(id, window, cx)
+            });
+            return dialog;
+        }
+        let Some(panel) = open.panel.upgrade() else {
+            return dialog;
+        };
+        let values = self.settings_values();
+        let owner = cx.weak_entity();
+        let dialog = dialog.on_close(move |_, _, cx| {
+            let _ = owner.update(cx, |this, cx| {
+                if this
+                    .settings_panel
+                    .as_ref()
+                    .is_some_and(|open| open.panel.entity_id() == id)
+                {
+                    this.settings_panel = None;
+                    cx.notify();
+                }
+            });
+        });
+        panel.update(cx, |panel, cx| panel.sync_effective(values, window, cx));
+        SettingsPanel::dialog(panel, dialog, window)
+    }
+
+    fn close_settings_panel(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(open) = &self.settings_panel else {
+            return;
+        };
+        if open.panel.entity_id() != id {
+            return;
+        }
+        let active = open.lifetime.upgrade().is_some();
+        self.settings_panel = None;
+        // An expired form must not close a later, unrelated dialog.
+        if active {
+            window.close_dialog(cx);
+        }
+        cx.notify();
+    }
+    fn sync_settings_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(open) = &self.settings_panel else {
+            return;
+        };
+        if open.lifetime.upgrade().is_none() {
+            self.settings_panel = None;
+            cx.notify();
+            return;
+        }
+        let id = open.panel.entity_id();
+        if open.scope != self.settings_scope() {
+            self.close_settings_panel(id, window, cx);
+            return;
+        }
+        let Some(panel) = open.panel.upgrade() else {
+            return;
+        };
+        let values = self.settings_values();
+        panel.update(cx, |panel, cx| panel.sync_effective(values, window, cx));
+    }
+
+    fn handle_settings_intent(
+        &mut self,
+        sender: EntityId,
+        intent: SettingsIntent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(open) = &self.settings_panel else {
+            return;
+        };
+        if open.panel.entity_id() != sender {
+            return;
+        }
+        if open.lifetime.upgrade().is_none() {
+            self.settings_panel = None;
+            cx.notify();
+            return;
+        }
+        if matches!(intent, SettingsIntent::Close) {
+            self.close_settings_panel(sender, window, cx);
+            return;
+        }
+        let current = self.settings_scope();
+        let same_scope = if intent.is_autosave() {
+            open.scope.autosave == current.autosave
+        } else {
+            open.scope.preferences == current.preferences
+        };
+        if !same_scope {
+            self.close_settings_panel(sender, window, cx);
+            return;
+        }
+        // Preserve autosave changes allowed during activation/close; other form
+        // fields retain their existing foreground-operation guard.
+        if self.is_busy() && !intent.is_autosave() {
+            self.sync_settings_panel(window, cx);
+            return;
+        }
+        let mut appearance = self.appearance();
+        let appearance_changed = match intent {
+            SettingsIntent::AutosaveEnabled(enabled) => {
+                let mut settings = self.autosave_settings();
+                settings.enabled = enabled;
+                self.update_autosave(settings, window, cx);
+                false
             }
+            SettingsIntent::AutosaveDelay(delay_ms) => {
+                let mut settings = self.autosave_settings();
+                settings.delay_ms = delay_ms;
+                self.update_autosave(settings, window, cx);
+                false
+            }
+            SettingsIntent::ShowExtensions(show) => {
+                self.update_sidebar_extensions(show, self.hidden_extensions().to_vec(), cx);
+                false
+            }
+            SettingsIntent::HiddenExtensions(extensions) => {
+                if self.show_file_extensions() {
+                    self.update_sidebar_extensions(true, extensions, cx);
+                }
+                false
+            }
+            SettingsIntent::DateFormat(value) => {
+                if let Some(book) = &mut self.notebooks.active {
+                    book.settings.date_format = value;
+                    self.persist_notebooks(cx);
+                } else {
+                    self.session_date_format = value;
+                }
+                false
+            }
+            SettingsIntent::Font(role, value) => {
+                match role {
+                    FontRole::Interface => appearance.interface_font = value,
+                    FontRole::Text => appearance.text_font = value,
+                    FontRole::Monospace => appearance.monospace_font = value,
+                }
+                true
+            }
+            SettingsIntent::FontSizeStep(role, delta) => {
+                let value = match role {
+                    FontSizeRole::Content => &mut appearance.content_font_size,
+                    FontSizeRole::Interface => &mut appearance.ui_font_size,
+                };
+                *value = value.saturating_add_signed(i16::from(delta));
+                true
+            }
+            SettingsIntent::Theme(choice) => {
+                appearance.theme = Some(choice);
+                true
+            }
+            SettingsIntent::Color(role, value) => {
+                let mut palette = appearance.palette(self.startup_dark);
+                match role {
+                    ColorRole::Background => palette.background = value,
+                    ColorRole::Font => palette.font = value,
+                    ColorRole::Primary => palette.primary = value,
+                }
+                appearance.set_palette(self.startup_dark, palette);
+                true
+            }
+            SettingsIntent::ResetPalettes => {
+                appearance.reset_palettes();
+                true
+            }
+            SettingsIntent::Close => {
+                self.close_settings_panel(sender, window, cx);
+                false
+            }
+        };
+        if appearance_changed {
+            self.update_appearance(appearance, window, cx);
         }
-        for (index, label, value, maximum) in [
-            (
-                0usize,
-                "Content font size",
-                appearance.content_font_size,
-                40,
-            ),
-            (1usize, "UI font size", appearance.ui_font_size, 24),
-        ] {
-            font_body = font_body.child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .when(window.viewport_size().width < px(560.), |v| v.w_full())
-                            .when(window.viewport_size().width >= px(560.), |v| v.flex_1())
-                            .min_w_0()
-                            .child(label),
-                    )
-                    .child(
-                        Button::new(("font-decrease", index))
-                            .label("−")
-                            .disabled(self.is_busy() || value <= 10)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                let mut settings = this.appearance();
-                                if index == 0 {
-                                    settings.content_font_size =
-                                        settings.content_font_size.saturating_sub(1);
-                                } else {
-                                    settings.ui_font_size = settings.ui_font_size.saturating_sub(1);
-                                }
-                                this.update_appearance(settings, window, cx);
-                            })),
-                    )
-                    .child(
-                        div()
-                            .min_w(px(48.))
-                            .text_center()
-                            .child(format!("{value} px")),
-                    )
-                    .child(
-                        Button::new(("font-increase", index))
-                            .label("+")
-                            .disabled(self.is_busy() || value >= maximum)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                let mut settings = this.appearance();
-                                if index == 0 {
-                                    settings.content_font_size += 1;
-                                } else {
-                                    settings.ui_font_size += 1;
-                                }
-                                this.update_appearance(settings, window, cx);
-                            })),
-                    ),
-            );
-        }
-        body = body
-            .child(
-                Switch::new("autosave-enabled")
-                    .label("Autosave")
-                    .checked(self.autosave_settings().enabled)
-                    .on_click(cx.listener(|this, enabled: &bool, window, cx| {
-                        let mut settings = this.autosave_settings();
-                        settings.enabled = *enabled;
-                        this.update_autosave(settings, window, cx);
-                    })),
-            )
-            .child("Autosave delay (milliseconds)")
-            .when_some(self.autosave_delay.clone(), |view, input| {
-                view.child(Input::new(&input))
-            })
-            .when_some(self.autosave_validation.clone(), |view, message| {
-                view.child(div().text_sm().text_color(cx.theme().danger).child(message))
-            })
-            .child("Sidebar")
-            .child(Switch::new("show-file-extensions")
-                .label("Show file extensions")
-                .checked(self.show_file_extensions())
-                .disabled(self.is_busy())
-                .on_click(cx.listener(|this, enabled: &bool, _, cx| {
-                    this.update_sidebar_extensions(*enabled, this.hidden_extensions().to_vec(), cx);
-                })))
-            .child("Always hide these extensions")
-            .when_some(self.hidden_extensions_input.clone(), |view, input| {
-                view.child(Input::new(&input).disabled(!self.show_file_extensions() || self.is_busy()))
-            })
-            .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                .child("Hide these extensions even when Show file extensions is on. Example: md, txt."))
-            .when_some(self.hidden_extensions_validation.clone(), |view, error| {
-                view.child(div().text_sm().text_color(cx.theme().danger).child(error))
-            })
-            .when_some(self.notebooks.notice.clone(), |view, notice| {
-                view.child(div().text_sm().child(notice))
-            })
-            .child(
-                Button::new("close-settings")
-                    .label("Close")
-                    .on_click(|_, window, cx| window.close_dialog(cx)),
-            );
-        let templates_body = div().w_full().min_w_0().flex().flex_col().gap_3()
-            .child("Current date format")
-            .when_some(self.date_input.clone(), |view, input| view.child(Input::new(&input)))
-            .when_some(self.date_validation.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
-            .child(format!("Example: {}", templates::current(self.date_format()).unwrap_or_default()))
-            .child(div().text_sm().child("Moment-style tokens, local time, English names. Use [brackets] for literal text. See README for supported tokens."));
-        let mut theme_body = div().flex().flex_col().gap_3().child("Theme");
-        let mut selector = div().flex().flex_wrap().gap_2();
-        for (index, choice, label) in [
-            (0usize, notebook::ThemeChoice::Light, "Light"),
-            (1, notebook::ThemeChoice::Dark, "Dark"),
-        ] {
-            selector = selector.child(
-                Button::new(("theme-choice", index))
-                    .label(label)
-                    .when(
-                        appearance.theme_choice(self.startup_dark) == choice,
-                        |button| button.primary(),
-                    )
-                    .disabled(self.is_busy())
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        let mut settings = this.appearance();
-                        settings.theme = Some(choice);
-                        this.update_appearance(settings, window, cx);
-                    })),
-            );
-        }
-        theme_body = theme_body.child(selector);
-        for (picker, label) in
-            self.theme_pickers
-                .iter()
-                .zip(["Background color", "Font color", "Primary color"])
-        {
-            theme_body = theme_body.child(ColorPicker::new(picker).label(label));
-        }
-        theme_body = theme_body.child(
-            Button::new("reset-theme-colors")
-                .label("Reset Light and Dark themes")
-                .disabled(self.is_busy())
-                .on_click(cx.listener(|this, _, window, cx| {
-                    let mut settings = this.appearance();
-                    settings.reset_palettes();
-                    this.update_appearance(settings, window, cx);
-                })),
-        );
-        let sidebar = div()
-            .w(px(104.))
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(
-                Button::new("settings-general")
-                    .label("General")
-                    .when(self.settings_section == SettingsSection::General, |v| {
-                        v.primary()
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings_section = SettingsSection::General;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                Button::new("settings-templates")
-                    .label("Templates")
-                    .when(self.settings_section == SettingsSection::Templates, |v| {
-                        v.primary()
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings_section = SettingsSection::Templates;
-                        cx.notify();
-                    })),
-            );
-        let sidebar = sidebar.child(
-            Button::new("settings-font")
-                .label("Font")
-                .when(self.settings_section == SettingsSection::Font, |b| {
-                    b.primary()
-                })
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.settings_section = SettingsSection::Font;
-                    cx.notify();
-                })),
-        );
-        let sidebar = sidebar.child(
-            Button::new("settings-theme")
-                .label("Theme")
-                .when(self.settings_section == SettingsSection::Theme, |button| {
-                    button.primary()
-                })
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.settings_section = SettingsSection::Theme;
-                    cx.notify();
-                })),
-        );
-        dialog
-            .title("Settings")
-            .w(px(620.).min(window.viewport_size().width - px(32.)))
-            .max_h((window.viewport_size().height - px(100.)).max(px(120.)))
-            .child(
-                div()
-                    .w_full()
-                    .min_w_0()
-                    .flex()
-                    .gap_3()
-                    .child(sidebar)
-                    .child(div().flex_1().min_w_0().child(
-                        if self.settings_section == SettingsSection::Theme {
-                            theme_body.into_any_element()
-                        } else if self.settings_section == SettingsSection::Font {
-                            font_body.into_any_element()
-                        } else if self.settings_section == SettingsSection::Templates {
-                            templates_body.into_any_element()
-                        } else {
-                            body.w_full().min_w_0().into_any_element()
-                        },
-                    )),
-            )
+        self.sync_settings_panel(window, cx);
+        cx.notify();
+    }
+
+    #[cfg(feature = "editor-diagnostics")]
+    pub(super) fn diagnostic_set_settings_delay(
+        &self,
+        value: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings_panel
+            .as_ref()
+            .and_then(|open| open.panel.upgrade())
+            .expect("settings panel is open")
+            .update(cx, |panel, cx| {
+                panel.diagnostic_set_delay(value, window, cx)
+            });
+    }
+    #[cfg(feature = "editor-diagnostics")]
+    pub(super) fn diagnostic_settings_delay_invalid(&self, cx: &App) -> bool {
+        self.settings_panel
+            .as_ref()
+            .and_then(|open| open.panel.upgrade())
+            .is_some_and(|panel| panel.read(cx).diagnostic_delay_invalid())
     }
 }
-
 fn apply_theme_colors(theme: &mut Theme, appearance: notebook::Appearance, startup_dark: bool) {
     let palette = appearance.palette(startup_dark);
     theme.background = rgb(palette.background).into();
@@ -803,63 +735,6 @@ impl Notes {
                 &self.installed_fonts,
                 ".SystemUIFont",
             )
-        }
-    }
-
-    fn initialize_font_pickers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        use gpui_component::{
-            IndexPath,
-            select::{SearchableVec, SelectEvent, SelectState},
-        };
-        self.font_pickers.clear();
-        self.font_subscriptions.clear();
-        let appearance = self.appearance();
-        for (index, selected) in [
-            appearance.interface_font,
-            appearance.text_font,
-            appearance.monospace_font,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let mut fonts = self.installed_fonts.clone();
-            fonts.sort_by_key(|font| font.to_lowercase());
-            fonts.dedup();
-            if let Some(name) = &selected
-                && !fonts.contains(name)
-            {
-                fonts.push(name.clone());
-            }
-            fonts.insert(0, "Default".to_owned());
-            let row = selected
-                .as_ref()
-                .and_then(|name| fonts.iter().position(|font| font == name))
-                .unwrap_or(0);
-            let picker = cx.new(|cx| {
-                SelectState::new(
-                    SearchableVec::new(fonts),
-                    Some(IndexPath::default().row(row)),
-                    window,
-                    cx,
-                )
-                .searchable(true)
-            });
-            self.font_subscriptions.push(cx.subscribe_in(
-                &picker,
-                window,
-                move |this, _, event: &SelectEvent<SearchableVec<String>>, window, cx| {
-                    let SelectEvent::Confirm(value) = event;
-                    let value = value.clone().filter(|name| name != "Default");
-                    let mut appearance = this.appearance();
-                    match index {
-                        0 => appearance.interface_font = value,
-                        1 => appearance.text_font = value,
-                        _ => appearance.monospace_font = value,
-                    }
-                    this.update_appearance(appearance, window, cx);
-                },
-            ));
-            self.font_pickers.push(picker);
         }
     }
 }

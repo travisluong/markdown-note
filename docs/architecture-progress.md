@@ -190,3 +190,14 @@ queries. Nine existing command/ranking/discovery tests were retained in the new
 owner, with a new filter/replacement/selection regression; all ten passed on
 Linux, including a complete 56-test library run with existing storage and newly
 prepared owners. The live palette adapter is integrated in a following change.
+
+## Settings form ownership
+
+`SettingsPanel` owns its form controls, validation, selected section and internal
+subscriptions. Named preference intents cross into the application adapter,
+which retains notebook/session scope and theme application. The dialog retains a
+lifetime token; callbacks after replacement, ordinary close or programmatic
+closure cannot apply preferences to another form or notebook. Thirteen focused
+Windows tests passed in an isolated pre-Session checkout, including invalid and
+valid values, sections, theme/font controls, scope, stale events and both close
+paths. Strict diagnostics Clippy also passed for that isolated integration.

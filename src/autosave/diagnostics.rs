@@ -89,10 +89,10 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(!this.dirty(cx));
                         assert!(this.saves.error.is_none());
                         this.open_settings(window, cx);
-                        this.autosave_delay.clone().unwrap().update(cx, |e, cx| e.set_value("99", window, cx));
+                        this.diagnostic_set_settings_delay("99", window, cx);
                     }
                     8 => {
-                        assert!(this.autosave_validation.is_some());
+                        assert!(this.diagnostic_settings_delay_invalid(cx));
                         assert_eq!(this.autosave_settings().delay_ms, 100);
                         window.close_dialog(cx);
                         this.editor.update(cx, |e, cx| e.set_value("discarded\n", window, cx));

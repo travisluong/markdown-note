@@ -111,7 +111,7 @@ impl Notes {
     }
 
     pub(super) fn edit_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.can_insert_date() || window.has_active_dialog(cx) {
+        if !self.can_edit_document() || window.has_active_dialog(cx) {
             return;
         }
         let snapshot = self.editor.read(cx).value().to_string();
@@ -176,7 +176,7 @@ impl Notes {
                             );
                             if this.saves.identity != identity
                                 || this.editor.read(cx).value().as_ref() != snapshot
-                                || !this.can_insert_date()
+                                || !this.can_edit_document()
                             {
                                 *error.borrow_mut() =
                                     "The document changed. Close this dialog and try again.".into();
