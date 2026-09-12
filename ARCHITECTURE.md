@@ -39,6 +39,10 @@ application files contain `impl Notes`; most import the executable root with
 `use super::*`. A method living in a feature file can mutate shared root state.
 Follow its callers and completions before treating a file as an isolated module.
 
+The library also exposes the command catalogue and capability/ranking policies
+in `src/commands` and `src/capabilities.rs`. Their application adapter migration is
+tracked separately; runtime ownership below describes the committed integration.
+
 ## Where responsibilities live today
 
 | Responsibility | Starting points | Important coupling |

@@ -14,7 +14,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | 4. Data/storage boundaries and file policy | Implemented and verified on Windows/Linux | Library exposes format/I/O, notebook domain owners and shared values. Disk versions guard saves; conflict pause retains editor/history; app-owned moves revalidate saved bytes. Metadata and optimistic race limits are explicit in `document-storage.md`. Both full headless suites passed. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Implemented and verified on Windows/Linux | Pure one-running/latest-per-destination model and one GPUI worker loop replace the task chain. Ten model/disk tests and six actual lifecycle tests pass, including 20,000 submissions, target-book flush, unrelated failures, close retry/cancel/explicit discard and late preference changes. |
-| 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
+| 7. UI and command ownership | In progress | Pure command catalogue, named capability snapshots and palette selection/ranking owner are exposed by the library; ten focused tests pass on Linux. Settings, Explorer, Search and application integration are being verified separately. |
 | 8. Editor boundary and analysis performance | In progress | Complete vendor patch inventory verified against the published 0.5.1 package. Shared GFM analysis verified: mixed queued requests use one parse, plain requests use zero; 67 editor tests passed, preserving incremental/cache/work bounds. Initial Reading parse moved off layout; 8 controlled lifecycle tests passed. Thin editor adapter remains. |
 
 ## Verification rules
@@ -179,3 +179,14 @@ preferences remain intact; changes on A cannot replace B, and autosave for a
 standalone document stays in session scope. Four real TestPlatform regressions
 and two pure owner tests passed on Windows, followed by all 19 notebook lifecycle
 tests. The regression hook delays installation after real filesystem reads.
+
+## Command policy boundary
+
+The library now exposes `commands::Command`, `PaletteEntry`, `PaletteModel` and
+recursive notebook discovery behind an explicit facade. Command labels and
+availability, discovery, and palette ranking/selection have separate modules.
+`capabilities::Capabilities` uses named state fields and semantic edit/save/search
+queries. Nine existing command/ranking/discovery tests were retained in the new
+owner, with a new filter/replacement/selection regression; all ten passed on
+Linux, including a complete 56-test library run with existing storage and newly
+prepared owners. The live palette adapter is integrated in a following change.

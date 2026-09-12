@@ -1,0 +1,312 @@
+use super::{
+    Command, PaletteEntry, PaletteModel, discover,
+    palette::{ranked_entries, score},
+};
+use crate::{ViewMode, capabilities::Capabilities};
+use std::{fs, path::Path};
+#[test]
+fn commands_filter_by_full_label_and_check_editability() {
+    let entries: Vec<_> = Command::ALL
+        .iter()
+        .copied()
+        .map(PaletteEntry::Command)
+        .collect();
+    let results = ranked_entries(&entries, "  CURRENT DATE  ");
+    assert_eq!(results.len(), 1);
+    assert!(matches!(
+        results[0],
+        PaletteEntry::Command(Command::InsertDate)
+    ));
+    assert!(ranked_entries(&entries, "no such command xyz").is_empty());
+    for command in [Command::InsertDate, Command::EditLink] {
+        assert!(
+            command
+                .unavailable(Capabilities {
+                    has_document: true,
+                    mode: ViewMode::Source,
+                    busy: false,
+                    has_notebook: false
+                })
+                .is_none()
+        );
+        assert!(
+            command
+                .unavailable(Capabilities {
+                    has_document: false,
+                    mode: ViewMode::Source,
+                    busy: false,
+                    has_notebook: false
+                })
+                .is_some()
+        );
+        assert!(
+            command
+                .unavailable(Capabilities {
+                    has_document: true,
+                    mode: ViewMode::Reading,
+                    busy: false,
+                    has_notebook: false
+                })
+                .is_some()
+        );
+        assert!(
+            command
+                .unavailable(Capabilities {
+                    has_document: true,
+                    mode: ViewMode::Source,
+                    busy: true,
+                    has_notebook: false
+                })
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn theme_command_works_without_an_editable_document() {
+    assert!(
+        Command::ToggleTheme
+            .unavailable(Capabilities {
+                has_document: false,
+                mode: ViewMode::Reading,
+                busy: false,
+                has_notebook: false
+            })
+            .is_none()
+    );
+    assert!(
+        Command::ToggleTheme
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Source,
+                busy: true,
+                has_notebook: true
+            })
+            .is_some()
+    );
+    assert_eq!(
+        ranked_entries(&[PaletteEntry::Command(Command::ToggleTheme)], "light/dark").len(),
+        1
+    );
+}
+
+#[test]
+fn notebook_results_distinguish_duplicate_names_and_search_paths() {
+    let entries = vec![
+        PaletteEntry::Notebook {
+            path: "one/Notes".into(),
+            active: false,
+        },
+        PaletteEntry::Notebook {
+            path: "two/Notes".into(),
+            active: true,
+        },
+    ];
+    assert_eq!(ranked_entries(&entries, "notes").len(), 2);
+    let results = ranked_entries(&entries, "two/notes");
+    assert_eq!(results.len(), 1);
+    assert!(results[0].label().contains("(active)"));
+    assert_eq!(results[0].detail(), "two/Notes");
+    assert_ne!(entries[0].detail(), entries[1].detail());
+    assert!(
+        Command::ChangeNotebook
+            .unavailable(Capabilities {
+                has_document: false,
+                mode: ViewMode::Reading,
+                busy: false,
+                has_notebook: false
+            })
+            .is_none()
+    );
+}
+
+#[test]
+fn new_note_requires_a_notebook_but_not_an_editable_document() {
+    assert!(
+        Command::NewNote
+            .unavailable(Capabilities {
+                has_document: false,
+                mode: ViewMode::Reading,
+                busy: false,
+                has_notebook: true
+            })
+            .is_none()
+    );
+    assert!(
+        Command::NewNote
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Source,
+                busy: false,
+                has_notebook: false
+            })
+            .is_some()
+    );
+    assert!(
+        Command::NewNote
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Source,
+                busy: true,
+                has_notebook: true
+            })
+            .is_some()
+    );
+}
+
+#[test]
+fn current_file_search_supports_reading_and_standalone_documents() {
+    assert!(
+        Command::SearchFile
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Reading,
+                busy: false,
+                has_notebook: false
+            })
+            .is_none()
+    );
+    assert!(
+        Command::SearchFile
+            .unavailable(Capabilities {
+                has_document: false,
+                mode: ViewMode::Source,
+                busy: false,
+                has_notebook: true
+            })
+            .is_some()
+    );
+}
+
+#[test]
+fn all_files_search_requires_only_an_active_notebook() {
+    assert!(
+        Command::SearchAllFiles
+            .unavailable(Capabilities {
+                has_document: false,
+                mode: ViewMode::Reading,
+                busy: false,
+                has_notebook: true
+            })
+            .is_none()
+    );
+    assert!(
+        Command::SearchAllFiles
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Source,
+                busy: false,
+                has_notebook: false
+            })
+            .is_some()
+    );
+}
+
+#[test]
+fn replacement_requires_an_editable_document() {
+    assert!(
+        Command::ReplaceFile
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Source,
+                busy: false,
+                has_notebook: false
+            })
+            .is_none()
+    );
+    assert!(
+        Command::ReplaceFile
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Reading,
+                busy: false,
+                has_notebook: true
+            })
+            .is_some()
+    );
+    assert!(
+        Command::ReplaceFile
+            .unavailable(Capabilities {
+                has_document: false,
+                mode: ViewMode::Source,
+                busy: false,
+                has_notebook: true
+            })
+            .is_some()
+    );
+    assert!(
+        Command::ReplaceFile
+            .unavailable(Capabilities {
+                has_document: true,
+                mode: ViewMode::Source,
+                busy: true,
+                has_notebook: true
+            })
+            .is_some()
+    );
+}
+
+#[test]
+fn ranking() {
+    assert!(score("note", "note") < score("notebook", "note"));
+    assert!(score("notebook", "note") < score("a note", "note"));
+    assert!(score("a note", "note") < score("n o t e", "note"));
+    assert_eq!(score("note", "xyz"), None);
+    assert!(score("日本語", "日語").is_some());
+}
+#[test]
+fn recursive_duplicates_and_settings() {
+    let temp = tempfile::tempdir().unwrap();
+    for folder in ["a/deep", "b", ".gpui-note"] {
+        fs::create_dir_all(temp.path().join(folder)).unwrap();
+    }
+    for file in [
+        "a/deep/Note.md",
+        "b/Note.md",
+        "b/ignore.txt",
+        ".gpui-note/private.md",
+    ] {
+        fs::write(temp.path().join(file), "").unwrap();
+    }
+    let entries = discover(temp.path()).unwrap();
+    assert_eq!(entries.iter().filter(|e| !e.directory).count(), 2);
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.relative == Path::new("a/deep/Note.md"))
+    );
+    assert!(discover(&temp.path().join("missing")).is_err());
+}
+
+#[test]
+fn selection_and_replacement_follow_the_current_filtered_results() {
+    let mut model = PaletteModel::new(
+        Command::ALL
+            .iter()
+            .copied()
+            .map(PaletteEntry::Command)
+            .collect(),
+    );
+    model.move_selection(true);
+    assert_eq!(model.selected_index(), 1);
+    model.filter("current date");
+    assert_eq!(model.selected_index(), 0);
+    assert!(matches!(
+        model.selected_entry(),
+        Some(PaletteEntry::Command(Command::InsertDate))
+    ));
+    assert!(!model.select(1));
+    assert_eq!(model.move_selection(true), 0);
+    model.replace_entries(
+        vec![PaletteEntry::Command(Command::SearchFile)],
+        "current date",
+    );
+    assert!(model.results().is_empty());
+    assert!(model.selected_entry().is_none());
+    assert_eq!(model.move_selection(false), 0);
+    model.filter("search");
+    assert!(matches!(
+        model.selected_entry(),
+        Some(PaletteEntry::Command(Command::SearchFile))
+    ));
+}

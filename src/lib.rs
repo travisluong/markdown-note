@@ -3,6 +3,8 @@
 //! UI coordination lives in the executable. These modules can be exercised by
 //! integration tests and extended without importing the application root.
 
+pub mod capabilities;
+pub mod commands;
 pub mod document;
 pub mod notebook;
 pub mod templates;
