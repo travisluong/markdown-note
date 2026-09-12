@@ -47,7 +47,7 @@ impl Notes {
         extensions: Vec<String>,
         cx: &mut Context<Self>,
     ) {
-        if self.busy {
+        if self.is_busy() {
             return;
         }
         if let Some(book) = &mut self.notebooks.active {
@@ -63,7 +63,7 @@ impl Notes {
     }
 
     pub(super) fn can_insert_date(&self) -> bool {
-        self.document.is_some() && !self.busy && self.mode != ViewMode::Reading
+        self.document.is_some() && !self.is_busy() && self.mode != ViewMode::Reading
     }
 
     pub(super) fn date_format(&self) -> &str {
@@ -120,7 +120,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy {
+        if self.is_busy() {
             return;
         }
         let appearance = appearance.resolved(self.startup_dark);
@@ -142,7 +142,7 @@ impl Notes {
     }
 
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) {
+        if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         self.menu = None;
@@ -186,7 +186,7 @@ impl Notes {
         let extensions = self.hidden_extensions().join(", ");
         let input = cx.new(|cx| InputState::new(window, cx).default_value(extensions));
         self.hidden_extensions_subscription = Some(cx.subscribe(&input, |this, input, event, cx| {
-            if !matches!(event, InputEvent::Change) || this.busy || !this.show_file_extensions() { return; }
+            if !matches!(event, InputEvent::Change) || this.is_busy() || !this.show_file_extensions() { return; }
             match notebook::parse_hidden_extensions(&input.read(cx).value()) {
                 Ok(extensions) => {
                     this.hidden_extensions_validation = None;
@@ -206,7 +206,7 @@ impl Notes {
             }
             let value = input.read(cx).value().to_string();
             match templates::current(&value) {
-                Ok(_) if !this.busy => {
+                Ok(_) if !this.is_busy() => {
                     this.date_validation = None;
                     if let Some(book) = &mut this.notebooks.active {
                         book.settings.date_format = value;
@@ -301,7 +301,7 @@ impl Notes {
                     .child(
                         Button::new(("font-decrease", index))
                             .label("−")
-                            .disabled(self.busy || value <= 10)
+                            .disabled(self.is_busy() || value <= 10)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 let mut settings = this.appearance();
                                 if index == 0 {
@@ -322,7 +322,7 @@ impl Notes {
                     .child(
                         Button::new(("font-increase", index))
                             .label("+")
-                            .disabled(self.busy || value >= maximum)
+                            .disabled(self.is_busy() || value >= maximum)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 let mut settings = this.appearance();
                                 if index == 0 {
@@ -357,13 +357,13 @@ impl Notes {
             .child(Switch::new("show-file-extensions")
                 .label("Show file extensions")
                 .checked(self.show_file_extensions())
-                .disabled(self.busy)
+                .disabled(self.is_busy())
                 .on_click(cx.listener(|this, enabled: &bool, _, cx| {
                     this.update_sidebar_extensions(*enabled, this.hidden_extensions().to_vec(), cx);
                 })))
             .child("Always hide these extensions")
             .when_some(self.hidden_extensions_input.clone(), |view, input| {
-                view.child(Input::new(&input).disabled(!self.show_file_extensions() || self.busy))
+                view.child(Input::new(&input).disabled(!self.show_file_extensions() || self.is_busy()))
             })
             .child(div().text_sm().text_color(cx.theme().muted_foreground)
                 .child("Hide these extensions even when Show file extensions is on. Example: md, txt."))
@@ -397,7 +397,7 @@ impl Notes {
                         appearance.theme_choice(self.startup_dark) == choice,
                         |button| button.primary(),
                     )
-                    .disabled(self.busy)
+                    .disabled(self.is_busy())
                     .on_click(cx.listener(move |this, _, window, cx| {
                         let mut settings = this.appearance();
                         settings.theme = Some(choice);
@@ -416,7 +416,7 @@ impl Notes {
         theme_body = theme_body.child(
             Button::new("reset-theme-colors")
                 .label("Reset Light and Dark themes")
-                .disabled(self.busy)
+                .disabled(self.is_busy())
                 .on_click(cx.listener(|this, _, window, cx| {
                     let mut settings = this.appearance();
                     settings.reset_palettes();

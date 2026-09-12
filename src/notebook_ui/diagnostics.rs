@@ -29,7 +29,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
         while step <= 31 {
             cx.background_executor().timer(Duration::from_millis(std::env::var("GPUI_NOTE_SMOKE_DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(60).clamp(60, 2000))).await;
             assert!(started.elapsed() < Duration::from_secs(120), "Notebook smoke check timed out at step {step}");
-            let ready = notes.update(cx, |this, _| !this.busy && !this.notebooks.directories.values().any(|d| matches!(d, DirectoryState::Loading))).unwrap();
+            let ready = notes.update(cx, |this, _| !this.is_busy() && !this.notebooks.directories.values().any(|d| matches!(d, DirectoryState::Loading))).unwrap();
             if !ready { continue; }
             fs::write(output.with_extension("progress.txt"), format!("step {step} of 31")).unwrap();
             cx.update(|window, cx| notes.update(cx, |this, cx| {
@@ -80,16 +80,16 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.editor.update(cx, |editor, cx| editor.set_value("# Saved", window, cx));
                         assert!(this.dirty(cx));
                         // Exercise the same response handler as the native save prompt.
-                        this.answer_request(None, Next::File(first.join("root.md")), window, cx);
+                        this.diagnostic_answer_request(None, Next::File(first.join("root.md")), window, cx);
                         assert_eq!(this.document.as_ref().unwrap().path.file_name().unwrap(), "nested.md");
                         assert!(this.dirty(cx));
-                        this.answer_request(Some(0), Next::File(first.join("root.md")), window, cx);
+                        this.diagnostic_answer_request(Some(0), Next::File(first.join("root.md")), window, cx);
                     }
                     9 => {
                         assert_eq!(fs::read_to_string(first.join("folder/nested.md")).unwrap(), "# Saved");
                         assert_eq!(this.reading_text.as_str(), "# Root");
                         this.editor.update(cx, |editor, cx| editor.set_value("discard me", window, cx));
-                        this.answer_request(Some(1), Next::Notebook { path: second.clone(), create: false }, window, cx);
+                        this.diagnostic_answer_request(Some(1), Next::Notebook { path: second.clone(), create: false }, window, cx);
                     }
                     10 => {
                         assert_eq!(notebook::name(&this.notebooks.active.as_ref().unwrap().root), "Second");
@@ -164,10 +164,10 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert_eq!(this.reading_text.as_str(), "# Saved");
                         assert!(this.notebooks.tree_focus.is_focused(window));
                         this.editor.update(cx, |editor, cx| editor.set_value("unsaved", window, cx));
-                        this.answer_request(None, Next::TreeFile(first.join("root.md")), window, cx);
+                        this.diagnostic_answer_request(None, Next::TreeFile(first.join("root.md")), window, cx);
                         assert!(this.dirty(cx));
                         assert_eq!(this.notebooks.rows[this.notebooks.cursor.unwrap()].label, "nested.md");
-                        this.answer_request(Some(1), Next::TreeFile(first.join("root.md")), window, cx);
+                        this.diagnostic_answer_request(Some(1), Next::TreeFile(first.join("root.md")), window, cx);
                     }
                     19 => {
                         assert_eq!(this.reading_text.as_str(), "# Root");
@@ -216,11 +216,11 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(second.is_dir());
                         assert_eq!(this.notebooks.index.notebooks.len(), 1);
                         this.editor.update(cx, |editor, cx| editor.set_value("unsaved removal", window, cx));
-                        this.answer_request(None, Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx);
+                        this.diagnostic_answer_request(None, Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx);
                         assert!(this.notebooks.active.is_some());
                         assert!(this.dirty(cx));
                     }
-                    27 => this.answer_request(Some(1), Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx),
+                    27 => this.diagnostic_answer_request(Some(1), Next::RemoveNotebook(fs::canonicalize(&first).unwrap()), window, cx),
                     28 => {
                         assert!(this.notebooks.active.is_none());
                         assert!(this.document.is_none());

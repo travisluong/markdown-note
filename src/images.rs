@@ -84,7 +84,7 @@ impl Notes {
     fn can_drop_images(&self) -> bool {
         drop_allowed(
             self.mode,
-            self.busy,
+            self.is_busy(),
             self.document.as_ref().map(|d| d.path.as_path()),
             self.notebooks
                 .active

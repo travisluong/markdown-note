@@ -24,7 +24,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
             loop {
                 Timer::after(Duration::from_millis(250)).await;
                 assert!(started.elapsed().as_secs() < 45, "autosave timeout at {step}");
-                if notes.read_with(cx, |this, _| !this.saves.writing && !this.busy).unwrap() { break; }
+                if notes.read_with(cx, |this, _| !this.saves.writing && !this.is_busy()).unwrap() { break; }
             }
             cx.update(|window, cx| notes.update(cx, |this, cx| {
                 match step {
@@ -38,7 +38,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert_eq!(Document::open(path.clone()).unwrap().saved, "start\n");
                         this.editor.update(cx, |e, cx| e.set_value("snapshot A\n", window, cx));
                         this.start_write(None, window, cx);
-                        assert!(!this.busy);
+                        assert!(!this.is_busy());
                         this.editor.update(cx, |e, cx| e.set_value("newer B\n", window, cx));
                     }
                     2 => {
@@ -55,7 +55,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.start_write(None, window, cx);
                         this.editor.update(cx, |e, cx| e.set_value("manual newest\n", window, cx));
                         this.save(Next::Nothing, window, cx);
-                        assert!(matches!(this.saves.pending, Some(Pending::Save(_))));
+                        assert!(matches!(this.saves.pending, Some(Pending::Save(_, _))));
                     }
                     4 => {
                         assert_eq!(Document::open(path.clone()).unwrap().saved, "manual newest\n");
@@ -63,7 +63,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.editor.update(cx, |e, cx| e.set_value("before navigation\n", window, cx));
                         this.start_write(None, window, cx);
                         this.request(Next::File(path.clone()), window, cx);
-                        assert!(matches!(this.saves.pending, Some(Pending::Request(_))));
+                        assert!(matches!(this.saves.pending, Some(Pending::Request(_, _))));
                     }
                     5 => {
                         assert_eq!(this.editor.read(cx).value().as_str(), "before navigation\n");
@@ -77,7 +77,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     6 => {
                         assert!(this.saves.error.is_some());
                         assert!(this.dirty(cx));
-                        assert!(!this.busy);
+                        assert!(!this.is_busy());
                         fs::remove_dir(&path).unwrap();
                         this.save(Next::Nothing, window, cx);
                     }
@@ -94,7 +94,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         window.close_dialog(cx);
                         this.editor.update(cx, |e, cx| e.set_value("discarded\n", window, cx));
                         this.schedule_autosave(window, cx);
-                        this.answer_request(Some(1), Next::File(path.clone()), window, cx);
+                        this.diagnostic_answer_request(Some(1), Next::File(path.clone()), window, cx);
                     }
                     9 => {
                         assert_eq!(Document::open(path.clone()).unwrap().saved, "recover me\n");

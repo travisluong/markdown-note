@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod app;
 mod autosave;
 #[cfg(feature = "editor-diagnostics")]
 mod benchmark;
@@ -27,6 +28,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use app::operation::{ForegroundOperation, OperationId};
 use gpui::{prelude::*, *};
 use gpui_component::{
     ActiveTheme, Root, Sizable, WindowExt,
@@ -206,7 +208,7 @@ struct Notes {
     reading_text: SharedString,
     reading_search: Option<reading_search::ReadingSearch>,
     focus: FocusHandle,
-    busy: bool,
+    foreground: ForegroundOperation,
     dirty_cached: bool,
     dirty_revision: u64,
     dirty_task: Option<Task<()>>,
@@ -229,7 +231,7 @@ impl Notes {
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| {
-                if this.busy {
+                if this.is_busy() {
                     return false;
                 }
                 this.request(Next::Close, window, cx);
@@ -274,7 +276,7 @@ impl Notes {
             reading_text: SharedString::default(),
             reading_search: None,
             focus,
-            busy: false,
+            foreground: ForegroundOperation::default(),
             dirty_cached: false,
             dirty_revision: 0,
             dirty_task: None,
@@ -359,6 +361,10 @@ impl Notes {
         cx.notify();
     }
 
+    fn is_busy(&self) -> bool {
+        self.foreground.is_busy()
+    }
+
     fn error(
         &mut self,
         message: &str,
@@ -366,7 +372,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         let prompt = window.prompt(
             PromptLevel::Critical,
             message,
@@ -377,7 +383,9 @@ impl Notes {
         cx.spawn_in(window, async move |this, cx| {
             let _ = prompt.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.resume_document(window, cx);
+                if this.foreground.finish(operation) {
+                    this.resume_document(window, cx);
+                }
             });
         })
         .detach();
@@ -386,19 +394,18 @@ impl Notes {
 
     /// Resume a retained document after a cancelled or failed foreground operation.
     fn resume_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.busy = false;
         self.schedule_autosave(window, cx);
         self.refresh(window, cx);
     }
 
     fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.is_busy() {
             return;
         }
         self.saves.timer = None;
         if self.saves.writing {
-            self.saves.pending = Some(autosave::Pending::Request(next));
-            self.busy = true;
+            let Some(operation) = self.foreground.begin() else { return; };
+            self.saves.pending = Some(autosave::Pending::Request(operation, next));
             cx.notify();
             return;
         }
@@ -406,7 +413,7 @@ impl Notes {
             self.continue_with(next, window, cx);
             return;
         }
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         let prompt = window.prompt(
             PromptLevel::Warning,
             "Save changes?",
@@ -421,7 +428,7 @@ impl Notes {
         cx.spawn_in(window, async move |this, cx| {
             let answer = prompt.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
-                this.answer_request(answer, next, window, cx);
+                this.answer_request(operation, answer, next, window, cx);
             });
         })
         .detach();
@@ -430,12 +437,13 @@ impl Notes {
 
     fn answer_request(
         &mut self,
+        operation: OperationId,
         answer: Option<usize>,
         next: Next,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.busy = false;
+        if !self.foreground.finish(operation) { return; }
         match answer {
             Some(0) => self.save(next, window, cx),
             Some(1) => self.continue_with(next, window, cx),
@@ -447,6 +455,18 @@ impl Notes {
                 self.resume_document(window, cx);
             }
         }
+    }
+
+    #[cfg(feature = "editor-diagnostics")]
+    fn diagnostic_answer_request(
+        &mut self,
+        answer: Option<usize>,
+        next: Next,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let operation = self.foreground.begin().expect("diagnostic response needs an idle session");
+        self.answer_request(operation, answer, next, window, cx);
     }
 
     fn continue_with(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
@@ -468,7 +488,7 @@ impl Notes {
     }
 
     fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         let picker = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -490,7 +510,7 @@ impl Notes {
                 Err(error) => Err(io::Error::other(error.to_string())),
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.finish_open(result, window, cx);
+                this.finish_open(operation, result, window, cx);
             });
         })
         .detach();
@@ -499,11 +519,12 @@ impl Notes {
 
     fn finish_open(
         &mut self,
+        operation: OperationId,
         result: io::Result<Option<Document>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.busy = false;
+        if !self.foreground.finish(operation) { return; }
         match result {
             Ok(Some(document)) => {
                 self.install_document(Some(document), window, cx);
@@ -548,7 +569,7 @@ impl Notes {
             return;
         }
         self.menu_previous_focus = window.focused(cx);
-        let busy = self.busy;
+        let busy = self.is_busy();
         let can_save = self.document.is_some() && !busy;
         let mode = self.mode;
         let focus = self.focus.clone();
@@ -629,7 +650,7 @@ impl Render for Notes {
                         .appearance(false)
                         .text_size(content_size)
                         .line_height(relative(1.5))
-                        .disabled(self.busy),
+                        .disabled(self.is_busy()),
                 )
                 .into_any_element()
         } else {
@@ -680,7 +701,7 @@ impl Render for Notes {
                         let document_path = self.document.as_ref().map(|d| d.path.clone());
                         move |offset, source, window, cx| {
                             let _ = owner.update(cx, |this, cx| {
-                                if this.busy
+                                if this.is_busy()
                                     || this.document.as_ref().map(|d| &d.path)
                                         != document_path.as_ref()
                                 {

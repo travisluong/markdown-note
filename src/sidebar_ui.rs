@@ -14,7 +14,7 @@ impl Notes {
     }
 
     pub(super) fn toggle_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
+        if self.is_busy() || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
             return;
         }
         if self.sidebar_collapsed {
@@ -37,7 +37,7 @@ impl Notes {
     }
 
     pub(super) fn show_explorer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
+        if self.is_busy() || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
             return;
         }
         self.reveal_sidebar(cx);
@@ -89,7 +89,7 @@ impl Notes {
                     .ghost()
                     .icon(IconName::SortAscending)
                     .tooltip("Sort files")
-                    .disabled(self.busy)
+                    .disabled(self.is_busy())
                     .dropdown_menu(move |mut menu, _, cx| {
                         let selected = owner
                             .upgrade()

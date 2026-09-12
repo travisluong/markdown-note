@@ -5,6 +5,9 @@ use std::collections::BTreeMap;
 #[cfg(feature = "editor-diagnostics")]
 pub(super) mod diagnostics;
 
+#[cfg(test)]
+mod operation_tests;
+
 #[derive(Clone)]
 enum DirectoryState {
     Loading,
@@ -180,7 +183,7 @@ impl Notes {
     }
 
     pub(super) fn restore_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         let configured_path = self.notebooks.index_path.clone();
         cx.spawn_in(window, async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
@@ -188,7 +191,7 @@ impl Notes {
                 notebook::load_index(&path).map(|index| (path, index))
             }).await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
+                if !this.foreground.finish(operation) { return; }
                 match result {
                     Ok((path, index)) => {
                         let active = index.active.clone();
@@ -208,7 +211,7 @@ impl Notes {
         menu = menu.menu_with_disabled(
             "Manage notebooks",
             Box::new(ManageNotebooks),
-            self.busy || !self.notebooks.index_writable,
+            self.is_busy() || !self.notebooks.index_writable,
         );
         if !self.notebooks.index.notebooks.is_empty() {
             menu = menu.separator();
@@ -238,7 +241,7 @@ impl Notes {
             menu = menu.item(
                 PopupMenuItem::new(label)
                     .checked(checked)
-                    .disabled(self.busy)
+                    .disabled(self.is_busy())
                     .on_click(move |_, window, cx| {
                         let _ = owner.update(cx, |this, cx| {
                             this.request(
@@ -257,7 +260,7 @@ impl Notes {
     }
 
     pub(super) fn manage_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || !self.notebooks.index_writable || window.has_active_dialog(cx) {
+        if self.is_busy() || !self.notebooks.index_writable || window.has_active_dialog(cx) {
             return;
         }
         self.menu = None;
@@ -288,8 +291,8 @@ impl Notes {
             .w(px(460.).min(window.viewport_size().width - px(32.)))
             .max_h((window.viewport_size().height - px(100.)).max(px(120.)))
             .overlay_closable(false)
-            .close_button(!self.busy)
-            .keyboard(!self.busy)
+            .close_button(!self.is_busy())
+            .keyboard(!self.is_busy())
             .on_ok(move |_, window, cx| {
                 let _ = owner.update(cx, |this, cx| {
                     if this.notebooks.creating {
@@ -303,7 +306,7 @@ impl Notes {
             let name = self.notebooks.name.read(cx).value().to_string();
             body = body
                 .child("Notebook name")
-                .child(Input::new(&self.notebooks.name).disabled(self.busy))
+                .child(Input::new(&self.notebooks.name).disabled(self.is_busy()))
                 .child("Location (parent folder)")
                 .child(
                     div()
@@ -322,7 +325,7 @@ impl Notes {
                         .child(
                             Button::new("browse-notebook-location")
                                 .label("Browse")
-                                .disabled(self.busy)
+                                .disabled(self.is_busy())
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.pick_notebook_folder(true, window, cx)
                                 })),
@@ -342,7 +345,7 @@ impl Notes {
                         .child(
                             Button::new("notebook-back")
                                 .label("Back")
-                                .disabled(self.busy)
+                                .disabled(self.is_busy())
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.notebooks.creating = false;
                                     this.notebooks.modal_error = None;
@@ -353,7 +356,7 @@ impl Notes {
                             Button::new("notebook-create")
                                 .primary()
                                 .label("Create")
-                                .disabled(self.busy || self.notebooks.location.is_none())
+                                .disabled(self.is_busy() || self.notebooks.location.is_none())
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.create_from_form(window, cx);
                                 })),
@@ -405,7 +408,7 @@ impl Notes {
                                 .child(
                                     Button::new(("managed-notebook", index))
                                         .label(label)
-                                        .disabled(self.busy)
+                                        .disabled(self.is_busy())
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             this.request(
                                                 Next::Notebook {
@@ -427,7 +430,7 @@ impl Notes {
                         .child(
                             Button::new(("remove-notebook", index))
                                 .label("Remove")
-                                .disabled(self.busy)
+                                .disabled(self.is_busy())
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     if this
                                         .notebooks
@@ -452,7 +455,7 @@ impl Notes {
                 .child(
                     Button::new("new-notebook")
                         .label("Create new notebook")
-                        .disabled(self.busy)
+                        .disabled(self.is_busy())
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.notebooks.creating = true;
                             this.notebooks.modal_error = None;
@@ -465,7 +468,7 @@ impl Notes {
                 .child(
                     Button::new("open-notebook")
                         .label("Open folder as notebook")
-                        .disabled(self.busy)
+                        .disabled(self.is_busy())
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.pick_notebook_folder(false, window, cx)
                         })),
@@ -484,7 +487,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || !self.notebooks.index_writable {
+        if self.is_busy() || !self.notebooks.index_writable {
             return;
         }
         if self
@@ -508,7 +511,7 @@ impl Notes {
     }
 
     fn create_from_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.is_busy() {
             return;
         }
         let name = self.notebooks.name.read(cx).value().to_string();
@@ -538,10 +541,10 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy {
+        if self.is_busy() {
             return;
         }
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         self.notebooks.modal_error = None;
         let picker = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -563,7 +566,7 @@ impl Notes {
                 Err(error) => Err(error.to_string()),
             };
             let _ = this.update_in(cx, |this, window, cx| {
-                this.finish_notebook_picker(result, location, window, cx);
+                this.finish_notebook_picker(operation, result, location, window, cx);
             });
         })
         .detach();
@@ -572,12 +575,13 @@ impl Notes {
 
     pub(super) fn finish_notebook_picker(
         &mut self,
+        operation: OperationId,
         result: Result<Option<PathBuf>, String>,
         location: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.busy = false;
+        if !self.foreground.finish(operation) { return; }
         match result {
             Ok(Some(path)) if !location => {
                 self.request(Next::Notebook { path, create: false }, window, cx);
@@ -600,7 +604,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         self.notebooks.modal_error = None;
         let pending = self.notebooks.persistence.take();
         cx.spawn_in(window, async move |this, cx| {
@@ -625,7 +629,7 @@ impl Notes {
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
+                if !this.foreground.finish(operation) { return; }
                 match result {
                     Ok((book, document)) => {
                         this.search = None;
@@ -664,7 +668,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy
+        if self.is_busy()
             || !self
                 .notebooks
                 .active
@@ -673,14 +677,14 @@ impl Notes {
         {
             return;
         }
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move { notebook::create_untitled(&root).and_then(Document::open) })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
+                if !this.foreground.finish(operation) { return; }
                 match result {
                     Ok(document) => {
                         if this.mode == ViewMode::Reading {
@@ -765,7 +769,7 @@ impl Notes {
             self.open_image(path, keep_tree_focus, window, cx);
             return;
         }
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         self.notebooks.tree_loading = keep_tree_focus;
         self.notebooks.tree_target = keep_tree_focus.then(|| path.clone());
         let loading_path = path.clone();
@@ -783,7 +787,7 @@ impl Notes {
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
+                if !this.foreground.finish(operation) { return; }
                 this.notebooks.tree_loading = false;
                 if keep_tree_focus && this.notebooks.tree_target.as_ref() != Some(&loading_path) {
                     if let Some(target) = this.notebooks.tree_target.take() {
@@ -873,13 +877,17 @@ impl Notes {
     }
 
     pub(super) fn finish_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         let pending = self.notebooks.persistence.take();
-        cx.spawn_in(window, async move |_, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             if let Some(pending) = pending {
                 pending.await;
             }
-            let _ = cx.update(|window, _| window.remove_window());
+            let _ = this.update_in(cx, |this, window, _| {
+                if this.foreground.finish(operation) {
+                    window.remove_window();
+                }
+            });
         })
         .detach();
     }
@@ -961,7 +969,7 @@ impl Notes {
     }
 
     fn activate_row(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.is_busy() {
             return;
         }
         let Some(row) = self.notebooks.rows.get(index).cloned() else {
@@ -999,7 +1007,7 @@ impl Notes {
 
     fn tree_move(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
         let len = self.notebooks.rows.len();
-        if len == 0 || (self.busy && !self.notebooks.tree_loading) {
+        if len == 0 || (self.is_busy() && !self.notebooks.tree_loading) {
             return;
         }
         let next = match self.notebooks.cursor {
@@ -1063,7 +1071,7 @@ impl Notes {
     }
 
     fn tree_horizontal(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy && !self.notebooks.tree_loading {
+        if self.is_busy() && !self.notebooks.tree_loading {
             return;
         }
         let Some(index) = self.notebooks.cursor else {
@@ -1214,16 +1222,16 @@ impl Notes {
                                     })
                                     .relative()
                                     // Rows consume drops so only unoccupied space falls back to root.
-                                    .when(!row.draggable || !directory || this.busy, |view| {
+                                    .when(!row.draggable || !directory || this.is_busy(), |view| {
                                         view.on_drop(|_: &EntryDrag, _, cx| cx.stop_propagation())
                                     })
-                                    .when(row.draggable && !this.busy, |view| {
+                                    .when(row.draggable && !this.is_busy(), |view| {
                                         view.on_drag(drag, |drag, _, _, cx| {
                                             cx.stop_propagation();
                                             cx.new(|_| drag.clone())
                                         })
                                     })
-                                    .when(row.draggable && directory && !this.busy, |view| {
+                                    .when(row.draggable && directory && !this.is_busy(), |view| {
                                         view.drag_over::<EntryDrag>(|view, _, _, cx| {
                                             view.bg(cx.theme().accent)
                                         })
@@ -1281,7 +1289,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || window.has_active_dialog(cx) {
+        if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         if self.saves.writing {
@@ -1300,7 +1308,7 @@ impl Notes {
         let from = drag.path.clone();
         let mut settings = book.settings.clone();
         self.saves.timer = None;
-        self.busy = true;
+        let Some(operation) = self.foreground.begin() else { return; };
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
             let worker_root = root.clone();
@@ -1314,7 +1322,7 @@ impl Notes {
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.busy = false;
+                if !this.foreground.finish(operation) { return; }
                 match result {
                     Ok((to, settings)) => {
                         if let Some(document) = &mut this.document {
@@ -1360,7 +1368,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || window.has_active_dialog(cx) {
+        if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         let Some(book) = &mut self.notebooks.active else {

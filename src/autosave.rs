@@ -2,8 +2,8 @@ use super::*;
 use std::time::Duration;
 
 pub(super) enum Pending {
-    Request(Next),
-    Save(Next),
+    Request(OperationId, Next),
+    Save(OperationId, Next),
 }
 
 #[derive(Default)]
@@ -54,7 +54,7 @@ impl Notes {
     pub(super) fn schedule_autosave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.saves.timer = None;
         let settings = self.autosave_settings();
-        if !settings.enabled || self.busy || self.document.is_none() {
+        if !settings.enabled || self.is_busy() || self.document.is_none() {
             return;
         }
         let identity = self.saves.identity;
@@ -66,7 +66,7 @@ impl Notes {
             let _ = this.update_in(cx, |this, window, cx| {
                 if this.saves.identity == identity
                     && !this.saves.writing
-                    && !this.busy
+                    && !this.is_busy()
                     && this.autosave_settings().enabled
                     && this.dirty(cx)
                 {
@@ -77,30 +77,36 @@ impl Notes {
     }
 
     pub(super) fn save(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || self.document.is_none() {
+        if self.is_busy() || self.document.is_none() {
             return;
         }
         self.saves.timer = None;
         if self.saves.writing {
-            self.saves.pending = Some(Pending::Save(next));
-            self.busy = true;
+            let Some(operation) = self.foreground.begin() else { return; };
+            self.saves.pending = Some(Pending::Save(operation, next));
             cx.notify();
             return;
         }
         self.start_write(Some(next), window, cx);
     }
 
-    fn start_write(&mut self, next: Option<Next>, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn start_write(&mut self, next: Option<Next>, window: &mut Window, cx: &mut Context<Self>) {
         debug_assert!(!self.saves.writing);
+        if self.is_busy() { return; }
         let Some(document) = &self.document else {
             return;
         };
         let identity = self.saves.identity;
         let (path, bom, newline) = (document.path.clone(), document.bom, document.newline);
         let snapshot = self.editor.read(cx).snapshot();
+        let operation = if next.is_some() {
+            let Some(operation) = self.foreground.begin() else { return; };
+            Some(operation)
+        } else {
+            None
+        };
         self.saves.writing = true;
         self.saves.error = None;
-        self.busy = next.is_some();
         cx.spawn_in(window, async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
                 let text = snapshot.to_string();
@@ -108,9 +114,17 @@ impl Notes {
             }).await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.saves.writing = false;
-                this.busy = false;
                 let success = result.is_ok();
-                if this.saves.identity == identity {
+                let same_document = this.saves.identity == identity;
+                let pending = this.saves.pending.take();
+                let owner = match &pending {
+                    Some(Pending::Request(owner, _) | Pending::Save(owner, _)) => Some(*owner),
+                    None => operation,
+                };
+                let can_continue = owner.is_none_or(|owner| this.foreground.finish(owner));
+                // The write owns its captured baseline independently of any
+                // foreground continuation. Never release an unrelated picker/load.
+                if same_document {
                     match result {
                         Ok((path, text, snapshot)) => {
                             if let Some(document) = &mut this.document {
@@ -126,17 +140,21 @@ impl Notes {
                         }
                         Err(error) => this.saves.error = Some(format!("Could not save file: {error}. Your changes are still in the editor. Edit again or use Save to retry.")),
                     }
-                    if let Some(pending) = this.saves.pending.take() {
+                }
+                if can_continue && same_document {
+                    if let Some(pending) = pending {
                         match pending {
-                            Pending::Request(next) => this.request(next, window, cx),
-                            Pending::Save(next) => this.save(next, window, cx),
+                            Pending::Request(_, next) => this.request(next, window, cx),
+                            Pending::Save(_, next) => this.save(next, window, cx),
                         }
                     } else if success {
                         if let Some(next) = next { this.continue_with(next, window, cx); }
-                        if this.dirty(cx) { this.schedule_autosave(window, cx); }
-                    } else {
+                    } else if !this.is_busy() {
                         this.finish_search_navigation(false, window, cx);
                     }
+                }
+                if (success || !same_document) && this.dirty(cx) {
+                    this.schedule_autosave(window, cx);
                 }
                 this.refresh(window, cx);
             });

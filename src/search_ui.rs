@@ -31,7 +31,7 @@ impl Drop for SearchPanel {
 
 impl Notes {
     pub(super) fn search_current_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.document.is_none() || self.busy || window.has_active_dialog(cx) {
+        if self.document.is_none() || self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         if self.mode == ViewMode::Reading {
@@ -43,7 +43,7 @@ impl Notes {
     }
 
     pub(super) fn open_search_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) {
+        if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         let Some(book) = &self.notebooks.active else {
@@ -190,7 +190,7 @@ impl Notes {
     }
 
     fn move_search_result(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) { return; }
+        if self.is_busy() || window.has_active_dialog(cx) { return; }
         if let Some(panel) = &mut self.search {
             if panel.hits.is_empty() {
                 return;
@@ -217,7 +217,7 @@ impl Notes {
     }
 
     fn activate_search_result(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) {
+        if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         let Some(panel) = &self.search else {
@@ -379,7 +379,7 @@ impl Notes {
                                             .child(div().child(hit.after.clone())),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
-                                        if this.busy || window.has_active_dialog(cx) { return; }
+                                        if this.is_busy() || window.has_active_dialog(cx) { return; }
                                         if let Some(panel) = &mut this.search {
                                             panel.selected = i;
                                         }
@@ -429,7 +429,7 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
         for attempt in 0..100 {
             let ready = notes
                 .update(cx, |this, _| {
-                    !this.busy
+                    !this.is_busy()
                         && !this.saves.writing
                         && this
                             .search
@@ -578,7 +578,7 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                             query: "needle".into(),
                             case_sensitive: false,
                         };
-                        this.answer_request(
+                        this.diagnostic_answer_request(
                             None,
                             Next::SearchResult(destination.clone()),
                             window,
@@ -586,7 +586,7 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                         );
                         assert_eq!(this.document.as_ref().unwrap().path, a);
                         assert_eq!(this.editor.read(cx).value().as_str(), "unsaved needle");
-                        this.answer_request(Some(0), Next::SearchResult(destination), window, cx);
+                        this.diagnostic_answer_request(Some(0), Next::SearchResult(destination), window, cx);
                     }
                     12 => {
                         assert_eq!(this.document.as_ref().unwrap().path, b);
@@ -597,7 +597,7 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
                     }
                     13 => {
                         let hit = this.search.as_ref().unwrap().hits[0].clone();
-                        this.answer_request(
+                        this.diagnostic_answer_request(
                             Some(1),
                             Next::SearchResult(search::Destination {
                                 path: a,

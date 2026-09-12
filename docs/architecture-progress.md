@@ -9,8 +9,8 @@ Native desktop tests remain user-run under AGENTS.md.
 | Milestone | Status | Evidence / remaining work |
 | --- | --- | --- |
 | 1. Editor redo policy | Implemented and verified | `tests/editor_history.rs`: 11 headless tests passed, including divergent typing/commands/IME, no-op replacements and generic History compatibility; complete 168-test suite passed. |
-| 2. Reliable baseline | Pending | Correct feature docs, format, lint, separate validation CI, explicit toolchain and platform checks. |
-| 3. Lifecycle/edit fixes and integration coverage | In progress | F2 cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired and verified. F6 operation ownership and broader table/save integration coverage remain. |
+| 2. Reliable baseline | In progress | Feature documentation corrected; Rust 1.98.1 pinned and separate three-platform validation CI configured. Format, strict lint and platform execution remain. Release packaging workflow unchanged. |
+| 3. Lifecycle/edit fixes and integration coverage | In progress | F2 picker/error cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. Additional retained-dirty-buffer tree-retarget autosave regression is being reproduced separately. |
 | 4. Data/storage boundaries and file policy | Pending | Library entry point; document and notebook modules; conflict detection and metadata policy with platform tests. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
@@ -29,6 +29,14 @@ does not implement the native folder/file picker.
 
 The subsequent F5 search lifecycle target passed three additional tests for
 published/debounced discarded overlays and clean-navigation state preservation.
+
+Subsequent Windows checks under the pinned compiler: the full application target
+passed 88 tests after F6 operation ownership (including gate, save/pending/stale
+completion and four tree-retarget cases). The new `editor_transactions` target
+passed both list/task/selection and table-command diagnostics on TestPlatform.
+The default application check passed. This is not yet a new full-suite result.
+Linux/macOS jobs are configured but have not been executed from this Windows
+workspace; no source was pushed.
 
 Run the default application check and diagnostics-enabled headless suite after
 behavioral changes; use focused tests while developing each repair. Establish

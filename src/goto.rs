@@ -208,7 +208,7 @@ impl Palette {
 
 impl Notes {
     pub(super) fn command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) {
+        if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         self.open_palette(
@@ -268,7 +268,7 @@ impl Notes {
     }
 
     pub(super) fn go_to(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || window.has_active_dialog(cx) {
+        if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
         let Some(book) = &self.notebooks.active else {
@@ -321,7 +321,7 @@ impl Notes {
     }
 
     fn activate_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.is_busy() {
             return;
         }
         let entry = self
@@ -368,7 +368,7 @@ impl Notes {
         command.unavailable(
             self.document.is_some(),
             self.mode == ViewMode::Reading,
-            self.busy,
+            self.is_busy(),
             self.notebooks.active.is_some(),
         )
     }
@@ -748,9 +748,8 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                 let root = book.root.clone();
                 let count = fs::read_dir(&root).unwrap().count();
                 let previous_path = this.document.as_ref().map(|doc| doc.path.clone());
-                this.busy = true;
-                this.answer_request(None, Next::NewNote(root.clone()), window, cx);
-                assert!(!this.busy);
+                this.diagnostic_answer_request(None, Next::NewNote(root.clone()), window, cx);
+                assert!(!this.is_busy());
                 assert_eq!(
                     fs::read_dir(root).unwrap().count(),
                     count,

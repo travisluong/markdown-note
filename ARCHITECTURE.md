@@ -41,7 +41,7 @@ Follow its callers and completions before treating a file as an isolated module.
 | --- | --- | --- |
 | Startup, actions, document state, save prompts, root rendering | [main.rs](src/main.rs): `Notes`, `Next`, `request`, `continue_with`, `NotesWindow` | `NotesWindow` renders modal layers outside `Notes::render` to avoid recursively borrowing the entity. |
 | Encoding and atomic note replacement | [main.rs](src/main.rs): `Document::open`, `normalize_newlines`, `save_file` | Saved text and saved rope represent the last successful write; current text belongs to `InputState`. |
-| Debounced autosave and queued foreground operations | [autosave.rs](src/autosave.rs): `SaveState`, `schedule_autosave`, `start_write` | Coordinates with `Notes.busy`, `Next`, document identity, tree refresh and search navigation. |
+| Debounced autosave and queued foreground operations | [autosave.rs](src/autosave.rs): `SaveState`, `schedule_autosave`, `start_write`; [app/operation.rs](src/app/operation.rs): `ForegroundOperation` | Background writes own a captured document baseline. Foreground prompts, navigation and saves own explicit operation tokens; queued actions carry their waiting token. |
 | Notebook settings, schema defaults, paths, directory entries and mutations | [notebook.rs](src/notebook.rs): `Settings`, `Notebook`, `Index`, `resolve`, `save_state`, `move_entry`, `create_untitled` | Includes preference values and filesystem behavior; `Settings` refers to root `ViewMode`. |
 | Notebook activation, document installation, explorer and persistence queue | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`, `activate_notebook`, `install_document`, `persist_notebooks`, `drop_entry` | Owns document replacement as well as tree presentation. |
 | Sidebar visibility and width | [sidebar_ui.rs](src/sidebar_ui.rs) | Explorer and Search share sidebar geometry and visibility. |
@@ -93,6 +93,14 @@ Additional contracts to preserve:
   History has separate semantics; the editor applies its policy explicitly.
 - Background results need an identity/revision or cancellation check before
   applying. Inspect each subsystem's actual check; they are not interchangeable.
+- Foreground operations acquire a token from the session's persistent
+  `ForegroundOperation` gate. Only a matching completion releases that token;
+  stale and duplicate completions cannot install content or unlock another
+  operation. Background autosave owns no foreground token. Successful writes
+  advance a matching document's saved baseline even when their navigation
+  continuation is obsolete. A queued save/navigation releases its waiting token
+  before dispatching the next operation. Tree arrows may retarget the current
+  load without acquiring another token.
 - Live-preview parsing maintains one running job and one latest pending
   snapshot. Safe offset edits can rebase some results; context-changing edits
   invalidate them. Fenced-code tokens require their stricter revision checks.
