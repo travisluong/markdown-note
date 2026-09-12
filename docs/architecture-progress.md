@@ -358,3 +358,17 @@ application or installer was launched. Native installation/upgrade behavior and
 other platform builds remain manual/CI validation. The GitHub repository was
 renamed to `travisluong/mithril`, its repository identity was verified, and the
 local origin was updated. Source changes were not pushed.
+
+## Icon-free Windows title bar (2026-09-12)
+
+Windows startup now requests a transparent native title bar and Notes renders
+`gpui_component::TitleBar` with only the current title and window controls.
+One title helper supplies the visible text and native title, preserving file
+names and the unsaved marker. Fullscreen omits the client title bar.
+
+Windows/MSVC verification: `cargo check --offline --locked --bin mithril`,
+`cargo test --offline --locked --features editor-diagnostics` (301 passed),
+`cargo fmt --check`, strict all-target clippy with editor diagnostics, and
+`cargo build --offline --locked --bin mithril` passed. No desktop app was
+launched. Native appearance, dragging, minimize/maximize and close behavior
+remain manual validation.
