@@ -41,6 +41,10 @@ checks compilation, not interactive UI behavior.
 
 ## Use
 
+On macOS, application shortcuts use **Command** in place of **Ctrl** below.
+Menu shortcuts use **Control+Option+F / V / N / H**, leaving Option-letter
+combinations available for typing. Help → Keyboard shortcuts shows platform-specific bindings.
+
 - **File → Open…** (`Ctrl+O`): open a UTF-8 `.md` or `.markdown` file.
 - **File → Settings**: adjust content font size (10–40 px), UI font size (10–24 px), and themes. The Theme section offers independently customizable Light and Dark palettes, background/font/primary color pickers, and a button to reset both palettes. Changes apply immediately and are saved per notebook. Without an active notebook, settings apply for the session only.
 - **File → Save** (`Ctrl+S`): save back to the opened file.

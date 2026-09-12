@@ -2,7 +2,7 @@ use super::*;
 use gpui_component::scroll::ScrollableElement;
 
 pub(super) struct Shortcut {
-    key: &'static str,
+    key: String,
     description: &'static str,
     group: &'static str,
     pub binding: KeyBinding,
@@ -11,7 +11,11 @@ pub(super) struct Shortcut {
 pub(super) fn app_shortcuts() -> Vec<Shortcut> {
     macro_rules! shortcut {
         ($key:literal, $action:expr, $context:literal, $group:literal, $description:literal) => {
-            Shortcut { key: $key, description: $description, group: $group, binding: KeyBinding::new($key, $action, Some($context)) }
+            {
+                let key = platform_shortcut($key, cfg!(target_os = "macos"));
+                let binding = KeyBinding::new(&key, $action, Some($context));
+                Shortcut { key, description: $description, group: $group, binding }
+            }
         };
     }
     vec![
@@ -35,7 +39,20 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
     ]
 }
 
-// Windows bindings audited against the vendored InputState and table handlers.
+fn platform_shortcut(key: &str, macos: bool) -> String {
+    if macos {
+        if let Some(rest) = key.strip_prefix("ctrl-") {
+            return format!("cmd-{rest}");
+        }
+        // Option-letter combinations enter text on macOS.
+        if let Some(rest) = key.strip_prefix("alt-") {
+            return format!("ctrl-alt-{rest}");
+        }
+    }
+    key.to_owned()
+}
+
+// Base labels audited against the vendored InputState and table handlers.
 const CONTEXT_SHORTCUTS: &[(&str, &str, &str)] = &[
     ("Editor", "Ctrl+A", "Select all"),
     ("Editor", "Ctrl+C / X / V", "Copy / cut / paste"),
@@ -62,6 +79,17 @@ const CONTEXT_SHORTCUTS: &[(&str, &str, &str)] = &[
     ("Table navigation", "Escape", "Leave table navigation"),
 ];
 
+fn context_shortcut(key: &str, macos: bool) -> String {
+    if !macos { return key.to_owned(); }
+    match key {
+        "Ctrl+Z / Ctrl+Y" => "Cmd+Z / Cmd+Shift+Z".into(),
+        "Ctrl+Left / Right" => "Option+Left / Right".into(),
+        "Ctrl+Shift+Left / Right" => "Option+Shift+Left / Right".into(),
+        "Ctrl+Backspace / Delete" => "Option+Backspace / Delete".into(),
+        _ => key.replace("Ctrl+", "Cmd+"),
+    }
+}
+
 impl Notes {
     pub(super) fn open_help(&mut self, shortcuts: bool, window: &mut Window, cx: &mut Context<Self>) {
         if window.has_active_dialog(cx) { return; }
@@ -74,10 +102,10 @@ impl Notes {
                 for group in ["Application", "Editor", "Search", "Notebook tree", "Table navigation"] {
                     body = body.child(div().mt_2().font_weight(FontWeight::BOLD).child(group));
                     for shortcut in app.iter().filter(|s| s.group == group) {
-                        body = body.child(shortcut_row(shortcut.key, shortcut.description));
+                        body = body.child(shortcut_row(&shortcut.key, shortcut.description));
                     }
                     for (_, key, description) in CONTEXT_SHORTCUTS.iter().filter(|s| s.0 == group) {
-                        body = body.child(shortcut_row(key, description));
+                        body = body.child(shortcut_row(&context_shortcut(key, cfg!(target_os = "macos")), description));
                     }
                 }
             } else {
@@ -120,7 +148,21 @@ mod tests {
             assert!(!shortcut.description.is_empty());
             assert!(keys.insert(shortcut.key));
         }
-        assert!(keys.contains("alt-h"));
-        assert!(keys.contains("ctrl-shift-f"));
+        assert!(keys.contains(&super::platform_shortcut("alt-h", cfg!(target_os = "macos"))));
+        assert!(keys.contains(&super::platform_shortcut("ctrl-shift-f", cfg!(target_os = "macos"))));
+    }
+
+    #[test]
+    fn mac_shortcuts_use_command_and_preserve_option_text_entry() {
+        for shortcut in app_shortcuts() {
+            let mac_key = super::platform_shortcut(&shortcut.key, true);
+            gpui::Keystroke::parse(&mac_key).unwrap();
+        }
+        assert_eq!(super::platform_shortcut("ctrl-s", true), "cmd-s");
+        assert_eq!(super::platform_shortcut("ctrl-shift-f", true), "cmd-shift-f");
+        assert_eq!(super::platform_shortcut("alt-n", true), "ctrl-alt-n");
+        assert_eq!(super::platform_shortcut("ctrl-s", false), "ctrl-s");
+        assert_eq!(super::context_shortcut("Ctrl+Z / Ctrl+Y", true), "Cmd+Z / Cmd+Shift+Z");
+        assert_eq!(super::context_shortcut("Ctrl+Left / Right", true), "Option+Left / Right");
     }
 }
