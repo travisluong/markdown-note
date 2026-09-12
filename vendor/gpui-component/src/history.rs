@@ -124,6 +124,12 @@ where
         &self.redos
     }
 
+    /// Discard a redo branch when a consumer records a divergent edit.
+    /// Generic history keeps redo entries across pushes unless explicitly cleared.
+    pub(crate) fn clear_redo(&mut self) {
+        self.redos.clear();
+    }
+
     /// Clear the undo and redo stacks.
     pub fn clear(&mut self) {
         self.undos.clear();

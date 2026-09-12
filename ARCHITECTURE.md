@@ -1,7 +1,8 @@
 # Architecture and change guide
 
-This describes the implementation reviewed at `c852b70` on 2026-09-12. Proposed
-changes are separate in [the architecture audit](docs/architecture-audit.md).
+This maps the current implementation. The baseline review is recorded in
+[the architecture audit](docs/architecture-audit.md); implementation evidence and
+remaining milestones are tracked in [architecture progress](docs/architecture-progress.md).
 Update this map when ownership, lifecycle rules, or verification commands change.
 Read [AGENTS.md](AGENTS.md) before working, especially its vendor, commit, and
 desktop-testing rules.
@@ -86,6 +87,9 @@ Additional contracts to preserve:
   fences and images.
 - Source ranges use UTF-8 byte offsets; display geometry and IME UTF-16 offsets
   are different coordinate systems. Name conversions and validate boundaries.
+- A changed document edit after Undo abandons the old redo branch. Selection
+  changes and identical-text replacements preserve redo. Generic component
+  History has separate semantics; the editor applies its policy explicitly.
 - Background results need an identity/revision or cancellation check before
   applying. Inspect each subsystem's actual check; they are not interchangeable.
 - Live-preview parsing maintains one running job and one latest pending

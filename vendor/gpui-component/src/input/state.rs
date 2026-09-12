@@ -1913,6 +1913,11 @@ impl InputState {
         let old_text = text.slice(range.clone()).to_string();
         let new_range = range.start..range.start + new_text.len();
 
+        // Text edits abandon the old redo branch. History replay returns above;
+        // unchanged text and selection-only operations keep redo available.
+        if old_text != new_text {
+            self.history.clear_redo();
+        }
         self.history
             .push(Change::new(range.clone(), &old_text, new_range, new_text));
     }

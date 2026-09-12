@@ -1,5 +1,11 @@
 # Local editor patch
 
+Document edits invalidate the abandoned redo branch after Undo. InputState clears
+redo only for actual text changes, after the replay guard; generic History keeps
+its existing opt-in policy. `tests/editor_history.rs` covers isolated edits,
+ordinary typing, Unicode IME grouping, selection and identical-text replacements
+in Source and Live preview, plus generic history compatibility.
+
 Live-preview links use GPUI's secondary modifier: Command-click on macOS and
 Control-click on Windows/Linux, matching each platform's editing conventions.
 
