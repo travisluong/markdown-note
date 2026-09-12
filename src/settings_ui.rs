@@ -825,10 +825,10 @@ impl Notes {
             let mut fonts = self.installed_fonts.clone();
             fonts.sort_by_key(|font| font.to_lowercase());
             fonts.dedup();
-            if let Some(name) = &selected {
-                if !fonts.contains(name) {
-                    fonts.push(name.clone());
-                }
+            if let Some(name) = &selected
+                && !fonts.contains(name)
+            {
+                fonts.push(name.clone());
             }
             fonts.insert(0, "Default".to_owned());
             let row = selected

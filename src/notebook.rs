@@ -567,16 +567,16 @@ impl Notebook {
             return Err(io::Error::other("Choose an existing folder."));
         }
         let metadata_dir = root.join(".gpui-note");
-        if let Ok(metadata) = fs::symlink_metadata(&metadata_dir) {
-            if is_link(&metadata) || !metadata.is_dir() {
-                return Err(io::Error::other(".gpui-note must be a regular folder."));
-            }
+        if let Ok(metadata) = fs::symlink_metadata(&metadata_dir)
+            && (is_link(&metadata) || !metadata.is_dir())
+        {
+            return Err(io::Error::other(".gpui-note must be a regular folder."));
         }
         let path = settings_path(&root);
-        if let Ok(metadata) = fs::symlink_metadata(&path) {
-            if is_link(&metadata) {
-                return Err(io::Error::other("Notebook settings must not be a link."));
-            }
+        if let Ok(metadata) = fs::symlink_metadata(&path)
+            && is_link(&metadata)
+        {
+            return Err(io::Error::other("Notebook settings must not be a link."));
         }
         let existing: Option<Settings> = read_json(&path)?;
         let mut settings = existing.clone().unwrap_or_default();
@@ -986,13 +986,12 @@ mod tests {
 /// A display-only spelling; filesystem operations and stored identities keep the original path.
 pub fn display_path(path: &Path) -> String {
     let value = path.to_string_lossy();
-    if let Some(unc) = value.strip_prefix(r"\\?\UNC\") {
-        if unc
+    if let Some(unc) = value.strip_prefix(r"\\?\UNC\")
+        && unc
             .split_once('\\')
             .is_some_and(|(server, share)| !server.is_empty() && !share.is_empty())
-        {
-            return format!(r"\\{unc}");
-        }
+    {
+        return format!(r"\\{unc}");
     }
     if let Some(drive) = value.strip_prefix(r"\\?\") {
         let bytes = drive.as_bytes();
@@ -1179,8 +1178,10 @@ mod move_tests {
             "collision"
         );
         assert!(move_entry(root, Path::new("../outside"), Path::new("")).is_err());
-        let mut settings = Settings::default();
-        settings.last_file = Some(PathBuf::from("folder/a.md"));
+        let mut settings = Settings {
+            last_file: Some(PathBuf::from("folder/a.md")),
+            ..Default::default()
+        };
         settings.expanded.insert(PathBuf::from("folder/sub"));
         settings.remap_entry(Path::new("folder"), Path::new("new/folder"));
         assert_eq!(

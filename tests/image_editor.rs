@@ -311,7 +311,7 @@ async fn leaving_image_line_preserves_clicked_text(cx: &mut TestAppContext) {
                         });
                         cx.run_until_parked();
                     }
-                    let locate = |state: &InputState| {
+                    let locate = |state: &InputState| -> Option<i32> {
                         (0..1000).find(|y| {
                             state
                                 .drop_offset(point(px(50.), px(*y as f32)))
@@ -330,7 +330,7 @@ async fn leaving_image_line_preserves_clicked_text(cx: &mut TestAppContext) {
                         assert_eq!(state.cursor(), expected);
                         let after = locate(state).unwrap();
                         if scroll_case == 1 || (scroll_case == 0 && !below) || (scroll_case == 2 && below) {
-                            assert!((after as i32 - before as i32).abs() <= 1,
+                            assert!((after - before).abs() <= 1,
                                 "jump: {before} -> {after}, missing={missing}, wrapped={wrapped}, below={below}, scroll_case={scroll_case}");
                         } else {
                             // Scroll limits allow only the movement caused by collapsing source.

@@ -271,10 +271,10 @@ impl TextWrapper {
             .at(self.active_offset)
             .map(|(t, _, _)| t.cache_key());
         let next_table = self.tables.at(offset).map(|(t, _, _)| t.cache_key());
-        if previous_table != next_table {
-            if let Some(key) = previous_table {
-                self.table_widths.remove(&key);
-            }
+        if previous_table != next_table
+            && let Some(key) = previous_table
+        {
+            self.table_widths.remove(&key);
         }
         let previous = self
             .tables
@@ -508,16 +508,14 @@ impl TextWrapper {
         let mut scrolls = std::collections::HashMap::new();
         for table in &parsed.tables.tables {
             if let Some(old) = old_by_start.get(&table.source.start) {
-                if old.column_characters == table.column_characters
-                    || table.cell_at(self.active_offset).is_some()
-                {
-                    if let Some(value) = self
+                if (old.column_characters == table.column_characters
+                    || table.cell_at(self.active_offset).is_some())
+                    && let Some(value) = self
                         .table_widths
                         .remove(&old.cache_key())
                         .filter(|w| w.len() == table.alignments.len())
-                    {
-                        widths.insert(table.cache_key(), value);
-                    }
+                {
+                    widths.insert(table.cache_key(), value);
                 }
                 if let Some(value) = self.table_scroll.remove(&old.cache_key()) {
                     scrolls.insert(table.cache_key(), value);
@@ -689,10 +687,10 @@ impl TextWrapper {
                     )
                 }
             });
-            if code_block.as_ref().is_some_and(|c| c.empty) {
-                if let Some(p) = &mut presentation {
-                    p.hidden = vec![0..source.len()];
-                }
+            if code_block.as_ref().is_some_and(|c| c.empty)
+                && let Some(p) = &mut presentation
+            {
+                p.hidden = std::iter::once(0..source.len()).collect();
             }
             let scale = if code_block.is_some() {
                 self.code_font_size / self.font_size
@@ -726,7 +724,7 @@ impl TextWrapper {
             if let Some(wrap_width) = wrap_width {
                 // Here only have wrapped line, if there is no wrap meet, the `line_wraps` result will empty.
                 for boundary in wrap_line(
-                    &line_str,
+                    line_str,
                     (wrap_width
                         - if code_block.is_some() {
                             self.code_inset * 2.
@@ -771,21 +769,23 @@ impl TextWrapper {
         if self.lines.len() == 0 {
             self.lines = new_lines.into();
         } else {
-            if range.is_empty() && new_text.len() == 0 && new_lines.len() == 1 {
-                if let Some(old) = self.lines.get(start_row) {
-                    let new = &mut new_lines[0];
-                    let offset = changed_text.line_start_offset(start_row);
-                    if old.line == new.line && self.tables.at(offset).is_some() {
-                        new.table = old.table.clone();
-                        new.cache = old.cache.clone();
-                    }
-                    if old.scale == new.scale
-                        && old.mapped == new.mapped
-                        && old.presentation == new.presentation
-                        && old.wrapped_lines == new.wrapped_lines
-                    {
-                        new.cache = old.cache.clone();
-                    }
+            if range.is_empty()
+                && new_text.len() == 0
+                && new_lines.len() == 1
+                && let Some(old) = self.lines.get(start_row)
+            {
+                let new = &mut new_lines[0];
+                let offset = changed_text.line_start_offset(start_row);
+                if old.line == new.line && self.tables.at(offset).is_some() {
+                    new.table = old.table.clone();
+                    new.cache = old.cache.clone();
+                }
+                if old.scale == new.scale
+                    && old.mapped == new.mapped
+                    && old.presentation == new.presentation
+                    && old.wrapped_lines == new.wrapped_lines
+                {
+                    new.cache = old.cache.clone();
                 }
             }
             self.lines.splice(rows_range, new_lines);
@@ -929,16 +929,15 @@ impl TextWrapper {
                     });
                     x += widths[c];
                 }
-                if let Some(previous) = old.table.as_ref() {
-                    if previous.cells == cells
-                        && previous.widths == widths
-                        && previous.height == height
-                        && previous.active == active_col
-                        && previous.header == (r == 0)
-                    {
-                        previous.revision.set(self.syntax_revision);
-                        continue;
-                    }
+                if let Some(previous) = old.table.as_ref()
+                    && previous.cells == cells
+                    && previous.widths == widths
+                    && previous.height == height
+                    && previous.active == active_col
+                    && previous.header == (r == 0)
+                {
+                    previous.revision.set(self.syntax_revision);
+                    continue;
                 }
                 let mut item = old.clone();
                 item.table = Some(std::rc::Rc::new(TableRowLayout {
@@ -961,26 +960,27 @@ impl TextWrapper {
                 self.lines.splice(row..=row, vec![item]);
             }
             let row = self.text.offset_to_point(table.separator.start).row;
-            if rows.contains(&row) {
-                if let Some(old) = self.lines.get(row) {
-                    let mut item = old.clone();
-                    item.table = Some(std::rc::Rc::new(TableRowLayout {
-                        revision: std::cell::Cell::new(self.syntax_revision),
-                        scroll: scroll.clone(),
-                        viewport,
-                        cells: vec![],
-                        height: 0,
-                        header: false,
-                        active: None,
-                        widths,
-                    }));
-                    item.scale = 0.;
-                    item.measured = true;
-                    item.mapped = None;
-                    item.presentation = None;
-                    item.wrapped_lines = std::rc::Rc::new(vec![0..item.line.len()]);
-                    self.lines.splice(row..=row, vec![item]);
-                }
+            if rows.contains(&row)
+                && let Some(old) = self.lines.get(row)
+            {
+                let mut item = old.clone();
+                item.table = Some(std::rc::Rc::new(TableRowLayout {
+                    revision: std::cell::Cell::new(self.syntax_revision),
+                    scroll: scroll.clone(),
+                    viewport,
+                    cells: vec![],
+                    height: 0,
+                    header: false,
+                    active: None,
+                    widths,
+                }));
+                item.scale = 0.;
+                item.measured = true;
+                item.mapped = None;
+                item.presentation = None;
+                item.wrapped_lines =
+                    std::rc::Rc::new(std::iter::once(0..item.line.len()).collect());
+                self.lines.splice(row..=row, vec![item]);
             }
         }
         self.soft_lines = self.lines.wraps();
@@ -996,22 +996,21 @@ impl TextWrapper {
 
         let wrapped_row = self.lines.prefix_wraps(row);
         let local_offset = offset.saturating_sub(start);
-        if let Some(table) = &line.table {
-            if let Some(cell) = table
+        if let Some(table) = &line.table
+            && let Some(cell) = table
                 .cells
                 .iter()
                 .find(|c| local_offset <= c.source.end)
                 .or_else(|| table.cells.last())
-            {
-                let display = cell.mapped.source_to_display[local_offset
-                    .saturating_sub(cell.source.start)
-                    .min(cell.source.len())];
-                let wrap = cell
-                    .wraps
-                    .partition_point(|r| r.end <= display)
-                    .min(cell.wraps.len() - 1);
-                return DisplayPoint::new(wrapped_row + wrap, wrap, local_offset);
-            }
+        {
+            let display = cell.mapped.source_to_display[local_offset
+                .saturating_sub(cell.source.start)
+                .min(cell.source.len())];
+            let wrap = cell
+                .wraps
+                .partition_point(|r| r.end <= display)
+                .min(cell.wraps.len() - 1);
+            return DisplayPoint::new(wrapped_row + wrap, wrap, local_offset);
         }
         let local_offset = line
             .mapped
@@ -1030,7 +1029,7 @@ impl TextWrapper {
         // Otherwise return the eof of the line.
         let last_range = line.wrapped_lines.last().unwrap_or(&(0..0));
         let ix = line.wrapped_lines.len().saturating_sub(1);
-        return DisplayPoint::new(wrapped_row + ix, ix, last_range.len());
+        DisplayPoint::new(wrapped_row + ix, ix, last_range.len())
     }
 
     /// Return byte offset in the text from the given display point (with soft wrap).
@@ -1290,13 +1289,13 @@ impl LineLayout {
         if self.code_block.is_some() && (pos.y < px(0.) || pos.y >= self.size(line_height).height) {
             return None;
         }
-        let pos = if self.code_block.is_some() {
+        let pos = if let Some(code_block) = &self.code_block {
             point(
                 pos.x,
                 (pos.y - self.code_top(line_height)).max(px(0.)).min(
                     (self.size(line_height).height
                         - self.code_top(line_height)
-                        - self.code_block.as_ref().unwrap().bottom() * line_height
+                        - code_block.bottom() * line_height
                         - px(0.01))
                     .max(px(0.)),
                 ),
@@ -1881,7 +1880,7 @@ mod tests {
                 image: None,
                 table: None,
                 line: Rope::from("Hello, 世界!\r"),
-                wrapped_lines: std::rc::Rc::new(vec![0..15]),
+                wrapped_lines: std::rc::Rc::new(std::iter::once(0..15).collect()),
                 presentation: None,
                 mapped: None,
                 scale: 1.,
@@ -1923,7 +1922,7 @@ mod tests {
                 image: None,
                 table: None,
                 line: Rope::from("这里是第 4 行。"),
-                wrapped_lines: std::rc::Rc::new(vec![0..22]),
+                wrapped_lines: std::rc::Rc::new(std::iter::once(0..22).collect()),
                 presentation: None,
                 mapped: None,
                 scale: 1.,

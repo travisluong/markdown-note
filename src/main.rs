@@ -563,11 +563,11 @@ impl Notes {
         if mode == ViewMode::Reading {
             self.update_reading_search(cx);
         }
-        if let Some(book) = &mut self.notebooks.active {
-            if book.settings.view_mode != mode {
-                book.settings.view_mode = mode;
-                self.persist_notebooks(cx);
-            }
+        if let Some(book) = &mut self.notebooks.active
+            && book.settings.view_mode != mode
+        {
+            book.settings.view_mode = mode;
+            self.persist_notebooks(cx);
         }
         self.editor.update(cx, |editor, cx| {
             editor.set_live_preview(mode == ViewMode::LivePreview, cx)
@@ -638,7 +638,105 @@ impl Render for Notes {
         let content_size = px(self.appearance().content_font_size as f32);
         let content = if let Some(path) = &self.image_path {
             images::viewer(path).into_any_element()
-        } else if self.document.is_none() {
+        } else if let Some(document) = &self.document {
+            if self.mode != ViewMode::Reading {
+                div()
+                    .key_context("DocumentEditor")
+                    .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {
+                        if this.can_insert_date() && this.editor.focus_handle(cx).is_focused(window)
+                        {
+                            this.editor
+                                .update(cx, |editor, cx| editor.toggle_selected_tasks(window, cx));
+                        }
+                    }))
+                    .size_full()
+                    .font_family(self.content_font(cx))
+                    .child(
+                        Input::new(&self.editor)
+                            .h_full()
+                            .appearance(false)
+                            .text_size(content_size)
+                            .line_height(relative(1.5))
+                            .disabled(self.is_busy()),
+                    )
+                    .into_any_element()
+            } else {
+                div()
+                    .size_full()
+                    .p_6()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .font_family(self.content_font(cx))
+                    .key_context("ReadingContent")
+                    .on_action(cx.listener(|this, _: &CloseReadingFind, window, cx| {
+                        this.reading_search = None;
+                        this.focus.focus(window);
+                        cx.notify();
+                    }))
+                    .when(self.reading_search.is_some(), |view| {
+                        view.child(self.render_reading_find(cx))
+                    })
+                    .child(
+                        TextView::markdown(
+                            ("reading", self.saves.identity as usize),
+                            self.reading_text.clone(),
+                            window,
+                            cx,
+                        )
+                        .image_document(document.path.clone())
+                        .source_highlights(
+                            self.reading_search
+                                .as_ref()
+                                .map(|find| find.highlights.clone()),
+                        )
+                        .on_link_open({
+                            let owner = cx.weak_entity();
+                            let identity = self.saves.identity;
+                            move |destination, source, window, cx| {
+                                let _ = owner.update(cx, |this, cx| {
+                                    if this.saves.identity == identity
+                                        && this.editor.read(cx).value().as_ref() == source
+                                    {
+                                        this.open_link(destination, window, cx);
+                                    }
+                                });
+                            }
+                        })
+                        .on_task_toggle({
+                            let owner = cx.weak_entity();
+                            let document_path = self.document.as_ref().map(|d| d.path.clone());
+                            move |offset, source, window, cx| {
+                                let _ = owner.update(cx, |this, cx| {
+                                    if this.is_busy()
+                                        || this.document.as_ref().map(|d| &d.path)
+                                            != document_path.as_ref()
+                                    {
+                                        return;
+                                    }
+                                    this.editor.update(cx, |editor, cx| {
+                                        editor.toggle_markdown_task(offset, source, window, cx);
+                                    });
+                                });
+                            }
+                        })
+                        .text_size(content_size)
+                        .line_height(relative(1.5))
+                        .style(gpui_component::text::TextViewStyle {
+                            heading_base_font_size: content_size,
+                            highlight_theme: cx.theme().highlight_theme.clone(),
+                            is_dark: cx.theme().mode.is_dark(),
+                            ..Default::default()
+                        })
+                        .selectable(true)
+                        .scrollable(true)
+                        .min_h_0()
+                        .flex_1()
+                        .size_full(),
+                    )
+                    .into_any_element()
+            }
+        } else {
             div()
                 .size_full()
                 .flex()
@@ -650,101 +748,6 @@ impl Render for Notes {
                 } else {
                     "Open a Markdown file with File → Open… (Ctrl+O)"
                 })
-                .into_any_element()
-        } else if self.mode != ViewMode::Reading {
-            div()
-                .key_context("DocumentEditor")
-                .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {
-                    if this.can_insert_date() && this.editor.focus_handle(cx).is_focused(window) {
-                        this.editor
-                            .update(cx, |editor, cx| editor.toggle_selected_tasks(window, cx));
-                    }
-                }))
-                .size_full()
-                .font_family(self.content_font(cx))
-                .child(
-                    Input::new(&self.editor)
-                        .h_full()
-                        .appearance(false)
-                        .text_size(content_size)
-                        .line_height(relative(1.5))
-                        .disabled(self.is_busy()),
-                )
-                .into_any_element()
-        } else {
-            div()
-                .size_full()
-                .p_6()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .font_family(self.content_font(cx))
-                .key_context("ReadingContent")
-                .on_action(cx.listener(|this, _: &CloseReadingFind, window, cx| {
-                    this.reading_search = None;
-                    this.focus.focus(window);
-                    cx.notify();
-                }))
-                .when(self.reading_search.is_some(), |view| {
-                    view.child(self.render_reading_find(cx))
-                })
-                .child(
-                    TextView::markdown(
-                        ("reading", self.saves.identity as usize),
-                        self.reading_text.clone(),
-                        window,
-                        cx,
-                    )
-                    .image_document(self.document.as_ref().unwrap().path.clone())
-                    .source_highlights(
-                        self.reading_search
-                            .as_ref()
-                            .map(|find| find.highlights.clone()),
-                    )
-                    .on_link_open({
-                        let owner = cx.weak_entity();
-                        let identity = self.saves.identity;
-                        move |destination, source, window, cx| {
-                            let _ = owner.update(cx, |this, cx| {
-                                if this.saves.identity == identity
-                                    && this.editor.read(cx).value().as_ref() == source
-                                {
-                                    this.open_link(destination, window, cx);
-                                }
-                            });
-                        }
-                    })
-                    .on_task_toggle({
-                        let owner = cx.weak_entity();
-                        let document_path = self.document.as_ref().map(|d| d.path.clone());
-                        move |offset, source, window, cx| {
-                            let _ = owner.update(cx, |this, cx| {
-                                if this.is_busy()
-                                    || this.document.as_ref().map(|d| &d.path)
-                                        != document_path.as_ref()
-                                {
-                                    return;
-                                }
-                                this.editor.update(cx, |editor, cx| {
-                                    editor.toggle_markdown_task(offset, source, window, cx);
-                                });
-                            });
-                        }
-                    })
-                    .text_size(content_size)
-                    .line_height(relative(1.5))
-                    .style(gpui_component::text::TextViewStyle {
-                        heading_base_font_size: content_size,
-                        highlight_theme: cx.theme().highlight_theme.clone(),
-                        is_dark: cx.theme().mode.is_dark(),
-                        ..Default::default()
-                    })
-                    .selectable(true)
-                    .scrollable(true)
-                    .min_h_0()
-                    .flex_1()
-                    .size_full(),
-                )
                 .into_any_element()
         };
         div()

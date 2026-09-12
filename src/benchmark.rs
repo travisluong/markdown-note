@@ -92,7 +92,7 @@ fn geometry_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &
         notes.update(cx, |notes,cx| {
             let fixture = format!("before\n\n| Name | Details | {} |\n| --- | :---: | {} |\n| café | **你好** words words words words words words | {} |\n| second | other | {} |\n\nafter",
                 (0..10).map(|i| format!("C{i}")).collect::<Vec<_>>().join(" | "),
-                vec!["---:";10].join(" | "), vec!["value";10].join(" | "),vec!["";10].join(" | "));
+                ["---:";10].join(" | "), ["value";10].join(" | "),["";10].join(" | "));
             notes.editor.update(cx,|editor,cx| { editor.set_value(fixture,window,cx); editor.set_cursor_position(Position::new(0,0),window,cx); });
         });
         table_round(notes,output,0,window);
@@ -193,7 +193,7 @@ fn advance(notes: Entity<Notes>, mut run: Run, window: &mut Window, cx: &mut App
     let started = Instant::now();
     notes.update(cx, |notes, cx| {
         notes.editor.update(cx, |editor, cx| {
-            if group % 2 == 0 {
+            if group.is_multiple_of(2) {
                 editor.insert("x", window, cx);
             } else {
                 editor.diagnostic_scroll(if sample % 20 < 10 { -80. } else { 80. }, cx);

@@ -29,46 +29,47 @@ impl LinkIndex {
             .iter()
             .find(|p| p.start < range.start && range.end < p.end)
             .cloned();
-        if self.simple_definitions && ordinary(inserted) && ordinary(&old[range.clone()]) {
-            if let Some(block) = paragraph {
-                let delta = inserted.len() as isize - range.len() as isize;
-                let end = block.end.saturating_add_signed(delta);
-                let fragment = format!("{}\n\n{}", &source[block.start..end], self.definitions);
-                let parsed = parse_document_inner(&fragment, false);
-                // A paragraph becoming a list, HTML block, heading or definition
-                // can change neighboring blocks, so use the document parser.
-                if parsed.paragraphs.first() != Some(&(0..end - block.start)) {
-                    let mut next = parse_document(source);
-                    next.parsed_bytes += self.parsed_bytes + fragment.len();
-                    *self = next;
-                    return;
-                }
-                let mut links = parsed.links;
-                links.retain(|link| link.source.end <= end - block.start);
-                for link in &mut links {
-                    shift(link, block.start as isize);
-                }
-                self.links.retain(|link| {
-                    link.source.end <= block.start || link.source.start >= block.end
-                });
-                for link in &mut self.links {
-                    if link.source.start >= block.end {
-                        shift(link, delta);
-                    }
-                }
-                self.links.extend(links);
-                self.links.sort_by_key(|link| link.source.start);
-                for p in &mut self.paragraphs {
-                    if p.start >= block.end {
-                        p.start = p.start.saturating_add_signed(delta);
-                    }
-                    if p.end >= block.end {
-                        p.end = p.end.saturating_add_signed(delta);
-                    }
-                }
-                self.parsed_bytes += fragment.len();
+        if self.simple_definitions
+            && ordinary(inserted)
+            && ordinary(&old[range.clone()])
+            && let Some(block) = paragraph
+        {
+            let delta = inserted.len() as isize - range.len() as isize;
+            let end = block.end.saturating_add_signed(delta);
+            let fragment = format!("{}\n\n{}", &source[block.start..end], self.definitions);
+            let parsed = parse_document_inner(&fragment, false);
+            // A paragraph becoming a list, HTML block, heading or definition
+            // can change neighboring blocks, so use the document parser.
+            if parsed.paragraphs.first() != Some(&(0..end - block.start)) {
+                let mut next = parse_document(source);
+                next.parsed_bytes += self.parsed_bytes + fragment.len();
+                *self = next;
                 return;
             }
+            let mut links = parsed.links;
+            links.retain(|link| link.source.end <= end - block.start);
+            for link in &mut links {
+                shift(link, block.start as isize);
+            }
+            self.links
+                .retain(|link| link.source.end <= block.start || link.source.start >= block.end);
+            for link in &mut self.links {
+                if link.source.start >= block.end {
+                    shift(link, delta);
+                }
+            }
+            self.links.extend(links);
+            self.links.sort_by_key(|link| link.source.start);
+            for p in &mut self.paragraphs {
+                if p.start >= block.end {
+                    p.start = p.start.saturating_add_signed(delta);
+                }
+                if p.end >= block.end {
+                    p.end = p.end.saturating_add_signed(delta);
+                }
+            }
+            self.parsed_bytes += fragment.len();
+            return;
         }
         let mut next = parse_document(source);
         next.parsed_bytes += self.parsed_bytes;
@@ -158,11 +159,11 @@ fn parse_document_inner(source: &str, allow_skip: bool) -> LinkIndex {
         .filter_map(|node| node.position().map(|p| p.start.offset..p.end.offset))
         .collect();
     fn definition_source(node: &Node, source: &str, out: &mut String) {
-        if matches!(node, Node::Definition(_)) {
-            if let Some(p) = node.position() {
-                out.push_str(&source[p.start.offset..p.end.offset]);
-                out.push('\n');
-            }
+        if matches!(node, Node::Definition(_))
+            && let Some(p) = node.position()
+        {
+            out.push_str(&source[p.start.offset..p.end.offset]);
+            out.push('\n');
         }
         if let Some(children) = node.children() {
             for child in children {

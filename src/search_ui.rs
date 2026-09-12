@@ -213,19 +213,19 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(panel) = &mut self.search {
-            if let Some(previous) = panel.navigation.take() {
-                if !success {
-                    panel.selected = previous.min(panel.hits.len().saturating_sub(1));
-                }
-                panel
-                    .scroll
-                    .scroll_to_item(panel.selected, ScrollStrategy::Top);
-                if panel.visible {
-                    panel.query.update(cx, |query, cx| query.focus(window, cx));
-                }
-                cx.notify();
+        if let Some(panel) = &mut self.search
+            && let Some(previous) = panel.navigation.take()
+        {
+            if !success {
+                panel.selected = previous.min(panel.hits.len().saturating_sub(1));
             }
+            panel
+                .scroll
+                .scroll_to_item(panel.selected, ScrollStrategy::Top);
+            if panel.visible {
+                panel.query.update(cx, |query, cx| query.focus(window, cx));
+            }
+            cx.notify();
         }
     }
 
@@ -417,24 +417,6 @@ fn adjacent_result(selected: usize, count: usize, down: bool) -> usize {
         selected.saturating_add(1).min(count.saturating_sub(1))
     } else {
         selected.saturating_sub(1)
-    }
-}
-
-#[cfg(test)]
-mod lifecycle_tests;
-
-#[cfg(test)]
-mod navigation_tests {
-    use super::adjacent_result;
-    #[test]
-    fn arrows_clamp_and_repeat() {
-        assert_eq!(adjacent_result(0, 0, true), 0);
-        assert_eq!(adjacent_result(0, 3, false), 0);
-        let next = adjacent_result(0, 3, true);
-        assert_eq!(next, 1);
-        assert_eq!(adjacent_result(next, 3, true), 2);
-        assert_eq!(adjacent_result(2, 3, true), 2);
-        assert_eq!(adjacent_result(2, 3, false), 1);
     }
 }
 
@@ -667,5 +649,23 @@ pub(super) async fn diagnostic_search(notes: &Entity<Notes>, cx: &mut AsyncWindo
             });
         })
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests;
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::adjacent_result;
+    #[test]
+    fn arrows_clamp_and_repeat() {
+        assert_eq!(adjacent_result(0, 0, true), 0);
+        assert_eq!(adjacent_result(0, 3, false), 0);
+        let next = adjacent_result(0, 3, true);
+        assert_eq!(next, 1);
+        assert_eq!(adjacent_result(next, 3, true), 2);
+        assert_eq!(adjacent_result(2, 3, true), 2);
+        assert_eq!(adjacent_result(2, 3, false), 1);
     }
 }

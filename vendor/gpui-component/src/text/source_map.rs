@@ -20,34 +20,28 @@ pub fn map_leaf(source: &str, range: Range<usize>, display: &str) -> Vec<SourceR
         // Character references may expand to more than one Unicode character.
         // Let the same Markdown parser decode them; retain the entire token's
         // source extent rather than guessing offsets in its name or digits.
-        if raw[cursor..].starts_with('&') {
-            if let Some(end) = raw.as_bytes()[cursor..]
+        if raw[cursor..].starts_with('&')
+            && let Some(end) = raw.as_bytes()[cursor..]
                 .iter()
                 .take(33)
                 .position(|byte| *byte == b';')
+        {
+            let token = &raw[cursor..cursor + end + 1];
+            if !display[index..].starts_with(token)
+                && let Ok(markdown::mdast::Node::Root(root)) =
+                    markdown::to_mdast(token, &markdown::ParseOptions::gfm())
+                && let Some(markdown::mdast::Node::Paragraph(p)) = root.children.first()
+                && let Some(markdown::mdast::Node::Text(text)) = p.children.first()
+                && text.value != token
+                && display[index..].starts_with(&text.value)
             {
-                let token = &raw[cursor..cursor + end + 1];
-                if !display[index..].starts_with(token) {
-                    if let Ok(markdown::mdast::Node::Root(root)) =
-                        markdown::to_mdast(token, &markdown::ParseOptions::gfm())
-                    {
-                        if let Some(markdown::mdast::Node::Paragraph(p)) = root.children.first() {
-                            if let Some(markdown::mdast::Node::Text(text)) = p.children.first() {
-                                if text.value != token && display[index..].starts_with(&text.value)
-                                {
-                                    runs.push(SourceRun {
-                                        source: range.start + cursor
-                                            ..range.start + cursor + token.len(),
-                                        display: index..index + text.value.len(),
-                                    });
-                                    cursor += token.len();
-                                    index += text.value.len();
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                }
+                runs.push(SourceRun {
+                    source: range.start + cursor..range.start + cursor + token.len(),
+                    display: index..index + text.value.len(),
+                });
+                cursor += token.len();
+                index += text.value.len();
+                continue;
             }
         }
         let ch = display[index..].chars().next().unwrap();

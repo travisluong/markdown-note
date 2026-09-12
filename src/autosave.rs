@@ -138,11 +138,11 @@ impl Notes {
                 if same_document {
                     match result {
                         Ok((path, text, snapshot)) => {
-                            if let Some(document) = &mut this.document {
-                                if document.path == path {
-                                    document.saved = text;
-                                    document.saved_rope = snapshot;
-                                }
+                            if let Some(document) = &mut this.document
+                                && document.path == path
+                            {
+                                document.saved = text;
+                                document.saved_rope = snapshot;
                             }
                             this.check_dirty(window, cx);
                             if this.notebooks.active.as_ref().is_some_and(|book| path.starts_with(&book.root)) {

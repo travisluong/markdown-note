@@ -129,7 +129,7 @@ pub(super) fn marker(line: &str) -> Option<(usize, String)> {
     let body = &line[start..];
     let digits = body.bytes().take_while(u8::is_ascii_digit).count();
     let next_marker = if digits > 0 {
-        let mut next = body[..digits].as_bytes().to_vec();
+        let mut next = body.as_bytes()[..digits].to_vec();
         let mut carry = true;
         for digit in next.iter_mut().rev() {
             if *digit == b'9' {
@@ -191,7 +191,7 @@ impl Presentation {
         Self {
             code: Some(tokens),
             hidden: if prefix > 0 {
-                vec![0..prefix]
+                std::iter::once(0..prefix).collect()
             } else {
                 Vec::new()
             },
@@ -346,9 +346,7 @@ impl Presentation {
                         .get(hidden_index)
                         .is_some_and(|r| r.contains(&ix));
             let start = text.len();
-            for pos in ix..ix + ch.len_utf8() {
-                source_to_display[pos] = start;
-            }
+            source_to_display[ix..ix + ch.len_utf8()].fill(start);
             if !hidden {
                 text.push(if self.task == Some(ix) {
                     '\u{fffc}'
@@ -639,11 +637,11 @@ pub(super) fn nest_lines_with_style(
                     break;
                 }
             } else if previous.indent <= root.indent {
-                if previous.indent == root.indent {
-                    if let Some(content) = previous.content {
-                        // Selected siblings stay siblings even when their marker widths differ.
-                        target = targets[previous_row].unwrap_or(content);
-                    }
+                if previous.indent == root.indent
+                    && let Some(content) = previous.content
+                {
+                    // Selected siblings stay siblings even when their marker widths differ.
+                    target = targets[previous_row].unwrap_or(content);
                 }
                 break;
             }
@@ -705,13 +703,13 @@ pub(super) fn nest_lines_with_style(
                     line.offset + line.prefix..line.offset + line.start,
                     " ".repeat(new_indent),
                 ));
-                if line.offset == root.offset {
-                    if let Some((len, ref marker)) = marker {
-                        replacements.push((
-                            line.offset + line.start..line.offset + line.start + len,
-                            marker.clone(),
-                        ));
-                    }
+                if line.offset == root.offset
+                    && let Some((len, ref marker)) = marker
+                {
+                    replacements.push((
+                        line.offset + line.start..line.offset + line.start + len,
+                        marker.clone(),
+                    ));
                 }
             }
         }

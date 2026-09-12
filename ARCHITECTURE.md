@@ -180,9 +180,11 @@ cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings
 ```
 
 `--offline` can be added when the locked dependencies are already cached.
-The audit records the current pass/fail baseline; these commands are not all
-green yet. GPUI tests in `tests/image_editor.rs` and `tests/code_highlighting.rs`
-use `TestAppContext`/TestPlatform, not native desktop windows. Some editor tests
+The audit records the original pass/fail baseline. The current baseline passes
+all four commands on Windows; Linux also passes the default check and headless
+suite. See [architecture progress](docs/architecture-progress.md) for counts and
+platform limits. GPUI tests use `TestAppContext`/TestPlatform, not native desktop
+windows. Some editor tests
 include vendor source files with `#[path]`; this is why root formatting/lint
 checks can also report those vendor files.
 

@@ -144,49 +144,50 @@ pub(crate) fn insertion(source: &str, offset: usize, images: &str) -> io::Result
         .map_err(|e| io::Error::other(e.to_string()))?;
     if let Node::Root(root) = root {
         for node in root.children {
-            if let Some(pos) = node.position() {
-                if pos.start.offset <= offset && offset <= pos.end.offset {
-                    if let Node::Paragraph(paragraph) = &node {
-                        // Keep ordinary text offsets, but move protected spans
-                        // after the paragraph. Splitting at a span's end could
-                        // reinterpret its remaining text as a new Markdown block.
-                        for child in &paragraph.children {
-                            if !matches!(child, Node::Text(_))
-                                && let Some(position) = child.position()
-                                && position.start.offset < offset
-                                && offset < position.end.offset
-                            {
-                                offset = pos.end.offset;
-                                break;
-                            }
+            if let Some(pos) = node.position()
+                && pos.start.offset <= offset
+                && offset <= pos.end.offset
+            {
+                if let Node::Paragraph(paragraph) = &node {
+                    // Keep ordinary text offsets, but move protected spans
+                    // after the paragraph. Splitting at a span's end could
+                    // reinterpret its remaining text as a new Markdown block.
+                    for child in &paragraph.children {
+                        if !matches!(child, Node::Text(_))
+                            && let Some(position) = child.position()
+                            && position.start.offset < offset
+                            && offset < position.end.offset
+                        {
+                            offset = pos.end.offset;
+                            break;
                         }
-                    } else {
-                        // A separate paragraph cannot safely split a structural block.
-                        offset = pos.end.offset;
-                        if source[offset..].starts_with('\n') {
-                            offset += 1;
-                        }
-                        if matches!(node, Node::Code(_)) && pos.end.offset == source.len() {
-                            // An unclosed fence would swallow the image; refuse instead of changing code.
-                            let raw = &source[pos.start.offset..pos.end.offset];
-                            let first = raw.lines().next().unwrap_or("").trim_start();
-                            if first.starts_with("```") || first.starts_with("~~~") {
-                                let marker = first.as_bytes()[0] as char;
-                                let count = first.chars().take_while(|c| *c == marker).count();
-                                let closed = raw.lines().skip(1).any(|line| {
-                                    let line = line.trim();
-                                    line.len() >= count && line.chars().all(|c| c == marker)
-                                });
-                                if !closed {
-                                    return Err(io::Error::other(
-                                        "Close the code fence before dropping an image here.",
-                                    ));
-                                }
+                    }
+                } else {
+                    // A separate paragraph cannot safely split a structural block.
+                    offset = pos.end.offset;
+                    if source[offset..].starts_with('\n') {
+                        offset += 1;
+                    }
+                    if matches!(node, Node::Code(_)) && pos.end.offset == source.len() {
+                        // An unclosed fence would swallow the image; refuse instead of changing code.
+                        let raw = &source[pos.start.offset..pos.end.offset];
+                        let first = raw.lines().next().unwrap_or("").trim_start();
+                        if first.starts_with("```") || first.starts_with("~~~") {
+                            let marker = first.as_bytes()[0] as char;
+                            let count = first.chars().take_while(|c| *c == marker).count();
+                            let closed = raw.lines().skip(1).any(|line| {
+                                let line = line.trim();
+                                line.len() >= count && line.chars().all(|c| c == marker)
+                            });
+                            if !closed {
+                                return Err(io::Error::other(
+                                    "Close the code fence before dropping an image here.",
+                                ));
                             }
                         }
                     }
-                    break;
                 }
+                break;
             }
         }
     }
@@ -247,7 +248,7 @@ mod tests {
         fs::create_dir(&folder).unwrap();
         let nested = folder.join("inner.png");
         png(&nested);
-        let mut batch = prepare(&root, &[nested.clone()]).unwrap();
+        let mut batch = prepare(&root, std::slice::from_ref(&nested)).unwrap();
         assert!(root.join("inner.png").exists());
         batch.commit();
         drop(batch);
@@ -277,7 +278,7 @@ mod tests {
         let fixture = tempfile::tempdir().unwrap();
         let note = fixture.path().join("notes").join("deep").join("note.md");
         let image = fixture.path().join("写真 [a] #100%.png");
-        let text = markdown(&note, &[image.clone()]).unwrap();
+        let text = markdown(&note, std::slice::from_ref(&image)).unwrap();
         let parsed = gpui_component::markdown_images::paragraphs(&text);
         assert_eq!(parsed.len(), 1, "{text}");
         let url = parsed.values().next().unwrap();

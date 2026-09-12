@@ -816,10 +816,10 @@ impl Notes {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    if let Some(root) = root {
-                        if let Ok(relative) = path.strip_prefix(&root) {
-                            return notebook::resolve(&root, relative).and_then(Document::open);
-                        }
+                    if let Some(root) = root
+                        && let Ok(relative) = path.strip_prefix(&root)
+                    {
+                        return notebook::resolve(&root, relative).and_then(Document::open);
                     }
                     Document::open(path)
                 })
@@ -830,11 +830,11 @@ impl Notes {
                 }
                 this.notebooks.tree_loading = false;
                 if keep_tree_focus && this.notebooks.tree_target.as_ref() != Some(&loading_path) {
-                    if let Some(target) = this.notebooks.tree_target.take() {
-                        if !this.document.as_ref().is_some_and(|doc| doc.path == target) {
-                            this.open_path(target, true, window, cx);
-                            return;
-                        }
+                    if let Some(target) = this.notebooks.tree_target.take()
+                        && !this.document.as_ref().is_some_and(|doc| doc.path == target)
+                    {
+                        this.open_path(target, true, window, cx);
+                        return;
                     }
                     // A folder or the current note keeps the original buffer.
                     this.resume_document(window, cx);
@@ -991,19 +991,18 @@ impl Notes {
                     }
                 }
                 this.notebooks.rebuild_rows();
-                if let Some(target) = &this.notebooks.folder_target {
-                    if let Some(index) = this
+                if let Some(target) = &this.notebooks.folder_target
+                    && let Some(index) = this
                         .notebooks
                         .rows
                         .iter()
                         .position(|row| row.directory && &row.path == target)
-                    {
-                        this.notebooks.cursor = Some(index);
-                        this.notebooks
-                            .scroll
-                            .scroll_to_item(index, ScrollStrategy::Top);
-                        this.notebooks.folder_target = None;
-                    }
+                {
+                    this.notebooks.cursor = Some(index);
+                    this.notebooks
+                        .scroll
+                        .scroll_to_item(index, ScrollStrategy::Top);
+                    this.notebooks.folder_target = None;
                 }
                 cx.notify();
             });
@@ -1112,10 +1111,10 @@ impl Notes {
             });
         if self.notebooks.tree_loading {
             self.notebooks.tree_target = target;
-        } else if let Some(path) = target {
-            if !self.document.as_ref().is_some_and(|doc| doc.path == path) {
-                self.request(Next::TreeFile(path), window, cx);
-            }
+        } else if let Some(path) = target
+            && !self.document.as_ref().is_some_and(|doc| doc.path == path)
+        {
+            self.request(Next::TreeFile(path), window, cx);
         }
     }
 

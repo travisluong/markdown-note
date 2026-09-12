@@ -312,10 +312,10 @@ impl Notes {
     }
 
     fn close_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(palette) = self.palette.take() {
-            if let Some(focus) = palette.focus {
-                focus.focus(window);
-            }
+        if let Some(palette) = self.palette.take()
+            && let Some(focus) = palette.focus
+        {
+            focus.focus(window);
         }
         cx.notify();
     }
@@ -332,10 +332,10 @@ impl Notes {
         let Some(entry) = entry else {
             return;
         };
-        if let PaletteEntry::Command(command) = &entry {
-            if self.command_unavailable(*command).is_some() {
-                return;
-            }
+        if let PaletteEntry::Command(command) = &entry
+            && self.command_unavailable(*command).is_some()
+        {
+            return;
         }
         window.close_dialog(cx);
         self.close_palette(window, cx);
@@ -565,179 +565,6 @@ impl Notes {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Command, PaletteEntry, discover, ranked_entries, score};
-    use std::{fs, path::Path};
-    #[test]
-    fn commands_filter_by_full_label_and_check_editability() {
-        let entries: Vec<_> = Command::ALL
-            .iter()
-            .copied()
-            .map(PaletteEntry::Command)
-            .collect();
-        let results = ranked_entries(&entries, "  CURRENT DATE  ");
-        assert_eq!(results.len(), 1);
-        assert!(matches!(
-            results[0],
-            PaletteEntry::Command(Command::InsertDate)
-        ));
-        assert!(ranked_entries(&entries, "no such command xyz").is_empty());
-        for command in [Command::InsertDate, Command::EditLink] {
-            assert!(command.unavailable(true, false, false, false).is_none());
-            assert!(command.unavailable(false, false, false, false).is_some());
-            assert!(command.unavailable(true, true, false, false).is_some());
-            assert!(command.unavailable(true, false, true, false).is_some());
-        }
-    }
-
-    #[test]
-    fn theme_command_works_without_an_editable_document() {
-        assert!(
-            Command::ToggleTheme
-                .unavailable(false, true, false, false)
-                .is_none()
-        );
-        assert!(
-            Command::ToggleTheme
-                .unavailable(true, false, true, true)
-                .is_some()
-        );
-        assert_eq!(
-            ranked_entries(&[PaletteEntry::Command(Command::ToggleTheme)], "light/dark").len(),
-            1
-        );
-    }
-
-    #[test]
-    fn notebook_results_distinguish_duplicate_names_and_search_paths() {
-        let entries = vec![
-            PaletteEntry::Notebook {
-                path: "one/Notes".into(),
-                active: false,
-            },
-            PaletteEntry::Notebook {
-                path: "two/Notes".into(),
-                active: true,
-            },
-        ];
-        assert_eq!(ranked_entries(&entries, "notes").len(), 2);
-        let results = ranked_entries(&entries, "two/notes");
-        assert_eq!(results.len(), 1);
-        assert!(results[0].label().contains("(active)"));
-        assert_eq!(results[0].detail(), "two/Notes");
-        assert_ne!(entries[0].detail(), entries[1].detail());
-        assert!(
-            Command::ChangeNotebook
-                .unavailable(false, true, false, false)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn new_note_requires_a_notebook_but_not_an_editable_document() {
-        assert!(
-            Command::NewNote
-                .unavailable(false, true, false, true)
-                .is_none()
-        );
-        assert!(
-            Command::NewNote
-                .unavailable(true, false, false, false)
-                .is_some()
-        );
-        assert!(
-            Command::NewNote
-                .unavailable(true, false, true, true)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn current_file_search_supports_reading_and_standalone_documents() {
-        assert!(
-            Command::SearchFile
-                .unavailable(true, true, false, false)
-                .is_none()
-        );
-        assert!(
-            Command::SearchFile
-                .unavailable(false, false, false, true)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn all_files_search_requires_only_an_active_notebook() {
-        assert!(
-            Command::SearchAllFiles
-                .unavailable(false, true, false, true)
-                .is_none()
-        );
-        assert!(
-            Command::SearchAllFiles
-                .unavailable(true, false, false, false)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn replacement_requires_an_editable_document() {
-        assert!(
-            Command::ReplaceFile
-                .unavailable(true, false, false, false)
-                .is_none()
-        );
-        assert!(
-            Command::ReplaceFile
-                .unavailable(true, true, false, true)
-                .is_some()
-        );
-        assert!(
-            Command::ReplaceFile
-                .unavailable(false, false, false, true)
-                .is_some()
-        );
-        assert!(
-            Command::ReplaceFile
-                .unavailable(true, false, true, true)
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn ranking() {
-        assert!(score("note", "note") < score("notebook", "note"));
-        assert!(score("notebook", "note") < score("a note", "note"));
-        assert!(score("a note", "note") < score("n o t e", "note"));
-        assert_eq!(score("note", "xyz"), None);
-        assert!(score("日本語", "日語").is_some());
-    }
-    #[test]
-    fn recursive_duplicates_and_settings() {
-        let temp = tempfile::tempdir().unwrap();
-        for folder in ["a/deep", "b", ".gpui-note"] {
-            fs::create_dir_all(temp.path().join(folder)).unwrap();
-        }
-        for file in [
-            "a/deep/Note.md",
-            "b/Note.md",
-            "b/ignore.txt",
-            ".gpui-note/private.md",
-        ] {
-            fs::write(temp.path().join(file), "").unwrap();
-        }
-        let entries = discover(temp.path()).unwrap();
-        assert_eq!(entries.iter().filter(|e| !e.directory).count(), 2);
-        assert!(
-            entries
-                .iter()
-                .any(|e| e.relative == Path::new("a/deep/Note.md"))
-        );
-        assert!(discover(&temp.path().join("missing")).is_err());
-    }
-}
-
 #[cfg(feature = "editor-diagnostics")]
 pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWindowContext) {
     cx.update(|window, cx| {
@@ -931,5 +758,178 @@ pub(super) async fn diagnostic_task_shortcut(notes: &Entity<Notes>, cx: &mut Asy
             }),
         })
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Command, PaletteEntry, discover, ranked_entries, score};
+    use std::{fs, path::Path};
+    #[test]
+    fn commands_filter_by_full_label_and_check_editability() {
+        let entries: Vec<_> = Command::ALL
+            .iter()
+            .copied()
+            .map(PaletteEntry::Command)
+            .collect();
+        let results = ranked_entries(&entries, "  CURRENT DATE  ");
+        assert_eq!(results.len(), 1);
+        assert!(matches!(
+            results[0],
+            PaletteEntry::Command(Command::InsertDate)
+        ));
+        assert!(ranked_entries(&entries, "no such command xyz").is_empty());
+        for command in [Command::InsertDate, Command::EditLink] {
+            assert!(command.unavailable(true, false, false, false).is_none());
+            assert!(command.unavailable(false, false, false, false).is_some());
+            assert!(command.unavailable(true, true, false, false).is_some());
+            assert!(command.unavailable(true, false, true, false).is_some());
+        }
+    }
+
+    #[test]
+    fn theme_command_works_without_an_editable_document() {
+        assert!(
+            Command::ToggleTheme
+                .unavailable(false, true, false, false)
+                .is_none()
+        );
+        assert!(
+            Command::ToggleTheme
+                .unavailable(true, false, true, true)
+                .is_some()
+        );
+        assert_eq!(
+            ranked_entries(&[PaletteEntry::Command(Command::ToggleTheme)], "light/dark").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn notebook_results_distinguish_duplicate_names_and_search_paths() {
+        let entries = vec![
+            PaletteEntry::Notebook {
+                path: "one/Notes".into(),
+                active: false,
+            },
+            PaletteEntry::Notebook {
+                path: "two/Notes".into(),
+                active: true,
+            },
+        ];
+        assert_eq!(ranked_entries(&entries, "notes").len(), 2);
+        let results = ranked_entries(&entries, "two/notes");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].label().contains("(active)"));
+        assert_eq!(results[0].detail(), "two/Notes");
+        assert_ne!(entries[0].detail(), entries[1].detail());
+        assert!(
+            Command::ChangeNotebook
+                .unavailable(false, true, false, false)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn new_note_requires_a_notebook_but_not_an_editable_document() {
+        assert!(
+            Command::NewNote
+                .unavailable(false, true, false, true)
+                .is_none()
+        );
+        assert!(
+            Command::NewNote
+                .unavailable(true, false, false, false)
+                .is_some()
+        );
+        assert!(
+            Command::NewNote
+                .unavailable(true, false, true, true)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn current_file_search_supports_reading_and_standalone_documents() {
+        assert!(
+            Command::SearchFile
+                .unavailable(true, true, false, false)
+                .is_none()
+        );
+        assert!(
+            Command::SearchFile
+                .unavailable(false, false, false, true)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn all_files_search_requires_only_an_active_notebook() {
+        assert!(
+            Command::SearchAllFiles
+                .unavailable(false, true, false, true)
+                .is_none()
+        );
+        assert!(
+            Command::SearchAllFiles
+                .unavailable(true, false, false, false)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn replacement_requires_an_editable_document() {
+        assert!(
+            Command::ReplaceFile
+                .unavailable(true, false, false, false)
+                .is_none()
+        );
+        assert!(
+            Command::ReplaceFile
+                .unavailable(true, true, false, true)
+                .is_some()
+        );
+        assert!(
+            Command::ReplaceFile
+                .unavailable(false, false, false, true)
+                .is_some()
+        );
+        assert!(
+            Command::ReplaceFile
+                .unavailable(true, false, true, true)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn ranking() {
+        assert!(score("note", "note") < score("notebook", "note"));
+        assert!(score("notebook", "note") < score("a note", "note"));
+        assert!(score("a note", "note") < score("n o t e", "note"));
+        assert_eq!(score("note", "xyz"), None);
+        assert!(score("日本語", "日語").is_some());
+    }
+    #[test]
+    fn recursive_duplicates_and_settings() {
+        let temp = tempfile::tempdir().unwrap();
+        for folder in ["a/deep", "b", ".gpui-note"] {
+            fs::create_dir_all(temp.path().join(folder)).unwrap();
+        }
+        for file in [
+            "a/deep/Note.md",
+            "b/Note.md",
+            "b/ignore.txt",
+            ".gpui-note/private.md",
+        ] {
+            fs::write(temp.path().join(file), "").unwrap();
+        }
+        let entries = discover(temp.path()).unwrap();
+        assert_eq!(entries.iter().filter(|e| !e.directory).count(), 2);
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.relative == Path::new("a/deep/Note.md"))
+        );
+        assert!(discover(&temp.path().join("missing")).is_err());
     }
 }
