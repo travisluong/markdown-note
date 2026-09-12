@@ -11,6 +11,32 @@ and a Windows SDK installed:
 cargo run --locked
 ```
 
+## Download a build from GitHub Actions
+
+The **Build desktop binaries** workflow builds release executables for Windows
+x86-64, Linux x86-64, and macOS (separate Apple Silicon and Intel builds).
+It runs on pushes to `main` or `dev`, version tags starting with `v`, pull
+requests, and manual runs. Push the workflow to GitHub before using it; manual
+**Run workflow** becomes available once the workflow is on the default branch.
+
+Open the repository's **Actions** tab, select **Build desktop binaries**, and
+open a successful run. Under **Artifacts**, download the build matching your
+computer. Extract the downloaded artifact ZIP, then extract the archive inside:
+
+| Artifact | Contents |
+| --- | --- |
+| `gpui-note-windows-x86_64` | ZIP containing `gpui-note.exe` |
+| `gpui-note-linux-x86_64` | tar.gz containing `gpui-note` |
+| `gpui-note-macos-apple-silicon` | tar.gz containing `gpui-note` for M-series Macs |
+| `gpui-note-macos-intel` | tar.gz containing `gpui-note` for Intel Macs |
+
+Run `gpui-note.exe` on Windows or `./gpui-note` from a terminal on macOS/Linux.
+Artifacts are retained for 14 days. These are standalone executables, without
+installers, macOS `.app`/`.dmg` packaging, or distribution signing/notarization.
+The Linux build uses Ubuntu 22.04 and needs compatible system libraries and a
+working graphics driver; it is not a self-contained AppImage. The workflow
+checks compilation, not interactive UI behavior.
+
 ## Use
 
 - **File → Open…** (`Ctrl+O`): open a UTF-8 `.md` or `.markdown` file.

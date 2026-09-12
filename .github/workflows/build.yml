@@ -1,0 +1,102 @@
+name: Build desktop binaries
+
+on:
+  push:
+    branches: [main, dev]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+          - platform: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - platform: macos-apple-silicon
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - platform: macos-intel
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      BUILD_TARGET: ${{ matrix.target }}
+      ARCHIVE_NAME: gpui-note-${{ matrix.platform }}
+
+    steps:
+      - name: Check out source and vendored components
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang cmake pkg-config libssl-dev \
+            libfontconfig1-dev libfreetype6-dev libwayland-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-composite0-dev libxcb-randr0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libvulkan-dev
+
+      - name: Check Xcode and Metal tools
+        if: runner.os == 'macOS'
+        run: |
+          xcodebuild -version
+          if ! xcrun metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun metal --version
+
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add "$BUILD_TARGET" --toolchain stable
+          rustc +stable --version
+
+      - name: Build release executable
+        run: cargo +stable build --release --locked --target "$BUILD_TARGET" --bin gpui-note
+
+      # A tar archive preserves the executable bit on macOS and Linux.
+      - name: Package macOS or Linux executable
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          tar -czf "dist/$ARCHIVE_NAME.tar.gz" -C "target/$BUILD_TARGET/release" gpui-note
+
+      - name: Package Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Compress-Archive -LiteralPath "target/$env:BUILD_TARGET/release/gpui-note.exe" -DestinationPath "dist/$env:ARCHIVE_NAME.zip"
+
+      - name: Upload build
+        uses: actions/upload-artifact@v7
+        with:
+          name: gpui-note-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
