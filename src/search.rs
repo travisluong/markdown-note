@@ -168,7 +168,7 @@ pub fn scan(
                         bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes),
                     )
                     .map_err(io::Error::other)?;
-                    Ok(normalize_newlines(raw))
+                    Ok(document::normalize_newlines(raw))
                 })();
                 match read {
                     Ok(text) => text,

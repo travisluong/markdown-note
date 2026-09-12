@@ -13,18 +13,15 @@ mod images;
 #[cfg(test)]
 mod lifecycle_tests;
 mod links;
-mod notebook;
 mod notebook_ui;
 mod reading_search;
 mod search;
 mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
-mod templates;
 
 use std::{
-    fs,
-    io::{self, Write},
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -37,6 +34,7 @@ use gpui_component::{
     menu::PopupMenu,
     text::TextView,
 };
+use gpui_note::{ViewMode, document, notebook, templates};
 
 actions!(
     notes,
@@ -68,15 +66,6 @@ actions!(
     ]
 );
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewMode {
-    Source,
-    #[default]
-    LivePreview,
-    Reading,
-}
-
 #[derive(Clone)]
 enum Next {
     Nothing,
@@ -98,81 +87,23 @@ enum MenuKind {
     Help,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Newline {
-    Lf,
-    CrLf,
-    Cr,
-}
-
 struct Document {
     path: PathBuf,
     saved: String,
     saved_rope: Rope,
-    bom: bool,
-    newline: Newline,
+    format: document::TextFormat,
 }
 
 impl Document {
     fn open(path: PathBuf) -> io::Result<Self> {
-        if !path
-            .extension()
-            .and_then(|s| s.to_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case("md") || s.eq_ignore_ascii_case("markdown"))
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Choose a .md or .markdown file.",
-            ));
-        }
-        let path = fs::canonicalize(path)?;
-        let bytes = fs::read(&path)?;
-        let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
-        let raw = std::str::from_utf8(if bom { &bytes[3..] } else { &bytes }).map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, "This file is not valid UTF-8.")
-        })?;
-        // ponytail: mixed endings use the first convention; track each line if exact mixed-file preservation is needed.
-        let newline = match raw.bytes().position(|b| b == b'\r' || b == b'\n') {
-            Some(i) if raw.as_bytes()[i..].starts_with(b"\r\n") => Newline::CrLf,
-            Some(i) if raw.as_bytes()[i] == b'\r' => Newline::Cr,
-            _ => Newline::Lf,
-        };
-        let saved = normalize_newlines(raw);
+        let loaded = document::open(&path)?;
         Ok(Self {
-            path,
-            saved_rope: Rope::from(saved.as_str()),
-            saved,
-            bom,
-            newline,
+            path: loaded.path,
+            saved_rope: Rope::from(loaded.text.as_str()),
+            saved: loaded.text,
+            format: loaded.format,
         })
     }
-
-    #[cfg(test)]
-    fn dirty(&self, text: &str) -> bool {
-        self.saved != text
-    }
-}
-
-fn normalize_newlines(text: &str) -> String {
-    text.replace("\r\n", "\n").replace('\r', "\n")
-}
-
-fn save_file(path: &Path, text: &str, bom: bool, newline: Newline) -> io::Result<()> {
-    // Write beside the original, then replace it only after the complete write succeeds.
-    let mut temp = tempfile::NamedTempFile::new_in(path.parent().unwrap_or(Path::new(".")))?;
-    if bom {
-        temp.write_all(&[0xef, 0xbb, 0xbf])?;
-    }
-    let normalized = normalize_newlines(text);
-    let encoded = match newline {
-        Newline::Lf => normalized,
-        Newline::CrLf => normalized.replace('\n', "\r\n"),
-        Newline::Cr => normalized.replace('\n', "\r"),
-    };
-    temp.write_all(encoded.as_bytes())?;
-    temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|e| e.error)?;
-    Ok(())
 }
 
 struct Notes {
@@ -1026,63 +957,4 @@ fn main() {
             .expect("Could not create the GPUI Note window");
             cx.activate(true);
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Document, Newline, fs, save_file};
-
-    #[test]
-    fn document_round_trip_and_dirty_state() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("note.md");
-        for (bytes, newline) in [
-            ("# Café\n你好\n", Newline::Lf),
-            ("# Café\r\n你好\r\n", Newline::CrLf),
-            ("# Café\r你好\r", Newline::Cr),
-            ("", Newline::Lf),
-        ] {
-            for bom in [false, true] {
-                let original = [
-                    if bom { b"\xef\xbb\xbf".as_slice() } else { b"" },
-                    bytes.as_bytes(),
-                ]
-                .concat();
-                fs::write(&path, &original).unwrap();
-                let mut document = Document::open(path.clone()).unwrap();
-                assert_eq!(document.newline, newline);
-                assert!(!document.dirty(&document.saved));
-                save_file(&path, &document.saved, document.bom, document.newline).unwrap();
-                assert_eq!(fs::read(&path).unwrap(), original);
-                let edited = format!("{}edit\n", document.saved);
-                assert!(document.dirty(&edited));
-                save_file(&path, &edited, document.bom, document.newline).unwrap();
-                document.saved = edited.clone();
-                assert!(!document.dirty(&edited));
-                assert_eq!(Document::open(path.clone()).unwrap().saved, edited);
-            }
-        }
-        fs::write(&path, [0xff]).unwrap();
-        assert!(Document::open(path.clone()).is_err());
-        assert!(Document::open(dir.path().join("missing.md")).is_err());
-        assert!(Document::open(dir.path().join("file.txt")).is_err());
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn failed_save_preserves_original() {
-        use std::os::windows::fs::OpenOptionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("note.md");
-        fs::write(&path, "original").unwrap();
-        let lock = fs::OpenOptions::new()
-            .read(true)
-            .share_mode(1)
-            .open(&path)
-            .unwrap();
-        assert!(save_file(&path, "changed", false, Newline::Lf).is_err());
-        assert_eq!(fs::read_to_string(&path).unwrap(), "original");
-        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
-        drop(lock);
-    }
 }

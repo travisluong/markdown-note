@@ -11,7 +11,7 @@ Native desktop tests remain user-run under AGENTS.md.
 | 1. Editor redo policy | Implemented and verified | `tests/editor_history.rs`: 11 headless tests passed, including divergent typing/commands/IME, no-op replacements and generic History compatibility; complete Windows/Linux suites passed. |
 | 2. Reliable baseline | Windows/Linux verified; macOS execution pending | Feature docs corrected; dedicated formatting commit; strict Clippy passes without added suppressions; Rust 1.98.1 pinned; separate three-platform validation CI configured. Release packaging unchanged. |
 | 3. Lifecycle/edit fixes and integration coverage | Implemented and verified | F2 picker/error/tree-retarget cancellation, F3 revalidation, F4 inline image insertion and F5 discarded overlays repaired. F6 foreground ownership and table/list/save/navigation headless coverage passed. A separately reproduced close-time input loss was repaired; all 91 application tests passed afterward. |
-| 4. Data/storage boundaries and file policy | Pending | Library entry point; document and notebook modules; conflict detection and metadata policy with platform tests. |
+| 4. Data/storage boundaries and file policy | In progress | Library entry point exposes document format/I/O, notebook domain owners and shared view preference. Public storage regression tests cover BOM, newline conventions, invalid files and failed replacement. Conflict detection and metadata policy remain. |
 | 5. Document-session transition owner | Pending | Explicit operation identities/effects, dependent-state notifications and delayed/failure/cancel/move/close tests. |
 | 6. Bounded settings writer | Pending | Coalescing per destination, flush/error semantics and multi-notebook stress tests. |
 | 7. UI and command ownership | Pending | Settings/explorer/palette/search owners, command catalogue and explicit capabilities/imports. |
@@ -69,3 +69,18 @@ input, platform execution or latency results from static analysis alone.
 Preserve the dated audit as historical evidence. Update ARCHITECTURE.md when
 current ownership/contracts change, and update this table as milestones are
 implemented and verified. Keep each improvement in a separate commit.
+
+## Data and storage extraction
+
+Notebook schema, path policy, tree values and storage now have separate owners
+behind the existing explicit facade. All 23 notebook tests moved with their
+owners. `src/lib.rs` exposes these modules, document storage, date templates
+and the shared view preference. Public document tests cover BOM/Unicode, all
+newline conventions including mixed files, invalid inputs and Windows sharing
+locks. The application still owns the saved rope and live editor.
+
+After extraction, Windows default check passed; the focused diagnostics run
+passed 25 library tests, 64 application tests, 4 public document tests and 67
+editor tests (160 total). The new count moves existing tests between targets;
+no tests were ignored. These are headless results; file conflict policy remains
+the next separate storage behavior change.

@@ -1,6 +1,9 @@
 //! Opt-in UI smoke check. Uses only disposable notebooks and a disposable index.
 use super::*;
-use std::time::{Duration, Instant};
+use std::{
+    io::Write,
+    time::{Duration, Instant},
+};
 
 pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, cx: &mut App) {
     let panic_path = output.with_extension("panic.txt");

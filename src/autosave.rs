@@ -106,7 +106,7 @@ impl Notes {
             return;
         };
         let identity = self.saves.identity;
-        let (path, bom, newline) = (document.path.clone(), document.bom, document.newline);
+        let (path, format) = (document.path.clone(), document.format);
         let snapshot = self.editor.read(cx).snapshot();
         let operation = if next.is_some() {
             let Some(operation) = self.foreground.begin() else {
@@ -121,7 +121,7 @@ impl Notes {
         cx.spawn_in(window, async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
                 let text = snapshot.to_string();
-                save_file(&path, &text, bom, newline).map(|()| (path, text, snapshot))
+                document::save_file(&path, &text, format).map(|()| (path, text, snapshot))
             }).await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.saves.writing = false;

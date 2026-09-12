@@ -21,7 +21,7 @@ flowchart TD
     Notes --> Editor[Vendored InputState: rope, selection, history]
     Notes --> Reading[Vendored TextView: Reading rendering and source maps]
     Notes --> Saves[autosave.rs: save scheduling and completion]
-    Saves --> FileIO[main.rs: Document and save_file]
+    Saves --> FileIO[document: file decoding and atomic replacement]
     Notes --> Notebook[notebook.rs: explicit domain facade]
     Notes --> Search[search.rs: notebook scans and literal matching]
     Notes --> Imports[image_import.rs: asset import transaction]
@@ -30,7 +30,11 @@ flowchart TD
     Editor --> Preview[Preview syntax queue, indexes and viewport layout]
 ```
 
-These are runtime responsibilities, not enforced architectural layers. Eleven
+The library entry point in `src/lib.rs` exposes document storage, notebook
+policies and date templates without importing the application root. `ViewMode`
+is a shared persisted value in `src/view_mode.rs`. The executable keeps the
+editor and saved rope; the storage API accepts captured text and returns file
+data. Other arrows remain runtime responsibilities, not enforced layers. Eleven
 application files contain `impl Notes`; most import the executable root with
 `use super::*`. A method living in a feature file can mutate shared root state.
 Follow its callers and completions before treating a file as an isolated module.
@@ -40,7 +44,7 @@ Follow its callers and completions before treating a file as an isolated module.
 | Responsibility | Starting points | Important coupling |
 | --- | --- | --- |
 | Startup, actions, document state, save prompts, root rendering | [main.rs](src/main.rs): `Notes`, `Next`, `request`, `continue_with`, `NotesWindow` | `NotesWindow` renders modal layers outside `Notes::render` to avoid recursively borrowing the entity. |
-| Encoding and atomic note replacement | [main.rs](src/main.rs): `Document::open`, `normalize_newlines`, `save_file` | Saved text and saved rope represent the last successful write; current text belongs to `InputState`. |
+| Encoding and atomic note replacement | [document/mod.rs](src/document/mod.rs): `open`, `LoadedDocument`, `TextFormat`, `save_file`; [tests/document.rs](tests/document.rs) | Storage has no GPUI dependencies. The application `Document` retains saved text/rope; current text belongs to `InputState`. |
 | Debounced autosave and queued foreground operations | [autosave.rs](src/autosave.rs): `SaveState`, `schedule_autosave`, `start_write`; [app/operation.rs](src/app/operation.rs): `ForegroundOperation` | Background writes own a captured document baseline. Foreground prompts, navigation and saves own explicit operation tokens; queued actions carry their waiting token. |
 | Notebook schema, path policy, tree values and filesystem operations | [notebook.rs](src/notebook.rs) re-exports [settings](src/notebook/settings.rs), [paths](src/notebook/paths.rs), [tree](src/notebook/tree.rs) and [storage](src/notebook/storage.rs) | Storage depends on schema/path/tree policies; policies have no UI dependencies. Existing `notebook::` entry points are preserved. |
 | Notebook activation, document installation, explorer and persistence queue | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`, `activate_notebook`, `install_document`, `persist_notebooks`, `drop_entry` | Owns document replacement as well as tree presentation. |
@@ -158,7 +162,7 @@ Do not assume a dependency upgrade preserves the custom editor behavior.
 | Change | Trace and validate |
 | --- | --- |
 | Add an editor command | Start with `goto::Command` and/or `help_ui::app_shortcuts`; resolve capability and focus; call an isolated editor edit API. Verify selection direction, Unicode, one-step undo/redo and dirty/autosave events. |
-| Add a preference | Add a default/migration/normalization in `notebook::Settings` or `Appearance`; implement settings controls and session fallback; verify JSON round trips and notebook switching. |
+| Add a preference | Add a default/migration/normalization in `notebook/settings.rs` (`Settings` or `Appearance`); implement settings controls and session fallback; verify JSON round trips and notebook switching. |
 | Add Markdown presentation | Decide Source/Live/Reading behavior explicitly; preserve original ranges; extend analysis, layout and hit mapping where needed. Test delayed/stale results, Unicode, undo and viewport bounds. |
 | Change opening, moving or saving | Trace `Next`, autosave pending operations and document installation together. Test success, failure, cancellation, delayed completion and retained edits. |
 | Change search | Separate matching from scan lifecycle and result navigation. Verify unsaved overlays, cancellation, limits, Reading mappings and result-list retention. |

@@ -1,5 +1,6 @@
 //! Opt-in, in-app release benchmark. No user files are opened or saved.
 use super::*;
+use gpui_note::document::{Newline, TextFormat};
 mod burst;
 use gpui_component::input::{Position, editor_work};
 use std::time::Instant;
@@ -56,8 +57,10 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
             path: "diagnostics.md".into(),
             saved_rope: Rope::from(fixture.as_str()),
             saved: fixture,
-            bom: false,
-            newline: Newline::Lf,
+            format: TextFormat {
+                bom: false,
+                newline: Newline::Lf,
+            },
         });
         notes.set_mode(ViewMode::LivePreview, window, cx);
     });
@@ -116,8 +119,10 @@ fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<
         path: "benchmark.md".into(),
         saved_rope: Rope::from(text.as_str()),
         saved: text,
-        bom: false,
-        newline: Newline::Lf,
+        format: TextFormat {
+            bom: false,
+            newline: Newline::Lf,
+        },
     });
     notes.set_mode(ViewMode::LivePreview, window, cx);
 }
