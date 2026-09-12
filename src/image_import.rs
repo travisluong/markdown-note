@@ -134,7 +134,7 @@ pub(crate) fn markdown(note: &Path, paths: &[PathBuf]) -> io::Result<String> {
     Ok(paragraphs.join("\n\n"))
 }
 
-/// Protect structural blocks when choosing the insertion point.
+/// Protect structural blocks and inline syntax when choosing the insertion point.
 pub(crate) fn insertion(source: &str, offset: usize, images: &str) -> io::Result<(usize, String)> {
     if !source.is_char_boundary(offset) {
         return Err(io::Error::other("Invalid drop position."));
@@ -146,8 +146,22 @@ pub(crate) fn insertion(source: &str, offset: usize, images: &str) -> io::Result
         for node in root.children {
             if let Some(pos) = node.position() {
                 if pos.start.offset <= offset && offset <= pos.end.offset {
-                    // A separate paragraph cannot safely split these containers or inline formatting.
-                    if !matches!(node, Node::Paragraph(_)) {
+                    if let Node::Paragraph(paragraph) = &node {
+                        // Keep ordinary text offsets, but move protected spans
+                        // after the paragraph. Splitting at a span's end could
+                        // reinterpret its remaining text as a new Markdown block.
+                        for child in &paragraph.children {
+                            if !matches!(child, Node::Text(_))
+                                && let Some(position) = child.position()
+                                && position.start.offset < offset
+                                && offset < position.end.offset
+                            {
+                                offset = pos.end.offset;
+                                break;
+                            }
+                        }
+                    } else {
+                        // A separate paragraph cannot safely split a structural block.
                         offset = pos.end.offset;
                         if source[offset..].starts_with('\n') {
                             offset += 1;
@@ -275,6 +289,114 @@ mod tests {
             _ => panic!("expected file"),
         }
     }
+
+    fn without_positions(mut node: Node) -> Node {
+        node.position_set(None);
+        if let Some(children) = node.children_mut() {
+            for child in children {
+                *child = without_positions(child.clone());
+            }
+        }
+        node
+    }
+
+    fn inline_syntax(source: &str) -> Vec<Node> {
+        let Node::Root(root) = markdown::to_mdast(source, &ParseOptions::gfm()).unwrap() else {
+            panic!("expected document root");
+        };
+        root.children
+            .into_iter()
+            .filter_map(|node| match node {
+                Node::Paragraph(paragraph) => Some(paragraph.children),
+                _ => None,
+            })
+            .flatten()
+            .filter(|node| !matches!(node, Node::Text(_) | Node::Image(_)))
+            .map(without_positions)
+            .collect()
+    }
+
+    #[test]
+    fn insertion_preserves_inline_syntax_and_nested_spans() {
+        let images = "![a](a.png)";
+        let prefix = "hello ";
+        for span in [
+            "**world**",
+            "*world*",
+            "~~world~~",
+            "`world`",
+            "``a ` b``",
+            "[world](target.md)",
+            "[**world**](target.md)",
+            "**outer *inner* text**",
+            "***world***",
+            "<https://example.com>",
+            "**世🙂界**",
+        ] {
+            let source = format!("{prefix}{span} tail");
+            let expected = inline_syntax(&source);
+            assert_eq!(expected.len(), 1, "{source}");
+            // Exercise label/content and delimiter positions, including a link's
+            // destination and nested spans, without bisecting UTF-8 code points.
+            for (inside, _) in span.char_indices().skip(1) {
+                let (offset, inserted) = insertion(&source, prefix.len() + inside, images).unwrap();
+                assert_eq!(offset, source.len(), "{source} at {inside}");
+                let result = format!("{}{}{}", &source[..offset], inserted, &source[offset..]);
+                assert_eq!(inline_syntax(&result), expected, "{source} at {inside}");
+                assert_eq!(gpui_component::markdown_images::paragraphs(&result).len(), 1);
+            }
+            for boundary in [prefix.len(), prefix.len() + span.len()] {
+                let (offset, inserted) = insertion(&source, boundary, images).unwrap();
+                assert_eq!(offset, boundary, "{source}");
+                let result = format!("{}{}{}", &source[..offset], inserted, &source[offset..]);
+                assert_eq!(inline_syntax(&result), expected, "{source}");
+            }
+        }
+    }
+
+    #[test]
+    fn insertion_preserves_paragraph_suffixes_that_look_like_blocks() {
+        let images = "![a](a.png)";
+        for suffix in [" - tail", " # tail", "    tail"] {
+            let paragraph = format!("hello **world**{suffix}");
+            let source = format!("before\n\n{paragraph}\n\nfollowing");
+            let paragraph_start = source.find("hello").unwrap();
+            let (offset, inserted) = insertion(&source, paragraph_start + 10, images).unwrap();
+            assert_eq!(offset, paragraph_start + paragraph.len(), "{source}");
+            let result = format!("{}{}{}", &source[..offset], inserted, &source[offset..]);
+
+            // The complete AST must retain every original block and inline node;
+            // only the standalone image paragraph is added after the target.
+            let mut expected = markdown::to_mdast(&source, &ParseOptions::gfm()).unwrap();
+            let mut image = markdown::to_mdast(images, &ParseOptions::gfm()).unwrap();
+            expected
+                .children_mut()
+                .unwrap()
+                .insert(2, image.children_mut().unwrap().remove(0));
+            let actual = markdown::to_mdast(&result, &ParseOptions::gfm()).unwrap();
+            assert_eq!(
+                without_positions(actual),
+                without_positions(expected),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn insertion_keeps_plain_text_offsets_and_rejects_invalid_boundaries() {
+        let source = "hello 世🙂界";
+        for offset in source
+            .char_indices()
+            .map(|(offset, _)| offset)
+            .chain([source.len()])
+        {
+            assert_eq!(insertion(source, offset, "![a](a.png)").unwrap().0, offset);
+        }
+        for offset in [7, source.len() + 1, usize::MAX] {
+            assert!(insertion(source, offset, "![a](a.png)").is_err());
+        }
+    }
+
     #[test]
     fn insertion_preserves_utf8_and_structural_blocks() {
         let images = "![a](a.png)";
