@@ -756,3 +756,15 @@ Verification: `cargo fmt --check`, `cargo check --locked --offline`,
 `cargo test --locked --offline --features editor-diagnostics` (354 tests), and
 `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
 passed. Validation was headless; native menu appearance remains manual.
+
+### Top Sort menu (2026-09-13)
+
+The top bar includes Sort between Search and Notebooks. It shares the sidebar
+sort button's menu builder, exposing all six name/modified/created ordering
+options with the active notebook's selection checked. Both menus use the existing
+sort and persistence handler; entries are disabled while busy or without a notebook.
+
+Verification: `cargo fmt --check`, `cargo check --locked --offline`,
+`cargo test --locked --offline --features editor-diagnostics`, and
+`cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+passed. Validation was headless; native menu appearance remains manual.

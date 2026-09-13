@@ -287,6 +287,10 @@ spellings, preserving native path characters. Async failures update the notice
 only while the captured notebook/generation remains current. Tests inject an
 in-memory backend; other platforms keep GPUI's reveal integration.
 
+The top Sort menu and sidebar sort button share `Notes::file_sort_menu` in
+`sidebar_ui.rs`. Both use `FileSort::OPTIONS` and the active notebook's selected
+order, dispatching through `set_file_sort` for explorer updates and persistence.
+
 Theme palettes persist independent Light and Dark background, font, primary, and
 border RGB colors. Missing/invalid border values normalize using the containing
 palette's mode default. SettingsPanel owns the four picker subscriptions and

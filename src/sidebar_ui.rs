@@ -6,6 +6,27 @@ use gpui_component::{
 };
 
 impl Notes {
+    pub(super) fn file_sort_menu(&self, mut menu: PopupMenu, owner: WeakEntity<Self>) -> PopupMenu {
+        let selected = self
+            .notebooks
+            .active
+            .as_ref()
+            .map(|book| book.settings.file_sort);
+        let disabled = self.is_busy() || selected.is_none();
+        for (sort, label) in notebook::FileSort::OPTIONS {
+            let owner = owner.clone();
+            menu = menu.item(
+                PopupMenuItem::new(label)
+                    .checked(selected == Some(sort))
+                    .disabled(disabled)
+                    .on_click(move |_, window, cx| {
+                        let _ = owner.update(cx, |this, cx| this.set_file_sort(sort, window, cx));
+                    }),
+            );
+        }
+        menu
+    }
+
     pub(super) fn reveal_sidebar(&mut self, cx: &mut Context<Self>) {
         if self.sidebar_collapsed {
             self.sidebar_collapsed = false;
@@ -87,31 +108,12 @@ impl Notes {
                     .icon(IconName::SortAscending)
                     .tooltip("Sort files")
                     .disabled(self.is_busy())
-                    .dropdown_menu(move |mut menu, _, cx| {
-                        let selected = owner
-                            .upgrade()
-                            .and_then(|entity| {
-                                entity
-                                    .read(cx)
-                                    .notebooks
-                                    .active
-                                    .as_ref()
-                                    .map(|book| book.settings.file_sort)
-                            })
-                            .unwrap_or_default();
-                        for (sort, label) in notebook::FileSort::OPTIONS {
-                            let owner = owner.clone();
-                            menu = menu.item(
-                                PopupMenuItem::new(label)
-                                    .checked(sort == selected)
-                                    .on_click(move |_, window, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            this.set_file_sort(sort, window, cx)
-                                        });
-                                    }),
-                            );
+                    .dropdown_menu(move |menu, _, cx| {
+                        if let Some(entity) = owner.upgrade() {
+                            entity.read(cx).file_sort_menu(menu, owner.clone())
+                        } else {
+                            menu
                         }
-                        menu
                     }),
             )
     }

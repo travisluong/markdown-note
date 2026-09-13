@@ -98,6 +98,7 @@ enum MenuKind {
     File,
     View,
     Search,
+    Sort,
     Notebooks,
     Help,
 }
@@ -340,6 +341,7 @@ impl Notes {
         let mode = self.mode;
         let capabilities = self.capabilities();
         let focus = self.focus.clone();
+        let owner = cx.weak_entity();
         let menu = PopupMenu::build(window, cx, |menu, _, cx| {
             let menu = menu.action_context(focus);
             if kind == MenuKind::File {
@@ -380,6 +382,8 @@ impl Notes {
                     Box::new(ReplaceFile),
                     Command::ReplaceFile.unavailable(capabilities).is_some(),
                 )
+            } else if kind == MenuKind::Sort {
+                self.file_sort_menu(menu, owner)
             } else if kind == MenuKind::Help {
                 menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts))
                     .menu("About", Box::new(About))
@@ -659,6 +663,16 @@ impl Render for Notes {
                             })),
                     )
                     .child(
+                        Button::new("sort-menu")
+                            .cursor_default()
+                            .ghost()
+                            .small()
+                            .label("Sort")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.show_menu(MenuKind::Sort, window, cx)
+                            })),
+                    )
+                    .child(
                         Button::new("notebooks-menu")
                             .cursor_default()
                             .ghost()
@@ -729,8 +743,9 @@ impl Render for Notes {
                                 MenuKind::File => 0.25,
                                 MenuKind::View => 3.375,
                                 MenuKind::Search => 6.75,
-                                MenuKind::Notebooks => 11.,
-                                MenuKind::Help => 16.75,
+                                MenuKind::Sort => 11.,
+                                MenuKind::Notebooks => 14.125,
+                                MenuKind::Help => 19.875,
                             } + if self.notebooks.active.is_some() {
                                 2.
                             } else {
