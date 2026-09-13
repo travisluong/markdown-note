@@ -103,3 +103,35 @@ mod focus_tests {
         assert_eq!(text_offset(offset, false, false), offset);
     }
 }
+
+/// Reveal an interval with minimal scrolling, prioritizing its beginning when
+/// the interval is larger than the viewport.
+pub(super) fn reveal_span(offset: Pixels, start: Pixels, end: Pixels, viewport: Pixels) -> Pixels {
+    let extent = (end - start).max(px(0.));
+    if extent > viewport {
+        return (-start).min(px(0.));
+    }
+    offset.clamp(-start, viewport - end).min(px(0.))
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+
+    #[test]
+    fn reveals_whole_match_or_its_beginning() {
+        assert_eq!(
+            reveal_span(px(-100.), px(120.), px(150.), px(100.)),
+            px(-100.)
+        );
+        assert_eq!(reveal_span(px(0.), px(180.), px(220.), px(100.)), px(-120.));
+        assert_eq!(
+            reveal_span(px(-300.), px(180.), px(220.), px(100.)),
+            px(-180.)
+        );
+        assert_eq!(
+            reveal_span(px(-300.), px(180.), px(420.), px(100.)),
+            px(-180.)
+        );
+    }
+}

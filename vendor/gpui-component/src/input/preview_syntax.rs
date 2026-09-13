@@ -180,7 +180,6 @@ impl Queue {
         self.running = None;
         revision == self.revision
     }
-    #[cfg(any(test, feature = "editor-diagnostics"))]
     pub fn jobs(&self) -> usize {
         usize::from(self.running.is_some()) + usize::from(self.pending.is_some())
     }

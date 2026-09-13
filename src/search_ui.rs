@@ -163,7 +163,7 @@ impl Notes {
             );
             return;
         }
-        self.editor.select(range, window, cx);
+        self.editor.reveal_match(range, cx);
         cx.notify();
     }
 

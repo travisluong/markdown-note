@@ -366,3 +366,13 @@ analysis, and exact parsing of changed fence context.
 Live-preview and Reading links use the standard arrow cursor on hover. Live
 preview shares the current-source destination hit lookup with its tooltip and
 click handling; ordinary editor text keeps the I-beam cursor.
+
+Notebook search uses select_source_range_without_focus for selection plus a
+pending source-range reveal. Layout measures the endpoint rows before choosing
+the viewport, then refines scrolling with current wrapped/code/table geometry.
+The target survives pending preview analysis and is replaced by later search
+navigation or cleared by editor movement, pointer input, scrolling or edits.
+The existing select_source_range keeps its focusing behavior. Search selection
+is painted while focus remains outside the editor. tests/search_reveal.rs covers
+initial layout, distant Unicode, wrapped/horizontal matches, code, tables,
+oversized selections, invalid ranges, superseding targets and undo/redo.

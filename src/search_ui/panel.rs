@@ -48,6 +48,11 @@ struct OpenRequest {
     arrow: bool,
 }
 
+struct Navigation {
+    previous: usize,
+    arrow: bool,
+}
+
 pub(crate) struct SearchPanel {
     visible: bool,
     root: PathBuf,
@@ -56,7 +61,7 @@ pub(crate) struct SearchPanel {
     case_sensitive: bool,
     hits: Vec<search::Hit>,
     selected: usize,
-    navigation: Option<usize>,
+    navigation: Option<Navigation>,
     pending_opens: VecDeque<OpenRequest>,
     status: String,
     scroll: UniformListScrollHandle,
@@ -278,9 +283,10 @@ impl SearchPanel {
             return false;
         }
         let request = self.pending_opens.pop_front().unwrap();
-        if request.arrow {
-            self.navigation = Some(self.selected);
-        }
+        self.navigation = Some(Navigation {
+            previous: self.selected,
+            arrow: request.arrow,
+        });
         self.selected = request.selected;
         if request.arrow {
             self.scroll
@@ -313,12 +319,14 @@ impl SearchPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(previous) = self.navigation.take() {
+        if let Some(navigation) = self.navigation.take() {
             if !success {
-                self.selected = previous.min(self.hits.len().saturating_sub(1));
+                self.selected = navigation.previous.min(self.hits.len().saturating_sub(1));
             }
-            self.scroll
-                .scroll_to_item(self.selected, ScrollStrategy::Top);
+            if navigation.arrow || !success {
+                self.scroll
+                    .scroll_to_item(self.selected, ScrollStrategy::Top);
+            }
             if self.visible {
                 self.query.update(cx, |query, cx| query.focus(window, cx));
             }
@@ -396,6 +404,7 @@ impl Render for SearchPanel {
                                 let first = i == 0 || panel.hits[i - 1].relative != hit.relative;
                                 div()
                                     .id(i)
+                                    .debug_selector(move || format!("notebook-search-result-{i}"))
                                     .h(px(54.))
                                     .w_full()
                                     .min_w_0()

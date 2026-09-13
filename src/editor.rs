@@ -91,6 +91,12 @@ impl Editor {
         self.input
             .update(cx, |input, cx| input.select_source_range(range, window, cx))
     }
+    /// Highlight and reveal a notebook match while keyboard focus stays in search.
+    pub fn reveal_match(&self, range: Range<usize>, cx: &mut App) -> bool {
+        self.input.update(cx, |input, cx| {
+            input.select_source_range_without_focus(range, cx)
+        })
+    }
     pub fn replace_selection(&self, text: &str, window: &mut Window, cx: &mut App) {
         self.input.update(cx, |input, cx| {
             input.replace_selection_isolated(text, window, cx)

@@ -795,3 +795,22 @@ Verification: `cargo fmt --check`, `cargo check --locked --offline`,
 passed. Static review confirmed shared state and the existing toggle guards;
 native menu appearance and interaction remain manual. No desktop interaction
 was used.
+
+### Notebook search focus and visibility (2026-09-13)
+
+Clicks, Enter and arrow navigation retain notebook-query focus while selecting
+and revealing the match. Cancelled/failed navigation restores the previous
+result; successful clicks preserve result-list scroll. Reading initializes find
+without focusing its query. The editor resolves a pending source range against
+current wrapping and preview geometry, including code and table viewports.
+
+Verification: all 367 tests passed with
+`cargo test --locked --offline --features editor-diagnostics`.
+`cargo check --locked --offline`, `cargo fmt --check`, and
+`cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+also passed. New TestPlatform regressions exercise real row clicks followed by
+arrow/Enter actions in Source, Live and Reading, cancellation/load failure,
+retained list scroll, delayed Reading parsing, initial editor layout, distant
+Unicode, wrapped/horizontal matches, code, tables, oversized selections,
+superseding/invalid ranges, and undo/redo preservation. No desktop interaction
+or native app harness was used; native appearance remains manual validation.

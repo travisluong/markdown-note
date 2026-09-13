@@ -212,3 +212,13 @@ plus editor_transactions direct_link_click with an observed OpenLink event.
 Link hover cursor: input/input.rs selects Arrow for a current-source link hit,
 otherwise IBeam; text/inline.rs selects Arrow over Reading links. Retain this
 cursor policy when reconciling upstream hover rendering.
+
+Search reveal: input/state.rs exposes select_source_range_without_focus and owns
+the pending UTF-8 range; input/movement.rs retires it on caret movement.
+input/element.rs resolves endpoint wrapping before viewport layout and applies
+current range/table geometry; input/scroll.rs supplies interval reveal policy.
+input/preview_syntax.rs exposes the existing queue job count to production layout
+so the reveal remains pending until analysis settles. Coverage:
+tests/search_reveal.rs and tests/editor.rs scroll range tests. Preserve focus
+independence, bounded endpoint measurement, and editor-interaction cancellation
+when reconciling upstream changes.

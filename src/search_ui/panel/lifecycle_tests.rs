@@ -246,7 +246,13 @@ fn panel_open_intents_use_application_navigation_and_restore_cancelled_arrows(
         let notes = notes.read(cx);
         let panel = notes.search.as_ref().unwrap().read(cx);
         assert_eq!(panel.selected, 0);
-        assert_eq!(panel.navigation, Some(1));
+        assert_eq!(
+            panel
+                .navigation
+                .as_ref()
+                .map(|navigation| navigation.previous),
+            Some(1)
+        );
         assert!(panel.pending_opens.is_empty());
     });
     cx.simulate_prompt_answer("Cancel");
@@ -309,5 +315,151 @@ fn queued_arrows_do_not_skip_the_first_pending_file_navigation(cx: &mut TestAppC
         assert!(panel.navigation.is_none());
         assert!(panel.pending_opens.is_empty());
         assert_eq!(notes.document().unwrap().path.file_name().unwrap(), "b.md");
+    });
+}
+
+fn click_then_arrows(cx: &mut TestAppContext, mode: crate::ViewMode) {
+    use gpui::Focusable;
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "hit\n\nhit\n\nhit").unwrap();
+    fs::write(dir.path().join("b.md"), "hit\n\nhit").unwrap();
+    let (notes, cx) = fixture(cx, dir.path());
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.set_mode(mode, window, cx)));
+    search(&notes, cx);
+    finish_search(cx);
+    // TestPlatform dispatches a real row click without any OS input. Start
+    // outside search to require the click to establish query focus.
+    cx.update(|window, cx| notes.read(cx).editor.clone().focus(window, cx));
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let row = cx
+        .debug_bounds("notebook-search-result-1")
+        .expect("second search row");
+    cx.simulate_click(row.center(), gpui::Modifiers::default());
+    cx.run_until_parked();
+    for (action, expected) in [
+        (None, 1),
+        (Some(true), 2),
+        (Some(false), 1),
+        (Some(true), 2),
+        (Some(true), 3),
+    ] {
+        if let Some(down) = action {
+            if down {
+                cx.dispatch_action(gpui_component::input::MoveDown);
+            } else {
+                cx.dispatch_action(gpui_component::input::MoveUp);
+            }
+            cx.run_until_parked();
+        }
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            let panel = this.search.as_ref().unwrap().read(cx);
+            assert_eq!(panel.selected, expected);
+            assert!(panel.query.focus_handle(cx).is_focused(window));
+            assert!(!this.editor.is_focused(window, cx));
+            let hit = &panel.hits[expected];
+            assert_eq!(
+                this.document().unwrap().path,
+                fs::canonicalize(dir.path().join(&hit.relative)).unwrap()
+            );
+            if mode == crate::ViewMode::Reading {
+                let find = this.reading_search.as_ref().unwrap();
+                assert!(find.matches.contains(&hit.range));
+                assert!(!find.query.focus_handle(cx).is_focused(window));
+            } else {
+                assert_eq!(this.editor.selection(cx), hit.range);
+            }
+            assert_eq!(
+                this.editor.text(cx).as_ref(),
+                fs::read_to_string(&this.document().unwrap().path).unwrap()
+            );
+        });
+    }
+    cx.dispatch_action(gpui_component::input::Enter { secondary: false });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let panel = notes.read(cx).search.as_ref().unwrap().read(cx);
+        assert_eq!(panel.selected, 3);
+        assert!(panel.query.focus_handle(cx).is_focused(window));
+    });
+}
+
+#[gpui::test]
+fn source_click_then_arrows_keep_search_focus(cx: &mut TestAppContext) {
+    click_then_arrows(cx, crate::ViewMode::Source);
+}
+
+#[gpui::test]
+fn live_click_then_arrows_keep_search_focus(cx: &mut TestAppContext) {
+    click_then_arrows(cx, crate::ViewMode::LivePreview);
+}
+
+#[gpui::test]
+fn reading_click_then_arrows_keep_search_focus(cx: &mut TestAppContext) {
+    click_then_arrows(cx, crate::ViewMode::Reading);
+}
+
+#[gpui::test]
+fn cancelled_and_failed_clicks_restore_selection_and_search_focus(cx: &mut TestAppContext) {
+    use gpui::Focusable;
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "hit").unwrap();
+    fs::write(dir.path().join("b.md"), "hit").unwrap();
+    let (notes, cx) = fixture(cx, dir.path());
+    edit(&notes, "hit changed", cx);
+    search(&notes, cx);
+    finish_search(cx);
+    let panel = cx.update(|_, cx| notes.read(cx).search.as_ref().unwrap().clone());
+    cx.update(|_, cx| panel.update(cx, |panel, cx| panel.request_open(1, false, cx)));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert_eq!(panel.read(cx).selected, 0);
+        assert!(panel.read(cx).query.focus_handle(cx).is_focused(window));
+    });
+    // A scanned file disappearing must follow the same failure restoration.
+    fs::remove_file(dir.path().join("b.md")).unwrap();
+    cx.update(|_, cx| panel.update(cx, |panel, cx| panel.request_open(1, false, cx)));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert_eq!(panel.read(cx).selected, 0);
+        assert!(panel.read(cx).query.focus_handle(cx).is_focused(window));
+        assert_eq!(
+            notes.read(cx).document().unwrap().path,
+            fs::canonicalize(dir.path().join("a.md")).unwrap()
+        );
+    });
+}
+
+#[gpui::test]
+fn successful_click_preserves_result_list_scroll(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "hit\n".repeat(80)).unwrap();
+    let (notes, cx) = fixture(cx, dir.path());
+    search(&notes, cx);
+    finish_search(cx);
+    let panel = cx.update(|_, cx| notes.read(cx).search.as_ref().unwrap().clone());
+    cx.update(|_, cx| {
+        panel.update(cx, |panel, cx| {
+            panel.scroll.scroll_to_item(20, ScrollStrategy::Top);
+            cx.notify();
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let before = cx.update(|_, cx| panel.read(cx).scroll.offset());
+    let row = cx
+        .debug_bounds("notebook-search-result-22")
+        .expect("visible row");
+    cx.simulate_click(row.center(), gpui::Modifiers::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(panel.read(cx).selected, 22);
+        assert_eq!(panel.read(cx).scroll.offset(), before);
     });
 }

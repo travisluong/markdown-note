@@ -304,3 +304,12 @@ List drops replace the smallest changed UTF-8 span and retain a source-mapped vi
 Numeric list Enter uses input/list_edit.rs source-line container scanning and an isolated transaction shared by Source and Live. It preserves the list start and delimiter, updates only direct siblings, and adjusts continuation indentation when digit widths change. No GFM parse runs on the input thread.
 
 Numbered items now participate in the shared revision-guarded drag index, including numeric-only documents. Item metadata retains marker extent, list identity/start and content indentation. Numeric drops accept only numeric destinations in the same quote context, move subtrees, and normalize both affected sibling lists through list_edit. Hover and press share measured number-marker bounds; numbered tasks also accept their checkbox target.
+
+Notebook result navigation uses Editor::reveal_match to select UTF-8 source text
+without taking focus. InputState owns a pending range reveal through current
+wrapping and preview analysis; layout reveals the match independently of the
+caret, including table scroll. Explicit editor interaction retires that target.
+SearchPanel restores query focus for clicks, Enter and arrows, and restores the
+previous result on cancelled/failed navigation. Successful clicks preserve list
+scroll. Reading initializes its find state without focusing its input when the
+navigation comes from notebook search.

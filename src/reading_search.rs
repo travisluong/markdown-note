@@ -13,6 +13,16 @@ pub(super) struct ReadingSearch {
 
 impl Notes {
     pub(super) fn open_reading_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ensure_reading_search(window, cx);
+        self.reading_search
+            .as_ref()
+            .unwrap()
+            .query
+            .update(cx, |query, cx| query.focus(window, cx));
+        cx.notify();
+    }
+
+    fn ensure_reading_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.reading_search.is_none() {
             let query = cx.new(|cx| InputState::new(window, cx).placeholder("Find in file"));
             let subscription = cx.subscribe(&query, |this, _, event, cx| {
@@ -29,12 +39,6 @@ impl Notes {
                 highlights: SourceHighlights::new(self.reading_text.clone(), Vec::new(), None),
             });
         }
-        self.reading_search
-            .as_ref()
-            .unwrap()
-            .query
-            .update(cx, |query, cx| query.focus(window, cx));
-        cx.notify();
     }
 
     pub(super) fn update_reading_search(&mut self, cx: &mut Context<Self>) {
@@ -67,7 +71,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.open_reading_search(window, cx);
+        self.ensure_reading_search(window, cx);
         let find = self.reading_search.as_mut().unwrap();
         find.case_sensitive = case_sensitive;
         find.query

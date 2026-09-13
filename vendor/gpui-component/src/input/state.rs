@@ -298,6 +298,8 @@ pub struct InputState {
     pub(super) last_cursor: Option<usize>,
     /// Source offset and painted screen Y to preserve when preview blocks expand or collapse.
     pub(super) preview_click_anchor: Option<(usize, Pixels)>,
+    /// Source selection to reveal using current layout, independent of focus.
+    pub(super) pending_range_reveal: Option<Range<usize>>,
     /// The input container bounds
     pub(super) input_bounds: Bounds<Pixels>,
     /// The text bounds
@@ -426,6 +428,7 @@ impl InputState {
             last_selected_range: None,
             last_cursor: None,
             preview_click_anchor: None,
+            pending_range_reveal: None,
             scroll_handle: ScrollHandle::new(),
             scroll_size: gpui::size(px(0.), px(0.)),
             deferred_scroll_offset: None,
@@ -665,6 +668,7 @@ impl InputState {
 
         // Move scroll to top
         self.list_viewport_anchor = None;
+        self.pending_range_reveal = None;
         self.scroll_handle.set_offset(point(px(0.), px(0.)));
 
         cx.notify();
@@ -910,6 +914,7 @@ impl InputState {
     /// Switch presentation without replacing the buffer or history.
     pub fn set_live_preview(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.list_viewport_anchor = None;
+        self.pending_range_reveal = None;
         self.list_drag = None;
         if self.live_preview != enabled {
             self.live_preview = enabled;
@@ -989,6 +994,28 @@ impl InputState {
         self.select_to(range.end, cx);
         self.scroll_to(range.start, None, cx);
         self.focus(window, cx);
+        true
+    }
+
+    /// Select and reveal UTF-8 source text without taking keyboard focus.
+    /// Invalid ranges leave selection, focus and the pending reveal unchanged.
+    pub fn select_source_range_without_focus(
+        &mut self,
+        range: Range<usize>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let text = self.text.to_string();
+        if range.start > range.end || text.get(range.clone()).is_none() {
+            return false;
+        }
+        self.move_to(range.start, None, cx);
+        self.selection_reversed = false;
+        self.select_to(range.end, cx);
+        self.preview_click_anchor = None;
+        self.list_viewport_anchor = None;
+        self.deferred_scroll_offset = None;
+        self.pending_range_reveal = Some(range);
+        cx.notify();
         true
     }
 
@@ -1444,6 +1471,7 @@ impl InputState {
         self.list_drag = None;
         // Clear inline completion on any mouse interaction
         self.list_viewport_anchor = None;
+        self.pending_range_reveal = None;
         self.clear_inline_completion(cx);
 
         // If there have IME marked range and is empty (Means pressed Esc to abort IME typing)
@@ -1837,6 +1865,7 @@ impl InputState {
             .map(|layout| layout.line_height)
             .unwrap_or(window.line_height());
         self.list_viewport_anchor = None;
+        self.pending_range_reveal = None;
         let delta = event.delta.pixel_delta(line_height);
 
         let horizontal = if event.modifiers.shift {
@@ -2172,6 +2201,7 @@ impl InputState {
     ///
     /// Ensure the offset use self.next_boundary or self.previous_boundary to get the correct offset.
     pub(crate) fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        self.pending_range_reveal = None;
         self.clear_inline_completion(cx);
 
         let offset = offset.clamp(0, self.text.len());
@@ -2203,6 +2233,7 @@ impl InputState {
 
     /// Unselects the currently selected text.
     pub fn unselect(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        self.pending_range_reveal = None;
         let offset = self.cursor();
         self.selected_range = (offset..offset).into();
         cx.notify()
@@ -2294,6 +2325,7 @@ impl InputState {
 
     pub(super) fn on_key_down(&mut self, _: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.list_viewport_anchor = None;
+        self.pending_range_reveal = None;
         self.pause_blink_cursor(cx);
     }
 
@@ -2560,6 +2592,7 @@ impl EntityInputHandler for InputState {
         if self.text != old_text {
             self.list_drag = None;
             self.list_viewport_anchor = None;
+            self.pending_range_reveal = None;
         }
         self.push_history(&old_text, &range, &new_text);
         if self.list_enter_boundary {
@@ -2665,6 +2698,7 @@ impl EntityInputHandler for InputState {
         if self.text != old_text {
             self.list_drag = None;
             self.list_viewport_anchor = None;
+            self.pending_range_reveal = None;
         }
         self.push_history(&old_text, &range, new_text);
         cx.notify();
@@ -2782,7 +2816,35 @@ impl Render for InputState {
 
 #[cfg(feature = "editor-diagnostics")]
 impl InputState {
-    /// Internal benchmark driver; never enabled in normal builds.
+    /// Headless geometry probe; never enabled in normal builds.
+    #[doc(hidden)]
+    pub fn diagnostic_range_visible(&self, range: Range<usize>) -> bool {
+        let Some(layout) = &self.last_layout else {
+            return false;
+        };
+        [range.start, range.end].into_iter().all(|offset| {
+            let p = self.text.offset_to_point(offset);
+            let Some(line) = layout.line(p.row) else {
+                return false;
+            };
+            let Some(local) = line.position_for_index(p.column, layout.line_height) else {
+                return false;
+            };
+            let scroll = self.scroll_handle.offset();
+            let y = self.text_wrapper.lines.prefix(p.row) * layout.line_height + local.y + scroll.y;
+            let x = local.x + scroll.x + layout.line_number_width;
+            y >= -px(1.)
+                && y + layout.line_height * line.scale <= self.input_bounds.size.height + px(1.)
+                && x >= -px(1.)
+                && x <= self.input_bounds.size.width + px(1.)
+        })
+    }
+
+    #[doc(hidden)]
+    pub fn diagnostic_pending_reveal(&self) -> Option<Range<usize>> {
+        self.pending_range_reveal.clone()
+    }
+
     #[doc(hidden)]
     pub fn diagnostic_scroll(&mut self, dy: f32, cx: &mut Context<Self>) {
         let mut offset = self.scroll_handle.offset();

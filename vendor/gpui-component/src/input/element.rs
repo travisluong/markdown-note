@@ -103,7 +103,8 @@ impl TextElement {
         let mut scroll_offset = state.scroll_handle.offset();
         let mut cursor_bounds = None;
 
-        if state.last_selected_range != Some(selected_range) {
+        if state.last_selected_range != Some(selected_range) && state.pending_range_reveal.is_none()
+        {
             let p = state.text.offset_to_point(cursor);
             if let Some(line) = last_layout.line(p.row) {
                 if let Some(table) = &line.table {
@@ -149,7 +150,7 @@ impl TextElement {
                     .and_then(|row| text_wrapper.lines.get(row))
                     .map_or(1., |line| line.scale);
             let selection_changed = state.last_selected_range != Some(selected_range);
-            if selection_changed && !is_selected_all {
+            if selection_changed && !is_selected_all && state.pending_range_reveal.is_none() {
                 scroll_offset.x = if scroll_offset.x + cursor_pos.x
                     > (bounds.size.width - line_number_width - RIGHT_MARGIN)
                 {
@@ -1228,10 +1229,22 @@ impl Element for TextElement {
         let before = state.text_wrapper.lines.prefix(anchor);
         self.state.update(cx, |state, cx| {
             // Establish wrapping before the first paint, including newly opened long lines.
-            if state.live_preview && state.soft_wrap {
-                state
-                    .text_wrapper
-                    .set_wrap_width(Some(bounds.size.width - RIGHT_MARGIN), cx);
+            if state.soft_wrap {
+                state.text_wrapper.set_wrap_width(
+                    Some(
+                        bounds.size.width
+                            - Self::layout_line_numbers(
+                                state,
+                                &state.text,
+                                text_size,
+                                &style,
+                                window,
+                            )
+                            .0
+                            - RIGHT_MARGIN,
+                    ),
+                    cx,
+                );
             }
             state.text_wrapper.set_font(font, text_size, cx);
             state.text_wrapper.configure_code(
@@ -1252,6 +1265,28 @@ impl Element for TextElement {
                 window.rem_size() * 0.75 / line_height,
             );
             state.restore_list_viewport(line_height);
+            if let Some(range) = state.pending_range_reveal.clone() {
+                let start_row = state.text.offset_to_point(range.start).row;
+                let end_row = state.text.offset_to_point(range.end).row;
+                // Measure only the endpoint rows, including wrapped segments far
+                // outside the old viewport. Never expand layout across the gap.
+                state.text_wrapper.measure(start_row..start_row + 1, cx);
+                state.text_wrapper.measure(end_row..end_row + 1, cx);
+                let position = |offset| {
+                    let row = state.text.offset_to_point(offset).row;
+                    let line = &state.text_wrapper.lines[row];
+                    let wrap = state.text_wrapper.offset_to_display_point(offset).local_row;
+                    let top = state.text_wrapper.lines.prefix(row) * line_height
+                        + wrap as f32 * line_height * line.scale;
+                    (top, line_height * line.scale)
+                };
+                let (start, _) = position(range.start);
+                let (end, height) = position(range.end);
+                let mut scroll = state.scroll_handle.offset();
+                scroll.y =
+                    super::scroll::reveal_span(scroll.y, start, end + height, bounds.size.height);
+                state.deferred_scroll_offset = Some(scroll);
+            }
         });
 
         let state = self.state.read(cx);
@@ -1523,6 +1558,80 @@ impl Element for TextElement {
                         state.deferred_scroll_offset = Some(scroll);
                     }
                 }
+            }
+        });
+        self.state.update(cx, |state, _| {
+            let Some(range) = state.pending_range_reveal.clone() else {
+                return;
+            };
+            let start = state.text.offset_to_point(range.start);
+            let end = state.text.offset_to_point(range.end);
+            // Tables own their horizontal viewport independently of the editor.
+            if let Some(line) = last_layout.line(start.row)
+                && let Some(table) = &line.table
+                && let Some(first) = line.position_for_index(start.column, line_height)
+            {
+                let last = if start.row == end.row {
+                    line.position_for_index(end.column, line_height)
+                        .unwrap_or(first)
+                } else {
+                    first
+                };
+                let old = table.scroll.get();
+                let width = table.cells.last().map_or(px(0.), |(_, x, w, _)| *x + *w);
+                let offset = super::scroll::reveal_span(
+                    -old,
+                    first.x + old,
+                    last.x + old + px(8.),
+                    table.viewport,
+                );
+                table
+                    .scroll
+                    .set((-offset).clamp(px(0.), (width - table.viewport).max(px(0.))));
+            }
+            let position = |p: tree_sitter::Point| {
+                let line = last_layout.line(p.row)?;
+                let local = line.position_for_index(p.column, line_height)?;
+                Some((
+                    local + point(px(0.), state.text_wrapper.lines.prefix(p.row) * line_height),
+                    line_height * line.scale,
+                ))
+            };
+            let Some((first, first_height)) = position(start) else {
+                return;
+            };
+            let last = position(end);
+            let (last, last_height) = last.unwrap_or((first, first_height));
+            let mut scroll = state
+                .deferred_scroll_offset
+                .unwrap_or(state.scroll_handle.offset());
+            scroll.y = super::scroll::reveal_span(
+                scroll.y,
+                first.y,
+                last.y + last_height,
+                bounds.size.height,
+            );
+            if last_layout
+                .line(start.row)
+                .is_none_or(|line| line.table.is_none())
+            {
+                scroll.x = super::scroll::reveal_span(
+                    scroll.x,
+                    first.x,
+                    if first.y == last.y {
+                        last.x.max(first.x) + RIGHT_MARGIN
+                    } else {
+                        first.x + RIGHT_MARGIN
+                    },
+                    bounds.size.width - line_number_width,
+                );
+            }
+            state.deferred_scroll_offset = Some(scroll);
+            // A later preview analysis may still change the source projection.
+            // Retain the source target until that exact presentation is ready.
+            if state.text_wrapper.analysis.jobs() == 0 {
+                state.pending_range_reveal = None;
+                state.last_selected_range = Some(state.selected_range);
             }
         });
         let (cursor_bounds, cursor_scroll_offset, current_row) =

@@ -393,3 +393,45 @@ fn closing_view_cancels_delivery_of_its_held_parse(cx: &mut TestAppContext) {
     cx.run_until_parked();
     TestAppContext::update(cx, |cx| assert!(probe.snapshot(cx).is_none()));
 }
+
+#[gpui::test]
+fn newest_match_waits_for_reading_parse_and_reveals_in_both_directions(cx: &mut TestAppContext) {
+    let text = (0..200)
+        .map(|i| format!("paragraph {i}\n\n"))
+        .collect::<String>();
+    let (view, control, cx) = fixture(cx, &text);
+    let highlight = |index: usize, cx: &mut VisualTestContext| {
+        let needle = format!("paragraph {index}");
+        let start = text.find(&needle).unwrap();
+        let range = start..start + needle.len();
+        cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.search = Some(SourceHighlights::new(
+                    text.clone().into(),
+                    vec![range.clone()],
+                    Some(range),
+                ));
+                cx.notify();
+            })
+        });
+        cx.run_until_parked();
+    };
+    highlight(40, cx);
+    highlight(180, cx);
+    assert!(!snapshot(&view, cx).search_started);
+    complete(&control, cx);
+    for index in [180, 20, 150, 10] {
+        highlight(index, cx);
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert!(
+                view.read(cx)
+                    .probe
+                    .as_ref()
+                    .unwrap()
+                    .item_is_vertically_visible(index, cx)
+            )
+        });
+    }
+}

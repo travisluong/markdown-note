@@ -45,6 +45,7 @@ impl InputState {
         direction: Option<MoveDirection>,
         cx: &mut Context<Self>,
     ) {
+        self.pending_range_reveal = None;
         let offset = self
             .text
             .floor_char_boundary(offset.clamp(0, self.text.len()));
