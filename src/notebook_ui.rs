@@ -1711,12 +1711,6 @@ impl Notes {
                                         )
                                     })
                                     .child(format!("{prefix}{}", row.label))
-                                    .when_some(row.filename.clone(), |view, filename| {
-                                        view.tooltip(move |window, cx| {
-                                            gpui_component::tooltip::Tooltip::new(filename.clone())
-                                                .build(window, cx)
-                                        })
-                                    })
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.notebooks.tree_focus.focus(window);
                                         this.activate_row(index, window, cx);
