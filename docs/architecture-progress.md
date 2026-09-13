@@ -513,3 +513,7 @@ Settings controls use explicit available widths and nonshrinking text fields. Be
 ## Logical line movement (2026-09-12)
 Added document-only Ctrl+Up/Down (Command on macOS), palette commands and Help entries through Editor. Pure tests cover UTF-8, selected blocks, CRLF and EOF; TestPlatform covers Source/Live, undo and redo.
 
+
+## Inline code styling (2026-09-12)
+Source-preserving inline-code spans now share the existing GFM worker and exact-revision acceptance. Both rendered modes use the fenced-code muted background. Three focused tests passed for Unicode, multi-backticks, multiline content, literal markers, active-line reveal and stale parsing.
+

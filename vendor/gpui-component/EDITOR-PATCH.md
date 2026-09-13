@@ -308,3 +308,6 @@ long edit/undo bursts, source-coordinate reveal, and closing-fence invalidation.
 
 Line movement uses an isolated source transaction, retaining selection direction and final-newline state. Source and Live preview share the same implementation; IME and disabled input reject moves. Coverage: move_line_tests and editor::tests::line_moves_are_isolated_and_preserve_selection_in_both_modes.
 
+
+Inline code is indexed from the shared GFM analysis and accepted only at the exact source revision. Live preview preserves literal markup inside code, reveals backticks on the active line, and paints muted surfaces below selection/find highlights; Reading uses the same muted background. inline_code and sustained_edit_tests cover parsing, byte mappings and stale results.
+

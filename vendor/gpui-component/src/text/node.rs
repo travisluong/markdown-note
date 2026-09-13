@@ -718,7 +718,7 @@ impl Paragraph {
                         });
                     }
                     if style.code {
-                        highlight.background_color = Some(cx.theme().accent);
+                        highlight.background_color = Some(cx.theme().muted);
                     }
 
                     if let Some(mut link_mark) = style.link.clone() {
@@ -1529,3 +1529,4 @@ impl CodeBlock {
         );
     }
 }
+

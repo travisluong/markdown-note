@@ -23,6 +23,7 @@ pub(super) struct Request {
     pub text: Rope,
 }
 pub(super) struct Parsed {
+    pub inline_code: Arc<Vec<super::inline_code::CodeSpan>>,
     pub code: Arc<super::fenced_code::Snapshot>,
     pub images: std::collections::BTreeMap<usize, String>,
     pub revision: u64,
@@ -48,7 +49,12 @@ impl Request {
         let code_needed = super::fenced_code::Snapshot::requires_parse(&source);
         let images_needed = crate::markdown_images::requires_parse(&source);
         let mut work = PreviewParseWork::default();
-        let root = if links_needed || tables_needed || code_needed || images_needed {
+        let root = if links_needed
+            || tables_needed
+            || code_needed
+            || images_needed
+            || source.contains('`')
+        {
             work.gfm_calls += 1;
             work.gfm_bytes += source.len();
             markdown::to_mdast(&source, &markdown::ParseOptions::gfm()).ok()
@@ -75,6 +81,11 @@ impl Request {
         // The tree stays on this worker and is dropped before returning derived indexes.
         (
             Parsed {
+                inline_code: Arc::new(
+                    root.as_ref()
+                        .map(|root| super::inline_code::from_ast(&source, root))
+                        .unwrap_or_default(),
+                ),
                 code: Arc::new(code),
                 images,
                 revision: self.revision,

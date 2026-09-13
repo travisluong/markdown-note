@@ -48,3 +48,5 @@ fn production_preview_parser_counts_gfm_work_once() {
         }
     );
 }
+#[path = "../vendor/gpui-component/src/input/inline_code.rs"]
+mod inline_code;

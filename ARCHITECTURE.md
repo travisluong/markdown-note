@@ -247,3 +247,6 @@ Current test counts, platform execution and remaining limits belong in
 
 Logical line movement is a semantic Editor operation. The vendored editor owns the source transaction and selection remapping; document-only shortcuts and palette capabilities exclude Reading and form inputs.
 
+
+Inline-code ranges are derived by the shared preview worker. TextWrapper invalidates them on edits and accepts exact revisions; mapped presentation and background painting retain UTF-8 source coordinates.
+

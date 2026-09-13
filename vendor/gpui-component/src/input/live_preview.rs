@@ -3,6 +3,7 @@ use std::ops::Range;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Presentation {
+    pub inline_code: Vec<Range<usize>>,
     pub code: Option<crate::highlighter::code::CodeTokens>,
     pub links: Vec<super::markdown_links::MarkdownLink>,
     pub heading: usize,
@@ -270,6 +271,32 @@ impl Presentation {
         result
     }
 
+    pub fn with_inline_code(
+        mut self,
+        spans: &[super::inline_code::CodeSpan],
+        start: usize,
+        len: usize,
+    ) -> Self {
+        let first = spans.partition_point(|span| span.source.end <= start);
+        for span in spans[first..]
+            .iter()
+            .take_while(|span| span.source.start < start + len)
+        {
+            let local = |range: &Range<usize>| {
+                range.start.saturating_sub(start).min(len)..range.end.saturating_sub(start).min(len)
+            };
+            let source = local(&span.source);
+            self.hidden
+                .retain(|range| range.end <= source.start || range.start >= source.end);
+            self.inline_code.push(local(&span.content));
+            self.hidden
+                .push(local(&(span.source.start..span.content.start)));
+            self.hidden
+                .push(local(&(span.content.end..span.source.end)));
+        }
+        self.hidden.sort_by_key(|range| range.start);
+        self
+    }
     pub fn with_links(
         mut self,
         links: &[super::markdown_links::MarkdownLink],

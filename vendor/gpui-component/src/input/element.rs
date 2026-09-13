@@ -926,6 +926,9 @@ impl TextElement {
                                 if let Some(underline) = style.underline { run.underline = Some(underline); }
                                 if let Some(strike) = style.strikethrough { run.strikethrough = Some(strike); }
                             }
+                            if p.inline_code.iter().any(|range| range.contains(&source)) {
+                                run.font = gpui::font(cx.theme().mono_font_family.clone());
+                            }
                             if state.ime_marked_range.is_some_and(|r| {
                                 (r.start..r.end)
                                     .contains(&(visible_range_offset.start + offset + source))
@@ -1728,6 +1731,15 @@ impl Element for TextElement {
             code_y += line.size(line_height).height;
         }
 
+        // Code surfaces must remain underneath selection and find highlights.
+        let visible = &prepaint.last_layout.visible_range_offset;
+        let first = state.text_wrapper.inline_code.partition_point(|span| span.content.end <= visible.start);
+        for span in state.text_wrapper.inline_code[first..].iter().take_while(|span| span.content.start < visible.end) {
+            let range = span.content.start.max(visible.start)..span.content.end.min(visible.end);
+            if let Some(path) = Self::layout_match_range(range, &prepaint.last_layout, &bounds) {
+                window.paint_path(path, cx.theme().muted);
+            }
+        }
         // Paint selections
         if window.is_window_active() {
             let secondary_selection = cx.theme().selection.saturation(0.1);
@@ -2098,3 +2110,5 @@ mod tests {
         assert_eq!(result[5].color, gpui::blue());
     }
 }
+
+

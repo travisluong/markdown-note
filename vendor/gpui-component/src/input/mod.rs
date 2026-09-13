@@ -7,6 +7,7 @@ mod fenced_code;
 mod indent;
 mod input;
 mod live_preview;
+mod inline_code;
 mod lsp;
 pub mod markdown_links;
 mod mask_pattern;
@@ -45,3 +46,4 @@ pub use live_preview::{EditorWork, editor_work};
 #[cfg(feature = "editor-diagnostics")]
 #[doc(hidden)]
 pub use preview_syntax::{PreviewParseWork, diagnostic_preview_parse_work};
+

@@ -101,6 +101,7 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    pub(super) inline_code: std::sync::Arc<Vec<super::inline_code::CodeSpan>>,
     pub(super) code: super::fenced_code::Index,
     retired_code: Vec<super::fenced_code::Index>,
     pub(super) image_document: Option<std::path::PathBuf>,
@@ -145,6 +146,7 @@ impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
             code: Default::default(),
+            inline_code: Default::default(),
             retired_code: Vec::new(),
             image_document: None,
             images: Default::default(),
@@ -180,6 +182,7 @@ impl TextWrapper {
     }
 
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
+        self.inline_code = Default::default();
         self.images.clear();
         self.live_preview = enabled;
         self.retired_code.push(std::mem::take(&mut self.code));
@@ -412,10 +415,15 @@ impl TextWrapper {
         if !self.live_preview {
             return;
         }
+        if !self.inline_code.is_empty() {
+            self.inline_code = Default::default();
+            self.syntax_revision += 1;
+        }
         let safe = super::preview_syntax::context_independent(&self.text, range, inserted);
         if safe {
             crate::markdown_images::rebase(&mut self.images, range, inserted.len());
         } else if !self.images.is_empty() {
+            self.inline_code = Default::default();
             self.images.clear();
             self.syntax_revision += 1;
         }
@@ -472,6 +480,7 @@ impl TextWrapper {
         let current = parsed.revision == self.analysis.revision && self.live_preview;
         let code = super::fenced_code::Index::new(parsed.code);
         if current {
+            self.inline_code = parsed.inline_code;
             self.analysis.code_cache = code.snapshot.cache.clone();
             self.retired_code
                 .push(std::mem::replace(&mut self.code, code));
@@ -680,11 +689,13 @@ impl TextWrapper {
                 if let Some(code) = self.code.line(start) {
                     super::live_preview::Presentation::literal(&source, code.prefix, code.tokens)
                 } else {
-                    super::live_preview::Presentation::parse(&source).with_links(
-                        &self.links.in_range(start..start + source.len()),
-                        start,
-                        source.len(),
-                    )
+                    super::live_preview::Presentation::parse(&source)
+                        .with_inline_code(&self.inline_code, start, source.len())
+                        .with_links(
+                            &self.links.in_range(start..start + source.len()),
+                            start,
+                            source.len(),
+                        )
                 }
             });
             if code_block.as_ref().is_some_and(|c| c.empty)
@@ -2498,6 +2509,23 @@ mod sustained_edit_tests {
     }
 
     #[test]
+    fn inline_code_analysis_rejects_stale_results() {
+        let source = "intro\n`*café*`\n";
+        let mut wrapper = make(source);
+        assert_eq!(wrapper.inline_code.len(), 1);
+        measure(&mut wrapper, 0..3);
+        assert_eq!(wrapper.lines[1].mapped.as_ref().unwrap().text, "*café*");
+        wrapper.analysis.request(&wrapper.text.clone());
+        let stale = wrapper.analysis.start().unwrap();
+        edit(&mut wrapper, 6..7, "");
+        assert!(wrapper.inline_code.is_empty());
+        wrapper.apply_analysis(stale.parse());
+        assert!(wrapper.inline_code.is_empty());
+        let current = wrapper.analysis.start().unwrap();
+        assert!(wrapper.apply_analysis(current.parse()));
+        assert!(wrapper.inline_code.is_empty());
+    }
+    #[test]
     fn code_analysis_rejects_stale_tokens_and_restores_literal_mappings() {
         let source = "prefix\ntext\n\n```rs\nfn main() { let café = \"**literal**\"; }\n```\n";
         let mut wrapper = make(source);
@@ -2764,6 +2792,7 @@ impl TextWrapper {
         }
         .parse();
         self.analysis.code_cache = parsed.code.cache.clone();
+        self.inline_code = parsed.inline_code;
         self.code = super::fenced_code::Index::new(parsed.code);
         self.links = super::preview_syntax::Links::with_edits(parsed.links, Vec::new());
         let revision = self.tables.revision + 1;
