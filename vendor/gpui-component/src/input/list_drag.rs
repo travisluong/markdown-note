@@ -31,21 +31,29 @@ impl InputState {
             .filter(|item| item.marker <= self.text.line_end_offset(row))
     }
     fn list_marker_bounds(&self, item: &super::list_reorder::Item) -> Option<Bounds<Pixels>> {
+        self.list_marker_bounds_in(item, self.last_layout.as_ref()?, self.last_bounds?)
+    }
+    pub(super) fn list_marker_bounds_in(
+        &self,
+        item: &super::list_reorder::Item,
+        layout: &super::state::LastLayout,
+        bounds: Bounds<Pixels>,
+    ) -> Option<Bounds<Pixels>> {
         let row = self.text.offset_to_point(item.marker).row;
         let start = self.text.line_start_offset(row);
-        let layout = self.last_layout.as_ref()?;
         let line = layout.line(row)?;
-        if let Some((state, _, _)) = line.task {
-            return self.task_hit_bounds(row, state);
+        let origin = bounds.origin
+            + point(
+                layout.line_number_width,
+                self.text_wrapper.lines.prefix(row) * layout.line_height,
+            );
+        if let Some(mut task) = line.task_bounds(layout.line_height) {
+            task.origin += origin;
+            return Some(task);
         }
         let p = line.position_for_index(item.marker - start, layout.line_height)?;
         Some(Bounds::new(
-            self.last_bounds?.origin
-                + point(
-                    layout.line_number_width,
-                    self.text_wrapper.lines.prefix(row) * layout.line_height,
-                )
-                + p,
+            origin + p,
             size(px(16.), layout.line_height * line.scale),
         ))
     }

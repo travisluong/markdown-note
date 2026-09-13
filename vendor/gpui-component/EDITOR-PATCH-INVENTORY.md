@@ -183,3 +183,5 @@ existing tests/editor_transactions.rs covers task interactions and undo. Preserv
 physical pixel alignment when reconciling upstream paint changes.
 
 Table border ownership: input/text_wrapper.rs; tests/editor.rs exercises single shared edges and fractional display scales.
+
+Bullet cursor: input/list_drag.rs shares marker bounds with input/element.rs hover hitboxes. Headless editor_transactions list_drag verifies the rendered targets.

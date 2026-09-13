@@ -44,7 +44,9 @@ impl TextElement {
             let state = self.state.clone();
             move |event: &gpui::MouseUpEvent, phase, window, cx| {
                 if phase == gpui::DispatchPhase::Bubble {
-                    state.update(cx, |state, cx| { state.finish_list_press(event, window, cx); });
+                    state.update(cx, |state, cx| {
+                        state.finish_list_press(event, window, cx);
+                    });
                 }
             }
         });
@@ -875,9 +877,13 @@ impl TextElement {
                             .iter()
                             .filter(|(span, _)| span.end > source_start)
                             .collect::<Vec<_>>();
-                        let code_styles = p.code.as_ref().map(|tokens| {
-                            tokens.styles(source_start..source_end, &cx.theme().highlight_theme)
-                        }).unwrap_or_default();
+                        let code_styles = p
+                            .code
+                            .as_ref()
+                            .map(|tokens| {
+                                tokens.styles(source_start..source_end, &cx.theme().highlight_theme)
+                            })
+                            .unwrap_or_default();
                         let mut code_index = 0;
                         for (ix, ch) in line[range.clone()].char_indices() {
                             let source = m.display_to_source[range.start + ix];
@@ -915,15 +921,31 @@ impl TextElement {
                                     }
                                 }
                             }
-                            while code_styles.get(code_index).is_some_and(|(r, _)| r.end <= source) {
+                            while code_styles
+                                .get(code_index)
+                                .is_some_and(|(r, _)| r.end <= source)
+                            {
                                 code_index += 1;
                             }
-                            if let Some((_, style)) = code_styles.get(code_index).filter(|(r, _)| r.contains(&source)) {
-                                if let Some(color) = style.color { run.color = color; }
-                                if let Some(weight) = style.font_weight { run.font.weight = weight; }
-                                if let Some(style) = style.font_style { run.font.style = style; }
-                                if let Some(underline) = style.underline { run.underline = Some(underline); }
-                                if let Some(strike) = style.strikethrough { run.strikethrough = Some(strike); }
+                            if let Some((_, style)) = code_styles
+                                .get(code_index)
+                                .filter(|(r, _)| r.contains(&source))
+                            {
+                                if let Some(color) = style.color {
+                                    run.color = color;
+                                }
+                                if let Some(weight) = style.font_weight {
+                                    run.font.weight = weight;
+                                }
+                                if let Some(style) = style.font_style {
+                                    run.font.style = style;
+                                }
+                                if let Some(underline) = style.underline {
+                                    run.underline = Some(underline);
+                                }
+                                if let Some(strike) = style.strikethrough {
+                                    run.strikethrough = Some(strike);
+                                }
                             }
                             if p.inline_code.iter().any(|range| range.contains(&source)) {
                                 run.font = gpui::font(cx.theme().mono_font_family.clone());
@@ -1238,7 +1260,9 @@ impl Element for TextElement {
             self.calculate_visible_range(&state, line_height, bounds.size.height);
         self.state.update(cx, |state, cx| {
             state.text_wrapper.measure(visible_range.clone(), cx);
-            state.text_wrapper.measure_images(visible_range.clone(), line_height, window, cx);
+            state
+                .text_wrapper
+                .measure_images(visible_range.clone(), line_height, window, cx);
             let delta = (state.text_wrapper.lines.prefix(anchor) - before) * line_height;
             if delta != px(0.) {
                 let mut offset = state
@@ -1557,7 +1581,7 @@ impl Element for TextElement {
         };
 
         let hover_definition_hitbox = self.layout_hover_definition_hitbox(state, window, cx);
-        let task_hitboxes = last_layout
+        let mut task_hitboxes: Vec<_> = last_layout
             .lines
             .iter()
             .enumerate()
@@ -1572,6 +1596,16 @@ impl Element for TextElement {
                 Some(window.insert_hitbox(task_bounds, gpui::HitboxBehavior::Normal))
             })
             .collect();
+        let items = &state.text_wrapper.list_items;
+        let first = items.partition_point(|item| item.marker < visible_start_offset);
+        for item in items[first..]
+            .iter()
+            .take_while(|item| item.marker < visible_end_offset)
+        {
+            if let Some(marker) = state.list_marker_bounds_in(item, &last_layout, bounds) {
+                task_hitboxes.push(window.insert_hitbox(marker, gpui::HitboxBehavior::Normal));
+            }
+        }
         let indent_guides_path =
             self.layout_indent_guides(state, &bounds, &last_layout, &text_style, window);
 
@@ -1730,8 +1764,14 @@ impl Element for TextElement {
 
         // Code surfaces must remain underneath selection and find highlights.
         let visible = &prepaint.last_layout.visible_range_offset;
-        let first = state.text_wrapper.inline_code.partition_point(|span| span.content.end <= visible.start);
-        for span in state.text_wrapper.inline_code[first..].iter().take_while(|span| span.content.start < visible.end) {
+        let first = state
+            .text_wrapper
+            .inline_code
+            .partition_point(|span| span.content.end <= visible.start);
+        for span in state.text_wrapper.inline_code[first..]
+            .iter()
+            .take_while(|span| span.content.start < visible.end)
+        {
             let range = span.content.start.max(visible.start)..span.content.end.min(visible.end);
             if let Some(path) = Self::layout_match_range(range, &prepaint.last_layout, &bounds) {
                 window.paint_path(path, cx.theme().muted);
@@ -1883,20 +1923,39 @@ impl Element for TextElement {
             window.set_cursor_style(gpui::CursorStyle::Arrow, hitbox);
         }
 
-        if let Some(drag) = self.state.read(cx).list_drag.clone().filter(|drag| drag.active) {
+        if let Some(drag) = self
+            .state
+            .read(cx)
+            .list_drag
+            .clone()
+            .filter(|drag| drag.active)
+        {
             if let Some(indicator) = drag.indicator {
                 window.paint_quad(fill(indicator, cx.theme().primary));
             }
             if let Some(item) = &drag.item {
-                let label: String = drag.snapshot.slice(item.source.clone()).chars().take_while(|c| *c != '\n').take(64).collect();
+                let label: String = drag
+                    .snapshot
+                    .slice(item.source.clone())
+                    .chars()
+                    .take_while(|c| *c != '\n')
+                    .take(64)
+                    .collect();
                 let at = drag.pointer + point(px(14.), px(14.));
                 let run = window.text_style().to_run(label.len());
-                let shaped = window.text_system().shape_line(label.into(), px(14.), &[run], None);
-                window.paint_quad(fill(Bounds::new(at, size(shaped.width + px(12.), px(24.))), cx.theme().muted));
+                let shaped = window
+                    .text_system()
+                    .shape_line(label.into(), px(14.), &[run], None);
+                window.paint_quad(fill(
+                    Bounds::new(at, size(shaped.width + px(12.), px(24.))),
+                    cx.theme().muted,
+                ));
                 let _ = shaped.paint(at + point(px(6.), px(2.)), px(20.), window, cx);
             }
             let input = self.state.clone();
-            window.on_next_frame(move |_, cx| { input.update(cx, |state, cx| state.scroll_list_drag(cx)); });
+            window.on_next_frame(move |_, cx| {
+                input.update(cx, |state, cx| state.scroll_list_drag(cx));
+            });
         }
         // Paint inline completion first line suffix (after cursor on same line)
         if focused {
@@ -2122,7 +2181,3 @@ mod tests {
         assert_eq!(result[5].color, gpui::blue());
     }
 }
-
-
-
-

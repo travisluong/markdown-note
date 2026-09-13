@@ -336,3 +336,5 @@ and every supported interface font size. Existing editor transaction tests cover
 checkbox state changes and undo. Reading rendering is unchanged.
 
 Live tables paint each shared edge once, with physical-pixel-aligned borders matching the outer edge. Reading retains its existing single-edge layout.
+
+Live bullet hover uses Arrow over the same source-mapped marker bounds as drag initiation. Text retains the editor cursor; visible-row indexing bounds hitbox work.
