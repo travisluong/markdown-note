@@ -269,6 +269,18 @@ impl TextWrapper {
     }
 
     pub(super) fn reveal_cell(&mut self, offset: usize, cx: &mut App) {
+        let active_link = |at: usize| {
+            self.links
+                .in_range(at.saturating_sub(1)..at.saturating_add(1))
+                .into_iter()
+                .filter(|link| link.source.start <= at && at <= link.source.end)
+                .map(|link| link.source)
+                .collect::<Vec<_>>()
+        };
+        if self.live_preview && active_link(self.active_offset) != active_link(offset) {
+            // Same-row and same-cell movement must update link projection too.
+            self.syntax_revision += 1;
+        }
         let previous_table = self
             .tables
             .at(self.active_offset)
@@ -702,10 +714,13 @@ impl TextWrapper {
                 presentation.as_ref().map_or(1., |p| p.scale())
             };
             let mapped = presentation.as_ref().map(|p| {
-                let mapped = p.display(
+                let mapped = p.display_with_cursor(
                     &source,
                     code_block.is_none()
                         && (p.code.is_some() || new_start_row + ix == self.reveal_row),
+                    self.active_offset
+                        .checked_sub(changed_text.line_start_offset(new_start_row + ix))
+                        .filter(|at| *at <= source.len()),
                 );
                 std::rc::Rc::new(mapped)
             });
@@ -909,8 +924,15 @@ impl TextWrapper {
                     for link in &presentation.links {
                         inline.styles.push((link.label.clone(), 5));
                     }
-                    let mapped =
-                        std::rc::Rc::new(presentation.display(&text, active_col == Some(c)));
+                    let mapped = std::rc::Rc::new(
+                        presentation.display_with_cursor(
+                            &text,
+                            active_col == Some(c),
+                            self.active_offset
+                                .checked_sub(range.start)
+                                .filter(|at| *at <= text.len()),
+                        ),
+                    );
                     let mut starts = vec![0];
                     starts.extend(wrap(&mapped.text, widths[c] - px(CELL_PADDING * 2.)));
                     starts.push(mapped.text.len());
@@ -3047,6 +3069,49 @@ mod sustained_edit_tests {
             assert_eq!(wrapper.links.in_range(0..wrapper.text.len()).len(), 2);
             settle(&mut wrapper);
             assert!(wrapper.links.in_range(0..wrapper.text.len()).is_empty());
+        }
+    }
+
+    #[gpui::test]
+    fn link_caret_reveal_updates_cached_line_and_cell(cx: &mut gpui::TestAppContext) {
+        for source in [
+            "before [café](one.md) middle [你好](two.md) after\n",
+            "before [café](one.md)[你好](two.md) middle after\n",
+            "| label |\n| --- |\n| before [café](one.md) middle [你好](two.md) after |\n",
+        ] {
+            let mut wrapper = make(source);
+            let row = wrapper
+                .text
+                .offset_to_point(source.find("before").unwrap())
+                .row;
+            wrapper.reveal_row = row;
+            let links = wrapper.links.in_range(0..source.len());
+            for at in [
+                source.find("before").unwrap(),
+                links[0].label.start,
+                links[0].source.end,
+                source.find("middle").unwrap(),
+                links[1].label.start,
+                source.find("after").unwrap(),
+            ] {
+                cx.update(|cx| wrapper.reveal_cell(at, cx));
+                let count = wrapper.lines.len();
+                measure(&mut wrapper, 0..count);
+                let line = &wrapper.lines[row];
+                let mapped = if let Some(table) = &line.table {
+                    &table.cells[0].mapped
+                } else {
+                    line.mapped.as_ref().unwrap()
+                };
+                for link in &links {
+                    assert_eq!(
+                        mapped.text.contains(&link.destination),
+                        link.source.start <= at && at <= link.source.end,
+                        "caret {at}: {}",
+                        mapped.text
+                    );
+                }
+            }
         }
     }
 

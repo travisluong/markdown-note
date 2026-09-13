@@ -352,13 +352,24 @@ impl Presentation {
         }
     }
 
+    #[cfg(test)]
     pub fn display(&self, source: &str, reveal: bool) -> MappedText {
+        self.display_with_cursor(source, reveal, None)
+    }
+
+    pub fn display_with_cursor(
+        &self,
+        source: &str,
+        reveal: bool,
+        cursor: Option<usize>,
+    ) -> MappedText {
         let mut text = String::new();
         let mut source_to_display = vec![0; source.len() + 1];
         let mut display_to_source = vec![0];
         let mut hidden_index = 0;
         let marker_start = content_start(source);
         let task_start = self.task.map(|_| content_start(source));
+        let mut link_index = 0;
         for (ix, ch) in source.char_indices() {
             while self.hidden.get(hidden_index).is_some_and(|r| r.end <= ix) {
                 hidden_index += 1;
@@ -366,6 +377,22 @@ impl Presentation {
             let task_marker = self
                 .task
                 .is_some_and(|state| (task_start.unwrap()..state).contains(&ix) || ix == state + 1);
+            while self
+                .links
+                .get(link_index)
+                .is_some_and(|link| link.source.end <= ix)
+            {
+                link_index += 1;
+            }
+            // Links reveal individually, including their boundaries. Once revealed,
+            // the destination remains editable as the caret moves through source.
+            let reveal = self
+                .links
+                .get(link_index)
+                .filter(|link| link.source.contains(&ix))
+                .map_or(reveal, |link| {
+                    cursor.is_some_and(|at| link.source.start <= at && at <= link.source.end)
+                });
             let hidden = task_marker
                 || !reveal
                     && self
@@ -1205,6 +1232,36 @@ mod nesting_tests {
 mod link_tests {
     use super::*;
     #[test]
+    fn only_the_touched_link_reveals_on_the_active_line() {
+        let source = "before [**café**](one.md) between [你好](two.md) after";
+        let links = super::super::markdown_links::parse(source);
+        let p = Presentation::parse(source).with_links(&links, 0, source.len());
+        for at in 0..=source.len() {
+            if !source.is_char_boundary(at) {
+                continue;
+            }
+            let mapped = p.display_with_cursor(source, true, Some(at));
+            for link in &links {
+                let touching = link.source.start <= at && at <= link.source.end;
+                assert_eq!(
+                    mapped.text.contains(&link.destination),
+                    touching,
+                    "caret {at}: {}",
+                    mapped.text
+                );
+            }
+            for (i, _) in mapped.text.char_indices() {
+                let offset = mapped.display_to_source[i];
+                assert!(source.is_char_boundary(offset));
+                assert_eq!(mapped.source_to_display[offset], i);
+            }
+        }
+        assert_eq!(
+            p.display_with_cursor(source, true, Some(0)).text,
+            "before café between 你好 after"
+        );
+    }
+    #[test]
     fn link_syntax_reveal_and_utf8_mappings() {
         for (source, expected) in [
             ("[café](https://example.com/a_b_c \"title\")", "café"),
@@ -1223,7 +1280,11 @@ mod link_tests {
             );
             let mapped = p.display(line, false);
             assert_eq!(mapped.text, expected);
-            assert_eq!(p.display(line, true).text, line);
+            assert_eq!(
+                p.display_with_cursor(line, true, Some(p.links[0].label.start))
+                    .text,
+                line
+            );
             for (i, _) in mapped.text.char_indices() {
                 let offset = mapped.display_to_source[i];
                 assert!(line.is_char_boundary(offset));

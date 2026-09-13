@@ -283,7 +283,7 @@ impl RenderOnce for Input {
                     .flatten(),
                 |view, target| {
                     view.tooltip(move |window, cx| {
-                        crate::tooltip::Tooltip::new(format!("Ctrl+click to open: {target}"))
+                        crate::tooltip::Tooltip::new(format!("Click to open: {target}"))
                             .build(window, cx)
                     })
                 },

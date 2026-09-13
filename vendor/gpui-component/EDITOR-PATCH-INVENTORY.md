@@ -88,7 +88,7 @@ and its execution limits are documented in
 | `src/history.rs` | Adds explicit redo-branch clearing while preserving generic History's opt-in behavior. | H. | Reconcile with upstream History policy; InputState owns the decision to discard redo after a divergent text edit. |
 | `src/input/element.rs` | Paint/layout/hit-test integration for mapped live preview, tasks, tables, links, images, fenced code, selection, and caret/IME geometry. | E, IE, C, TX. | Reconcile alongside `state.rs`, `text_wrapper.rs`, and `movement.rs`; source coordinates and painted geometry must agree. |
 | `src/input/indent.rs` | Routes Tab/Shift+Tab to table navigation and list nesting, with disabled-state guards. | TX; E's list parser tests. | Preserve table precedence and isolated list transactions when merging upstream indentation behavior. |
-| `src/input/input.rs` | Adds live-preview destination hover tooltip wiring and debug-only input bounds selectors. | E covers destination parsing; settings panel tests measure real input bounds. Tooltip presentation is static/manual. | Retain current-source hit lookup, modifier wording and bounds diagnostics. |
+| `src/input/input.rs` | Adds live-preview destination hover tooltip wiring and debug-only input bounds selectors. | E covers destination parsing; settings panel tests measure real input bounds. Tooltip presentation is static/manual. | Retain current-source hit lookup, direct-click wording and bounds diagnostics. |
 | `src/input/mod.rs` | Registers local editor modules and exports Markdown-link helpers, doc-hidden table support, and work counters. | E, T, IE, C; root compilation. | Keep public versus internal exports intentional; direct-source test harness imports depend on these boundaries. |
 | `src/input/movement.rs` | Floors movement to UTF-8 boundaries and integrates scaled preview rows and table-aware arrow/Home/End movement. | TX, IE, C; E's layout tests. | Preserve source/display conversion and table navigation before ordinary line movement. |
 | `src/input/popovers/context_menu.rs` | Adds table row/column/alignment/delete actions with captured revision checks and enablement. | TX, T; popup visual placement is static/manual. | Retain revision validation and disabled/header/final-column guards when rebuilding upstream menus. |
@@ -202,3 +202,9 @@ Link retention: preview_syntax.rs translates queries crossing edits and compacts
 offset logs without losing unchanged links; text_wrapper.rs retains projections
 until exact context analysis. Coverage: editor link_queries and
 unchanged_links_survive_pending_context_analysis tests.
+
+Link interaction: live_preview.rs reveals individual links from the caret offset;
+text_wrapper.rs invalidates same-line/cell projections at link boundaries.
+state.rs opens direct clicks without selecting the label; input.rs documents the
+click in its tooltip. Coverage: editor link_tests and cached-line/cell regression,
+plus editor_transactions direct_link_click with an observed OpenLink event.

@@ -206,8 +206,10 @@ Code contents remain literal rather than receiving Markdown emphasis or task sty
 ### Links
 
 Markdown links render in Live preview, including reference links and autolinks.
-Syntax reveals on the active line or table cell. **Ctrl+click** (Command+click on
-macOS) opens a link without moving the selection; Reading uses ordinary clicks.
+Links stay rendered and underlined while you type elsewhere, including on the
+same line or in the same table cell. A link reveals its Markdown only when the
+caret touches or enters it. **Click** opens the destination without moving the
+selection in Live preview; Reading also uses ordinary clicks.
 Hover shows the destination. Code spans and blocks do not activate links.
 
 **Ctrl+K** or **Text: Insert or edit link** in the command palette opens the link

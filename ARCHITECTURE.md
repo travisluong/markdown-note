@@ -170,7 +170,10 @@ them, and fenced-code tokens have stricter revision checks. Unchanged links keep
 their mapped presentation during pending context analysis; overlapping edits retire
 only affected links. Link queries translate across edits and compact their bounded
 offset log after 64 edits without copying or parsing document source. Exact
-analysis remains authoritative for changed Markdown context.
+analysis remains authoritative for changed Markdown context. Live links reveal
+individually when the caret touches their source range, including boundaries;
+other links remain rendered even on the active line or in the active table cell.
+A direct click emits OpenLink without moving the caret or editing the document.
 Tables retain byte-identical, source-mapped projections during pending context
 analysis, including unchanged tables inside a list-move replacement. TableIndex
 rebases their ranges without GFM work on the input thread; only the exact worker

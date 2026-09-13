@@ -713,3 +713,22 @@ instead of clearing the index. Exact analysis applies changed Markdown context.
 Validation: `cargo test --locked --offline --test editor link -- --nocapture`
 passed all 13 matching headless tests, including new delayed-analysis and burst
 regressions. No native application or desktop interaction was used.
+
+### Individual link reveal and direct click (2026-09-13)
+
+Live-preview link projection uses the caret's UTF-8 source offset independently
+of line/cell syntax reveal. Entering or leaving a link invalidates cached line
+and cell presentation, including the shared boundary of adjacent links. Links
+retain their label underline; a direct click emits OpenLink without changing
+source or selection. Hover wording and README now describe direct clicks.
+
+Verification: `cargo check --locked --offline`, `cargo fmt --check`, and strict
+`cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+passed. `cargo test --locked --offline --features editor-diagnostics` passed all
+354 tests. After the adjacent-link boundary adjustment, the focused editor and
+editor_transactions link suites passed all 16 checks and strict lint passed again.
+Coverage includes Unicode mappings, active-line/cell reveal, source boundaries,
+unchanged-link retention, stale layout rejection, and the emitted OpenLink URL.
+Two intermediate Windows linker attempts could not reopen test executables;
+subsequent builds and tests succeeded. Validation used only headless TestPlatform;
+native visual validation remains manual.

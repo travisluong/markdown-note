@@ -15,8 +15,11 @@ its existing opt-in policy. `tests/editor_history.rs` covers isolated edits,
 ordinary typing, Unicode IME grouping, selection and identical-text replacements
 in Source and Live preview, plus generic history compatibility.
 
-Live-preview links use GPUI's secondary modifier: Command-click on macOS and
-Control-click on Windows/Linux, matching each platform's editing conventions.
+Live-preview links open with a direct click, preserving source and selection.
+Only the link touched by the caret (including source boundaries) reveals its
+Markdown; other links on the same line or table cell stay rendered and underlined.
+Caret movement through a revealed destination keeps it editable. Shift/Alt clicks
+retain selection behavior, and destination hits reject stale layout snapshots.
 
 Live-preview checkbox state replacements are recognized as context-independent
 edits by the shared syntax classifier, including undo and redo. Unchanged tables

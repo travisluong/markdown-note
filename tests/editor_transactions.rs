@@ -8,6 +8,48 @@ use gpui_component::{
 
 struct EditorView(Entity<InputState>);
 
+#[cfg(feature = "editor-diagnostics")]
+#[gpui::test]
+fn direct_link_click_opens_destination_without_changing_selection(cx: &mut TestAppContext) {
+    use gpui_component::input::InputEvent;
+    use std::{cell::RefCell, rc::Rc};
+    cx.update(gpui_component::init);
+    let mut editor = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx)
+                .multi_line(true)
+                .default_value("before [café](https://example.com) after\n");
+            state.set_live_preview(true, cx);
+            state.focus(window, cx);
+            state
+        });
+        editor = Some(input.clone());
+        let view = cx.new(|_| EditorView(input));
+        Root::new(view, window, cx)
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let editor = editor.unwrap();
+    let opened = Rc::new(RefCell::new(Vec::new()));
+    let events = opened.clone();
+    let _subscription = cx.update(|_, cx| {
+        cx.subscribe(&editor, move |_, event, _| {
+            if let InputEvent::OpenLink { destination } = event {
+                events.borrow_mut().push(destination.clone());
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        editor.update(cx, |state, cx| {
+            state.diagnostic_link_click_checks(window, cx)
+        })
+    });
+    cx.run_until_parked();
+    assert_eq!(*opened.borrow(), vec!["https://example.com"]);
+}
+
 impl Render for EditorView {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div().size_full().child(Input::new(&self.0).h_full())

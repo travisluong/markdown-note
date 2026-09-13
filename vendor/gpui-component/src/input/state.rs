@@ -1457,7 +1457,6 @@ impl InputState {
         if self.live_preview
             && event.button == MouseButton::Left
             && event.click_count == 1
-            && event.modifiers.secondary()
             && !event.modifiers.shift
             && !event.modifiers.alt
         {
@@ -1581,6 +1580,54 @@ impl InputState {
             .into_iter()
             .find(|link| link.label.contains(&offset))?;
         Some(link.destination.clone())
+    }
+
+    /// Headless coverage of the production layout hit and mouse-down event path.
+    #[cfg(feature = "editor-diagnostics")]
+    #[doc(hidden)]
+    pub fn diagnostic_link_click_checks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let original = self.text.clone();
+        let selection = self.selected_range;
+        let link = self.text_wrapper.links.in_range(0..self.text.len())[0].clone();
+        let row = self.text.offset_to_point(link.label.start).row;
+        let layout = self.last_layout.as_ref().unwrap();
+        let line = layout.line(row).unwrap();
+        let local = line
+            .position_for_index(
+                link.label.start - self.text.line_start_offset(row),
+                layout.line_height,
+            )
+            .unwrap();
+        let position = self.last_bounds.unwrap().origin
+            + point(
+                layout.line_number_width,
+                self.text_wrapper.lines.prefix(row) * layout.line_height,
+            )
+            + local
+            + point(px(2.), layout.line_height * 0.5);
+        assert_eq!(self.link_at_position(position), Some(link.destination));
+        self.on_mouse_down(
+            &MouseDownEvent {
+                button: MouseButton::Left,
+                position,
+                click_count: 1,
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+        assert_eq!(self.text, original);
+        assert_eq!(
+            self.selected_range, selection,
+            "opening must not move the caret into source"
+        );
+        assert!(!self.selecting);
+        let snapshot = self.link_layout_text.take();
+        assert!(
+            self.link_at_position(position).is_none(),
+            "stale layout cannot open a destination"
+        );
+        self.link_layout_text = snapshot;
     }
 
     pub(super) fn task_hit_bounds(&self, row: usize, _state: usize) -> Option<Bounds<Pixels>> {
