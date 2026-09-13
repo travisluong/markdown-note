@@ -732,3 +732,14 @@ unchanged-link retention, stale layout rejection, and the emitted OpenLink URL.
 Two intermediate Windows linker attempts could not reopen test executables;
 subsequent builds and tests succeeded. Validation used only headless TestPlatform;
 native visual validation remains manual.
+
+### Arrow cursor over links (2026-09-13)
+
+Live-preview Input hover uses the existing current-source link hit to select the
+standard Arrow cursor and destination tooltip; other editor text uses IBeam.
+Reading inline links also use Arrow. No source, selection, or click semantics
+changed. `cargo check --locked --offline`, `cargo fmt --check`, and strict
+all-target editor-diagnostics clippy passed. The existing direct-link-click test
+could not rebuild because Windows denied removal of target/debug/mithril.exe;
+a targeted cargo-rustc attempt encountered the same file lock. No application
+was closed or launched and no desktop interaction was used for validation.

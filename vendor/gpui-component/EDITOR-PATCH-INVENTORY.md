@@ -208,3 +208,7 @@ text_wrapper.rs invalidates same-line/cell projections at link boundaries.
 state.rs opens direct clicks without selecting the label; input.rs documents the
 click in its tooltip. Coverage: editor link_tests and cached-line/cell regression,
 plus editor_transactions direct_link_click with an observed OpenLink event.
+
+Link hover cursor: input/input.rs selects Arrow for a current-source link hit,
+otherwise IBeam; text/inline.rs selects Arrow over Reading links. Retain this
+cursor policy when reconciling upstream hover rendering.

@@ -266,6 +266,11 @@ impl RenderOnce for Input {
             }
         };
 
+        let hovered_link = state
+            .live_preview
+            .then(|| state.link_at_position(window.mouse_position()))
+            .flatten();
+        let link_hovered = hovered_link.is_some();
         let prefix = self.prefix;
         let suffix = self.suffix;
         let show_clear_button =
@@ -276,18 +281,12 @@ impl RenderOnce for Input {
             .id(("input", self.state.entity_id()))
             .debug_selector(|| format!("input-{}", self.state.entity_id()))
             .flex()
-            .when_some(
-                state
-                    .live_preview
-                    .then(|| state.link_at_position(window.mouse_position()))
-                    .flatten(),
-                |view, target| {
-                    view.tooltip(move |window, cx| {
-                        crate::tooltip::Tooltip::new(format!("Click to open: {target}"))
-                            .build(window, cx)
-                    })
-                },
-            )
+            .when_some(hovered_link, |view, target| {
+                view.tooltip(move |window, cx| {
+                    crate::tooltip::Tooltip::new(format!("Click to open: {target}"))
+                        .build(window, cx)
+                })
+            })
             .key_context(crate::input::CONTEXT)
             .track_focus(&state.focus_handle.clone())
             .tab_index(self.tab_index)
@@ -372,7 +371,11 @@ impl RenderOnce for Input {
             .input_py(self.size)
             .input_h(self.size)
             .input_text_size(self.size)
-            .cursor_text()
+            .cursor(if link_hovered {
+                gpui::CursorStyle::Arrow
+            } else {
+                gpui::CursorStyle::IBeam
+            })
             .items_center()
             .when(state.mode.is_multi_line(), |this| {
                 this.h_auto()

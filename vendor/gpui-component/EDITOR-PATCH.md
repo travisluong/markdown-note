@@ -362,3 +362,7 @@ context analysis. Range queries can cross edits; only overlapping links retire.
 Long edit bursts compact the offset log instead of clearing the index. Regression
 tests in tests/editor.rs cover same-line edits, Unicode, CRLF, delayed/stale
 analysis, and exact parsing of changed fence context.
+
+Live-preview and Reading links use the standard arrow cursor on hover. Live
+preview shares the current-source destination hit lookup with its tooltip and
+click handling; ordinary editor text keeps the I-beam cursor.
