@@ -271,3 +271,11 @@ with the validated target and normalizes only shell-facing verbatim drive/UNC
 spellings, preserving native path characters. Async failures update the notice
 only while the captured notebook/generation remains current. Tests inject an
 in-memory backend; other platforms keep GPUI's reveal integration.
+
+Theme palettes persist independent Light and Dark background, font, primary, and
+border RGB colors. Missing/invalid border values normalize using the containing
+palette's mode default. SettingsPanel owns the four picker subscriptions and
+emits typed color intents; the settings adapter applies the active palette to
+shared theme colors. The top navigation, sidebar resize divider, other shared
+border consumers, and current sidebar entry outline use theme.border. Primary
+checkbox colors and distinct interaction colors keep their existing roles.

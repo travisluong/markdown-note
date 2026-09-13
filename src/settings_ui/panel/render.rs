@@ -144,11 +144,12 @@ impl Render for SettingsPanel {
             );
         }
         theme_body = theme_body.child(selector);
-        for (picker, label) in
-            self.colors
-                .iter()
-                .zip(["Background color", "Font color", "Primary color"])
-        {
+        for (picker, label) in self.colors.iter().zip([
+            "Background color",
+            "Font color",
+            "Primary color",
+            "Border color",
+        ]) {
             theme_body = theme_body.child(ColorPicker::new(picker).label(label));
         }
         theme_body = theme_body.child(

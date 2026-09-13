@@ -1690,7 +1690,7 @@ impl Notes {
                                     .border_color(gpui::transparent_black())
                                     .when(selected, |view| view.bg(cx.theme().accent))
                                     .when(this.notebooks.explorer.cursor() == Some(index), |view| {
-                                        view.border_color(cx.theme().foreground.opacity(0.55))
+                                        view.border_color(cx.theme().border)
                                     })
                                     .when(row.disabled, |view| {
                                         view.text_color(cx.theme().muted_foreground)

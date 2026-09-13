@@ -193,3 +193,34 @@ fn an_unrelated_failed_book_does_not_block_activation_or_revert_the_index(cx: &m
         Some(fixture.other)
     );
 }
+
+#[gpui::test]
+fn border_colors_persist_through_the_settings_writer(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    for (mode, border) in [
+        (notebook::ThemeChoice::Light, 0x123456),
+        (notebook::ThemeChoice::Dark, 0xabcdef),
+    ] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                let mut appearance = this.appearance();
+                appearance.theme = Some(mode);
+                let mut palette = appearance.palette(this.startup_dark);
+                palette.border = border;
+                appearance.set_palette(this.startup_dark, palette);
+                this.update_appearance(appearance, window, cx);
+            });
+        });
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        let writer = notes.read(cx).notebooks.writer.as_ref().unwrap();
+        assert_eq!(
+            writer.flush_status(&writer.flush_all()),
+            notebook::FlushStatus::Succeeded
+        );
+    });
+    let loaded = notebook::Notebook::open(&fixture.root, false).unwrap();
+    assert_eq!(loaded.settings.appearance.light.unwrap().border, 0x123456);
+    assert_eq!(loaded.settings.appearance.dark.unwrap().border, 0xabcdef);
+}

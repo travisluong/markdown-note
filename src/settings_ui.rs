@@ -410,6 +410,7 @@ impl Notes {
                     ColorRole::Background => palette.background = value,
                     ColorRole::Font => palette.font = value,
                     ColorRole::Primary => palette.primary = value,
+                    ColorRole::Border => palette.border = value,
                 }
                 appearance.set_palette(self.startup_dark, palette);
                 true
@@ -458,6 +459,7 @@ fn apply_theme_colors(theme: &mut Theme, appearance: notebook::Appearance, start
     theme.background = rgb(palette.background).into();
     theme.foreground = rgb(palette.font).into();
     theme.primary = rgb(palette.primary).into();
+    theme.border = rgb(palette.border).into();
     theme.primary_hover = theme.primary;
     theme.primary_active = theme.primary;
     theme.link = theme.primary;
@@ -601,6 +603,7 @@ mod palette_tests {
             background: u32::MAX,
             font: u32::MAX,
             primary: u32::MAX,
+            border: u32::MAX,
         });
         assert_eq!(appearance.resolved(false).light, Some(ThemePalette::LIGHT));
     }
@@ -646,7 +649,12 @@ mod palette_tests {
                 ThemePalette {
                     background,
                     font,
-                    primary: font
+                    primary: font,
+                    border: if choice == ThemeChoice::Light {
+                        ThemePalette::LIGHT.border
+                    } else {
+                        ThemePalette::DARK.border
+                    },
                 }
             );
             let encoded = serde_json::to_string(&appearance).unwrap();
@@ -672,6 +680,7 @@ mod palette_tests {
                     background: 0x123456,
                     font: 0xabcdef,
                     primary: 0xff0000,
+                    border: 0x654321,
                 },
                 0x000000,
             ),
@@ -684,6 +693,7 @@ mod palette_tests {
             apply_theme_colors(&mut theme, appearance.clone(), false);
             assert_eq!(theme.background, rgb(palette.background).into());
             assert_eq!(theme.foreground, rgb(palette.font).into());
+            assert_eq!(theme.border, rgb(palette.border).into());
             for color in [
                 theme.primary,
                 theme.primary_hover,

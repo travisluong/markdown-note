@@ -613,3 +613,29 @@ translation. Logical layout and interaction bounds remain unchanged. The new
 geometry test covers fractional positions, 100/125/150/200% scale, and interface
 font sizes 10 through 24. The focused editor and editor_transactions suites pass:
 79 tests, zero failures. Native visual confirmation remains user-run.
+
+## Theme border color (2026-09-12)
+
+Settings > Theme now includes Border color, independently persisted for Light
+and Dark through the existing appearance preference owner. Missing/invalid
+border values resolve to the containing mode's default (#E5E5E5 / #262626).
+The setting updates shared theme borders and the current sidebar entry outline.
+The picker adapter rounds HSL-to-RGB channel conversion so selected RGB bytes
+are not truncated by floating-point noise.
+
+Headless tests cover old/invalid settings, JSON round trips, independent palettes,
+reset, actual picker events and acknowledgement without feedback, session versus
+notebook scope, stale dialogs/notebooks, theme propagation, and disk persistence
+through SettingsWriter. Checkbox paint geometry and existing editor interactions
+also pass. Final noninteractive Windows verification:
+
+- cargo check --locked --offline: passed.
+- cargo test --locked --offline --features editor-diagnostics: passed, no failures.
+- cargo fmt --check: passed.
+- cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings: passed.
+
+An initial alternate-target attempt hit a linker output-file error; the full
+suite passed using the default target. The existing proc-macro-error2 dependency
+future-compatibility notice remains. No desktop apps were launched or controlled;
+native visual confirmation remains user-run. The user's Cargo.lock changes were
+left untouched and excluded from both commits.

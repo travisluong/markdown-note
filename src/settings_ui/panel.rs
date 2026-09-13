@@ -1,7 +1,7 @@
 //! Settings form state and events. Authoritative preferences stay with the app.
 use gpui::{AppContext, Context, Entity, EventEmitter, Hsla, Subscription, Window, rgb};
 use gpui_component::{
-    Colorize, IndexPath,
+    IndexPath,
     color_picker::{ColorPickerEvent, ColorPickerState},
     input::{InputEvent, InputState},
     select::{SearchableVec, SelectEvent, SelectState},
@@ -28,6 +28,7 @@ pub(super) enum ColorRole {
     Background,
     Font,
     Primary,
+    Border,
 }
 
 #[derive(Clone, Debug)]
@@ -83,7 +84,7 @@ pub(super) struct SettingsPanel {
     hidden_extensions_error: Option<String>,
     date_error: Option<String>,
     delay_error: Option<String>,
-    colors: [Entity<ColorPickerState>; 3],
+    colors: [Entity<ColorPickerState>; 4],
     fonts: [FontPicker; 3],
     _subscriptions: Vec<Subscription>,
 }
@@ -133,6 +134,7 @@ impl SettingsPanel {
             (ColorRole::Background, palette.background),
             (ColorRole::Font, palette.font),
             (ColorRole::Primary, palette.primary),
+            (ColorRole::Border, palette.border),
         ]
         .map(|(role, value)| {
             let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(rgb(value)));
@@ -207,11 +209,12 @@ impl SettingsPanel {
         let old_palette = self.values.appearance.palette(self.values.startup_dark);
         let palette = values.appearance.palette(values.startup_dark);
         if old_palette != palette {
-            for (picker, color) in
-                self.colors
-                    .iter()
-                    .zip([palette.background, palette.font, palette.primary])
-            {
+            for (picker, color) in self.colors.iter().zip([
+                palette.background,
+                palette.font,
+                palette.primary,
+                palette.border,
+            ]) {
                 picker.update(cx, |picker, cx| picker.set_value(rgb(color), window, cx));
             }
         }
@@ -263,9 +266,11 @@ impl SettingsPanel {
         cx.notify();
     }
     fn change_color(&mut self, role: ColorRole, color: Option<Hsla>, cx: &mut Context<Self>) {
-        if let Some(value) =
-            color.and_then(|color| u32::from_str_radix(&color.to_hex()[1..7], 16).ok())
-        {
+        if let Some(color) = color {
+            let rgb = color.to_rgb();
+            // Round HSL conversion noise instead of truncating a selected RGB byte.
+            let byte = |channel: f32| (channel.clamp(0., 1.) * 255.).round() as u32;
+            let value = (byte(rgb.r) << 16) | (byte(rgb.g) << 8) | byte(rgb.b);
             self.emit_intent(SettingsIntent::Color(role, value), cx);
         }
     }

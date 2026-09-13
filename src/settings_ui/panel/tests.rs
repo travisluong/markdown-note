@@ -418,3 +418,122 @@ fn settings_fields_fill_the_content_column(cx: &mut TestAppContext) {
         }
     }
 }
+
+#[gpui::test]
+fn border_picker_switches_palettes_resets_and_ignores_stale_events(cx: &mut TestAppContext) {
+    use gpui_component::{ActiveTheme, color_picker::ColorPickerEvent};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let old = panel(&notes, cx);
+    let (events, _subscription) = watch(&old, cx);
+    for (mode, color) in [
+        (notebook::ThemeChoice::Light, 0x123456),
+        (notebook::ThemeChoice::Dark, 0xabcdef),
+    ] {
+        intent(&old, SettingsIntent::Theme(mode), cx);
+        // Exercise the actual picker subscription, not only the app intent.
+        cx.update(|_, cx| {
+            let picker = old.read(cx).colors[3].clone();
+            picker.update(cx, |_, cx| {
+                cx.emit(ColorPickerEvent::Change(Some(gpui::rgb(color).into())));
+            });
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let this = notes.read(cx);
+            assert_eq!(
+                this.session_appearance.palette(this.startup_dark).border,
+                color
+            );
+            assert_eq!(cx.theme().border, gpui::rgb(color).into());
+            assert_eq!(
+                old.read(cx).colors[3].read(cx).value(),
+                Some(gpui::rgb(color).into())
+            );
+        });
+    }
+    intent(
+        &old,
+        SettingsIntent::Theme(notebook::ThemeChoice::Light),
+        cx,
+    );
+    cx.update(|_, cx| {
+        assert_eq!(
+            old.read(cx).colors[3].read(cx).value(),
+            Some(gpui::rgb(0x123456).into())
+        );
+        assert_eq!(
+            events.read(cx).0.len(),
+            5,
+            "picker acknowledgement must not emit feedback"
+        );
+    });
+    intent(&old, SettingsIntent::ResetPalettes, cx);
+    cx.update(|_, cx| {
+        let appearance = notes.read(cx).appearance().resolved(false);
+        assert_eq!(appearance.light, Some(notebook::ThemePalette::LIGHT));
+        assert_eq!(appearance.dark, Some(notebook::ThemePalette::DARK));
+        assert_eq!(
+            old.read(cx).colors[3].read(cx).value(),
+            Some(gpui::rgb(notebook::ThemePalette::LIGHT.border).into())
+        );
+        assert_eq!(events.read(cx).0.len(), 6);
+    });
+    intent(&old, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    intent(&old, SettingsIntent::Color(ColorRole::Border, 0x010203), cx);
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(
+            this.appearance().palette(this.startup_dark).border,
+            notebook::ThemePalette::LIGHT.border
+        );
+    });
+}
+
+#[gpui::test]
+fn border_preference_targets_notebook_and_rejects_changed_scope(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    let panel = panel(&notes, cx);
+    let session_before = cx.update(|_, cx| notes.read(cx).session_appearance.clone());
+    intent(
+        &panel,
+        SettingsIntent::Theme(notebook::ThemeChoice::Dark),
+        cx,
+    );
+    intent(
+        &panel,
+        SettingsIntent::Color(ColorRole::Border, 0x345678),
+        cx,
+    );
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(
+            this.notebooks
+                .active
+                .as_ref()
+                .unwrap()
+                .settings
+                .appearance
+                .palette(this.startup_dark)
+                .border,
+            0x345678
+        );
+        assert_eq!(this.session_appearance, session_before);
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                panel.entity_id(),
+                SettingsIntent::Color(ColorRole::Border, 0x111111),
+                window,
+                cx,
+            );
+            assert_eq!(
+                this.notebooks.active.as_ref().unwrap().settings.appearance,
+                fixture.second.settings.appearance
+            );
+            assert!(this.settings_panel.is_none());
+        });
+    });
+}
