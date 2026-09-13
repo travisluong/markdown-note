@@ -132,6 +132,33 @@ fn line_moves_are_isolated_and_preserve_selection_in_both_modes(cx: &mut TestApp
     }
 }
 #[gpui::test]
+fn ordered_line_moves_renumber_in_one_undo_step(cx: &mut TestAppContext) {
+    let original = "9. café\n10. 茶\n11. last";
+    let expected = "9. 茶\n10. café\n11. last";
+    let (host, cx) = fixture(cx, original);
+    let editor = cx.update(|_, cx| host.read(cx).editor.clone());
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        cx.update(|window, cx| {
+            editor.set_mode(mode, cx);
+            editor.focus(window, cx);
+            assert!(editor.select(3..8, window, cx));
+            editor.move_lines(true, window, cx);
+            assert_eq!(editor.text(cx).as_ref(), expected);
+            assert_eq!(&editor.text(cx)[editor.selection(cx)], "café");
+        });
+        cx.run_until_parked();
+        cx.dispatch_action(Undo);
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), original));
+        cx.dispatch_action(Redo);
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), expected));
+        cx.dispatch_action(Undo);
+        cx.run_until_parked();
+    }
+}
+
+#[gpui::test]
 fn live_transactions_preserve_snapshots_events_and_undo(cx: &mut TestAppContext) {
     transactions(cx, ViewMode::LivePreview);
 }

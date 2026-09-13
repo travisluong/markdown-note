@@ -671,3 +671,14 @@ retrying the same commands succeeded. The existing proc-macro-error2 future
 compatibility notice remains. No native application or desktop input was used;
 physical pointer and visual confirmation remain user-run. The pre-existing
 Cargo.lock changes remain untouched and are excluded from the commits.
+
+## Ordered keyboard movement (2026-09-13)
+
+Ctrl+Up/Down now normalizes affected ordered sibling lists in the same source
+transaction, retaining their starting values and mapped selections. Focused
+move_line_tests passed (3 tests); the Source/Live TestPlatform history regression
+passed. Coverage includes both directions, selected siblings, nested/quoted lists,
+Unicode, CRLF, digit widths and literal fences. The pre-existing Cargo.lock edit
+is excluded. Headless tests use target/headless with shared dependency caches
+because Windows denies replacement of target/debug/mithril.exe; no app was
+launched, stopped or controlled.

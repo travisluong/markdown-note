@@ -608,11 +608,37 @@ pub(super) fn move_lines(source: &str, selection: Range<usize>, down: bool) -> O
     } else {
         (new_starts[last] + end_column).min(starts[lo] + text.len())
     };
-    Some(TaskEdit {
+    let edit = TaskEdit {
         range: starts[lo]..starts[hi + 1],
         text,
         selection: mapped_start..mapped_end,
-    })
+    };
+    let items = super::list_edit::scan(source);
+    let mut result = source.to_owned();
+    result.replace_range(edit.range.clone(), &edit.text);
+    let moved_items = super::list_edit::scan(&result);
+    let mut groups = std::collections::BTreeMap::new();
+    for item in &items {
+        if !edit.range.contains(&item.digits.start) {
+            continue;
+        }
+        let original_row = row(item.digits.start);
+        let at = new_starts[original_row] + item.digits.start - starts[original_row];
+        if let Some(moved) = moved_items.iter().find(|i| i.digits.start == at) {
+            let first = items.iter().find(|i| i.list == item.list).unwrap();
+            groups.entry(moved.list).or_insert((at, first.value));
+        }
+    }
+    let mut points = vec![mapped_start, mapped_end];
+    points.extend(groups.values().map(|(at, _)| *at));
+    for (index, (_, start)) in groups.values().enumerate() {
+        result = super::list_edit::renumber(&result, points[index + 2], *start, &mut points)?;
+    }
+    Some(super::list_reorder::minimal_edit(
+        source,
+        &result,
+        points[0]..points[1],
+    ))
 }
 
 #[cfg(test)]
@@ -644,6 +670,39 @@ mod move_line_tests {
         assert!(move_lines("a\nb", 0..0, false).is_none());
         assert!(move_lines("a\nb", 2..2, true).is_none());
         assert!(move_lines("café\nx", 4..4, true).is_none());
+    }
+
+    #[test]
+    fn ordered_moves_preserve_start_and_selection_across_digit_widths() {
+        for newline in ["\n", "\r\n"] {
+            let source = "9) café\n10) 茶\n11) end".replace('\n', newline);
+            let (text, selection) = moved(&source, 3..8, true);
+            assert_eq!(text, "9) 茶\n10) café\n11) end".replace('\n', newline));
+            assert_eq!(&text[selection], "café");
+            let at = source.find('茶').unwrap();
+            let (text, selection) = moved(&source, at..at + 3, false);
+            assert_eq!(text, "9) 茶\n10) café\n11) end".replace('\n', newline));
+            assert_eq!(&text[selection], "茶");
+        }
+    }
+
+    #[test]
+    fn ordered_moves_handle_selected_siblings_nested_lists_and_literals() {
+        let source = "> 5. a\n> 6. b\n> 7. c\n\n3. separate";
+        let end = source.find("\n\n").unwrap();
+        assert_eq!(
+            moved(source, 7..end, false).0,
+            "> 5. b\n> 6. c\n> 7. a\n\n3. separate"
+        );
+        let source = "1. parent\n   8. a\n   9. b\n2. next";
+        assert_eq!(
+            moved(source, 16..16, true).0,
+            "1. parent\n   8. b\n   9. a\n2. next"
+        );
+        assert_eq!(
+            moved("```\n1. a\n2. b\n```", 7..7, true).0,
+            "```\n2. b\n1. a\n```"
+        );
     }
 }
 

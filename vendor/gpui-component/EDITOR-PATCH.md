@@ -4,6 +4,11 @@ The [file-level inventory](EDITOR-PATCH-INVENTORY.md) maps every modified and
 added file against the verified published 0.5.1 package, with regression entry
 points and upgrade reconciliation notes. Preserve both documents and the license.
 
+Ordered keyboard line moves reuse list_edit numbering after the source swap,
+preserving list starts, delimiters, Unicode selections and digit-width changes
+in one isolated undo entry. Tests cover both directions, selected siblings,
+nested/quoted lists, literal code, CRLF and Source/Live history.
+
 Document edits invalidate the abandoned redo branch after Undo. InputState clears
 redo only for actual text changes, after the replay guard; generic History keeps
 its existing opt-in policy. `tests/editor_history.rs` covers isolated edits,

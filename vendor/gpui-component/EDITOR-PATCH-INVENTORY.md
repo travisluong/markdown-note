@@ -163,6 +163,8 @@ reconciliation; do not manufacture behavioral patches for these files.
    reconciliation decisions, and commit each completed improvement separately.
 
 Line movement: input/live_preview.rs owns source-line swapping; input/state.rs applies the isolated edit and selection. Reconcile these contracts on vendor upgrades.
+Ordered swaps use input/list_edit.rs to normalize affected sibling groups.
+Coverage: move_line_tests in tests/editor.rs and ordered_line_moves in src/editor/tests.rs.
 
 
 Inline code: input/inline_code.rs (new GFM ranges), preview_syntax.rs and text_wrapper.rs (shared analysis), live_preview.rs (mapped presentation), element.rs (monospace and background), text/node.rs (Reading color). Tests: tests/editor.rs inline_code and sustained_edit_tests.
