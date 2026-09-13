@@ -232,8 +232,8 @@ pub fn create_untitled(root: &Path) -> io::Result<PathBuf> {
             "Choose a notebook directory that is not a link.",
         ));
     }
-    for number in 1u64.. {
-        let name = if number == 1 {
+    for number in 0u64.. {
+        let name = if number == 0 {
             "Untitled.md".into()
         } else {
             format!("Untitled {number}.md")

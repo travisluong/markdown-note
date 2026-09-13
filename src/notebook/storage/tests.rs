@@ -471,12 +471,21 @@ fn creates_empty_notes_and_preserves_file_and_directory_collisions() {
     assert_eq!(first.file_name().unwrap(), "Untitled.md");
     assert_eq!(fs::read(&first).unwrap(), b"");
     fs::write(&first, "keep me").unwrap();
+    assert_eq!(
+        create_untitled(dir.path()).unwrap().file_name().unwrap(),
+        "Untitled 1.md"
+    );
     fs::create_dir(dir.path().join("Untitled 2.md")).unwrap();
     assert_eq!(
         create_untitled(dir.path()).unwrap().file_name().unwrap(),
         "Untitled 3.md"
     );
     assert_eq!(fs::read_to_string(first).unwrap(), "keep me");
+    fs::remove_file(dir.path().join("Untitled 1.md")).unwrap();
+    assert_eq!(
+        create_untitled(dir.path()).unwrap().file_name().unwrap(),
+        "Untitled 1.md"
+    );
     assert!(create_untitled(&dir.path().join("missing")).is_err());
     assert!(create_untitled(&dir.path().join("Untitled.md")).is_err());
 }
