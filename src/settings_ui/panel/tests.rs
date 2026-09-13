@@ -358,3 +358,63 @@ fn programmatic_close_expires_form_authority_before_a_later_dialog(cx: &mut Test
         assert_eq!(notes.read(cx).autosave_settings().delay_ms, 1_000);
     });
 }
+
+#[gpui::test]
+fn settings_fields_fill_the_content_column(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, true, false);
+    let panel = panel(&notes, cx);
+    let fields = cx.update(|_, cx| {
+        let panel = panel.read(cx);
+        [
+            (
+                super::Section::General,
+                vec![
+                    format!("input-{}", panel.delay.entity_id()),
+                    format!("input-{}", panel.hidden_extensions.entity_id()),
+                ],
+            ),
+            (
+                super::Section::Templates,
+                vec![format!("input-{}", panel.date.entity_id())],
+            ),
+            (
+                super::Section::Font,
+                panel
+                    .fonts
+                    .iter()
+                    .map(|font| format!("select-{}", font.entity_id()))
+                    .collect(),
+            ),
+        ]
+        .map(|(section, selectors)| {
+            (
+                section,
+                selectors
+                    .into_iter()
+                    .map(|s| &*Box::leak(s.into_boxed_str()))
+                    .collect::<Vec<&'static str>>(),
+            )
+        })
+    });
+    for width in [800., 560., 480.] {
+        cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(800.)));
+        for (section, selectors) in &fields {
+            cx.update(|_, cx| panel.update(cx, |panel, cx| panel.select_section(*section, cx)));
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            let content = cx.debug_bounds("settings-content").unwrap();
+            for selector in selectors {
+                let field = cx.debug_bounds(selector).unwrap();
+                assert!(
+                    (field.left() - content.left()).abs() < gpui::px(1.),
+                    "{selector}: {field:?}, content: {content:?}"
+                );
+                assert!(
+                    (field.right() - content.right()).abs() < gpui::px(1.),
+                    "{selector}: {field:?}, content: {content:?}"
+                );
+            }
+        }
+    }
+}

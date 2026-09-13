@@ -27,7 +27,15 @@ impl Render for SettingsPanel {
                 .iter()
                 .zip(["Interface font", "Text font", "Monospace font"])
         {
-            font_body = font_body.child(label).child(Select::new(picker));
+            font_body = font_body.child(label).child(
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .h_8()
+                    .flex()
+                    .flex_shrink_0()
+                    .child(Select::new(picker).w_full()),
+            );
         }
         for (index, role, label, value, maximum) in [
             (
@@ -190,6 +198,8 @@ impl Render for SettingsPanel {
             .child(
                 div()
                     .debug_selector(|| "settings-content".into())
+                    .flex()
+                    .flex_col()
                     .w_full()
                     .min_w_0()
                     .when(!narrow, |view| view.flex_1().min_w(px(240.)))

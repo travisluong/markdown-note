@@ -795,9 +795,12 @@ where
         div()
             .size_full()
             .relative()
+            .flex()
+            .flex_col()
             .child(
                 div()
                     .id("input")
+                    .debug_selector(|| format!("select-{}", cx.entity_id()))
                     .relative()
                     .flex()
                     .items_center()
@@ -1045,6 +1048,7 @@ where
             .on_action(window.listener_for(&self.state, SelectState::enter))
             .on_action(window.listener_for(&self.state, SelectState::escape))
             .size_full()
+            .flex()
             .child(self.state)
     }
 }

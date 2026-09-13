@@ -323,3 +323,8 @@ Selection changes hide or reveal fence glyphs only; font, padding, source mappin
 background and downstream positions stay fixed. Outer fence rows own rounded
 corners. `tests/code_highlighting.rs` covers caret/selection movement, themes,
 long info strings, empty/unfinished/nested blocks, Unicode, CRLF and history.
+Settings fields inherit their complete content-column width through flex
+containers. Select's outer/state containers also use flex layout so percentage
+widths reach the trigger on narrow windows. Input and Select expose debug-only
+bounds selectors for the actual controls; the SettingsPanel headless tests check
+text inputs and all three font selectors at 800, 560 and 480 pixel viewports.

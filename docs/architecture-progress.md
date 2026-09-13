@@ -580,3 +580,29 @@ verbatim drive/UNC paths for the shell. Launch errors appear in the notebook
 notice, with stale completion guards. The headless tests cover arguments,
 recorded dispatch, stale/missing targets and injected failures; no Explorer
 window is launched by tests. Native Explorer confirmation remains user-run.
+## Settings field width and integrated verification (2026-09-12)
+
+The actual autosave input measured 26 px inside a 454 px content column before
+this fix. The content column now propagates width through flex layout, and font
+selectors retain their full width through their component containers. Navigation
+stays on the left at normal widths and stacks above the content on narrow windows.
+Debug-only control selectors let tests measure the inputs themselves. All 15
+settings tests pass, including field bounds at 800, 560 and 480 px.
+
+All five requested improvements are implemented: file hover tooltips removed,
+code geometry/styling retained during selection, Windows Reveal repaired,
+Untitled numbering starts at 1 after the unnumbered note, and settings fields
+fill their content area. Existing files and the user's Cargo.lock change remain
+untouched.
+
+Final noninteractive verification on Windows:
+
+- `cargo check --locked --offline`: passed.
+- `cargo test --locked --offline --target-dir target/agent-validation --features editor-diagnostics`: 327 passed, zero failed or ignored.
+- `cargo fmt --check`: passed.
+- `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`: passed.
+
+The separate test target avoids a locked default-output mithril.exe. The only
+reported toolchain notice is the existing dependency future-compatibility notice
+for proc-macro-error2. No native application, Explorer window, or desktop input
+was used. Native visual and Explorer confirmation remain user-run.

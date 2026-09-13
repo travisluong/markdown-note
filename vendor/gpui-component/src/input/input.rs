@@ -274,6 +274,7 @@ impl RenderOnce for Input {
 
         div()
             .id(("input", self.state.entity_id()))
+            .debug_selector(|| format!("input-{}", self.state.entity_id()))
             .flex()
             .when_some(
                 state
