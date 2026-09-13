@@ -65,6 +65,7 @@ actions!(
         TreeDown,
         TreeLeft,
         TreeRight,
+        TreeContextMenu,
         TreeOpen
     ]
 );
@@ -77,10 +78,17 @@ enum Next {
     File(PathBuf),
     FileFromPicker(PathBuf),
     NewNote(PathBuf),
+    Entry {
+        target: notebook_ui::EntryTarget,
+        action: notebook_ui::EntryAction,
+    },
     TreeFile(PathBuf),
     SearchResult(search::Destination),
     RemoveNotebook(PathBuf),
-    Notebook { path: PathBuf, create: bool },
+    Notebook {
+        path: PathBuf,
+        create: bool,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -656,6 +664,17 @@ impl Render for Notes {
                         cx,
                     ),
                 ),
+            )
+            .when_some(
+                self.notebooks.context_menu.clone(),
+                |view, (position, menu)| {
+                    view.child(deferred(
+                        gpui::anchored()
+                            .position(position)
+                            .snap_to_window_with_margin(px(8.))
+                            .child(menu),
+                    ))
+                },
             )
             .when_some(self.menu.clone(), |this, (kind, menu)| {
                 this.child(deferred(

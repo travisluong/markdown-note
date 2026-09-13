@@ -73,6 +73,9 @@ impl Explorer {
     pub fn contains_directory(&self, path: &Path) -> bool {
         self.directories.contains_key(path)
     }
+    pub fn generation(&self) -> Generation {
+        self.generation
+    }
     pub fn is_current(&self, generation: Generation) -> bool {
         self.generation == generation
     }

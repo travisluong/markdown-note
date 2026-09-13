@@ -524,3 +524,36 @@ Implemented cross-list subtree moves with indentation/bullet adaptation, preserv
 
 List-drag final review: four pure reorder tests passed, including lazy continuation paragraphs moved into nested lists and CRLF files without a final newline. Accepted edits also cancel pending drag feedback immediately. Strict all-target Clippy passes.
 
+
+## Sidebar context menu and final editor verification (2026-09-12)
+
+Files expose Open, Rename, Duplicate, Copy relative path, system Reveal and Trash.
+Folders expose New note/folder, Rename, path copy, Reveal and Trash; background
+space exposes creation and Refresh. Right-click selects without navigating;
+Shift+F10 opens the selected row's menu. Targets retain notebook root and explorer
+generation, and filesystem actions revalidate relative paths and links.
+
+New notes target the selected directory. Duplicating the active note copies its
+unsaved snapshot with retained encoding/newline conventions. Rename reuses move
+baseline/history/settings remapping. Session-owned EntryOperation keeps the
+editor until I/O succeeds; active-content deletion uses Save/Discard/Cancel,
+while unrelated operations retain drafts across write barriers. Successful Trash
+clears affected content and persisted paths; failure retains them. Trash 5.2.8 is
+isolated behind the storage adapter; tests use temporary-file backends, never OS
+Trash or system Reveal.
+
+Verification on Windows, without desktop interaction:
+
+- `cargo check --locked --offline`: passed.
+- `cargo test --locked --offline --features editor-diagnostics`: 323 passed, none
+  failed or ignored, including TestPlatform right-click/keyboard context menus.
+- Focused coverage includes collision-safe storage, unsaved duplication, nested
+  note creation, stale targets, parent rename/history, failed/successful Trash,
+  write barriers and retained drafts; list gestures, source mappings and layout
+  checks are recorded in the sections above.
+- `cargo fmt --check` and strict all-target diagnostic Clippy: passed.
+- The pre-existing Cargo.lock package-order change remains uncommitted; only the
+  new Trash dependency changes are included in this feature.
+
+Native visual/pointer checks and system Recycle Bin/Finder/Explorer behavior
+remain user-run under AGENTS.md. No desktop apps or native harnesses were launched.

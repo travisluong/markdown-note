@@ -23,6 +23,13 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
     }
     vec![
         shortcut!(
+            "shift-f10",
+            TreeContextMenu,
+            "NotebookTree",
+            "Notebook tree",
+            "Open selected item context menu"
+        ),
+        shortcut!(
             "ctrl-up",
             MoveLineUp,
             "DocumentEditor",

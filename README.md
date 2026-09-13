@@ -413,3 +413,15 @@ the headless regression suite.
 
 Use Ctrl+Up / Ctrl+Down (Command on macOS) in Source or Live preview to move the current line or selected lines.
 
+
+Right-click a sidebar file or folder (or press Shift+F10 on its selected row) for
+creation, rename, duplicate, relative-path copy, system reveal and Trash actions.
+Folder and background menus offer New note and New folder; Duplicate applies to
+files and copies the active note's unsaved text. Trash uses the system recycle
+bin and resolves unsaved changes before deleting the active note or its parent.
+
+In Live preview, drag a bullet or checkbox to move its item and nested content
+before or after another unordered/task item, including in another list. The
+item matches the destination indentation and bullet style, preserving checkbox
+state. Escape cancels; Undo restores the entire move. Numbered lists and moves
+between different blockquotes are excluded.

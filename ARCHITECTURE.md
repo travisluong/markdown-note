@@ -253,3 +253,10 @@ Inline-code ranges are derived by the shared preview worker. TextWrapper invalid
 
 List item ranges share preview analysis and are valid only for their exact revision. InputState owns pending marker presses and drag state; list_reorder owns source transforms. Checkbox toggles happen on release unless dragging starts; successful drops emit one normal isolated editor edit.
 
+
+Sidebar context menus live in `notebook_ui/entry_menu.rs`; each target captures
+notebook root, explorer generation and relative path. File operations live in
+`notebook/entry_ops.rs`, with link/name guards and collision-safe duplication.
+Rename uses the existing move owner. Session owns approved `EntryOperation`
+lifetimes, write barriers and deletion/installation outcomes. OS Trash is isolated
+behind the storage adapter and replaced with a fixture backend in UI tests.

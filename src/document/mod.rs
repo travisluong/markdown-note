@@ -98,7 +98,8 @@ pub fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-fn encode(text: &str, format: TextFormat) -> Vec<u8> {
+/// Encode a captured editor snapshot using its existing disk conventions.
+pub fn encode(text: &str, format: TextFormat) -> Vec<u8> {
     let normalized = normalize_newlines(text);
     let encoded = match format.newline {
         Newline::Lf => normalized,

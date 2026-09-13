@@ -1,7 +1,12 @@
 //! Notebook domain facade: schemas, path rules, tree values, and filesystem operations.
 //! Callers use these exports; child modules name the owners and keep dependencies explicit.
 
+mod entry_ops;
 mod paths;
+pub use entry_ops::{
+    create_folder, duplicate_entry, entry_directory, entry_path, rename_destination, rename_entry,
+    trash_entry,
+};
 mod settings;
 mod storage;
 mod tree;

@@ -146,3 +146,18 @@ The completed integration subsequently passed the full Windows and Linux suites,
 301 tests on each platform, plus default builds and strict all-target lint.
 See [final verification](architecture-progress.md#final-integrated-gates) for
 counts, logs and platform limits.
+
+## Sidebar entry operations
+
+`request_retaining` waits for in-flight writes while retaining the current draft;
+its pending-write continuation retains that policy even when newer text exists.
+Creating a note uses normal navigation approval. Trashing the current file or an
+ancestor uses Save/Discard/Cancel; unrelated Trash and Duplicate do not prompt
+for the active draft. Rename reuses the existing move lifecycle.
+
+An approved filesystem action enters `EntryOperation`. It cannot be cancelled
+mid-I/O, and only its operation token can finish it. Failures retain content and
+history and resume eligible autosave. Successful deletion installs Empty only
+when the deleted entry contained the active content; successful note creation
+installs the new document. Installation forwards the exact discarded document
+path to search. Preference changes apply to current settings after completion.

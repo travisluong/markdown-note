@@ -5,8 +5,10 @@ use mithril::explorer::Explorer;
 use std::time::Duration;
 
 mod activation_preferences;
+mod entry_menu;
 use activation_preferences::ActivationPreferences;
 pub(super) use activation_preferences::PreferenceIntent;
+pub(super) use entry_menu::{EntryAction, EntryTarget};
 
 #[cfg(feature = "editor-diagnostics")]
 pub(super) mod diagnostics;
@@ -45,6 +47,11 @@ struct SettingsWaiter {
 
 pub(super) struct NotebookState {
     pub active: Option<notebook::Notebook>,
+    pub(super) context_menu: Option<(gpui::Point<Pixels>, Entity<PopupMenu>)>,
+    context_subscription: Option<Subscription>,
+    select_after_refresh: Option<PathBuf>,
+    #[cfg(test)]
+    trash_backend: fn(&Path, &Path) -> io::Result<()>,
     index: notebook::Index,
     index_path: Option<PathBuf>,
     index_writable: bool,
@@ -81,6 +88,11 @@ impl NotebookState {
         let subscription = cx.subscribe(&name, |_, _, _: &InputEvent, cx| cx.notify());
         Self {
             active: None,
+            context_menu: None,
+            context_subscription: None,
+            select_after_refresh: None,
+            #[cfg(test)]
+            trash_backend: |_, _| Err(io::Error::other("OS Trash is disabled in tests")),
             index: notebook::Index::default(),
             index_path: None,
             index_writable: false,
@@ -1306,6 +1318,8 @@ impl Notes {
     }
 
     fn refresh_tree(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.notebooks.context_menu = None;
+        self.notebooks.select_after_refresh = None;
         self.notebooks.explorer.clear();
         self.load_directory(PathBuf::new(), window, cx);
     }
@@ -1524,6 +1538,22 @@ impl Notes {
             .unwrap_or_default();
         div()
             .id("notebook-sidebar")
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.open_entry_menu(None, event.position, window, cx);
+                }),
+            )
+            .on_action(cx.listener(|this, _: &TreeContextMenu, window, cx| {
+                let path = this
+                    .notebooks
+                    .explorer
+                    .selected()
+                    .filter(|row| row.draggable)
+                    .map(|row| row.path.clone());
+                this.open_entry_menu(path, gpui::point(px(32.), px(90.)), window, cx);
+            }))
             .on_drop(cx.listener(|this, drag: &EntryDrag, window, cx| {
                 cx.stop_propagation();
                 this.drop_entry(drag, PathBuf::new(), window, cx);
@@ -1607,12 +1637,37 @@ impl Notes {
                                 };
                                 let path = row.path.clone();
                                 let directory = row.directory;
+                                let context_path = row.path.clone();
+                                let context_enabled = row.draggable;
                                 let drag = EntryDrag {
                                     root: this.notebooks.active.as_ref().unwrap().root.clone(),
                                     path: path.clone(),
                                 };
                                 div()
                                     .id(index)
+                                    .debug_selector(|| {
+                                        format!("notebook-row-{}", row.path.display())
+                                    })
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Right,
+                                        cx.listener(
+                                            move |this,
+                                                  event: &gpui::MouseDownEvent,
+                                                  window,
+                                                  cx| {
+                                                cx.stop_propagation();
+                                                if context_enabled {
+                                                    this.notebooks.explorer.select(Some(index));
+                                                    this.open_entry_menu(
+                                                        Some(context_path.clone()),
+                                                        event.position,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                }
+                                            },
+                                        ),
+                                    )
                                     .h(px(28. * this.appearance().ui_font_size as f32 / 16.))
                                     .w_full()
                                     .pl(px(8. + row.depth as f32 * 16.))
@@ -1701,7 +1756,20 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if window.has_active_dialog(cx) {
+            return;
+        }
+        self.move_sidebar_entry(drag, parent, None, window, cx);
+    }
+    fn move_sidebar_entry(
+        &mut self,
+        drag: &EntryDrag,
+        parent: PathBuf,
+        name: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_busy() {
             return;
         }
         if self.session.write().is_some() {
@@ -1713,7 +1781,9 @@ impl Notes {
         let Some(book) = &self.notebooks.active else {
             return;
         };
-        if book.root != drag.root || drag.path.parent() == Some(parent.as_path()) {
+        if book.root != drag.root
+            || (name.is_none() && drag.path.parent() == Some(parent.as_path()))
+        {
             return;
         }
         let root = book.root.clone();
@@ -1728,13 +1798,18 @@ impl Notes {
                 let from = from.clone();
                 let parent = parent.clone();
                 let document_version = document_version.clone();
+                let name = name.clone();
                 cx.spawn_in(window, async move |this, cx| {
                     let worker_root = root.clone();
                     let worker_from = from.clone();
                     let result = cx
                         .background_executor()
                         .spawn(async move {
-                            let to = notebook::move_entry(&worker_root, &worker_from, &parent)?;
+                            let to = if let Some(name) = name {
+                                notebook::rename_entry(&worker_root, &worker_from, &name)?
+                            } else {
+                                notebook::move_entry(&worker_root, &worker_from, &parent)?
+                            };
                             let moved_version = document_version.and_then(|(old_path, version)| {
                                 let path = notebook::remap_path(
                                     &old_path,
@@ -1890,6 +1965,20 @@ impl Notes {
                 ) else {
                     return;
                 };
+                if let Some(path) = this.notebooks.select_after_refresh.take() {
+                    let row = this
+                        .notebooks
+                        .explorer
+                        .rows()
+                        .iter()
+                        .position(|row| row.path == path);
+                    this.notebooks.explorer.select(row);
+                    if let Some(row) = row {
+                        this.notebooks
+                            .scroll
+                            .scroll_to_item(row, ScrollStrategy::Top);
+                    }
+                }
                 for path in missing {
                     this.load_directory(path, window, cx);
                 }

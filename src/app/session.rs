@@ -111,6 +111,7 @@ pub enum PhaseKind {
     ActivationFlushFailed,
     LoadingNotebook,
     Moving,
+    EntryOperation,
     Closing,
     CloseFailed,
     Error,
@@ -189,7 +190,7 @@ pub enum Effect<A> {
 }
 
 enum Waiting<A> {
-    Request(A),
+    Request(A, bool),
     Save(Option<A>),
 }
 
@@ -230,6 +231,7 @@ enum Phase<A> {
     FlushingActivation(OperationId),
     ActivationFlushFailed(OperationId),
     Moving(OperationId),
+    EntryOperation(OperationId),
     Closing {
         id: OperationId,
         discard_failed: bool,
@@ -261,6 +263,7 @@ impl<A> Phase<A> {
             Self::FlushingActivation(id) => (*id, PhaseKind::FlushingActivation),
             Self::ActivationFlushFailed(id) => (*id, PhaseKind::ActivationFlushFailed),
             Self::Moving(id) => (*id, PhaseKind::Moving),
+            Self::EntryOperation(id) => (*id, PhaseKind::EntryOperation),
             Self::Closing { id, .. } => (*id, PhaseKind::Closing),
             Self::CloseFailed(id) => (*id, PhaseKind::CloseFailed),
             Self::Error(id) => (*id, PhaseKind::Error),
@@ -407,6 +410,18 @@ impl<D, I, A> Session<D, I, A> {
     }
 
     pub fn request(&mut self, action: A, observed: Observed) -> Vec<Effect<A>> {
+        self.request_policy(action, observed, true)
+    }
+    /// Entry operations outside the active content wait for writes but retain its draft.
+    pub fn request_retaining(&mut self, action: A, observed: Observed) -> Vec<Effect<A>> {
+        self.request_policy(action, observed, false)
+    }
+    fn request_policy(
+        &mut self,
+        action: A,
+        observed: Observed,
+        prompt_dirty: bool,
+    ) -> Vec<Effect<A>> {
         if !self.matches(observed) {
             return vec![];
         }
@@ -422,9 +437,9 @@ impl<D, I, A> Session<D, I, A> {
             self.phase = Phase::Waiting {
                 id: operation,
                 write,
-                next: Waiting::Request(action),
+                next: Waiting::Request(action, prompt_dirty),
             };
-        } else if observed.dirty {
+        } else if observed.dirty && prompt_dirty {
             self.phase = Phase::Prompt {
                 id: operation,
                 next: action,
@@ -604,9 +619,9 @@ impl<D, I, A> Session<D, I, A> {
         if owns {
             match std::mem::replace(&mut self.phase, Phase::Idle) {
                 Phase::Waiting {
-                    next: Waiting::Request(action),
+                    next: Waiting::Request(action, prompt_dirty),
                     ..
-                } => effects.extend(self.request(action, observed)),
+                } => effects.extend(self.request_policy(action, observed, prompt_dirty)),
                 Phase::Waiting {
                     next: Waiting::Save(next),
                     ..
@@ -926,6 +941,50 @@ impl<D, I, A> Session<D, I, A> {
         Self::changed(effects)
     }
 
+    /// An approved entry operation owns the foreground until its filesystem result.
+    pub fn begin_entry_operation(&mut self, operation: OperationId) -> Vec<Effect<A>> {
+        if !self.owns(operation, PhaseKind::Dispatching) || self.write.is_some() {
+            return vec![];
+        }
+        self.phase = Phase::EntryOperation(operation);
+        Self::changed(vec![])
+    }
+    pub fn entry_operation_finished(
+        &mut self,
+        operation: OperationId,
+        loaded: Option<Loaded<D, I>>,
+        observed: Observed,
+    ) -> Vec<Effect<A>> {
+        if !self.owns(operation, PhaseKind::EntryOperation) || !self.matches(observed) {
+            return vec![];
+        }
+        if let Some(loaded) = loaded {
+            self.phase = Phase::Loading {
+                id: operation,
+                target: LoadTarget::Current,
+                notebook: false,
+            };
+            return self.loaded(operation, Ok(loaded), observed);
+        }
+        self.phase = Phase::Idle;
+        let mut effects = vec![];
+        self.resume(observed, &mut effects);
+        Self::changed(effects)
+    }
+    /// A failed trash preserves the current buffer; only confirmed deletion installs Empty.
+    pub fn entry_deleted(
+        &mut self,
+        operation: OperationId,
+        success: bool,
+        contains_active: bool,
+        observed: Observed,
+    ) -> Vec<Effect<A>> {
+        self.entry_operation_finished(
+            operation,
+            (success && contains_active).then_some(Loaded::Empty),
+            observed,
+        )
+    }
     pub fn move_content(&mut self) -> Vec<Effect<A>> {
         if self.is_busy() || self.write.is_some() {
             return vec![Effect::Rejected(Rejection::Busy)];
@@ -1052,7 +1111,11 @@ impl<D, I, A> Session<D, I, A> {
     pub fn cancel(&mut self, operation: OperationId, observed: Observed) -> Vec<Effect<A>> {
         if !self.matches(observed)
             || !self.foreground().is_some_and(|(id, kind)| {
-                id == operation && !matches!(kind, PhaseKind::Closed | PhaseKind::Moving)
+                id == operation
+                    && !matches!(
+                        kind,
+                        PhaseKind::Closed | PhaseKind::Moving | PhaseKind::EntryOperation
+                    )
             })
         {
             return vec![];
@@ -1060,7 +1123,7 @@ impl<D, I, A> Session<D, I, A> {
         let action = match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Prompt { next, .. }
             | Phase::Waiting {
-                next: Waiting::Request(next),
+                next: Waiting::Request(next, _),
                 ..
             } => Some(next),
             Phase::Waiting {

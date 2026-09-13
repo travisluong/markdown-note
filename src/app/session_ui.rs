@@ -159,6 +159,9 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         match next {
+            Next::Entry { target, action } => {
+                self.entry_with_operation(operation, target, action, window, cx)
+            }
             Next::Nothing => {
                 let observed = self.observed_document(cx);
                 let effects = self.session.continued(operation, observed);

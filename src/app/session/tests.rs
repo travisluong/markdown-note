@@ -959,3 +959,56 @@ fn moved_path_survives_version_failure_and_pauses_automatic_saves() {
     model.write_succeeded(write, |_| false);
     assert!(!model.save_conflicted());
 }
+
+#[test]
+fn entry_deletion_keeps_content_until_success_and_rejects_stale_completions() {
+    let mut model = document();
+    let fact = observed(&model, true);
+    model.request("trash", fact);
+    let prompt = operation(&model, PhaseKind::Prompt);
+    model.answer(prompt, Choice::Cancel, fact);
+    assert!(model.content().document_id().is_some());
+    model.request("trash", fact);
+    let prompt = operation(&model, PhaseKind::Prompt);
+    model.answer(prompt, Choice::Discard, fact);
+    let op = operation(&model, PhaseKind::Dispatching);
+    model.begin_entry_operation(op);
+    assert!(model.is_busy());
+    assert!(model.cancel(op, fact).is_empty());
+    assert!(model.content().document_id().is_some());
+    model.entry_deleted(op, false, true, fact);
+    assert_eq!(model.content().document_id(), fact.document);
+    model.request("trash", fact);
+    let prompt = operation(&model, PhaseKind::Prompt);
+    model.answer(prompt, Choice::Discard, fact);
+    let next = operation(&model, PhaseKind::Dispatching);
+    model.begin_entry_operation(next);
+    assert!(model.entry_deleted(op, true, true, fact).is_empty());
+    assert_eq!(model.content().document_id(), fact.document);
+    let effects = model.entry_deleted(next, true, true, fact);
+    assert!(matches!(model.content(), Content::Empty));
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::Installed { current: None, .. }))
+    );
+}
+#[test]
+fn unrelated_entry_operation_waits_for_write_without_prompting_for_late_edits() {
+    let mut model = document();
+    let write = background_write(&mut model);
+    let fact = observed(&model, true);
+    model.request_retaining("duplicate", fact);
+    operation(&model, PhaseKind::WaitingForWrite);
+    let effects = model.write_succeeded(write, |_| true);
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::Prompt(_)))
+    );
+    let op = operation(&model, PhaseKind::Dispatching);
+    model.begin_entry_operation(op);
+    model.entry_operation_finished(op, None, fact);
+    assert_eq!(model.content().document_id(), fact.document);
+    assert!(model.autosave().is_some());
+}
