@@ -187,3 +187,5 @@ Table border ownership: input/text_wrapper.rs; tests/editor.rs exercises single 
 Bullet cursor: input/list_drag.rs shares marker bounds with input/element.rs hover hitboxes. Headless editor_transactions list_drag verifies the rendered targets.
 
 Drag viewport: input/list_drag.rs, list_reorder.rs, state.rs and element.rs. Coverage: list_drop_keeps_scrolled_viewport_with_offscreen_caret plus existing reorder and transaction tests.
+
+Numeric Enter: new input/list_edit.rs; input/state.rs and input/mod.rs integration. Coverage: list_edit unit tests through tests/editor.rs and editor_transactions list_task_and_selection_transactions.

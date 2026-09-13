@@ -340,3 +340,5 @@ Live tables paint each shared edge once, with physical-pixel-aligned borders mat
 Live bullet hover uses Arrow over the same source-mapped marker bounds as drag initiation. Text retains the editor cursor; visible-row indexing bounds hitbox work.
 
 List drops preserve the viewport across selection remapping and background layout, replace only the changed source span, and refresh hit geometry after edge scrolling. tests/editor_transactions.rs covers a scrolled nested checkbox drop with an offscreen caret and post-analysis stability.
+
+Numeric Enter renumbers siblings in the insertion undo step. input/list_edit.rs owns literal-aware container scanning, replacement mapping and continuation indentation. Tests cover non-1 starts, nesting, quotes, code, UTF-8, CRLF, caret mapping and Source/Live undo/redo.

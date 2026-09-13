@@ -1347,8 +1347,20 @@ impl InputState {
             let row = self.text.offset_to_point(self.cursor()).row;
             let start = self.text.line_start_offset(row);
             let line = self.text.slice_line(row).to_string();
-            if let Some((range, insertion)) =
-                super::live_preview::list_enter(&line, self.cursor() - start)
+            let numeric = super::list_edit::numeric_marker(&line);
+            if numeric && self.ime_marked_range.is_none() {
+                if let Some(edit) = super::list_edit::enter(&self.text.to_string(), self.cursor()) {
+                    let range = self.range_to_utf16(&edit.range);
+                    self.replace_range_isolated(Some(range), &edit.text, window, cx);
+                    self.selected_range = edit.selection.into();
+                    self.selection_reversed = false;
+                    self.pause_blink_cursor(cx);
+                    return;
+                }
+            }
+            if !numeric
+                && let Some((range, insertion)) =
+                    super::live_preview::list_enter(&line, self.cursor() - start)
             {
                 let range = self.range_to_utf16(&(start + range.start..start + range.end));
                 let history = std::mem::replace(&mut self.history, History::new());
@@ -2779,6 +2791,34 @@ impl InputState {
             assert_eq!(self.value().as_str(), original);
             self.redo(&Redo, window, cx);
             assert_eq!(self.value().as_str(), "  - [ ] plain\n> - [ ] 你好\nlast");
+        }
+        for live in [false, true] {
+            self.set_live_preview(live, cx);
+            for (source, at, expected) in [
+                (
+                    "5. café word\n6. two\n7. three",
+                    8,
+                    "5. café\n6.  word\n7. two\n8. three",
+                ),
+                (
+                    "8) a\r\n9) b\r\n   1. child",
+                    4,
+                    "8) a\r\n9) \r\n10) b\r\n    1. child",
+                ),
+            ] {
+                self.set_value(source, window, cx);
+                self.selected_range = (at..at).into();
+                self.enter(&Enter { secondary: false }, window, cx);
+                assert_eq!(self.value().as_str(), expected);
+                self.undo(&Undo, window, cx);
+                assert_eq!(
+                    self.value().as_str(),
+                    source,
+                    "insertion and renumbering undo together"
+                );
+                self.redo(&Redo, window, cx);
+                assert_eq!(self.value().as_str(), expected);
+            }
         }
         self.set_value("a你好z", window, cx);
         self.selected_range = (1..7).into();
