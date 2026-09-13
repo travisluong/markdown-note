@@ -1,5 +1,4 @@
 use super::*;
-use gpui_component::scroll::ScrollableElement;
 
 pub(super) struct Shortcut {
     key: String,
@@ -277,24 +276,24 @@ impl Notes {
                     "About Mithril"
                 })
                 .w(px(700.).min(window.viewport_size().width - px(32.)))
-                .max_h((window.viewport_size().height - px(80.)).max(px(120.)))
-                .child(
-                    div()
-                        .id("help-content")
-                        .max_h((window.viewport_size().height - px(220.)).max(px(80.)))
-                        .overflow_y_scrollbar()
-                        .child(body),
-                )
-                .child(
-                    Button::new("close-help")
-                        .label("Close")
-                        .on_click(move |_, window, cx| {
-                            window.close_dialog(cx);
-                            if let Some(focus) = &close_focus {
-                                focus.focus(window);
-                            }
-                        }),
-                )
+                // Reserve both window margins and the dialog's 30px slide animation.
+                .margin_top(px(16.))
+                .max_h((window.viewport_size().height - px(62.)).max(px(0.)))
+                .child(body)
+                .footer(move |_, _, _, _| {
+                    let close_focus = close_focus.clone();
+                    vec![
+                        Button::new("close-help")
+                            .label("Close")
+                            .debug_selector(|| "close-help".into())
+                            .on_click(move |_, window, cx| {
+                                window.close_dialog(cx);
+                                if let Some(focus) = &close_focus {
+                                    focus.focus(window);
+                                }
+                            }),
+                    ]
+                })
                 .on_close(move |_, window, _| {
                     if let Some(focus) = &restore {
                         focus.focus(window);
@@ -317,6 +316,47 @@ fn shortcut_row(key: &str, description: &str) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::app_shortcuts;
+
+    #[gpui::test]
+    fn shortcuts_keep_close_button_inside_window_when_resized(cx: &mut gpui::TestAppContext) {
+        use crate::{Notes, NotesWindow};
+        use gpui::{AppContext, px, size};
+        use gpui_component::Root;
+
+        cx.update(gpui_component::init);
+        let mut notes_view = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let notes = cx.new(|cx| Notes::new(window, cx));
+            notes_view = Some(notes.clone());
+            let view = cx.new(|cx| NotesWindow {
+                _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),
+                notes,
+            });
+            Root::new(view, window, cx)
+        });
+        cx.update(|window, cx| {
+            notes_view
+                .unwrap()
+                .update(cx, |notes, cx| notes.open_help(true, window, cx));
+        });
+
+        for (width, height) in [(1000., 900.), (800., 600.), (480., 320.), (1000., 1200.)] {
+            cx.simulate_resize(size(px(width), px(height)));
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(300));
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+
+            let close = cx.debug_bounds("close-help").unwrap();
+            assert!(close.size.height > px(0.), "{close:?}");
+            assert!(close.top() >= px(16.), "{close:?}");
+            assert!(close.bottom() <= px(height - 16.), "{close:?}");
+            assert!(close.right() <= px(width - 16.), "{close:?}");
+        }
+    }
+
     #[test]
     fn app_bindings_have_unique_documented_shortcuts() {
         let shortcuts = app_shortcuts();

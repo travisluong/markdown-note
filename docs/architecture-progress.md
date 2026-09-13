@@ -768,3 +768,16 @@ Verification: `cargo fmt --check`, `cargo check --locked --offline`,
 `cargo test --locked --offline --features editor-diagnostics`, and
 `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
 passed. Validation was headless; native menu appearance remains manual.
+
+### Keyboard shortcut dialog height (2026-09-13)
+
+Help dialogs reserve a fixed top margin, the component's 30px slide animation,
+and a bottom margin when limiting their height. The shortcut list uses the
+dialog's built-in scrolling content, with Close in the fixed footer. A headless
+GPUI regression verifies that Close stays inside the window while resizing
+between 900px, 600px, 320px, and 1200px heights, including a narrow window.
+
+Verification: `cargo check --locked --offline`,
+`cargo test --locked --offline --features editor-diagnostics`, `cargo fmt --check`,
+and `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+passed. Native appearance remains manual; no desktop interaction was used.
