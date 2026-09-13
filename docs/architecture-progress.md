@@ -822,3 +822,30 @@ Verification: the 16 search UI tests, `cargo check --locked --offline`,
 `cargo fmt --check`, and strict Clippy with all targets and editor diagnostics
 passed after this presentation change. The full 367-test suite passed for the
 preceding focus/reveal change. Native appearance remains manual validation.
+### Full-width window toolbar (2026-09-13)
+
+The root layout now renders a dedicated toolbar below the text menus and above
+notices and the resizable sidebar/document area. Its fixed buttons toggle the
+sidebar, show Explorer, open notebook Search, and sort files. The toolbar stays
+visible without a notebook or with the sidebar collapsed; buttons are disabled
+without a notebook or while busy. Explorer/Search highlight only a visible panel,
+and the toggle icon and tooltip reflect whether the sidebar is visible.
+
+Toolbar presentation lives in `toolbar_ui.rs`; existing sidebar/search handlers
+retain focus, panel restoration, width, sorting, and preference ownership. The
+old sidebar icon row is removed. Explorer retains notebook-root drops, while the
+window toolbar has no drop handler. Customization and preference changes are
+deferred.
+
+Verification: `cargo check --locked --offline`, `cargo fmt --check`, and
+`cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+passed. `cargo test --locked --offline --features editor-diagnostics --lib --bins`
+passed all 199 tests (67 library and 132 application), including notebook width
+persistence and search navigation/focus/state regressions. Static review verified
+shared toggle/panel/sort dispatch and Explorer's retained root-drop handler.
+The full `cargo test --locked --offline --features editor-diagnostics` command
+was attempted but could not remove `target/debug/mithril.exe` (Windows access
+denied); the integration suite could not complete through that command. No
+application process was stopped and no desktop or native harness was used.
+Native layout, themes, narrow windows, toolbar interaction, and Explorer drops
+remain manual validation. The pre-existing Cargo.lock change is excluded.

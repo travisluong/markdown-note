@@ -19,6 +19,7 @@ mod reading_search;
 mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
+mod toolbar_ui;
 
 use std::{
     fs, io,
@@ -686,6 +687,7 @@ impl Render for Notes {
                             })),
                     ),
             )
+            .child(self.render_toolbar(cx))
             .when_some(self.saves.error.clone(), |view, error| {
                 view.child(div().p_2().text_sm().child(error))
             })

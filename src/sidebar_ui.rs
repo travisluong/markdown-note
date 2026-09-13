@@ -1,9 +1,6 @@
 use super::*;
 use gpui_component::resizable::{ResizableState, h_resizable, resizable_panel};
-use gpui_component::{
-    Disableable, IconName, PixelsExt, Selectable,
-    menu::{DropdownMenu, PopupMenuItem},
-};
+use gpui_component::{PixelsExt, menu::PopupMenuItem};
 
 impl Notes {
     pub(super) fn file_sort_menu(&self, mut menu: PopupMenu, owner: WeakEntity<Self>) -> PopupMenu {
@@ -66,57 +63,6 @@ impl Notes {
         cx.notify();
     }
 
-    fn render_sidebar_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let searching = self.search_visible(cx);
-        let owner = cx.weak_entity();
-        div()
-            .id("sidebar-toolbar")
-            .drag_over::<notebook_ui::EntryDrag>(|view, _, _, cx| view.bg(cx.theme().accent))
-            .on_drop(
-                cx.listener(|this, drag: &notebook_ui::EntryDrag, window, cx| {
-                    cx.stop_propagation();
-                    this.drop_entry(drag, PathBuf::new(), window, cx);
-                }),
-            )
-            .flex()
-            .items_center()
-            .flex_shrink_0()
-            .gap_1()
-            .p_1()
-            .child(
-                Button::new("sidebar-explorer")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Folder)
-                    .tooltip("Explorer")
-                    .selected(!searching)
-                    .on_click(cx.listener(|this, _, window, cx| this.show_explorer(window, cx))),
-            )
-            .child(
-                Button::new("sidebar-search")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Search)
-                    .tooltip("Search all files (Ctrl+Shift+F)")
-                    .selected(searching)
-                    .on_click(cx.listener(|this, _, window, cx| this.open_search_all(window, cx))),
-            )
-            .child(
-                Button::new("sidebar-sort")
-                    .small()
-                    .ghost()
-                    .icon(IconName::SortAscending)
-                    .tooltip("Sort files")
-                    .disabled(self.is_busy())
-                    .dropdown_menu(move |menu, _, cx| {
-                        if let Some(entity) = owner.upgrade() {
-                            entity.read(cx).file_sort_menu(menu, owner.clone())
-                        } else {
-                            menu
-                        }
-                    }),
-            )
-    }
     pub(super) fn reset_sidebar_resize(&mut self, cx: &mut Context<Self>) {
         self.sidebar_resize = cx.new(|_| ResizableState::default());
     }
@@ -165,7 +111,6 @@ impl Notes {
             .min_w_0()
             .overflow_hidden()
             // The resize handle supplies the single-pixel divider.
-            .child(self.render_sidebar_toolbar(cx))
             .child(div().flex_1().min_h_0().overflow_hidden().child(sidebar));
         h_resizable("sidebar-layout")
             .with_state(&self.sidebar_resize)

@@ -51,6 +51,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies current overlay and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
+| Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Dispatches existing sidebar and search actions; owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
@@ -287,9 +288,15 @@ spellings, preserving native path characters. Async failures update the notice
 only while the captured notebook/generation remains current. Tests inject an
 in-memory backend; other platforms keep GPUI's reveal integration.
 
-The top Sort menu and sidebar sort button share `Notes::file_sort_menu` in
+The top Sort menu and window toolbar sort button share `Notes::file_sort_menu` in
 `sidebar_ui.rs`. Both use `FileSort::OPTIONS` and the active notebook's selected
 order, dispatching through `set_file_sort` for explorer updates and persistence.
+
+The window toolbar remains visible with the sidebar collapsed or no notebook
+open. Its fixed buttons toggle the sidebar, show Explorer, open notebook Search,
+and sort files; notebook actions are disabled without a notebook or while busy.
+Only a visible sidebar panel is highlighted. Notebook-root file drops remain
+within Explorer; the toolbar is not a drop target. Customization is deferred.
 
 Theme palettes persist independent Light and Dark background, font, primary, and
 border RGB colors. Missing/invalid border values normalize using the containing
