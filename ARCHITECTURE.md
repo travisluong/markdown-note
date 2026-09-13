@@ -266,3 +266,8 @@ Selection changes hide or reveal fence glyphs only; font, padding, source mappin
 background and downstream positions stay fixed. Outer fence rows own rounded
 corners. `tests/code_highlighting.rs` covers caret/selection movement, themes,
 long info strings, empty/unfinished/nested blocks, Unicode, CRLF and history.
+Windows sidebar Reveal is owned by `notebook_ui/reveal.rs`. It launches Explorer
+with the validated target and normalizes only shell-facing verbatim drive/UNC
+spellings, preserving native path characters. Async failures update the notice
+only while the captured notebook/generation remains current. Tests inject an
+in-memory backend; other platforms keep GPUI's reveal integration.

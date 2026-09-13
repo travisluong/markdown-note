@@ -6,6 +6,8 @@ use std::time::Duration;
 
 mod activation_preferences;
 mod entry_menu;
+#[cfg(windows)]
+mod reveal;
 use activation_preferences::ActivationPreferences;
 pub(super) use activation_preferences::PreferenceIntent;
 pub(super) use entry_menu::{EntryAction, EntryTarget};
@@ -45,6 +47,9 @@ struct SettingsWaiter {
     after: SettingsAfterFlush,
 }
 
+#[cfg(test)]
+type RevealBackend = dyn FnMut(&Path) -> io::Result<()>;
+
 pub(super) struct NotebookState {
     pub active: Option<notebook::Notebook>,
     pub(super) context_menu: Option<(gpui::Point<Pixels>, Entity<PopupMenu>)>,
@@ -52,6 +57,8 @@ pub(super) struct NotebookState {
     select_after_refresh: Option<PathBuf>,
     #[cfg(test)]
     trash_backend: fn(&Path, &Path) -> io::Result<()>,
+    #[cfg(test)]
+    reveal_backend: Box<RevealBackend>,
     index: notebook::Index,
     index_path: Option<PathBuf>,
     index_writable: bool,
@@ -93,6 +100,8 @@ impl NotebookState {
             select_after_refresh: None,
             #[cfg(test)]
             trash_backend: |_, _| Err(io::Error::other("OS Trash is disabled in tests")),
+            #[cfg(test)]
+            reveal_backend: Box::new(|_| Err(io::Error::other("OS reveal is disabled in tests"))),
             index: notebook::Index::default(),
             index_path: None,
             index_writable: false,

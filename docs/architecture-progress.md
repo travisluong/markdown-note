@@ -572,3 +572,11 @@ tests pass, including source/history, cursor and selection positions, themes,
 Unicode/CRLF, empty/unfinished/nested blocks and viewport work bounds. Tests use
 `--target-dir target/agent-validation` because the default output's mithril.exe
 is locked. No running application or desktop state was changed.
+## Windows Reveal repair (2026-09-12)
+
+Sidebar Reveal now launches Explorer through an app-owned background adapter.
+The adapter preserves Unicode and native path strings and converts canonical
+verbatim drive/UNC paths for the shell. Launch errors appear in the notebook
+notice, with stale completion guards. The headless tests cover arguments,
+recorded dispatch, stale/missing targets and injected failures; no Explorer
+window is launched by tests. Native Explorer confirmation remains user-run.

@@ -162,12 +162,29 @@ impl Notes {
             )),
             EntryAction::Reveal => match notebook::entry_path(&target.root, &target.path) {
                 Ok(path) => {
-                    #[cfg(not(test))]
-                    cx.reveal_path(&path);
                     #[cfg(test)]
-                    {
-                        let _ = path;
+                    if let Err(error) = (self.notebooks.reveal_backend)(&path) {
+                        self.notebooks.notice = Some(format!("Could not reveal entry: {error}"));
                     }
+                    #[cfg(all(not(test), not(windows)))]
+                    cx.reveal_path(&path);
+                    #[cfg(all(not(test), windows))]
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move { super::reveal::launch(&path) })
+                            .await;
+                        if let Err(error) = result {
+                            let _ = this.update(cx, |this, cx| {
+                                if this.entry_target_current(&target) {
+                                    this.notebooks.notice =
+                                        Some(format!("Could not reveal entry: {error}"));
+                                    cx.notify();
+                                }
+                            });
+                        }
+                    })
+                    .detach();
                 }
                 Err(error) => self.notebooks.notice = Some(error.to_string()),
             },
@@ -491,6 +508,52 @@ mod tests {
             generation: notes.notebooks.explorer.generation(),
             directory,
         }
+    }
+    #[gpui::test]
+    fn reveal_dispatches_valid_targets_and_reports_failures(cx: &mut TestAppContext) {
+        let (fixture, notes, cx) = fixture(cx);
+        let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let recorded = calls.clone();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.notebooks.reveal_backend = Box::new(move |path| {
+                    recorded.borrow_mut().push(path.to_path_buf());
+                    Ok(())
+                });
+                this.entry_action(
+                    target(this, "note.md", false),
+                    EntryAction::Reveal,
+                    window,
+                    cx,
+                );
+                let stale = target(this, "note.md", false);
+                this.notebooks.explorer.clear();
+                this.entry_action(stale, EntryAction::Reveal, window, cx);
+                this.entry_action(
+                    target(this, "missing.md", false),
+                    EntryAction::Reveal,
+                    window,
+                    cx,
+                );
+                assert!(this.notebooks.notice.is_some());
+                this.notebooks.reveal_backend =
+                    Box::new(|_| Err(io::Error::other("fixture launch failure")));
+                this.entry_action(
+                    target(this, "note.md", false),
+                    EntryAction::Reveal,
+                    window,
+                    cx,
+                );
+                assert!(
+                    this.notebooks
+                        .notice
+                        .as_ref()
+                        .unwrap()
+                        .contains("fixture launch failure")
+                );
+            })
+        });
+        assert_eq!(*calls.borrow(), [fixture.root.join("note.md")]);
     }
     fn fake_trash(root: &Path, relative: &Path) -> io::Result<()> {
         let from = notebook::entry_path(root, relative)?;
