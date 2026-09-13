@@ -781,3 +781,17 @@ Verification: `cargo check --locked --offline`,
 `cargo test --locked --offline --features editor-diagnostics`, `cargo fmt --check`,
 and `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
 passed. Native appearance remains manual; no desktop interaction was used.
+
+### View menu sidebar toggle (2026-09-13)
+
+View now includes Collapse sidebar after the view modes, checked from the same
+session state used by the sidebar icon. It calls the existing sidebar toggle
+after menu dismissal so editor, Explorer, and Search focus behavior is preserved.
+The item is disabled while busy or without an active notebook.
+
+Verification: `cargo fmt --check`, `cargo check --locked --offline`,
+`cargo test --locked --offline --features editor-diagnostics`, and
+`cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+passed. Static review confirmed shared state and the existing toggle guards;
+native menu appearance and interaction remain manual. No desktop interaction
+was used.

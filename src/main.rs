@@ -31,7 +31,7 @@ use gpui_component::{
     ActiveTheme, Root, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState, Rope, Search},
-    menu::PopupMenu,
+    menu::{PopupMenu, PopupMenuItem},
     text::TextView,
 };
 use mithril::editor::{Editor, Event as EditorEvent};
@@ -364,6 +364,20 @@ impl Notes {
                     "Reading view",
                     mode == ViewMode::Reading,
                     Box::new(ReadingView),
+                )
+                .separator()
+                .item(
+                    PopupMenuItem::new("Collapse sidebar")
+                        .checked(self.sidebar_collapsed)
+                        .disabled(busy || self.notebooks.active.is_none())
+                        .on_click(move |_, window, cx| {
+                            let _ = owner.update(cx, |_, cx| {
+                                // Restore sidebar focus after the menu finishes dismissing.
+                                cx.defer_in(window, |this, window, cx| {
+                                    this.toggle_sidebar(window, cx);
+                                });
+                            });
+                        }),
                 )
             } else if kind == MenuKind::Search {
                 use mithril::commands::Command;
