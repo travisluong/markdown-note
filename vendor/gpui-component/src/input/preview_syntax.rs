@@ -56,6 +56,7 @@ impl Request {
             || images_needed
             || source.contains('`')
             || source.lines().any(|line| line.contains(['-', '*', '+']))
+            || source.lines().any(super::list_edit::numeric_marker)
         {
             work.gfm_calls += 1;
             work.gfm_bytes += source.len();

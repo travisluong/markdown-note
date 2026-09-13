@@ -664,6 +664,7 @@ impl InputState {
         }
 
         // Move scroll to top
+        self.list_viewport_anchor = None;
         self.scroll_handle.set_offset(point(px(0.), px(0.)));
 
         cx.notify();
@@ -908,6 +909,7 @@ impl InputState {
 
     /// Switch presentation without replacing the buffer or history.
     pub fn set_live_preview(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.list_viewport_anchor = None;
         self.list_drag = None;
         if self.live_preview != enabled {
             self.live_preview = enabled;

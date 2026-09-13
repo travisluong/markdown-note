@@ -7,6 +7,10 @@ use std::ops::Range;
 pub(super) struct Item {
     pub source: Range<usize>,
     pub marker: usize,
+    pub marker_end: usize,
+    pub list: usize,
+    pub start_number: Option<usize>,
+    pub content_indent: usize,
     pub quote: Option<usize>,
     pub prefix: String,
     pub indent: usize,
@@ -38,7 +42,7 @@ pub(super) fn from_ast(source: &str, root: &Node) -> Vec<Item> {
         source: &str,
         node: &Node,
         quote: Option<usize>,
-        unordered: bool,
+        parent_list: Option<(usize, Option<usize>)>,
         out: &mut Vec<Item>,
     ) {
         let quote = if matches!(node, Node::Blockquote(_)) {
@@ -46,13 +50,24 @@ pub(super) fn from_ast(source: &str, root: &Node) -> Vec<Item> {
         } else {
             quote
         };
-        let unordered = if let Node::List(list) = node {
-            !list.ordered
+        let parent_list = if let Node::List(list) = node {
+            list.position.as_ref().map(|pos| {
+                let at = pos.start.offset;
+                let digits = source[at..].bytes().take_while(u8::is_ascii_digit).count();
+                (
+                    at,
+                    if list.ordered {
+                        source[at..at + digits].parse().ok()
+                    } else {
+                        None
+                    },
+                )
+            })
         } else {
-            unordered
+            parent_list
         };
         if let Node::ListItem(item) = node
-            && unordered
+            && let Some((list, start_number)) = parent_list
             && let Some(pos) = &item.position
         {
             let marker = pos.start.offset;
@@ -65,11 +80,26 @@ pub(super) fn from_ast(source: &str, root: &Node) -> Vec<Item> {
                     .map_or(source.len(), |at| pos.end.offset + at + 1)
             };
             let prefix = &source[start..marker];
-            if let Some(bullet @ ('-' | '*' | '+')) = source[marker..].chars().next() {
+            let digits = source[marker..]
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            let marker_end = marker + digits + 1;
+            if let Some(bullet @ ('-' | '*' | '+' | '.' | ')')) =
+                source[marker + digits..].chars().next()
+            {
                 let quote_end = prefix_end(prefix);
+                let spaces = source[marker_end..]
+                    .bytes()
+                    .take_while(|b| matches!(b, b' ' | b'\t'))
+                    .count();
                 out.push(Item {
                     source: start..end,
                     marker,
+                    marker_end,
+                    list,
+                    start_number,
+                    content_indent: columns(&source[start + quote_end..marker_end + spaces]),
                     quote,
                     prefix: prefix[..quote_end].into(),
                     indent: columns(&prefix[quote_end..]),
@@ -79,17 +109,19 @@ pub(super) fn from_ast(source: &str, root: &Node) -> Vec<Item> {
         }
         if let Some(children) = node.children() {
             for child in children {
-                visit(source, child, quote, unordered, out);
+                visit(source, child, quote, parent_list, out);
             }
         }
     }
     let mut out = Vec::new();
-    visit(source, root, None, false, &mut out);
+    visit(source, root, None, None, &mut out);
     out.sort_by_key(|item| item.marker);
     out
 }
 pub(super) fn can_drop(item: &Item, target: &Item) -> bool {
-    item.quote == target.quote && !item.source.contains(&target.marker)
+    item.quote == target.quote
+        && item.start_number.is_some() == target.start_number.is_some()
+        && !item.source.contains(&target.marker)
 }
 #[cfg(test)]
 pub(super) fn reorder(
@@ -127,6 +159,12 @@ pub(super) fn reorder_anchored(
     if destination > item.source.start && destination < item.source.end {
         return None;
     }
+    if (destination == item.source.start || destination == item.source.end)
+        && item.indent == target.indent
+        && item.bullet == target.bullet
+    {
+        return None;
+    }
     let newline = if source.contains("\r\n") {
         "\r\n"
     } else {
@@ -149,7 +187,8 @@ pub(super) fn reorder_anchored(
         let indent = if row == 0 {
             target.indent
         } else {
-            (old_indent.saturating_sub(item.indent) + target.indent).max(target.indent + 2)
+            (old_indent.saturating_sub(item.indent) + target.indent)
+                .max(target.indent + item.content_indent.saturating_sub(item.indent).max(2))
         };
         let start = block.len();
         if !line.trim().is_empty() {
@@ -159,7 +198,8 @@ pub(super) fn reorder_anchored(
         let new_content = block.len() - start;
         let mut content = line[old_content..].to_owned();
         if row == 0 {
-            content.replace_range(..1, &target.bullet.to_string());
+            let delimiter = item.marker_end - item.marker - 1;
+            content.replace_range(delimiter..delimiter + 1, &target.bullet.to_string());
         }
         block.push_str(&content);
         mapped.push((
@@ -193,8 +233,10 @@ pub(super) fn reorder_anchored(
             result.pop();
         }
     }
-    let map = |offset: usize| {
-        if offset >= item.source.start && offset <= item.source.end {
+    let map = |offset: usize, include_end: bool| {
+        if offset >= item.source.start
+            && (offset < item.source.end || (include_end && offset == item.source.end))
+        {
             let (range, start, old_content, new_content) = mapped
                 .iter()
                 .find(|(r, _, _, _)| r.contains(&offset))
@@ -218,14 +260,43 @@ pub(super) fn reorder_anchored(
             })
         .min(result.len())
     };
-    let (start, end) = (map(selection.start), map(selection.end));
+    let original_items = if item.start_number.is_some() {
+        super::list_edit::scan(source)
+    } else {
+        vec![]
+    };
+    let original_group = original_items
+        .iter()
+        .find(|i| i.digits.start == item.marker)
+        .map(|i| i.list);
+    let survivor = original_items
+        .iter()
+        .find(|i| Some(i.list) == original_group && !item.source.contains(&i.digits.start))
+        .map(|i| i.digits.start);
+    let mut points = [
+        map(selection.start, false),
+        map(selection.end, item.source.contains(&selection.start)),
+        map(anchor, false),
+        map(target.marker, false),
+        map(survivor.unwrap_or(0), false),
+    ];
+    if let Some(start) = target.start_number {
+        result = super::list_edit::renumber(&result, points[3], start, &mut points)?;
+        if item.list != target.list && survivor.is_some() {
+            result =
+                super::list_edit::renumber(&result, points[4], item.start_number?, &mut points)?;
+        }
+    }
     if result == source {
         return None;
     }
-    let anchor = map(anchor);
     Some((
-        minimal_edit(source, &result, start.min(end)..start.max(end)),
-        anchor,
+        minimal_edit(
+            source,
+            &result,
+            points[0].min(points[1])..points[0].max(points[1]),
+        ),
+        points[2],
     ))
 }
 
@@ -261,6 +332,60 @@ mod tests {
         )
     }
     #[test]
+    fn numbered_reorders_keep_start_and_unicode_selection() {
+        let s = "5. café\n6. beta\n7. gamma\n";
+        let i = items(s);
+        let edit = reorder(s, &i[0], &i[2], true, 3..8).unwrap();
+        assert_eq!(edit.text, "5. beta\n6. gamma\n7. café\n");
+        assert_eq!(&edit.text[edit.selection], "café");
+        assert_eq!(
+            reorder(s, &i[2], &i[0], false, 0..0).unwrap().text,
+            "5. gamma\n6. café\n7. beta\n"
+        );
+        assert!(reorder(s, &i[0], &i[1], false, 0..0).is_none());
+    }
+    #[test]
+    fn numbered_moves_renumber_both_lists_and_adopt_delimiter() {
+        let s = "5. a\r\n6. b\r\n\r\nparagraph\r\n\r\n10) c\r\n11) d";
+        let i = items(s);
+        assert_eq!(
+            reorder(s, &i[0], &i[2], false, 3..4).unwrap().text,
+            "5. b\r\n\r\nparagraph\r\n\r\n10) a\r\n11) c\r\n12) d"
+        );
+    }
+    #[test]
+    fn numbered_subtrees_follow_width_changes_and_nesting() {
+        let s = "8. a\n9. b\n   1. child\n10. c\n";
+        let i = items(s);
+        let edit = reorder(s, &i[3], &i[1], false, 15..20).unwrap();
+        assert_eq!(edit.text, "8. a\n9. c\n10. b\n    1. child\n");
+        let parsed = items(&edit.text);
+        assert!(parsed[2].source.contains(&parsed[3].marker));
+        assert!(!can_drop(&i[1], &i[2]));
+        let s = "1. a\n2. parent\n   1. target\n3. last";
+        let i = items(s);
+        assert_eq!(
+            reorder(s, &i[0], &i[2], true, 3..4).unwrap().text,
+            "1. parent\n   1. target\n   2. a\n2. last"
+        );
+        assert_eq!(
+            reorder(s, &i[2], &i[0], false, 0..0).unwrap().text,
+            "1. target\n2. a\n3. parent\n4. last"
+        );
+    }
+    #[test]
+    fn numbered_quote_and_type_boundaries_and_task_state() {
+        let s = "> 4. [x] done\n> 5. next\n\n> 1. separate\n\n- bullet\n";
+        let i = items(s);
+        assert_eq!(
+            reorder(s, &i[0], &i[1], true, 0..0).unwrap().text,
+            "> 4. next\n> 5. [x] done\n\n> 1. separate\n\n- bullet\n"
+        );
+        assert!(!can_drop(&i[0], &i[2]));
+        assert!(!can_drop(&i[0], &i[3]));
+        assert!(!can_drop(&i[3], &i[0]));
+    }
+    #[test]
     fn moves_subtrees_between_lists_and_keeps_task_state() {
         let s = "- [x] café\n  - child\n\nparagraph\n\n* other\n";
         let i = items(s);
@@ -277,8 +402,9 @@ mod tests {
         assert_eq!(edit.text, "- first\n  - last\n  - child");
         let s = "> - a\n\n> - b\n\n1. numbered\n";
         let i = items(s);
-        assert_eq!(i.len(), 2);
+        assert_eq!(i.len(), 3);
         assert!(!can_drop(&i[0], &i[1]));
+        assert!(!can_drop(&i[0], &i[2]));
     }
 }
 

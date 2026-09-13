@@ -50,7 +50,7 @@ fn production_preview_parser_counts_gfm_work_once() {
 }
 #[path = "../vendor/gpui-component/src/input/inline_code.rs"]
 mod inline_code;
-#[path = "../vendor/gpui-component/src/input/list_reorder.rs"]
-mod list_reorder;
 #[path = "../vendor/gpui-component/src/input/list_edit.rs"]
 mod list_edit;
+#[path = "../vendor/gpui-component/src/input/list_reorder.rs"]
+mod list_reorder;

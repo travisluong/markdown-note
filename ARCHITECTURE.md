@@ -283,3 +283,5 @@ checkbox colors and distinct interaction colors keep their existing roles.
 List drops replace the smallest changed UTF-8 span and retain a source-mapped viewport anchor through deferred preview layout. Intentional pointer, keyboard, scroll and text changes release the anchor; selection remapping after a drop does not reveal an offscreen caret.
 
 Numeric list Enter uses input/list_edit.rs source-line container scanning and an isolated transaction shared by Source and Live. It preserves the list start and delimiter, updates only direct siblings, and adjusts continuation indentation when digit widths change. No GFM parse runs on the input thread.
+
+Numbered items now participate in the shared revision-guarded drag index, including numeric-only documents. Item metadata retains marker extent, list identity/start and content indentation. Numeric drops accept only numeric destinations in the same quote context, move subtrees, and normalize both affected sibling lists through list_edit. Hover and press share measured number-marker bounds; numbered tasks also accept their checkbox target.

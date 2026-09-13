@@ -639,3 +639,35 @@ suite passed using the default target. The existing proc-macro-error2 dependency
 future-compatibility notice remains. No desktop apps were launched or controlled;
 native visual confirmation remains user-run. The user's Cargo.lock changes were
 left untouched and excluded from both commits.
+
+## List gestures, automatic numbering and table borders (2026-09-12)
+
+Live preview tables now paint each shared border once with physical pixel alignment.
+Bullet and numeric marker hover shares drag geometry and uses the standard arrow.
+Checkbox/list drops replace only the changed UTF-8 span and anchor stationary
+visible source content through selection remapping and background layout updates.
+Edge scrolling updates hit geometry and stops on release or cancellation.
+
+Source and Live Enter insert and renumber numeric siblings in one undo step.
+Numeric dragging moves full subtrees between numeric lists, retaining each list's
+original start and adopting its destination delimiter. Shared source transforms
+preserve task state, Unicode selections, CRLF/final-newline state and continuation
+indentation across digit-width changes. Literal fences and unrelated lists remain
+outside numbering transactions. Revision, quote, descendant, disabled and IME
+guards remain in force.
+
+Noninteractive Windows verification:
+
+- Full locked offline diagnostics suite: 344 tests passed, zero failures.
+- Locked offline cargo check and strict all-targets diagnostics Clippy: passed.
+- cargo fmt --check: passed.
+- Focused tests cover table border geometry at fractional scales, numeric-only
+  analysis, Source/Live Enter undo/redo, nested/cross-list/quoted moves, both numeric
+  delimiters, UTF-8/CRLF, rendered marker widths and scrolled drops with an offscreen
+  caret, including dragging the first visible item and cancelling edge scrolling.
+
+Windows intermittently denied the linker access to existing test executables;
+retrying the same commands succeeded. The existing proc-macro-error2 future
+compatibility notice remains. No native application or desktop input was used;
+physical pointer and visual confirmation remain user-run. The pre-existing
+Cargo.lock changes remain untouched and are excluded from the commits.

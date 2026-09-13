@@ -84,10 +84,10 @@ pub(super) fn scan(source: &str) -> Vec<NumericItem> {
         while frames.last().is_some_and(|f| f.depth > depth) {
             frames.pop();
         }
-        if let Some((_, _, fence_depth, fence_indent)) = fence {
-            if depth < fence_depth || (!body.is_empty() && indent < fence_indent) {
-                fence = None;
-            }
+        if let Some((_, _, fence_depth, fence_indent)) = fence
+            && (depth < fence_depth || (!body.is_empty() && indent < fence_indent))
+        {
+            fence = None;
         }
         let mut literal = fence.is_some();
         if let Some((ch, len, _, _)) = fence {
@@ -121,7 +121,7 @@ pub(super) fn scan(source: &str) -> Vec<NumericItem> {
                     if !same {
                         frames.push(Frame {
                             indent,
-                            content: indent + content,
+                            content: columns(&text[quote..start + content]),
                             depth,
                             kind,
                             id: next_id,
@@ -130,7 +130,7 @@ pub(super) fn scan(source: &str) -> Vec<NumericItem> {
                         next_id += 1;
                     }
                     let frame = frames.last_mut().unwrap();
-                    frame.content = indent + content;
+                    frame.content = columns(&text[quote..start + content]);
                     frame.last = number.map(|value| {
                         let ix = items.len();
                         let digits = body.bytes().take_while(u8::is_ascii_digit).count();
@@ -156,7 +156,10 @@ pub(super) fn scan(source: &str) -> Vec<NumericItem> {
                 while frames.last().is_some_and(|f| {
                     f.depth == depth
                         && indent < f.content
-                        && (blank || body.starts_with(['#', '>']))
+                        && (blank
+                            || body.starts_with(['#', '>'])
+                            || body.starts_with("```")
+                            || body.starts_with("~~~"))
                 }) {
                     frames.pop();
                 }
@@ -164,13 +167,13 @@ pub(super) fn scan(source: &str) -> Vec<NumericItem> {
                     .last()
                     .filter(|f| f.depth == depth)
                     .map_or(0, |f| f.content);
-                if indent < base + 4 {
-                    if let Some(ch @ (b'`' | b'~')) = body.as_bytes().first().copied() {
-                        let count = body.bytes().take_while(|b| *b == ch).count();
-                        if count >= 3 {
-                            fence = Some((ch, count, depth, base));
-                            literal = true;
-                        }
+                if indent < base + 4
+                    && let Some(ch @ (b'`' | b'~')) = body.as_bytes().first().copied()
+                {
+                    let count = body.bytes().take_while(|b| *b == ch).count();
+                    if count >= 3 {
+                        fence = Some((ch, count, depth, base));
+                        literal = true;
                     }
                 }
             }
@@ -265,9 +268,39 @@ pub(super) fn enter(source: &str, cursor: usize) -> Option<TaskEdit> {
     } else {
         insertion
     };
-    let mut result = source.to_owned();
-    result.replace_range(row_start + range.start..row_start + range.end, &insertion);
-    let mut caret = [row_start + range.start + insertion.len()];
+    let mut edits = Vec::new();
+    if insertion.contains('\n') {
+        let next_line = insertion.rsplit('\n').next()?;
+        let (_, marker_start, _) = prefix(next_line);
+        let digits = next_line[marker_start..]
+            .bytes()
+            .take_while(u8::is_ascii_digit)
+            .count();
+        let delta = digits as isize - item.digits.len() as isize;
+        if digits > 0 && delta != 0 {
+            let mut offset = item.source.start;
+            for (row, line) in source[item.source.clone()]
+                .split_inclusive('\n')
+                .enumerate()
+            {
+                let (quote, content, _) = prefix(line);
+                let indent = columns(&line[quote..content]);
+                if row > 0 && !line[content..].trim().is_empty() && indent >= item.content_column {
+                    edits.push((
+                        offset + quote..offset + content,
+                        " ".repeat(indent.saturating_add_signed(delta)),
+                    ));
+                }
+                offset += line.len();
+            }
+        }
+    }
+    edits.push((
+        row_start + range.start..row_start + range.end,
+        insertion.clone(),
+    ));
+    let mut caret = [row_start + range.end];
+    let mut result = apply(source, edits, &mut caret);
     if !insertion.is_empty() && insertion.contains('\n') {
         result = renumber(&result, item.digits.start, first.value, &mut caret)?;
     }
@@ -304,6 +337,10 @@ mod tests {
         );
         let (text, _) = inserted("5) a\r\n6) b", 4);
         assert_eq!(text, "5) a\r\n6) \r\n7) b");
+        assert_eq!(
+            inserted("9. a\n   1. child\n10. b", 4).0,
+            "9. a\n10. \n    1. child\n11. b"
+        );
     }
     #[test]
     fn literals_and_quote_boundaries() {
@@ -318,5 +355,11 @@ mod tests {
         let (text, _) = inserted(source, 6);
         assert_eq!(text, "> 5. a\n> 6. \n> 7. b\n\n> 2. other\n");
         assert_eq!(inserted("1. \n2. b", 3).0, "\n2. b");
+        let source = "1. before\n```\n7. literal\n```\n4. after";
+        assert_eq!(scan(source).len(), 2);
+        assert_eq!(
+            inserted(source, 9).0,
+            "1. before\n2. \n```\n7. literal\n```\n4. after"
+        );
     }
 }

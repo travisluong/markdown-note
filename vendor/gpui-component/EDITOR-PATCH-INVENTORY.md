@@ -189,3 +189,5 @@ Bullet cursor: input/list_drag.rs shares marker bounds with input/element.rs hov
 Drag viewport: input/list_drag.rs, list_reorder.rs, state.rs and element.rs. Coverage: list_drop_keeps_scrolled_viewport_with_offscreen_caret plus existing reorder and transaction tests.
 
 Numeric Enter: new input/list_edit.rs; input/state.rs and input/mod.rs integration. Coverage: list_edit unit tests through tests/editor.rs and editor_transactions list_task_and_selection_transactions.
+
+Numbered dragging: input/list_reorder.rs metadata and source moves; input/list_edit.rs shared numbering/offset mapping; input/preview_syntax.rs numeric-only detection; input/list_drag.rs marker geometry and transactions. Coverage: list_reorder/list_edit tests in tests/editor.rs and numbered/scrolled/edge-scroll diagnostics in tests/editor_transactions.rs.
