@@ -73,9 +73,6 @@ impl LineItem {
     }
 
     pub(super) fn height_units(&self) -> f32 {
-        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
-            return 0.;
-        }
         self.lines_len() as f32 * self.scale
             + self
                 .code_block
@@ -690,7 +687,7 @@ impl TextWrapper {
             } else {
                 None
             };
-            let mut presentation = self.live_preview.then(|| {
+            let presentation = self.live_preview.then(|| {
                 let start = changed_text.line_start_offset(new_start_row + ix);
                 if let Some(code) = self.code.line(start) {
                     super::live_preview::Presentation::literal(&source, code.prefix, code.tokens)
@@ -704,28 +701,17 @@ impl TextWrapper {
                         )
                 }
             });
-            if code_block.as_ref().is_some_and(|c| c.empty)
-                && let Some(p) = &mut presentation
-            {
-                p.hidden = std::iter::once(0..source.len()).collect();
-            }
             let scale = if code_block.is_some() {
                 self.code_font_size / self.font_size
             } else {
                 presentation.as_ref().map_or(1., |p| p.scale())
             };
             let mapped = presentation.as_ref().map(|p| {
-                let mut mapped = p.display(
+                let mapped = p.display(
                     &source,
                     code_block.is_none()
                         && (p.code.is_some() || new_start_row + ix == self.reveal_row),
                 );
-                if code_block.as_ref().is_some_and(|c| c.empty) {
-                    let start = changed_text.line_start_offset(new_start_row + ix);
-                    mapped.display_to_source[0] = self.code.block(start).map_or(0, |b| {
-                        b.content.start.saturating_sub(start).min(source.len())
-                    });
-                }
                 std::rc::Rc::new(mapped)
             });
             let line_str = mapped.as_ref().map_or(source.as_str(), |m| m.text.as_str());
@@ -1208,9 +1194,6 @@ impl LineLayout {
         offset: usize,
         line_height: Pixels,
     ) -> Option<Point<Pixels>> {
-        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
-            return Some(point(px(0.), px(0.)));
-        }
         if self.image.as_ref().is_some_and(|i| !i.reveal) {
             return (offset <= self.len()).then(|| point(px(0.), px(0.)));
         }
@@ -1300,9 +1283,6 @@ impl LineLayout {
         pos: Point<Pixels>,
         line_height: Pixels,
     ) -> Option<usize> {
-        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
-            return None;
-        }
         if self.code_block.is_some() && (pos.y < px(0.) || pos.y >= self.size(line_height).height) {
             return None;
         }
@@ -1435,9 +1415,6 @@ impl LineLayout {
     }
 
     pub(super) fn size(&self, line_height: Pixels) -> Size<Pixels> {
-        if self.code_block.as_ref().is_some_and(|c| c.hidden) {
-            return size(px(0.), px(0.));
-        }
         if let Some(image) = &self.image {
             let text_rows = if image.reveal {
                 self.segment_ranges
@@ -2429,7 +2406,10 @@ mod sustained_edit_tests {
             measure(&mut wrapper, 0..rows);
             assert_rendered(&wrapper, 3);
             assert!(
-                wrapper.lines[rows - 1].code_block.is_none(),
+                wrapper.lines[rows - 1]
+                    .code_block
+                    .as_ref()
+                    .is_some_and(|code| !code.hidden),
                 "new fence stays editable"
             );
 
@@ -2445,7 +2425,12 @@ mod sustained_edit_tests {
                 assert!(wrapper.apply_analysis(latest.parse()));
                 measure(&mut wrapper, 0..rows);
                 assert_rendered(&wrapper, 3);
-                assert!(wrapper.lines[rows - 1].code_block.is_none());
+                assert!(
+                    wrapper.lines[rows - 1]
+                        .code_block
+                        .as_ref()
+                        .is_some_and(|code| !code.hidden)
+                );
             }
 
             // Ordinary text before and after code, including a long input burst,
@@ -2480,7 +2465,7 @@ mod sustained_edit_tests {
         wrapper.reveal_code(at..at, 0.6);
         measure(&mut wrapper, 5000..5020);
         assert!(wrapper.copied_bytes - copied < 2000);
-        assert!(wrapper.lines[5005].code_block.is_none());
+        assert!(wrapper.lines[5005].code_block.is_some());
         let revision = wrapper.syntax_revision;
         wrapper.reveal_code(at + 1..at + 1, 0.6);
         assert_eq!(
@@ -2501,15 +2486,24 @@ mod sustained_edit_tests {
             nested.lines[2].mapped.as_ref().unwrap().text,
             "literal **你好**"
         );
-        assert_eq!(nested.lines[1].height_units(), 0.);
+        assert!(nested.lines[1].height_units() > 1.);
+        let heights: Vec<_> = (1..=3)
+            .map(|row| nested.lines[row].height_units())
+            .collect();
         let at = nested.text.line_start_offset(2);
         nested.reveal_code(at..at, 0.6);
         measure(&mut nested, 0..5);
         for row in 1..=3 {
-            assert!(nested.lines[row].code_block.is_none());
+            assert!(
+                nested.lines[row]
+                    .code_block
+                    .as_ref()
+                    .is_some_and(|code| !code.hidden)
+            );
+            assert_eq!(nested.lines[row].height_units(), heights[row - 1]);
             assert_eq!(
                 nested.lines[row].mapped.as_ref().unwrap().text,
-                nested.lines[row].line.to_string()
+                nested.lines[row].line.to_string().trim_start_matches("> ")
             );
         }
     }

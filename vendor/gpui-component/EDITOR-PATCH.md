@@ -287,12 +287,11 @@ Tests cover cache reuse/pruning, delayed results, nested/unfinished fences,
 Unicode/CRLF/tab mappings, literal presentation, and actual TestPlatform shaped
 runs across themes, wrapping, mode changes and undo/redo. No native UI is used.
 
-Inactive fenced code blocks in Live preview hide fence rows and share Reading
-mode's theme colors, monospace font/size, padding, and rounded code surfaces.
-The source-mapped editor reveals the entire block when the caret or selection
-intersects it, including navigation from Find; losing focus alone preserves
-this state. Empty blocks retain a clickable row at the content insertion point.
-Pointer expansion preserves the clicked source position within scroll limits.
+Fenced code blocks in Live preview retain Reading mode's theme colors, monospace
+font/size, padding and rounded surfaces while editing. Fence rows retain their
+full wrapped height; only their glyphs hide outside the selection's block.
+Find reveals fence text too, and losing focus alone preserves this state.
+Empty blocks retain clickable fence rows at their actual source positions.
 Block geometry uses the existing height index, lazy viewport measurement, and
 background syntax snapshots; stale classifications never hide source. Headless
 tests cover nested/unfinished/empty fences, Unicode/CRLF, keyboard and pointer
@@ -318,3 +317,9 @@ Live-preview bullets and tasks initiate list-item dragging after 4 px; checkbox 
 List drag follow-up coverage preserves CRLF without a final newline and normalizes lazy continuation indentation when nesting, so continuation text remains inside the moved item. Accepted text/IME edits clear a pending drag immediately.
 
 Line movement treats the terminal empty line after a final newline as a document boundary and keeps empty selections empty; LF/CRLF regression coverage lives in move_line_tests.
+
+Live-preview fenced blocks reserve the full wrapped geometry of both fence lines.
+Selection changes hide or reveal fence glyphs only; font, padding, source mapping,
+background and downstream positions stay fixed. Outer fence rows own rounded
+corners. `tests/code_highlighting.rs` covers caret/selection movement, themes,
+long info strings, empty/unfinished/nested blocks, Unicode, CRLF and history.

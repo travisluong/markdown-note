@@ -36,10 +36,10 @@ impl Block {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Decoration {
+    /// Suppress fence glyphs only; source mapping and geometry stay intact.
     pub hidden: bool,
     pub first: bool,
     pub last: bool,
-    pub empty: bool,
     pub padding: f32,
 }
 impl Decoration {
@@ -111,6 +111,26 @@ impl Snapshot {
                     && (code.value.is_empty()
                         || mappings.last().is_some_and(|m| m.line_start < last_start));
                 let closing = closed.then_some(last_start..range.end);
+                // Fence prefixes use the same quote/list inset as content, even
+                // when only the fence glyphs are hidden.
+                result.lines.insert(
+                    start,
+                    CodeLine {
+                        prefix: range.start - start,
+                        tokens: CodeTokens::default(),
+                    },
+                );
+                if closed {
+                    result.lines.insert(
+                        last_start,
+                        CodeLine {
+                            prefix: source[last_start..range.end]
+                                .find(marker as char)
+                                .unwrap_or(0),
+                            tokens: CodeTokens::default(),
+                        },
+                    );
+                }
                 let content_end = closing.as_ref().map_or(range.end, |r| r.start);
                 let empty = opening_end >= content_end;
                 let first = if empty { last_start } else { opening_end };
@@ -336,17 +356,12 @@ impl Index {
         padding: f32,
     ) -> Option<Decoration> {
         let block = self.block(start)?;
-        if block.active(selection) {
-            return None;
-        }
-        let empty = block.content.is_empty();
         Some(Decoration {
             hidden: (block.opening.contains(&start)
                 || block.closing.as_ref().is_some_and(|r| r.contains(&start)))
-                && !(empty && start == block.first),
-            first: start == block.first,
-            last: start == block.last,
-            empty,
+                && !block.active(selection),
+            first: start == block.opening.start,
+            last: start == block.closing.as_ref().map_or(block.last, |r| r.start),
             padding,
         })
     }
@@ -524,8 +539,18 @@ mod block_tests {
                     .unwrap()
                     .hidden
             );
-            assert!(index.decoration(block.first, &(0..0), 0.6).unwrap().first);
-            assert!(index.decoration(block.last, &(0..0), 0.6).unwrap().last);
+            assert!(
+                index
+                    .decoration(block.opening.start, &(0..0), 0.6)
+                    .unwrap()
+                    .first
+            );
+            assert!(
+                index
+                    .decoration(block.closing.as_ref().unwrap().start, &(0..0), 0.6)
+                    .unwrap()
+                    .last
+            );
             for caret in [
                 block.opening.start,
                 source.find("你好").unwrap(),
@@ -534,9 +559,13 @@ mod block_tests {
                 assert!(
                     index
                         .decoration(block.opening.start, &(caret..caret), 0.6)
-                        .is_none()
+                        .is_some_and(|code| !code.hidden)
                 );
-                assert!(index.decoration(block.last, &(caret..caret), 0.6).is_none());
+                assert!(
+                    index
+                        .decoration(block.last, &(caret..caret), 0.6)
+                        .is_some_and(|code| !code.hidden)
+                );
             }
             assert!(!block.active(&(0..block.source.start)));
             assert!(block.active(&(0..block.content.end)));
@@ -553,8 +582,8 @@ mod block_tests {
         ] {
             let index = Index::new(Arc::new(Snapshot::parse(source, &Cache::new())));
             let b = &index.snapshot.details[0];
-            let first = index.decoration(b.first, &(0..0), 0.6).unwrap();
-            assert!(!first.hidden, "{source}: {b:?}");
+            let first = index.decoration(b.opening.start, &(0..0), 0.6).unwrap();
+            assert!(first.padding > 0., "{source}: {b:?}");
             assert!(first.first);
             assert!(index.decoration(b.last, &(0..0), 0.6).unwrap().last);
         }
@@ -585,7 +614,11 @@ mod block_tests {
         assert_eq!(b.source.start, 9);
         assert_eq!(index.line(code + 2).unwrap().tokens, colors);
         assert!(index.decoration(9, &(0..0), 0.6).unwrap().hidden);
-        assert!(index.decoration(9, &(code + 2..code + 2), 0.6).is_none());
+        assert!(
+            index
+                .decoration(9, &(code + 2..code + 2), 0.6)
+                .is_some_and(|code| !code.hidden)
+        );
         // Editing the closing fence cannot retain its old hidden geometry.
         let closing = b.closing.unwrap();
         index.edit_context(closing.start..closing.start + 1, 0, closing, false);

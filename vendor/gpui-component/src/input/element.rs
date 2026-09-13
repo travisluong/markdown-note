@@ -249,10 +249,6 @@ impl TextElement {
         let mut line_corners = vec![];
 
         for line in lines.iter() {
-            if line.code_block.as_ref().is_some_and(|c| c.hidden) {
-                prev_lines_offset += line.len() + 1;
-                continue;
-            }
             if let Some(image) = line.image.as_ref().filter(|image| !image.reveal) {
                 if start_ix < prev_lines_offset + line.len() && end_ix > prev_lines_offset {
                     line_corners.push(Corners {
@@ -817,11 +813,6 @@ impl TextElement {
             line_layout.code_block = line_item.code_block.clone();
             line_layout.mapped = line_item.mapped.clone();
             line_layout.code_width = text_wrapper.code_width();
-            if line_item.code_block.as_ref().is_some_and(|c| c.hidden) {
-                lines.push(line_layout);
-                offset += line_item.len() + 1;
-                continue;
-            }
             line_layout.image = line_item.image.clone();
             line_layout.scale = line_item.scale;
             if let Some(p) = &line_item.presentation {
@@ -1708,33 +1699,31 @@ impl Element for TextElement {
         let mut code_y = invisible_top_padding;
         for line in prepaint.last_layout.lines.iter() {
             if let Some(code) = &line.code_block {
-                if !code.hidden {
-                    let radius = cx.theme().radius;
-                    let corners = Corners {
-                        top_left: if code.first { radius } else { px(0.) },
-                        top_right: if code.first { radius } else { px(0.) },
-                        bottom_left: if code.last { radius } else { px(0.) },
-                        bottom_right: if code.last { radius } else { px(0.) },
-                    };
-                    let gutter = (line.indent - window.rem_size() * 0.75).max(px(0.));
-                    window.paint_quad(gpui::quad(
-                        Bounds::new(
-                            point(
-                                origin.x + prepaint.last_layout.line_number_width + gutter,
-                                origin.y + code_y,
-                            ),
-                            size(
-                                (line.code_width - gutter).max(px(0.)),
-                                line.size(line_height).height,
-                            ),
+                let radius = cx.theme().radius;
+                let corners = Corners {
+                    top_left: if code.first { radius } else { px(0.) },
+                    top_right: if code.first { radius } else { px(0.) },
+                    bottom_left: if code.last { radius } else { px(0.) },
+                    bottom_right: if code.last { radius } else { px(0.) },
+                };
+                let gutter = (line.indent - window.rem_size() * 0.75).max(px(0.));
+                window.paint_quad(gpui::quad(
+                    Bounds::new(
+                        point(
+                            origin.x + prepaint.last_layout.line_number_width + gutter,
+                            origin.y + code_y,
                         ),
-                        corners,
-                        cx.theme().muted,
-                        px(0.),
-                        gpui::transparent_black(),
-                        gpui::BorderStyle::Solid,
-                    ));
-                }
+                        size(
+                            (line.code_width - gutter).max(px(0.)),
+                            line.size(line_height).height,
+                        ),
+                    ),
+                    corners,
+                    cx.theme().muted,
+                    px(0.),
+                    gpui::transparent_black(),
+                    gpui::BorderStyle::Solid,
+                ));
             }
             code_y += line.size(line_height).height;
         }

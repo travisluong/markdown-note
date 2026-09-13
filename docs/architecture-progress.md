@@ -559,3 +559,16 @@ Native visual/pointer checks and system Recycle Bin/Finder/Explorer behavior
 remain user-run under AGENTS.md. No desktop apps or native harnesses were launched.
 
 Final boundary regression: moving upward from EOF after a trailing LF/CRLF is a no-op, preserving an empty caret selection and the final-newline invariant. Focused line-movement and editor transaction tests pass.
+
+## Stable code-block presentation (2026-09-12)
+
+Live preview now reserves fence rows, including wrapped info strings, and hides
+only their glyphs outside the active block. Code font, padding, background and
+source mappings persist during selection changes. Nested fence prefixes use the
+same inset as their content; empty blocks retain real source positions.
+
+Headless verification: all 3 code-highlighting tests and all 75 editor module
+tests pass, including source/history, cursor and selection positions, themes,
+Unicode/CRLF, empty/unfinished/nested blocks and viewport work bounds. Tests use
+`--target-dir target/agent-validation` because the default output's mithril.exe
+is locked. No running application or desktop state was changed.

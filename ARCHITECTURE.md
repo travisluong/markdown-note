@@ -260,3 +260,9 @@ notebook root, explorer generation and relative path. File operations live in
 Rename uses the existing move owner. Session owns approved `EntryOperation`
 lifetimes, write barriers and deletion/installation outcomes. OS Trash is isolated
 behind the storage adapter and replaced with a fixture backend in UI tests.
+
+Live-preview fenced blocks reserve the full wrapped geometry of both fence lines.
+Selection changes hide or reveal fence glyphs only; font, padding, source mapping,
+background and downstream positions stay fixed. Outer fence rows own rounded
+corners. `tests/code_highlighting.rs` covers caret/selection movement, themes,
+long info strings, empty/unfinished/nested blocks, Unicode, CRLF and history.

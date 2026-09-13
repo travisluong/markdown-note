@@ -168,3 +168,9 @@ Inline code: input/inline_code.rs (new GFM ranges), preview_syntax.rs and text_w
 
 List dragging: new input/list_reorder.rs (GFM item boundaries and source transform), input/list_drag.rs (gesture state and transactions); state.rs/element.rs wire pointer events and feedback; preview_syntax.rs/text_wrapper.rs share revision-guarded analysis. Coverage: list_reorder tests and tests/editor_transactions.rs.
 
+
+Live-preview fenced blocks reserve the full wrapped geometry of both fence lines.
+Selection changes hide or reveal fence glyphs only; font, padding, source mapping,
+background and downstream positions stay fixed. Outer fence rows own rounded
+corners. `tests/code_highlighting.rs` covers caret/selection movement, themes,
+long info strings, empty/unfinished/nested blocks, Unicode, CRLF and history.
