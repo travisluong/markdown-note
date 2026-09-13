@@ -208,6 +208,8 @@ impl Notes {
 
     fn run_command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         match command {
+            Command::MoveLineUp => self.editor.move_lines(false, window, cx),
+            Command::MoveLineDown => self.editor.move_lines(true, window, cx),
             Command::InsertDate => {
                 if let Ok(date) = templates::current(self.date_format()) {
                     self.editor.replace_selection(&date, window, cx);

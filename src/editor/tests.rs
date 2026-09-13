@@ -106,6 +106,31 @@ fn transactions(cx: &mut TestAppContext, mode: ViewMode) {
 fn source_transactions_preserve_snapshots_events_and_undo(cx: &mut TestAppContext) {
     transactions(cx, ViewMode::Source);
 }
+
+#[gpui::test]
+fn line_moves_are_isolated_and_preserve_selection_in_both_modes(cx: &mut TestAppContext) {
+    let (host, cx) = fixture(cx, "a\ncafé\n茶");
+    let editor = cx.update(|_, cx| host.read(cx).editor.clone());
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        cx.update(|window, cx| {
+            editor.set_mode(mode, cx);
+            editor.focus(window, cx);
+            assert!(editor.select(3..7, window, cx));
+            editor.move_lines(true, window, cx);
+            assert_eq!(editor.text(cx).as_ref(), "a\n茶\ncafé");
+            assert_eq!(editor.selection(cx), 7..11);
+        });
+        cx.run_until_parked();
+        cx.dispatch_action(Undo);
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), "a\ncafé\n茶"));
+        cx.dispatch_action(Redo);
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), "a\n茶\ncafé"));
+        cx.dispatch_action(Undo);
+        cx.run_until_parked();
+    }
+}
 #[gpui::test]
 fn live_transactions_preserve_snapshots_events_and_undo(cx: &mut TestAppContext) {
     transactions(cx, ViewMode::LivePreview);

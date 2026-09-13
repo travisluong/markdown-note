@@ -159,3 +159,6 @@ reconciliation; do not manufacture behavioral patches for these files.
    verification from compilation alone.
 6. Update this inventory and the narrative, record the new baseline and
    reconciliation decisions, and commit each completed improvement separately.
+
+Line movement: input/live_preview.rs owns source-line swapping; input/state.rs applies the isolated edit and selection. Reconcile these contracts on vendor upgrades.
+

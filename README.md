@@ -410,3 +410,6 @@ Save/Discard/Cancel, notebook switching, menus, native pickers, clipboard,
 selection, scrolling and physical IME input. Reopen saved files and check invalid
 UTF-8 and locked/read-only files. These native interactions are distinct from
 the headless regression suite.
+
+Use Ctrl+Up / Ctrl+Down (Command on macOS) in Source or Live preview to move the current line or selected lines.
+

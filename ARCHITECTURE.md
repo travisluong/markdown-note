@@ -244,3 +244,6 @@ rendered benchmarks and platform UI validation to the user. Historical results
 in [benchmarks/README.md](benchmarks/README.md) are not current verification.
 Current test counts, platform execution and remaining limits belong in
 [implementation progress](docs/architecture-progress.md).
+
+Logical line movement is a semantic Editor operation. The vendored editor owns the source transaction and selection remapping; document-only shortcuts and palette capabilities exclude Reading and form inputs.
+

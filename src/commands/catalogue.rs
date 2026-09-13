@@ -4,6 +4,8 @@ use crate::capabilities::Capabilities;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
     InsertDate,
+    MoveLineUp,
+    MoveLineDown,
     EditLink,
     ToggleTheme,
     ChangeNotebook,
@@ -16,6 +18,8 @@ pub enum Command {
 impl Command {
     pub const ALL: &[Self] = &[
         Self::InsertDate,
+        Self::MoveLineUp,
+        Self::MoveLineDown,
         Self::EditLink,
         Self::ToggleTheme,
         Self::ChangeNotebook,
@@ -28,6 +32,8 @@ impl Command {
     pub fn label(self) -> &'static str {
         match self {
             Self::InsertDate => "Templates: Insert current date",
+            Self::MoveLineUp => "Text: Move line up",
+            Self::MoveLineDown => "Text: Move line down",
             Self::EditLink => "Text: Insert or edit link",
             Self::ToggleTheme => "Appearance: Toggle light/dark mode",
             Self::ChangeNotebook => "Notebook: Change notebook",
@@ -41,6 +47,8 @@ impl Command {
     pub fn description(self) -> &'static str {
         match self {
             Self::InsertDate => "Insert at the editor selection",
+            Self::MoveLineUp => "Move the current or selected lines up",
+            Self::MoveLineDown => "Move the current or selected lines down",
             Self::EditLink => "Insert a link or edit the selected link",
             Self::ToggleTheme => "Switch between your Light and Dark themes",
             Self::ChangeNotebook => "Choose a registered notebook",
@@ -61,7 +69,11 @@ impl Command {
                 Some("Open a notebook to search all Markdown files")
             }
             Self::NewNote if !context.can_create_note() => Some("Open a notebook to create a note"),
-            Self::InsertDate | Self::EditLink | Self::ReplaceFile
+            Self::InsertDate
+            | Self::EditLink
+            | Self::ReplaceFile
+            | Self::MoveLineUp
+            | Self::MoveLineDown
                 if !context.can_edit_document() =>
             {
                 Some("Open an editable document in Source or Live preview")

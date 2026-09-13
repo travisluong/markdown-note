@@ -509,3 +509,7 @@ proc-macro-error2 future-compatibility warning remains.
 ## Settings field layout (2026-09-12)
 Settings controls use explicit available widths and nonshrinking text fields. Below 560 px, navigation stacks above the form. Placeholders document delay, extensions and date syntax. Headless settings suite: 14 passed, including 800/480 px layout with invalid input. Native UI validation remains user-run.
 
+
+## Logical line movement (2026-09-12)
+Added document-only Ctrl+Up/Down (Command on macOS), palette commands and Help entries through Editor. Pure tests cover UTF-8, selected blocks, CRLF and EOF; TestPlatform covers Source/Live, undo and redo.
+

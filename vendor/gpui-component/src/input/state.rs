@@ -1617,6 +1617,21 @@ impl InputState {
     }
 
     /// Create or toggle tasks on intersected lines as one isolated edit.
+    pub fn move_lines(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled || !self.mode.is_multi_line() || self.ime_marked_range.is_some() { return; }
+        let Some(edit) = super::live_preview::move_lines(&self.text.to_string(), self.selected_range.into(), down) else { return; };
+        let reversed = self.selection_reversed;
+        let range = self.range_to_utf16(&edit.range);
+        self.replace_range_isolated(Some(range), &edit.text, window, cx);
+        self.selected_range = edit.selection.into();
+        self.selection_reversed = reversed;
+        self.selected_word_range = None;
+        self.update_preferred_column();
+        self.pause_blink_cursor(cx);
+        cx.notify();
+    }
+
+    /// Create or toggle tasks on intersected lines as one isolated edit.
     pub fn toggle_selected_tasks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.disabled || !self.mode.is_multi_line() {
             return;

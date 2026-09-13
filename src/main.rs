@@ -45,6 +45,8 @@ actions!(
         CommandPalette,
         SearchAllFiles,
         ToggleTasks,
+        MoveLineUp,
+        MoveLineDown,
         EditLink,
         Save,
         SourceMode,
@@ -378,6 +380,16 @@ impl Render for Notes {
             if self.mode != ViewMode::Reading {
                 div()
                     .key_context("DocumentEditor")
+                    .on_action(cx.listener(|this, _: &MoveLineUp, window, cx| {
+                        if this.can_edit_document() && this.editor.is_focused(window, cx) {
+                            this.editor.move_lines(false, window, cx);
+                        }
+                    }))
+                    .on_action(cx.listener(|this, _: &MoveLineDown, window, cx| {
+                        if this.can_edit_document() && this.editor.is_focused(window, cx) {
+                            this.editor.move_lines(true, window, cx);
+                        }
+                    }))
                     .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {
                         if this.can_edit_document()
                             && this.editor.focus_handle(cx).is_focused(window)

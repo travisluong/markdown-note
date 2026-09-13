@@ -140,6 +140,10 @@ impl Editor {
         self.input
             .update(cx, |input, cx| input.toggle_selected_tasks(window, cx));
     }
+    pub fn move_lines(&self, down: bool, window: &mut Window, cx: &mut App) {
+        self.input
+            .update(cx, |input, cx| input.move_lines(down, window, cx));
+    }
     pub fn toggle_task(
         &self,
         offset: usize,

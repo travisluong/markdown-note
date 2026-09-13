@@ -519,6 +519,99 @@ pub(super) struct TaskEdit {
     pub selection: Range<usize>,
 }
 
+/// Swap logical source lines, leaving line terminators attached to their slots.
+pub(super) fn move_lines(source: &str, selection: Range<usize>, down: bool) -> Option<TaskEdit> {
+    if selection.end > source.len()
+        || selection.start > selection.end
+        || !source.is_char_boundary(selection.start)
+        || !source.is_char_boundary(selection.end)
+    {
+        return None;
+    }
+    let lines: Vec<&str> = source.split_inclusive('\n').collect();
+    if lines.len() < 2 {
+        return None;
+    }
+    let mut starts = vec![0];
+    for line in &lines {
+        starts.push(starts.last().unwrap() + line.len());
+    }
+    let row = |offset: usize| {
+        starts
+            .partition_point(|start| *start <= offset)
+            .saturating_sub(1)
+            .min(lines.len() - 1)
+    };
+    let first = row(selection.start);
+    let last = row(if selection.is_empty() {
+        selection.end
+    } else {
+        selection.end - 1
+    });
+    if (!down && first == 0) || (down && last + 1 == lines.len()) {
+        return None;
+    }
+    let lo = if down { first } else { first - 1 };
+    let hi = if down { last + 1 } else { last };
+    let body = |line: &str| {
+        line.trim_end_matches('\n')
+            .strip_suffix('\r')
+            .unwrap_or_else(|| line.trim_end_matches('\n'))
+            .len()
+    };
+    let mut order: Vec<usize> = (lo..=hi).collect();
+    if down {
+        order.rotate_right(1);
+    } else {
+        order.rotate_left(1);
+    }
+    let mut text = String::new();
+    let mut new_starts = vec![0; lines.len()];
+    for (slot, original) in (lo..=hi).zip(order) {
+        new_starts[original] = starts[lo] + text.len();
+        text.push_str(&lines[original][..body(lines[original])]);
+        text.push_str(&lines[slot][body(lines[slot])..]);
+    }
+    let mapped_start =
+        new_starts[first] + (selection.start - starts[first]).min(body(lines[first]));
+    let end_column = selection.end - starts[last];
+    let mapped_end = (new_starts[last] + end_column).min(starts[lo] + text.len());
+    Some(TaskEdit {
+        range: starts[lo]..starts[hi + 1],
+        text,
+        selection: mapped_start..mapped_end,
+    })
+}
+
+#[cfg(test)]
+mod move_line_tests {
+    use super::*;
+    fn moved(source: &str, selection: Range<usize>, down: bool) -> (String, Range<usize>) {
+        let edit = move_lines(source, selection, down).unwrap();
+        let mut result = source.to_owned();
+        result.replace_range(edit.range, &edit.text);
+        (result, edit.selection)
+    }
+    #[test]
+    fn unicode_selection_and_final_newline() {
+        assert_eq!(
+            moved("a\ncafé\n茶", 3..7, true),
+            ("a\n茶\ncafé".into(), 7..11)
+        );
+        assert_eq!(
+            moved("a\nb\nc\nd\n", 2..6, false),
+            ("b\nc\na\nd\n".into(), 0..4)
+        );
+        assert_eq!(
+            moved("a\r\nb\r\nc", 3..4, true),
+            ("a\r\nc\r\nb".into(), 6..7)
+        );
+        assert!(move_lines("a\nb", 0..0, false).is_none());
+        assert!(move_lines("a\nb", 2..2, true).is_none());
+        assert!(move_lines("café\nx", 4..4, true).is_none());
+    }
+}
+
 /// List nesting uses source columns, excluding explicit blockquote prefixes.
 /// Markdown tabs advance to the next four-column stop.
 fn columns(text: &str) -> usize {

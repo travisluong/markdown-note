@@ -22,6 +22,20 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
         }};
     }
     vec![
+        shortcut!(
+            "ctrl-up",
+            MoveLineUp,
+            "DocumentEditor",
+            "Editor",
+            "Move line or selected lines up"
+        ),
+        shortcut!(
+            "ctrl-down",
+            MoveLineDown,
+            "DocumentEditor",
+            "Editor",
+            "Move line or selected lines down"
+        ),
         shortcut!("ctrl-o", GoTo, "Notes", "Application", "Go to a note"),
         shortcut!(
             "ctrl-p",
