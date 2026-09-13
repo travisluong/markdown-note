@@ -115,6 +115,27 @@ fn intent(panel: &Entity<SettingsPanel>, intent: SettingsIntent, cx: &mut Visual
 }
 
 struct Events(Vec<SettingsIntent>);
+
+#[gpui::test]
+fn settings_content_keeps_usable_width_and_stacks_on_small_windows(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, true, false);
+    let panel = panel(&notes, cx);
+    for width in [800., 480.] {
+        cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(800.)));
+        input(&panel, Field::Delay, "invalid", cx);
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        let content = cx.debug_bounds("settings-content").unwrap();
+        let navigation = cx.debug_bounds("settings-navigation").unwrap();
+        assert!(content.size.width >= gpui::px(240.), "{content:?}");
+        assert!(content.right() <= gpui::px(width));
+        if width < 560. {
+            assert!(content.top() >= navigation.bottom());
+        } else {
+            assert!(content.left() >= navigation.right());
+        }
+    }
+}
 fn watch(
     panel: &Entity<SettingsPanel>,
     cx: &mut VisualTestContext,

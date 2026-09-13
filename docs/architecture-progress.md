@@ -505,3 +505,7 @@ including all 111 application tests), `cargo fmt --check`, and
 executables inside the sandbox; the headless checks succeeded with elevated
 tool permissions. No application or installer was launched. The existing
 proc-macro-error2 future-compatibility warning remains.
+
+## Settings field layout (2026-09-12)
+Settings controls use explicit available widths and nonshrinking text fields. Below 560 px, navigation stacks above the form. Placeholders document delay, extensions and date syntax. Headless settings suite: 14 passed, including 800/480 px layout with invalid input. Native UI validation remains user-run.
+

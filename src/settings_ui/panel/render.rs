@@ -14,13 +14,14 @@ use mithril::{notebook, templates};
 impl Render for SettingsPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let appearance = &self.values.appearance;
-        let mut body = div().flex().flex_col().gap_3().child(
+        let narrow = window.viewport_size().width < px(560.);
+        let mut body = div().w_full().min_w_0().flex().flex_col().gap_3().child(
             div()
                 .text_sm()
                 .text_color(cx.theme().muted_foreground)
                 .child(self.values.subtitle.clone()),
         );
-        let mut font_body = div().flex().flex_col().gap_3();
+        let mut font_body = div().w_full().min_w_0().flex().flex_col().gap_3();
         for (picker, label) in
             self.fonts
                 .iter()
@@ -89,14 +90,14 @@ impl Render for SettingsPanel {
             .child(Switch::new("autosave-enabled").label("Autosave").checked(self.values.autosave.enabled)
                 .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::AutosaveEnabled(*enabled), cx))))
             .child("Autosave delay (milliseconds)")
-            .child(Input::new(&self.delay))
+            .child(Input::new(&self.delay).w_full().flex_shrink_0())
             .when_some(self.delay_error.clone(), |view, message| view.child(div().text_sm().text_color(cx.theme().danger).child(message)))
             .child("Sidebar")
             .child(Switch::new("show-file-extensions").label("Show file extensions").checked(self.values.show_extensions)
                 .disabled(self.values.busy)
                 .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::ShowExtensions(*enabled), cx))))
             .child("Always hide these extensions")
-            .child(Input::new(&self.hidden_extensions).disabled(!self.values.show_extensions || self.values.busy))
+            .child(Input::new(&self.hidden_extensions).w_full().flex_shrink_0().disabled(!self.values.show_extensions || self.values.busy))
             .child(div().text_sm().text_color(cx.theme().muted_foreground)
                 .child("Hide these extensions even when Show file extensions is on. Example: md, txt."))
             .when_some(self.hidden_extensions_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
@@ -105,11 +106,17 @@ impl Render for SettingsPanel {
                 .on_click(cx.listener(|this, _, _, cx| this.emit_intent(SettingsIntent::Close, cx))));
         let templates_body = div().w_full().min_w_0().flex().flex_col().gap_3()
             .child("Current date format")
-            .child(Input::new(&self.date))
+            .child(Input::new(&self.date).w_full().flex_shrink_0())
             .when_some(self.date_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
             .child(format!("Example: {}", templates::current(&self.values.date_format).unwrap_or_default()))
             .child(div().text_sm().child("Moment-style tokens, local time, English names. Use [brackets] for literal text. See README for supported tokens."));
-        let mut theme_body = div().flex().flex_col().gap_3().child("Theme");
+        let mut theme_body = div()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child("Theme");
         let mut selector = div().flex().flex_wrap().gap_2();
         for (index, choice, label) in [
             (0usize, notebook::ThemeChoice::Light, "Light"),
@@ -144,7 +151,16 @@ impl Render for SettingsPanel {
                     this.emit_intent(SettingsIntent::ResetPalettes, cx)
                 })),
         );
-        let mut sidebar = div().w(px(104.)).flex_shrink_0().flex().flex_col().gap_2();
+        let mut sidebar = div()
+            .debug_selector(|| "settings-navigation".into())
+            .w(px(104.))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .gap_2();
+        if narrow {
+            sidebar = sidebar.w_full().flex_row().flex_wrap();
+        }
         for (id, section, label) in [
             ("settings-general", Section::General, "General"),
             ("settings-templates", Section::Templates, "Templates"),
@@ -168,9 +184,17 @@ impl Render for SettingsPanel {
             .w_full()
             .min_w_0()
             .flex()
+            .when(narrow, |view| view.flex_col())
             .gap_3()
             .child(sidebar)
-            .child(div().flex_1().min_w_0().child(content))
+            .child(
+                div()
+                    .debug_selector(|| "settings-content".into())
+                    .w_full()
+                    .min_w_0()
+                    .when(!narrow, |view| view.flex_1().min_w(px(240.)))
+                    .child(content),
+            )
     }
 }
 

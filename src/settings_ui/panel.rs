@@ -97,12 +97,19 @@ impl SettingsPanel {
         cx: &mut Context<Self>,
     ) -> Self {
         let hidden_extensions = cx.new(|cx| {
-            InputState::new(window, cx).default_value(values.hidden_extensions.join(", "))
+            InputState::new(window, cx)
+                .placeholder("md, txt")
+                .default_value(values.hidden_extensions.join(", "))
         });
-        let date =
-            cx.new(|cx| InputState::new(window, cx).default_value(values.date_format.clone()));
+        let date = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("YYYY-MM-DD")
+                .default_value(values.date_format.clone())
+        });
         let delay = cx.new(|cx| {
-            InputState::new(window, cx).default_value(values.autosave.delay_ms.to_string())
+            InputState::new(window, cx)
+                .placeholder("1000")
+                .default_value(values.autosave.delay_ms.to_string())
         });
         let mut subscriptions = vec![
             cx.subscribe(&hidden_extensions, |this, input, event, cx| {
