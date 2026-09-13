@@ -2813,6 +2813,147 @@ mod sustained_edit_tests {
     }
 
     #[test]
+    fn typing_and_list_moves_keep_tables_rendered_during_delayed_analysis() {
+        for newline in ["\n", "\r\n"] {
+            let source = "- [ ] café\n- [x] second\n\n| name | value |\n| --- | ---: |\n| 你好 | **one** |\n\n> - [ ] nested\n\n| other | value |\n| :--- | --- |\n| two | three |\n\n- [x] after\n".replace('\n', newline);
+            let mut wrapper = make(&source);
+            wrapper.wrap_width = Some(px(150.));
+            let count = wrapper.lines.len();
+            measure(&mut wrapper, 0..count);
+            for scroll in wrapper.table_scroll.values() {
+                scroll.set(px(30.));
+            }
+            let originals = wrapper
+                .tables
+                .tables
+                .iter()
+                .map(|table| {
+                    (
+                        wrapper.text.slice(table.source.clone()).to_string(),
+                        wrapper.table_widths[&table.cache_key()].clone(),
+                        wrapper.table_scroll[&table.cache_key()].clone(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let assert_rendered = |wrapper: &mut TextWrapper| {
+                let count = wrapper.lines.len();
+                measure(wrapper, 0..count);
+                assert_eq!(wrapper.tables.tables.len(), 2);
+                let mut fresh = super::super::table::TableIndex::default();
+                fresh.rebuild(&wrapper.text);
+                for ((table, expected), (source, widths, scroll)) in wrapper
+                    .tables
+                    .tables
+                    .iter()
+                    .zip(&fresh.tables)
+                    .zip(&originals)
+                {
+                    assert_eq!(
+                        wrapper.text.slice(table.source.clone()).to_string(),
+                        *source
+                    );
+                    assert_eq!(table.source, expected.source);
+                    assert_eq!(table.separator, expected.separator);
+                    let separator_row = wrapper.text.offset_to_point(table.separator.start).row;
+                    assert_eq!(
+                        wrapper.lines[separator_row].table.as_ref().unwrap().height,
+                        0
+                    );
+                    for row in 0..table.rows.len() {
+                        assert_eq!(table.row_range(row), expected.row_range(row));
+                        for col in 0..table.alignments.len() {
+                            assert_eq!(table.cell_range(row, col), expected.cell_range(row, col));
+                        }
+                        let at = wrapper.text.offset_to_point(table.row_range(row).start).row;
+                        let layout = wrapper.lines[at]
+                            .table
+                            .as_ref()
+                            .expect("no table source flash");
+                        assert_eq!(layout.widths, *widths);
+                        assert!(std::rc::Rc::ptr_eq(&layout.scroll, scroll));
+                        assert_eq!(layout.scroll.get(), px(30.));
+                    }
+                }
+            };
+            wrapper.analysis.request(&wrapper.text.clone());
+            let delayed = wrapper.analysis.start().unwrap();
+            // Task labels, punctuation, blank-line typing adjacent to a table,
+            // Enter, and both keyboard directions while no worker completes.
+            for insertion in ["a", "*", "[link](note.md)", newline] {
+                let at = wrapper.text.to_string().find("café").unwrap();
+                edit(&mut wrapper, at..at, insertion);
+                assert_rendered(&mut wrapper);
+                edit(&mut wrapper, at..at + insertion.len(), "");
+                assert_rendered(&mut wrapper);
+            }
+            let at = wrapper.text.to_string().find("| name").unwrap() - newline.len();
+            let paragraph = format!("paragraph{newline}");
+            edit(&mut wrapper, at..at, &paragraph);
+            assert_rendered(&mut wrapper);
+            edit(&mut wrapper, at..at + paragraph.len(), "");
+            for down in [true, false] {
+                let source = wrapper.text.to_string();
+                let at = source.find("café").unwrap();
+                let moved = super::super::live_preview::move_lines(&source, at..at, down).unwrap();
+                edit(&mut wrapper, moved.range, &moved.text);
+                assert_rendered(&mut wrapper);
+            }
+            // A drag can replace a span containing entire unchanged tables.
+            for after in [true, false] {
+                let source = wrapper.text.to_string();
+                let root = markdown::to_mdast(&source, &markdown::ParseOptions::gfm()).unwrap();
+                let items = super::super::list_reorder::from_ast(&source, &root);
+                let item = items
+                    .iter()
+                    .find(|i| source[i.source.clone()].contains("café"))
+                    .unwrap();
+                let target = if after {
+                    items.last().unwrap()
+                } else {
+                    &items[0]
+                };
+                let (moved, _) = super::super::list_reorder::reorder_anchored(
+                    &source,
+                    item,
+                    target,
+                    after,
+                    0..0,
+                    0,
+                )
+                .unwrap();
+                edit(&mut wrapper, moved.range, &moved.text);
+                assert_rendered(&mut wrapper);
+            }
+            assert!(!wrapper.apply_analysis(delayed.parse()));
+            assert_rendered(&mut wrapper);
+            let latest = wrapper.analysis.start().unwrap();
+            assert!(wrapper.apply_analysis(latest.parse()));
+            assert_rendered(&mut wrapper);
+        }
+    }
+
+    #[test]
+    fn retained_tables_yield_to_exact_structural_analysis() {
+        let source = "before\n\n| a | b |\n| --- | --- |\n| c | d |\n";
+        let mut wrapper = make(source);
+        wrapper.analysis.request(&wrapper.text.clone());
+        let delayed = wrapper.analysis.start().unwrap();
+        edit(&mut wrapper, 0..0, "```\n");
+        assert_eq!(
+            wrapper.tables.tables.len(),
+            1,
+            "retain while context is pending"
+        );
+        assert!(!wrapper.apply_analysis(delayed.parse()));
+        let latest = wrapper.analysis.start().unwrap();
+        assert!(wrapper.apply_analysis(latest.parse()));
+        let rows = wrapper.lines.len();
+        measure(&mut wrapper, 0..rows);
+        assert!(wrapper.tables.tables.is_empty());
+        assert!((0..rows).all(|row| wrapper.lines[row].table.is_none()));
+    }
+
+    #[test]
     fn large_table_layout_visits_only_requested_rows_and_keeps_shifted_caches() {
         let source = format!(
             "paragraph\n\n\n| name | value |\n| --- | --- |\n{}",

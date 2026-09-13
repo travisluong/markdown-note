@@ -682,3 +682,25 @@ Unicode, CRLF, digit widths and literal fences. The pre-existing Cargo.lock edit
 is excluded. Headless tests use target/headless with shared dependency caches
 because Windows denies replacement of target/debug/mithril.exe; no app was
 launched, stopped or controlled.
+
+## Live table continuity during edits (2026-09-13)
+
+TableIndex retains unchanged source projections during pending context analysis.
+Unrelated edits rebase offsets; list replacements crossing tables locate unchanged
+rope slices within the edited rows. Edited structures retire individually, and
+exact background results remain authoritative for Markdown context. No document
+GFM parse or source copy was introduced on the input thread.
+
+New wrapper regressions hold analysis pending across typing, punctuation, Enter,
+keyboard moves and checkbox drags across two tables in both directions. They
+verify rendered rows, hidden separators, source/cell ranges, column widths and
+horizontal scroll under LF/CRLF. Delayed results cannot restore stale syntax;
+an exact parse removes tables genuinely converted into fenced code.
+
+The full locked offline editor-diagnostics suite passed, including existing
+large-table work bounds and InputState drag/history transactions. Locked offline
+cargo check, cargo fmt --check, and strict all-targets diagnostics Clippy passed.
+Commands used --target-dir target/headless to avoid the locked normal executable.
+The existing proc-macro-error2 future-compatibility notice remains. No desktop
+interaction or native application testing was performed. Cargo.lock was left
+unchanged by this task and excluded from both commits.

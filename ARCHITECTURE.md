@@ -167,6 +167,11 @@ mixed request converts its rope once and borrows one worker-local GFM tree for
 link/table/code/image visitors. Plain-text fast paths and independent incremental
 parsers remain. Safe offset edits can rebase results; context changes invalidate
 them, and fenced-code tokens have stricter revision checks.
+Tables retain byte-identical, source-mapped projections during pending context
+analysis, including unchanged tables inside a list-move replacement. TableIndex
+rebases their ranges without GFM work on the input thread; only the exact worker
+snapshot can validate changed Markdown context. Edited table structures retire
+individually, preserving unrelated tables and their width/scroll caches.
 
 Reading also keeps one running parse and one latest source/type request,
 including initial layout. Generations reject stale successes and errors.

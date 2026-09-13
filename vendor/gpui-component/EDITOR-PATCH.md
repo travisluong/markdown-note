@@ -23,7 +23,11 @@ edits by the shared syntax classifier, including undo and redo. Unchanged tables
 retain their rendered rows, dimensions, and horizontal scroll while background
 analysis is pending and after it completes. Headless regression tests cover
 repeated toggles, delayed analysis, nested tasks, Unicode, and CRLF; structural
-Markdown edits still invalidate syntax conservatively.
+Markdown edits still invalidate background-result reuse conservatively. Table
+projections whose source bytes are unchanged survive pending context analysis,
+including tables crossed by list drags. Exact parses apply genuine structural
+changes; changed tables retire individually. No document GFM parse or source copy
+is added to the input thread.
 
 Reading and Live-preview task checkbox squares explicitly use the standard arrow
 cursor. Live-preview cursor hitboxes share the checkbox click geometry.

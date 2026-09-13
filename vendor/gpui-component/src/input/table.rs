@@ -528,6 +528,48 @@ impl TableIndex {
         }
         self.tables = valid;
     }
+
+    /// Retain byte-identical table projections until the exact background parse
+    /// validates their Markdown context. This does not make a stale parse safe
+    /// to install. Intersecting edits retire a table unless its complete source
+    /// can be located in the replacement (for example, a list drag across it).
+    fn retain_preview(&mut self, old: &Rope, text: &Rope, range: &Range<usize>, inserted: usize) {
+        let delta = inserted as isize - range.len() as isize;
+        let mut retained = Vec::with_capacity(self.tables.len());
+        let first_row = text.offset_to_point(range.start).row;
+        let last_row = text.offset_to_point(range.start + inserted).row;
+        let mut next_start = 0;
+        for mut table in std::mem::take(&mut self.tables) {
+            let start = if table.source.end < range.start {
+                Some(table.source.start)
+            } else if table.source.start >= range.end {
+                Some(table.source.start.saturating_add_signed(delta))
+            } else {
+                // Compare rope slices without copying or parsing the document.
+                // Search only rows in the replacement, preserving table order.
+                let column = table.source.start
+                    - old.line_start_offset(old.offset_to_point(table.source.start).row);
+                (first_row..=last_row).find_map(|row| {
+                    let at = text.line_start_offset(row) + column;
+                    let end = at + table.source.len();
+                    (at >= next_start
+                        && end <= text.len()
+                        && text.is_char_boundary(at)
+                        && text.is_char_boundary(end)
+                        && text.slice(at..end) == old.slice(table.source.clone()))
+                    .then_some(at)
+                })
+            };
+            if let Some(start) = start {
+                table.shift_preview(start as isize - table.source.start as isize);
+                next_start = table.source.end;
+                retained.push(table);
+            } else {
+                self.retired.push(table);
+            }
+        }
+        self.tables = retained;
+    }
     /// Update trusted editing metadata without invoking the document parser.
     pub fn update_preview(
         &mut self,
@@ -635,7 +677,7 @@ impl TableIndex {
         if super::preview_syntax::context_independent(old, range, inserted) {
             self.rebase_preview(range, inserted.len());
         } else {
-            self.retired.append(&mut self.tables);
+            self.retain_preview(old, text, range, inserted.len());
         }
     }
     pub fn at(&self, offset: usize) -> Option<(&Table, usize, usize)> {
