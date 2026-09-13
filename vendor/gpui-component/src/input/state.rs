@@ -1602,7 +1602,7 @@ impl InputState {
         true
     }
 
-    /// Create or toggle tasks on intersected lines as one isolated edit.
+    /// Move intersected source lines as one isolated edit.
     pub fn move_lines(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.disabled || !self.mode.is_multi_line() || self.ime_marked_range.is_some() { return; }
         let Some(edit) = super::live_preview::move_lines(&self.text.to_string(), self.selected_range.into(), down) else { return; };

@@ -317,3 +317,4 @@ Live-preview bullets and tasks initiate list-item dragging after 4 px; checkbox 
 
 List drag follow-up coverage preserves CRLF without a final newline and normalizes lazy continuation indentation when nesting, so continuation text remains inside the moved item. Accepted text/IME edits clear a pending drag immediately.
 
+Line movement treats the terminal empty line after a final newline as a document boundary and keeps empty selections empty; LF/CRLF regression coverage lives in move_line_tests.

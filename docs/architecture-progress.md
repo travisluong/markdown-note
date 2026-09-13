@@ -557,3 +557,5 @@ Verification on Windows, without desktop interaction:
 
 Native visual/pointer checks and system Recycle Bin/Finder/Explorer behavior
 remain user-run under AGENTS.md. No desktop apps or native harnesses were launched.
+
+Final boundary regression: moving upward from EOF after a trailing LF/CRLF is a no-op, preserving an empty caret selection and the final-newline invariant. Focused line-movement and editor transaction tests pass.

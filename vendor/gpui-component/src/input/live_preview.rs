@@ -550,6 +550,7 @@ pub(super) struct TaskEdit {
 pub(super) fn move_lines(source: &str, selection: Range<usize>, down: bool) -> Option<TaskEdit> {
     if selection.end > source.len()
         || selection.start > selection.end
+        || (source.ends_with('\n') && selection.start == source.len())
         || !source.is_char_boundary(selection.start)
         || !source.is_char_boundary(selection.end)
     {
@@ -602,7 +603,11 @@ pub(super) fn move_lines(source: &str, selection: Range<usize>, down: bool) -> O
     let mapped_start =
         new_starts[first] + (selection.start - starts[first]).min(body(lines[first]));
     let end_column = selection.end - starts[last];
-    let mapped_end = (new_starts[last] + end_column).min(starts[lo] + text.len());
+    let mapped_end = if selection.is_empty() {
+        mapped_start
+    } else {
+        (new_starts[last] + end_column).min(starts[lo] + text.len())
+    };
     Some(TaskEdit {
         range: starts[lo]..starts[hi + 1],
         text,
@@ -633,6 +638,9 @@ mod move_line_tests {
             moved("a\r\nb\r\nc", 3..4, true),
             ("a\r\nc\r\nb".into(), 6..7)
         );
+        assert!(move_lines("a\nb\n", 4..4, false).is_none());
+        assert!(move_lines("a\r\nb\r\n", 6..6, false).is_none());
+        assert!(move_lines("a\nb\n", 4..4, true).is_none());
         assert!(move_lines("a\nb", 0..0, false).is_none());
         assert!(move_lines("a\nb", 2..2, true).is_none());
         assert!(move_lines("café\nx", 4..4, true).is_none());
