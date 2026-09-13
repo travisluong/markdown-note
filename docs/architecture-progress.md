@@ -704,3 +704,12 @@ Commands used --target-dir target/headless to avoid the locked normal executable
 The existing proc-macro-error2 future-compatibility notice remains. No desktop
 interaction or native application testing was performed. Cargo.lock was left
 unchanged by this task and excluded from both commits.
+
+### Link rendering during typing (2026-09-13)
+
+Unchanged links keep their mapped presentation during pending context analysis.
+Queries spanning edits retain unaffected links, and long bursts compact offsets
+instead of clearing the index. Exact analysis applies changed Markdown context.
+Validation: `cargo test --locked --offline --test editor link -- --nocapture`
+passed all 13 matching headless tests, including new delayed-analysis and burst
+regressions. No native application or desktop interaction was used.

@@ -353,3 +353,9 @@ List drops preserve the viewport across selection remapping and background layou
 Numeric Enter renumbers siblings in the insertion undo step. input/list_edit.rs owns literal-aware container scanning, replacement mapping and continuation indentation. Tests cover non-1 starts, nesting, quotes, code, UTF-8, CRLF, caret mapping and Source/Live undo/redo.
 
 Numbered list drag support extends the shared GFM item index and numeric-only parse detection. Numeric drops preserve each affected list's original start, adopt the destination delimiter, move descendants and remap selections through renumbering. Shared numeric edits adjust continuation columns at digit-width boundaries and exclude fenced literals. Marker hover uses rendered numeric widths; numbered tasks accept either number or checkbox. Regression coverage includes Source/Live Enter history, cross-list/nested drops, CRLF/UTF-8, task state, invalid destinations, stationary viewport anchoring and edge-scroll cancellation.
+
+Unchanged Live-preview links retain their source-mapped projection during pending
+context analysis. Range queries can cross edits; only overlapping links retire.
+Long edit bursts compact the offset log instead of clearing the index. Regression
+tests in tests/editor.rs cover same-line edits, Unicode, CRLF, delayed/stale
+analysis, and exact parsing of changed fence context.

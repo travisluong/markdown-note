@@ -454,14 +454,9 @@ impl TextWrapper {
         }
         self.analysis.edit(range.clone(), inserted.len(), safe);
         self.analysis.request(changed);
-        if safe {
-            self.links.edit(range.clone(), inserted.len());
-        } else {
-            if self.links.has_items() {
-                self.retired_links.push(std::mem::take(&mut self.links));
-            }
-            self.syntax_revision += 1;
-        }
+        // Keep byte-unchanged links projected until exact context analysis arrives.
+        // The index retires overlapping links and translates the remaining ranges.
+        self.links.edit(range.clone(), inserted.len());
         if !self.trusted_table_edit || !self.tables.replace_generated(range, inserted) {
             self.tables
                 .update_preview(&self.text, changed, range, inserted);
@@ -3011,6 +3006,48 @@ mod sustained_edit_tests {
         assert!(wrapper.copied_bytes - copied < 20_000);
         settle(&mut wrapper);
         assert_eq!(wrapper.links.in_range(0..wrapper.text.len()).len(), 10_000);
+    }
+
+    #[test]
+    fn unchanged_links_survive_pending_context_analysis() {
+        for newline in ["\n", "\r\n"] {
+            let source = "prefix [café](one.md) middle [你好](two.md) suffix\n\nother\n"
+                .replace('\n', newline);
+            let mut wrapper = make(&source);
+            wrapper.reveal_row = usize::MAX;
+            wrapper.analysis.request(&wrapper.text.clone());
+            let delayed = wrapper.analysis.start().unwrap();
+            for insertion in ["x", "*", "[", newline] {
+                for at in [
+                    source.find("other").unwrap(),
+                    source.find(" middle").unwrap(),
+                    0,
+                ] {
+                    edit(&mut wrapper, at..at, insertion);
+                    let rows = wrapper.lines.len();
+                    measure(&mut wrapper, 0..rows);
+                    assert_eq!(wrapper.links.in_range(0..wrapper.text.len()).len(), 2);
+                    for row in 0..rows {
+                        if let Some(mapped) = &wrapper.lines[row].mapped {
+                            assert!(!mapped.text.contains("one.md"));
+                            assert!(!mapped.text.contains("two.md"));
+                        }
+                    }
+                    edit(&mut wrapper, at..at + insertion.len(), "");
+                }
+            }
+            assert!(!wrapper.apply_analysis(delayed.parse()));
+            assert_eq!(wrapper.links.in_range(0..wrapper.text.len()).len(), 2);
+            settle(&mut wrapper);
+            assert_eq!(
+                wrapper.links.in_range(0..wrapper.text.len()),
+                super::super::markdown_links::parse(&source)
+            );
+            edit(&mut wrapper, 0..0, "```\n");
+            assert_eq!(wrapper.links.in_range(0..wrapper.text.len()).len(), 2);
+            settle(&mut wrapper);
+            assert!(wrapper.links.in_range(0..wrapper.text.len()).is_empty());
+        }
     }
 
     #[test]

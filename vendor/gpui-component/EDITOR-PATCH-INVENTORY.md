@@ -197,3 +197,8 @@ Drag viewport: input/list_drag.rs, list_reorder.rs, state.rs and element.rs. Cov
 Numeric Enter: new input/list_edit.rs; input/state.rs and input/mod.rs integration. Coverage: list_edit unit tests through tests/editor.rs and editor_transactions list_task_and_selection_transactions.
 
 Numbered dragging: input/list_reorder.rs metadata and source moves; input/list_edit.rs shared numbering/offset mapping; input/preview_syntax.rs numeric-only detection; input/list_drag.rs marker geometry and transactions. Coverage: list_reorder/list_edit tests in tests/editor.rs and numbered/scrolled/edge-scroll diagnostics in tests/editor_transactions.rs.
+
+Link retention: preview_syntax.rs translates queries crossing edits and compacts
+offset logs without losing unchanged links; text_wrapper.rs retains projections
+until exact context analysis. Coverage: editor link_queries and
+unchanged_links_survive_pending_context_analysis tests.

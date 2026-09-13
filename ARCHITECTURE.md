@@ -166,7 +166,11 @@ Live analysis keeps one running job and one latest pending snapshot. A queued
 mixed request converts its rope once and borrows one worker-local GFM tree for
 link/table/code/image visitors. Plain-text fast paths and independent incremental
 parsers remain. Safe offset edits can rebase results; context changes invalidate
-them, and fenced-code tokens have stricter revision checks.
+them, and fenced-code tokens have stricter revision checks. Unchanged links keep
+their mapped presentation during pending context analysis; overlapping edits retire
+only affected links. Link queries translate across edits and compact their bounded
+offset log after 64 edits without copying or parsing document source. Exact
+analysis remains authoritative for changed Markdown context.
 Tables retain byte-identical, source-mapped projections during pending context
 analysis, including unchanged tables inside a list-move replacement. TableIndex
 rebases their ranges without GFM work on the input thread; only the exact worker

@@ -200,9 +200,6 @@ pub(super) struct Links {
     edits: Vec<Delta>,
 }
 impl Links {
-    pub fn has_items(&self) -> bool {
-        !self.items.is_empty()
-    }
     #[cfg(test)]
     pub fn new(items: Vec<MarkdownLink>) -> Self {
         Self {
@@ -217,9 +214,10 @@ impl Links {
         }
     }
     pub fn edit(&mut self, range: Range<usize>, inserted: usize) {
-        // Bound query work during arbitrarily long input bursts.
+        // Bound query work without dropping rendered links during long input bursts.
+        // Compact offsets only; this never copies or parses document source.
         if self.edits.len() == 64 {
-            *self = Self::default();
+            *self = Self::with_edits(self.in_range(0..usize::MAX), Vec::new());
         }
         if !self.items.is_empty() {
             self.edits.push(Delta { range, inserted });
@@ -232,12 +230,19 @@ impl Links {
             if range.end <= edit.range.start {
                 continue;
             }
-            if range.start >= end {
-                range = range.start.saturating_add_signed(-delta)
-                    ..range.end.saturating_add_signed(-delta);
+            // A viewport/line query may cross an edit even when its links do not.
+            // Widen the inverse range across replaced bytes, then reject only
+            // individual links that overlap the edit below.
+            range.start = if range.start >= end {
+                range.start.saturating_add_signed(-delta)
             } else {
-                return Vec::new();
-            }
+                range.start.min(edit.range.start)
+            };
+            range.end = if range.end >= end {
+                range.end.saturating_add_signed(-delta)
+            } else {
+                edit.range.end
+            };
         }
         let start = self
             .items
@@ -269,6 +274,30 @@ impl Links {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn link_queries_cross_edits_and_survive_long_bursts() {
+        let mut source = "prefix [café](one.md) middle [你好](two.md) suffix".to_string();
+        let mut links = Links::new(super::super::markdown_links::parse(&source));
+        for i in 0..150 {
+            let at = if i % 2 == 0 {
+                0
+            } else {
+                source.find(" middle").unwrap()
+            };
+            source.insert(at, 'x');
+            links.edit(at..at, 1);
+            assert_eq!(
+                links.in_range(0..source.len()),
+                super::super::markdown_links::parse(&source)
+            );
+        }
+        let at = source.find("café").unwrap();
+        source.replace_range(at..at + "café".len(), "changed");
+        links.edit(at..at + "café".len(), "changed".len());
+        let remaining = links.in_range(0..source.len());
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(&source[remaining[0].label.clone()], "你好");
+    }
     #[test]
     fn queue_coalesces_without_cancelling_running_work() {
         let mut queue = Queue::default();
