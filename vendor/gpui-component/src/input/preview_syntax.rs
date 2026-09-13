@@ -23,6 +23,7 @@ pub(super) struct Request {
     pub text: Rope,
 }
 pub(super) struct Parsed {
+    pub list_items: Arc<Vec<super::list_reorder::Item>>,
     pub inline_code: Arc<Vec<super::inline_code::CodeSpan>>,
     pub code: Arc<super::fenced_code::Snapshot>,
     pub images: std::collections::BTreeMap<usize, String>,
@@ -54,6 +55,7 @@ impl Request {
             || code_needed
             || images_needed
             || source.contains('`')
+            || source.lines().any(|line| line.contains(['-', '*', '+']))
         {
             work.gfm_calls += 1;
             work.gfm_bytes += source.len();
@@ -81,6 +83,11 @@ impl Request {
         // The tree stays on this worker and is dropped before returning derived indexes.
         (
             Parsed {
+                list_items: Arc::new(
+                    root.as_ref()
+                        .map(|root| super::list_reorder::from_ast(&source, root))
+                        .unwrap_or_default(),
+                ),
                 inline_code: Arc::new(
                     root.as_ref()
                         .map(|root| super::inline_code::from_ast(&source, root))

@@ -42,6 +42,14 @@ impl TextElement {
     fn paint_mouse_listeners(&mut self, window: &mut Window, _: &mut App) {
         window.on_mouse_event({
             let state = self.state.clone();
+            move |event: &gpui::MouseUpEvent, phase, window, cx| {
+                if phase == gpui::DispatchPhase::Bubble {
+                    state.update(cx, |state, cx| { state.finish_list_press(event, window, cx); });
+                }
+            }
+        });
+        window.on_mouse_event({
+            let state = self.state.clone();
 
             move |event: &MouseMoveEvent, _, window, cx| {
                 if event.pressed_button == Some(MouseButton::Left) {
@@ -1886,6 +1894,21 @@ impl Element for TextElement {
             window.set_cursor_style(gpui::CursorStyle::Arrow, hitbox);
         }
 
+        if let Some(drag) = self.state.read(cx).list_drag.clone().filter(|drag| drag.active) {
+            if let Some(indicator) = drag.indicator {
+                window.paint_quad(fill(indicator, cx.theme().primary));
+            }
+            if let Some(item) = &drag.item {
+                let label: String = drag.snapshot.slice(item.source.clone()).chars().take_while(|c| *c != '\n').take(64).collect();
+                let at = drag.pointer + point(px(14.), px(14.));
+                let run = window.text_style().to_run(label.len());
+                let shaped = window.text_system().shape_line(label.into(), px(14.), &[run], None);
+                window.paint_quad(fill(Bounds::new(at, size(shaped.width + px(12.), px(24.))), cx.theme().muted));
+                let _ = shaped.paint(at + point(px(6.), px(2.)), px(20.), window, cx);
+            }
+            let input = self.state.clone();
+            window.on_next_frame(move |_, cx| { input.update(cx, |state, cx| state.scroll_list_drag(cx)); });
+        }
         // Paint inline completion first line suffix (after cursor on same line)
         if focused {
             if let Some(first_line) = &prepaint.ghost_first_line {
@@ -2110,5 +2133,7 @@ mod tests {
         assert_eq!(result[5].color, gpui::blue());
     }
 }
+
+
 
 

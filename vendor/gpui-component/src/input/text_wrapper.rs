@@ -101,6 +101,7 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    pub(super) list_items: std::sync::Arc<Vec<super::list_reorder::Item>>,
     pub(super) inline_code: std::sync::Arc<Vec<super::inline_code::CodeSpan>>,
     pub(super) code: super::fenced_code::Index,
     retired_code: Vec<super::fenced_code::Index>,
@@ -146,6 +147,7 @@ impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
             code: Default::default(),
+            list_items: Default::default(),
             inline_code: Default::default(),
             retired_code: Vec::new(),
             image_document: None,
@@ -183,6 +185,7 @@ impl TextWrapper {
 
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
         self.inline_code = Default::default();
+        self.list_items = Default::default();
         self.images.clear();
         self.live_preview = enabled;
         self.retired_code.push(std::mem::take(&mut self.code));
@@ -419,11 +422,13 @@ impl TextWrapper {
             self.inline_code = Default::default();
             self.syntax_revision += 1;
         }
+        self.list_items = Default::default();
         let safe = super::preview_syntax::context_independent(&self.text, range, inserted);
         if safe {
             crate::markdown_images::rebase(&mut self.images, range, inserted.len());
         } else if !self.images.is_empty() {
             self.inline_code = Default::default();
+            self.list_items = Default::default();
             self.images.clear();
             self.syntax_revision += 1;
         }
@@ -480,6 +485,7 @@ impl TextWrapper {
         let current = parsed.revision == self.analysis.revision && self.live_preview;
         let code = super::fenced_code::Index::new(parsed.code);
         if current {
+            self.list_items = parsed.list_items;
             self.inline_code = parsed.inline_code;
             self.analysis.code_cache = code.snapshot.cache.clone();
             self.retired_code
@@ -2792,6 +2798,7 @@ impl TextWrapper {
         }
         .parse();
         self.analysis.code_cache = parsed.code.cache.clone();
+        self.list_items = parsed.list_items;
         self.inline_code = parsed.inline_code;
         self.code = super::fenced_code::Index::new(parsed.code);
         self.links = super::preview_syntax::Links::with_edits(parsed.links, Vec::new());

@@ -517,3 +517,10 @@ Added document-only Ctrl+Up/Down (Command on macOS), palette commands and Help e
 ## Inline code styling (2026-09-12)
 Source-preserving inline-code spans now share the existing GFM worker and exact-revision acceptance. Both rendered modes use the fenced-code muted background. Three focused tests passed for Unicode, multi-backticks, multiline content, literal markers, active-line reveal and stale parsing.
 
+
+## Live-preview list dragging (2026-09-12)
+Implemented cross-list subtree moves with indentation/bullet adaptation, preserved task state, guarded source transactions, insertion preview and edge scrolling. Pure tests cover subtrees/nesting/EOF/blockquote rejection; three TestPlatform transaction tests pass including real marker geometry, drag-versus-click, undo/redo, reversed Unicode selection, Escape and stale edits. Native pointer validation remains user-run.
+
+
+List-drag final review: four pure reorder tests passed, including lazy continuation paragraphs moved into nested lists and CRLF files without a final newline. Accepted edits also cancel pending drag feedback immediately. Strict all-target Clippy passes.
+

@@ -311,3 +311,9 @@ Line movement uses an isolated source transaction, retaining selection direction
 
 Inline code is indexed from the shared GFM analysis and accepted only at the exact source revision. Live preview preserves literal markup inside code, reveals backticks on the active line, and paints muted surfaces below selection/find highlights; Reading uses the same muted background. inline_code and sustained_edit_tests cover parsing, byte mappings and stale results.
 
+
+Live-preview bullets and tasks initiate list-item dragging after 4 px; checkbox clicks toggle on release. Shared GFM item ranges include nested content. Moves preserve task status, adapt indentation/bullet style, reject descendant/numbered/other-quote destinations, and use an isolated source edit. Drags retain editor identity, source revision and snapshot; Escape, edits and mode changes invalidate them. Marker hit testing is indexed by source row; insertion feedback, drag text and edge scrolling use the editor layout. TestPlatform verifies click-versus-drag, undo/redo, reversed Unicode selection and stale/cancelled gestures.
+
+
+List drag follow-up coverage preserves CRLF without a final newline and normalizes lazy continuation indentation when nesting, so continuation text remains inside the moved item. Accepted text/IME edits clear a pending drag immediately.
+

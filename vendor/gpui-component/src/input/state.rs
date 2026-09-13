@@ -260,6 +260,7 @@ impl LastLayout {
 
 /// InputState to keep editing state of the [`super::Input`].
 pub struct InputState {
+    pub(super) list_drag: Option<super::list_drag::Drag>,
     pub(super) live_preview: bool,
     #[cfg(feature = "editor-diagnostics")]
     pub(super) preview_painted_revision: u64,
@@ -407,6 +408,7 @@ impl InputState {
             selection_reversed: false,
             ime_marked_range: None,
             input_bounds: Bounds::default(),
+            list_drag: None,
             selecting: false,
             disabled: false,
             masked: false,
@@ -888,6 +890,7 @@ impl InputState {
 
     /// Switch presentation without replacing the buffer or history.
     pub fn set_live_preview(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.list_drag = None;
         if self.live_preview != enabled {
             self.live_preview = enabled;
             self.text_wrapper.set_live_preview(enabled, cx);
@@ -1379,6 +1382,7 @@ impl InputState {
             return;
         }
 
+        if self.list_drag.take().is_some() { cx.notify(); return; }
         // Clear inline completion on escape
         if self.has_inline_completion() {
             self.clear_inline_completion(cx);
@@ -1402,6 +1406,7 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.list_drag = None;
         // Clear inline completion on any mouse interaction
         self.clear_inline_completion(cx);
 
@@ -1427,26 +1432,7 @@ impl InputState {
             }
         }
         let offset = self.index_for_mouse_position(event.position);
-        // Checkbox presses must never enter text selection, including multi-clicks.
-        if self.live_preview && event.button == MouseButton::Left {
-            let row = self.text.offset_to_point(offset).row;
-            let start = self.text.line_start_offset(row);
-            let line = self.text.slice_line(row).to_string();
-            if let Some(state) = super::live_preview::task_state(&line) {
-                if self
-                    .task_hit_bounds(row, state)
-                    .is_some_and(|bounds| bounds.contains(&event.position))
-                {
-                    if !self.disabled {
-                        let snapshot = self.text.to_string();
-                        self.toggle_markdown_task(start + state, &snapshot, window, cx);
-                    }
-                    self.selecting = false;
-                    cx.stop_propagation();
-                    return;
-                }
-            }
-        }
+        if self.begin_list_press(event, cx) { return; }
 
         self.selecting = true;
         if self.live_preview
@@ -1558,7 +1544,7 @@ impl InputState {
         Some(link.destination.clone())
     }
 
-    fn task_hit_bounds(&self, row: usize, _state: usize) -> Option<Bounds<Pixels>> {
+    pub(super) fn task_hit_bounds(&self, row: usize, _state: usize) -> Option<Bounds<Pixels>> {
         let layout = self.last_layout.as_ref()?;
         let bounds = self.last_bounds?;
         let line = layout
@@ -1690,10 +1676,11 @@ impl InputState {
 
     pub(super) fn on_mouse_up(
         &mut self,
-        _: &MouseUpEvent,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
+        event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) {
+        if self.finish_list_press(event, window, cx) { return; }
         if self.selected_range.is_empty() {
             self.selection_reversed = false;
         }
@@ -1984,6 +1971,7 @@ impl InputState {
 
     pub(crate) fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
         // If the text is empty, always return 0
+
         if self.text.len() == 0 {
             return 0;
         }
@@ -2217,6 +2205,7 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.update_list_drag(event, cx) { return; }
         if self.text.len() == 0 {
             return;
         }
@@ -2468,6 +2457,9 @@ impl EntityInputHandler for InputState {
             }
         }
 
+        if self.text != old_text {
+            self.list_drag = None;
+        }
         self.push_history(&old_text, &range, &new_text);
         if self.list_enter_boundary {
             self.list_enter_boundary = false;
@@ -2569,6 +2561,9 @@ impl EntityInputHandler for InputState {
         }
         self.mode.update_auto_grow(&self.text_wrapper);
         self.history.start_grouping();
+        if self.text != old_text {
+            self.list_drag = None;
+        }
         self.push_history(&old_text, &range, new_text);
         cx.notify();
     }
@@ -2954,7 +2949,9 @@ impl InputState {
                     window,
                     cx,
                 );
-                assert_ne!(self.text.to_string(), original, "checkbox press toggles");
+                assert_eq!(self.text.to_string(), original, "press waits for release" );
+                self.on_mouse_up(&MouseUpEvent { button: MouseButton::Left, position: hit.center(), ..Default::default() }, window, cx);
+                assert_ne!(self.text.to_string(), original, "checkbox release toggles" );
                 assert_eq!(
                     self.selected_range, selection,
                     "checkbox press preserves selection"
@@ -3079,3 +3076,5 @@ impl InputState {
         self.selecting = false;
     }
 }
+
+

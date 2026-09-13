@@ -165,3 +165,6 @@ Line movement: input/live_preview.rs owns source-line swapping; input/state.rs a
 
 Inline code: input/inline_code.rs (new GFM ranges), preview_syntax.rs and text_wrapper.rs (shared analysis), live_preview.rs (mapped presentation), element.rs (monospace and background), text/node.rs (Reading color). Tests: tests/editor.rs inline_code and sustained_edit_tests.
 
+
+List dragging: new input/list_reorder.rs (GFM item boundaries and source transform), input/list_drag.rs (gesture state and transactions); state.rs/element.rs wire pointer events and feedback; preview_syntax.rs/text_wrapper.rs share revision-guarded analysis. Coverage: list_reorder tests and tests/editor_transactions.rs.
+
