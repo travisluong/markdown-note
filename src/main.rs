@@ -625,27 +625,6 @@ impl Render for Notes {
                     .p_1()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .when(self.notebooks.active.is_some(), |view| {
-                        view.child(
-                            Button::new("toggle-sidebar")
-                                .ghost()
-                                .small()
-                                .w(rems(1.75))
-                                .icon(if self.sidebar_collapsed {
-                                    gpui_component::IconName::PanelLeftOpen
-                                } else {
-                                    gpui_component::IconName::PanelLeftClose
-                                })
-                                .tooltip(if self.sidebar_collapsed {
-                                    "Reveal sidebar"
-                                } else {
-                                    "Collapse sidebar"
-                                })
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.toggle_sidebar(window, cx);
-                                })),
-                        )
-                    })
                     .child(
                         Button::new("file-menu")
                             .cursor_default()
