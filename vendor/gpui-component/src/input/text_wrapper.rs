@@ -1121,6 +1121,7 @@ pub(crate) struct LineLayout {
 }
 
 pub(super) struct TablePaintLayout {
+    pub header: bool,
     pub scroll: std::rc::Rc<std::cell::Cell<Pixels>>,
     pub viewport: Pixels,
     pub cells: Vec<(Range<usize>, Pixels, Pixels, LineLayout)>,
@@ -1513,16 +1514,22 @@ impl LineLayout {
                     ),
                 }),
                 |window| {
-                    for (_, x, width, cell) in &table.cells {
+                    for (column, (_, x, width, cell)) in table.cells.iter().enumerate() {
                         let origin = pos + point(*x - table.scroll.get(), px(0.));
                         let bounds =
                             gpui::Bounds::new(origin, size(*width, table.height * line_height));
-                        // Transparent fill preserves document selection painted underneath.
+                        let (bounds, edges) = table_border_geometry(
+                            bounds,
+                            table.header,
+                            column + 1 == table.cells.len(),
+                            window.scale_factor(),
+                        );
+                        // Each shared edge has one owner; transparent fill preserves selection.
                         window.paint_quad(gpui::quad(
                             bounds,
                             px(0.),
                             gpui::transparent_black(),
-                            px(1.),
+                            edges,
                             cx.theme().border,
                             gpui::BorderStyle::Solid,
                         ));
@@ -1598,7 +1605,7 @@ impl LineLayout {
         len: usize,
         cells: Vec<(Range<usize>, Pixels, Pixels, LineLayout)>,
         height: usize,
-        _header: bool,
+        header: bool,
         scroll: std::rc::Rc<std::cell::Cell<Pixels>>,
         viewport: Pixels,
     ) -> Self {
@@ -1610,6 +1617,7 @@ impl LineLayout {
             .fold(px(0.), |a, b| a + b);
         line.longest_width = line.longest_width.min(viewport);
         line.table = Some(TablePaintLayout {
+            header,
             cells,
             height,
             scroll,
@@ -1617,6 +1625,29 @@ impl LineLayout {
         });
         line
     }
+}
+
+fn table_border_geometry(
+    bounds: gpui::Bounds<Pixels>,
+    header: bool,
+    last_column: bool,
+    scale: f32,
+) -> (gpui::Bounds<Pixels>, gpui::Edges<Pixels>) {
+    let snap = |value: Pixels| px((f32::from(value) * scale).round() / scale);
+    let bounds = gpui::Bounds::from_corners(
+        point(snap(bounds.left()), snap(bounds.top())),
+        point(snap(bounds.right()), snap(bounds.bottom())),
+    );
+    let stroke = px(scale.round().max(1.) / scale);
+    (
+        bounds,
+        gpui::Edges {
+            top: if header { stroke } else { px(0.) },
+            right: if last_column { stroke } else { px(0.) },
+            bottom: stroke,
+            left: stroke,
+        },
+    )
 }
 
 /// Snap only the final painted square, leaving source layout and hit targets unchanged.
@@ -1661,6 +1692,38 @@ pub(super) fn reserve_task_slot(line: &mut ShapedLine, offset: usize, width: Pix
 mod tests {
     use super::*;
     use gpui::{Boundary, FontFeatures, FontStyle, FontWeight, px};
+
+    #[test]
+    fn table_shared_edges_are_single_and_pixel_aligned() {
+        for scale in [1., 1.25, 1.5, 2.] {
+            for row in 0..3 {
+                for column in 0..3 {
+                    let original = gpui::Bounds::new(
+                        point(
+                            px(-27.3 + column as f32 * 81.5),
+                            px(5.2 + row as f32 * 43.7),
+                        ),
+                        size(px(81.5), px(43.7)),
+                    );
+                    let (bounds, edges) =
+                        table_border_geometry(original, row == 0, column == 2, scale);
+                    assert_eq!(edges.left, edges.bottom);
+                    assert_eq!(edges.top, if row == 0 { edges.left } else { px(0.) });
+                    assert_eq!(edges.right, if column == 2 { edges.left } else { px(0.) });
+                    for value in [
+                        bounds.left(),
+                        bounds.top(),
+                        bounds.right(),
+                        bounds.bottom(),
+                        edges.left,
+                    ] {
+                        let physical = f32::from(value) * scale;
+                        assert!((physical - physical.round()).abs() < 0.0001);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn task_borders_align_to_physical_pixels_at_fractional_positions() {

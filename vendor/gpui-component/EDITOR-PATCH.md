@@ -334,3 +334,5 @@ unchanged; the checkmark is centered within the snapped square. The geometry tes
 in text_wrapper.rs covers fractional positions, 100/125/150/200% display scales,
 and every supported interface font size. Existing editor transaction tests cover
 checkbox state changes and undo. Reading rendering is unchanged.
+
+Live tables paint each shared edge once, with physical-pixel-aligned borders matching the outer edge. Reading retains its existing single-edge layout.

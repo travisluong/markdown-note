@@ -10,7 +10,8 @@ behavior in a file has a dedicated test.
 ## Baseline and completeness
 
 The baseline is the locally cached crates.io **gpui-component 0.5.1 package**,
-identified on 2026-09-12 by both its normalized `Cargo.toml` (`name` and `version`)
+identified on 2026-09-12 by both its normalized `Cargo.toml` (
+ame` and `version`)
 and `.cargo_vcs_info.json`:
 
 - Git SHA: `0f0ab35233212f8f3277028995caf0c41e13ee6c`.
@@ -180,3 +181,5 @@ using the window scale factor. Regression: tests/editor.rs,
 text_wrapper::tests::task_borders_align_to_physical_pixels_at_fractional_positions;
 existing tests/editor_transactions.rs covers task interactions and undo. Preserve
 physical pixel alignment when reconciling upstream paint changes.
+
+Table border ownership: input/text_wrapper.rs; tests/editor.rs exercises single shared edges and fractional display scales.
