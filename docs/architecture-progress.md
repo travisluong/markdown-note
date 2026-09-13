@@ -743,3 +743,16 @@ all-target editor-diagnostics clippy passed. The existing direct-link-click test
 could not rebuild because Windows denied removal of target/debug/mithril.exe;
 a targeted cargo-rustc attempt encountered the same file lock. No application
 was closed or launched and no desktop interaction was used for validation.
+
+### Top Search menu (2026-09-13)
+
+The top bar now includes Search between View and Notebooks, with Search in file,
+Search in all files, and Search and replace in file. Menu entries reuse the
+existing file/Reading find, notebook search, and editor replace handlers, with
+availability supplied by the command catalogue. Alt+S opens the menu and appears
+in Keyboard shortcuts through the shared shortcut definitions.
+
+Verification: `cargo fmt --check`, `cargo check --locked --offline`,
+`cargo test --locked --offline --features editor-diagnostics` (354 tests), and
+`cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+passed. Validation was headless; native menu appearance remains manual.

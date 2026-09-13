@@ -54,6 +54,7 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
         shortcut!("ctrl-s", Save, "Notes", "Application", "Save"),
         shortcut!("alt-f", FileMenu, "Notes", "Application", "File menu"),
         shortcut!("alt-v", ViewMenu, "Notes", "Application", "View menu"),
+        shortcut!("alt-s", SearchMenu, "Notes", "Application", "Search menu"),
         shortcut!(
             "alt-n",
             NotebooksMenu,

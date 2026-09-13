@@ -44,6 +44,7 @@ actions!(
         GoTo,
         CommandPalette,
         SearchAllFiles,
+        ReplaceFile,
         ToggleTasks,
         MoveLineUp,
         MoveLineDown,
@@ -55,6 +56,7 @@ actions!(
         CloseReadingFind,
         FileMenu,
         ViewMenu,
+        SearchMenu,
         NotebooksMenu,
         HelpMenu,
         KeyboardShortcuts,
@@ -95,6 +97,7 @@ enum Next {
 enum MenuKind {
     File,
     View,
+    Search,
     Notebooks,
     Help,
 }
@@ -335,6 +338,7 @@ impl Notes {
         let busy = self.is_busy();
         let can_save = self.document().is_some() && !busy;
         let mode = self.mode;
+        let capabilities = self.capabilities();
         let focus = self.focus.clone();
         let menu = PopupMenu::build(window, cx, |menu, _, cx| {
             let menu = menu.action_context(focus);
@@ -358,6 +362,23 @@ impl Notes {
                     "Reading view",
                     mode == ViewMode::Reading,
                     Box::new(ReadingView),
+                )
+            } else if kind == MenuKind::Search {
+                use mithril::commands::Command;
+                menu.menu_with_disabled(
+                    "Search in file",
+                    Box::new(Search),
+                    Command::SearchFile.unavailable(capabilities).is_some(),
+                )
+                .menu_with_disabled(
+                    "Search in all files",
+                    Box::new(SearchAllFiles),
+                    Command::SearchAllFiles.unavailable(capabilities).is_some(),
+                )
+                .menu_with_disabled(
+                    "Search and replace in file",
+                    Box::new(ReplaceFile),
+                    Command::ReplaceFile.unavailable(capabilities).is_some(),
                 )
             } else if kind == MenuKind::Help {
                 menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts))
@@ -513,6 +534,15 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &Search, window, cx| {
                 this.search_current_file(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &ReplaceFile, window, cx| {
+                if mithril::commands::Command::ReplaceFile
+                    .unavailable(this.capabilities())
+                    .is_none()
+                    && !window.has_active_dialog(cx)
+                {
+                    this.editor.find_and_replace(window, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
             .on_action(
                 cx.listener(|this, _: &SearchAllFiles, window, cx| {
@@ -551,6 +581,9 @@ impl Render for Notes {
             }))
             .on_action(cx.listener(|this, _: &ViewMenu, window, cx| {
                 this.show_menu(MenuKind::View, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SearchMenu, window, cx| {
+                this.show_menu(MenuKind::Search, window, cx)
             }))
             .on_action(cx.listener(|this, _: &NotebooksMenu, window, cx| {
                 this.show_menu(MenuKind::Notebooks, window, cx)
@@ -613,6 +646,16 @@ impl Render for Notes {
                             .label("View")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.show_menu(MenuKind::View, window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("search-menu")
+                            .cursor_default()
+                            .ghost()
+                            .small()
+                            .label("Search")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.show_menu(MenuKind::Search, window, cx)
                             })),
                     )
                     .child(
@@ -685,8 +728,9 @@ impl Render for Notes {
                             match kind {
                                 MenuKind::File => 0.25,
                                 MenuKind::View => 3.375,
-                                MenuKind::Notebooks => 6.75,
-                                MenuKind::Help => 12.5,
+                                MenuKind::Search => 6.75,
+                                MenuKind::Notebooks => 11.,
+                                MenuKind::Help => 16.75,
                             } + if self.notebooks.active.is_some() {
                                 2.
                             } else {
