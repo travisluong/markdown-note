@@ -814,3 +814,11 @@ retained list scroll, delayed Reading parsing, initial editor layout, distant
 Unicode, wrapped/horizontal matches, code, tables, oversized selections,
 superseding/invalid ranges, and undo/redo preservation. No desktop interaction
 or native app harness was used; native appearance remains manual validation.
+### Search result snippets without line numbers (2026-09-13)
+
+Result rows display the existing before/match/after snippet without the numeric
+line prefix. Internal line metadata remains available for revalidation.
+Verification: the 16 search UI tests, `cargo check --locked --offline`,
+`cargo fmt --check`, and strict Clippy with all targets and editor diagnostics
+passed after this presentation change. The full 367-test suite passed for the
+preceding focus/reveal change. Native appearance remains manual validation.

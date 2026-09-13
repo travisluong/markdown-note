@@ -424,7 +424,7 @@ impl Render for SearchPanel {
                                             .child(
                                                 div()
                                                     .text_color(cx.theme().muted_foreground)
-                                                    .child(format!("{}: {}", hit.line, hit.before)),
+                                                    .child(hit.before.clone()),
                                             )
                                             .child(
                                                 div()
