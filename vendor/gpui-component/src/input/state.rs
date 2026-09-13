@@ -261,6 +261,7 @@ impl LastLayout {
 /// InputState to keep editing state of the [`super::Input`].
 pub struct InputState {
     pub(super) list_drag: Option<super::list_drag::Drag>,
+    pub(super) list_viewport_anchor: Option<(usize, Pixels, Selection)>,
     pub(super) live_preview: bool,
     #[cfg(feature = "editor-diagnostics")]
     pub(super) preview_painted_revision: u64,
@@ -409,6 +410,7 @@ impl InputState {
             ime_marked_range: None,
             input_bounds: Bounds::default(),
             list_drag: None,
+            list_viewport_anchor: None,
             selecting: false,
             disabled: false,
             masked: false,
@@ -698,16 +700,32 @@ impl InputState {
 
     /// Resolve a content drop using the last painted layout, in UTF-8 source bytes.
     pub fn drop_offset(&self, position: Point<Pixels>) -> Option<usize> {
-        if self.disabled || self.last_layout.is_none() { return None; }
-        Some(self.text.floor_char_boundary(self.index_for_mouse_position(position)))
+        if self.disabled || self.last_layout.is_none() {
+            return None;
+        }
+        Some(
+            self.text
+                .floor_char_boundary(self.index_for_mouse_position(position)),
+        )
     }
 
     /// Insert at a captured source position only while the snapshot is still current.
     /// This does not replace the existing selection or normalize input as table-cell text.
-    pub fn insert_at_snapshot(&mut self, offset: usize, snapshot: &Rope, text: &str,
-        window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.disabled || &self.text != snapshot || offset > self.text.len()
-            || self.text.floor_char_boundary(offset) != offset { return false; }
+    pub fn insert_at_snapshot(
+        &mut self,
+        offset: usize,
+        snapshot: &Rope,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.disabled
+            || &self.text != snapshot
+            || offset > self.text.len()
+            || self.text.floor_char_boundary(offset) != offset
+        {
+            return false;
+        }
         let offset = self.offset_to_utf16(offset);
         let table_editing = self.table_editing;
         self.table_editing = true;
@@ -1382,7 +1400,10 @@ impl InputState {
             return;
         }
 
-        if self.list_drag.take().is_some() { cx.notify(); return; }
+        if self.list_drag.take().is_some() {
+            cx.notify();
+            return;
+        }
         // Clear inline completion on escape
         if self.has_inline_completion() {
             self.clear_inline_completion(cx);
@@ -1408,6 +1429,7 @@ impl InputState {
     ) {
         self.list_drag = None;
         // Clear inline completion on any mouse interaction
+        self.list_viewport_anchor = None;
         self.clear_inline_completion(cx);
 
         // If there have IME marked range and is empty (Means pressed Esc to abort IME typing)
@@ -1432,7 +1454,9 @@ impl InputState {
             }
         }
         let offset = self.index_for_mouse_position(event.position);
-        if self.begin_list_press(event, cx) { return; }
+        if self.begin_list_press(event, cx) {
+            return;
+        }
 
         self.selecting = true;
         if self.live_preview
@@ -1500,7 +1524,8 @@ impl InputState {
                                 line.position_for_index(target.column, layout.line_height)
                             {
                                 let y = bounds.origin.y
-                                    + self.text_wrapper.lines.prefix(target.row) * layout.line_height
+                                    + self.text_wrapper.lines.prefix(target.row)
+                                        * layout.line_height
                                     + local.y;
                                 self.preview_click_anchor = Some((offset, y));
                             }
@@ -1604,8 +1629,16 @@ impl InputState {
 
     /// Move intersected source lines as one isolated edit.
     pub fn move_lines(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.disabled || !self.mode.is_multi_line() || self.ime_marked_range.is_some() { return; }
-        let Some(edit) = super::live_preview::move_lines(&self.text.to_string(), self.selected_range.into(), down) else { return; };
+        if self.disabled || !self.mode.is_multi_line() || self.ime_marked_range.is_some() {
+            return;
+        }
+        let Some(edit) = super::live_preview::move_lines(
+            &self.text.to_string(),
+            self.selected_range.into(),
+            down,
+        ) else {
+            return;
+        };
         let reversed = self.selection_reversed;
         let range = self.range_to_utf16(&edit.range);
         self.replace_range_isolated(Some(range), &edit.text, window, cx);
@@ -1680,7 +1713,9 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.finish_list_press(event, window, cx) { return; }
+        if self.finish_list_press(event, window, cx) {
+            return;
+        }
         if self.selected_range.is_empty() {
             self.selection_reversed = false;
         }
@@ -1740,6 +1775,7 @@ impl InputState {
             .as_ref()
             .map(|layout| layout.line_height)
             .unwrap_or(window.line_height());
+        self.list_viewport_anchor = None;
         let delta = event.delta.pixel_delta(line_height);
 
         let horizontal = if event.modifiers.shift {
@@ -2196,6 +2232,7 @@ impl InputState {
     }
 
     pub(super) fn on_key_down(&mut self, _: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.list_viewport_anchor = None;
         self.pause_blink_cursor(cx);
     }
 
@@ -2205,7 +2242,9 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.update_list_drag(event, cx) { return; }
+        if self.update_list_drag(event, cx) {
+            return;
+        }
         if self.text.len() == 0 {
             return;
         }
@@ -2459,6 +2498,7 @@ impl EntityInputHandler for InputState {
 
         if self.text != old_text {
             self.list_drag = None;
+            self.list_viewport_anchor = None;
         }
         self.push_history(&old_text, &range, &new_text);
         if self.list_enter_boundary {
@@ -2563,6 +2603,7 @@ impl EntityInputHandler for InputState {
         self.history.start_grouping();
         if self.text != old_text {
             self.list_drag = None;
+            self.list_viewport_anchor = None;
         }
         self.push_history(&old_text, &range, new_text);
         cx.notify();
@@ -2949,9 +2990,17 @@ impl InputState {
                     window,
                     cx,
                 );
-                assert_eq!(self.text.to_string(), original, "press waits for release" );
-                self.on_mouse_up(&MouseUpEvent { button: MouseButton::Left, position: hit.center(), ..Default::default() }, window, cx);
-                assert_ne!(self.text.to_string(), original, "checkbox release toggles" );
+                assert_eq!(self.text.to_string(), original, "press waits for release");
+                self.on_mouse_up(
+                    &MouseUpEvent {
+                        button: MouseButton::Left,
+                        position: hit.center(),
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
+                assert_ne!(self.text.to_string(), original, "checkbox release toggles");
                 assert_eq!(
                     self.selected_range, selection,
                     "checkbox press preserves selection"
@@ -3010,15 +3059,24 @@ impl InputState {
     /// Read actual shaped runs from the headless renderer, in line-local source bytes.
     #[doc(hidden)]
     pub fn diagnostic_code_runs(&self, row: usize) -> Vec<(Range<usize>, gpui::Hsla)> {
-        let Some(line) = self.text_wrapper.lines.get(row) else { return Vec::new() };
-        let Some(mapped) = &line.mapped else { return Vec::new() };
-        if !line.presentation.as_ref().is_some_and(|p| p.code.is_some()) { return Vec::new(); }
+        let Some(line) = self.text_wrapper.lines.get(row) else {
+            return Vec::new();
+        };
+        let Some(mapped) = &line.mapped else {
+            return Vec::new();
+        };
+        if !line.presentation.as_ref().is_some_and(|p| p.code.is_some()) {
+            return Vec::new();
+        }
         let mut result = Vec::new();
         for (segment, (runs, _)) in line.cache.borrow().iter() {
             let mut at = line.wrapped_lines[*segment].start;
             for run in runs {
                 let end = at + run.len;
-                result.push((mapped.display_to_source[at]..mapped.display_to_source[end], run.color));
+                result.push((
+                    mapped.display_to_source[at]..mapped.display_to_source[end],
+                    run.color,
+                ));
                 at = end;
             }
         }
@@ -3076,5 +3134,3 @@ impl InputState {
         self.selecting = false;
     }
 }
-
-

@@ -19,6 +19,21 @@ pub(super) struct Drag {
     pub indicator: Option<Bounds<Pixels>>,
 }
 impl InputState {
+    pub(super) fn restore_list_viewport(&mut self, line_height: Pixels) {
+        let Some((offset, screen_y, selection)) = self.list_viewport_anchor else {
+            return;
+        };
+        if selection != self.selected_range || offset > self.text.len() || !self.live_preview {
+            self.list_viewport_anchor = None;
+            return;
+        }
+        let row = self.text.offset_to_point(offset).row;
+        let mut scroll = self.scroll_handle.offset();
+        scroll.y = (screen_y - self.text_wrapper.lines.prefix(row) * line_height).min(px(0.));
+        self.scroll_handle.set_offset(scroll);
+        self.deferred_scroll_offset = Some(scroll);
+        self.last_selected_range = Some(selection);
+    }
     fn list_item_on_row(&self, row: usize) -> Option<&super::list_reorder::Item> {
         let start = self.text.line_start_offset(row);
         let first = self
@@ -179,6 +194,9 @@ impl InputState {
         let next = point(old.x, (old.y + delta).clamp(min, px(0.)));
         if next != old {
             self.scroll_handle.set_offset(next);
+            if let Some(bounds) = self.last_bounds.as_mut() {
+                bounds.origin += next - old;
+            }
             self.update_list_drag(
                 &MouseMoveEvent {
                     position: p,
@@ -214,12 +232,21 @@ impl InputState {
         if drag.active {
             if self.input_bounds.contains(&event.position) {
                 if let (Some(item), Some((target, after))) = (drag.item, drag.destination) {
-                    if let Some(edit) = super::list_reorder::reorder(
+                    let line_height = self.last_layout.as_ref().unwrap().line_height;
+                    let anchor_row = self
+                        .text_wrapper
+                        .lines
+                        .row_at((-self.scroll_handle.offset().y / line_height).max(0.));
+                    let anchor_offset = self.text.line_start_offset(anchor_row);
+                    let screen_y = self.text_wrapper.lines.prefix(anchor_row) * line_height
+                        + self.scroll_handle.offset().y;
+                    if let Some((edit, anchor)) = super::list_reorder::reorder_anchored(
                         &self.text.to_string(),
                         &item,
                         &target,
                         after,
                         self.selected_range.into(),
+                        anchor_offset,
                     ) {
                         let reversed = self.selection_reversed;
                         let range = self.range_to_utf16(&edit.range);
@@ -227,6 +254,9 @@ impl InputState {
                         self.selected_range = edit.selection.into();
                         self.selection_reversed = reversed;
                         self.selected_word_range = None;
+                        self.preview_click_anchor = None;
+                        self.list_viewport_anchor = Some((anchor, screen_y, self.selected_range));
+                        self.restore_list_viewport(line_height);
                         self.pause_blink_cursor(cx);
                     }
                 }
@@ -246,6 +276,83 @@ impl InputState {
 
 #[cfg(feature = "editor-diagnostics")]
 impl InputState {
+    #[doc(hidden)]
+    pub fn diagnostic_scrolled_list_drag(
+        &mut self,
+        phase: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let height = self.last_layout.as_ref().unwrap().line_height;
+        if phase == 0 {
+            self.selected_range = (self.text.len()..self.text.len()).into();
+            self.last_selected_range = Some(self.selected_range);
+            self.scroll_handle
+                .set_offset(point(px(0.), -self.text_wrapper.lines.prefix(40) * height));
+            cx.notify();
+        } else if phase == 1 {
+            let items = self.text_wrapper.list_items.clone();
+            let start = self.list_marker_bounds(&items[42]).unwrap().center();
+            let end = self.list_marker_bounds(&items[44]).unwrap().center() + point(px(0.), px(3.));
+            assert!(self.input_bounds.contains(&start));
+            assert!(self.input_bounds.contains(&end));
+            let scroll = self.scroll_handle.offset();
+            self.on_mouse_down(
+                &MouseDownEvent {
+                    button: MouseButton::Left,
+                    position: start,
+                    click_count: 1,
+                    ..Default::default()
+                },
+                window,
+                cx,
+            );
+            self.on_drag_move(
+                &MouseMoveEvent {
+                    position: end,
+                    pressed_button: Some(MouseButton::Left),
+                    ..Default::default()
+                },
+                window,
+                cx,
+            );
+            self.on_mouse_up(
+                &MouseUpEvent {
+                    button: MouseButton::Left,
+                    position: end,
+                    ..Default::default()
+                },
+                window,
+                cx,
+            );
+            assert!(self.list_drag.is_none());
+            assert!(self.list_viewport_anchor.is_some());
+            assert_eq!(
+                self.scroll_handle.offset(),
+                scroll,
+                "drop must not reveal the offscreen caret"
+            );
+            assert_eq!(self.selected_range.start, self.text.len());
+        } else {
+            let (anchor, screen_y, _) = self
+                .list_viewport_anchor
+                .expect("anchor survives background analysis");
+            let row = self.text.offset_to_point(anchor).row;
+            assert!(
+                (self.text_wrapper.lines.prefix(row) * height + self.scroll_handle.offset().y
+                    - screen_y)
+                    .abs()
+                    < px(0.1)
+            );
+            let scroll = self.scroll_handle.offset();
+            self.scroll_list_drag(cx);
+            assert_eq!(
+                self.scroll_handle.offset(),
+                scroll,
+                "released drags cannot edge-scroll"
+            );
+        }
+    }
     #[doc(hidden)]
     pub fn diagnostic_list_drag_checks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let original = self.text.to_string();

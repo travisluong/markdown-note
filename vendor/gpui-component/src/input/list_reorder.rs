@@ -91,6 +91,7 @@ pub(super) fn from_ast(source: &str, root: &Node) -> Vec<Item> {
 pub(super) fn can_drop(item: &Item, target: &Item) -> bool {
     item.quote == target.quote && !item.source.contains(&target.marker)
 }
+#[cfg(test)]
 pub(super) fn reorder(
     source: &str,
     item: &Item,
@@ -98,6 +99,23 @@ pub(super) fn reorder(
     after: bool,
     selection: Range<usize>,
 ) -> Option<TaskEdit> {
+    reorder_anchored(source, item, target, after, selection, 0).map(|(mut edit, _)| {
+        let mut result = source.to_owned();
+        result.replace_range(edit.range, &edit.text);
+        edit.range = 0..source.len();
+        edit.text = result;
+        edit
+    })
+}
+
+pub(super) fn reorder_anchored(
+    source: &str,
+    item: &Item,
+    target: &Item,
+    after: bool,
+    selection: Range<usize>,
+    anchor: usize,
+) -> Option<(TaskEdit, usize)> {
     if !can_drop(item, target) {
         return None;
     }
@@ -204,11 +222,33 @@ pub(super) fn reorder(
     if result == source {
         return None;
     }
-    Some(TaskEdit {
-        range: 0..source.len(),
-        text: result,
-        selection: start.min(end)..start.max(end),
-    })
+    let anchor = map(anchor);
+    Some((
+        minimal_edit(source, &result, start.min(end)..start.max(end)),
+        anchor,
+    ))
+}
+
+/// Preserve untouched layout caches by replacing only the differing UTF-8 span.
+pub(super) fn minimal_edit(source: &str, result: &str, selection: Range<usize>) -> TaskEdit {
+    let prefix: usize = source
+        .chars()
+        .zip(result.chars())
+        .take_while(|(a, b)| a == b)
+        .map(|(c, _)| c.len_utf8())
+        .sum();
+    let suffix: usize = source[prefix..]
+        .chars()
+        .rev()
+        .zip(result[prefix..].chars().rev())
+        .take_while(|(a, b)| a == b)
+        .map(|(c, _)| c.len_utf8())
+        .sum();
+    TaskEdit {
+        range: prefix..source.len() - suffix,
+        text: result[prefix..result.len() - suffix].into(),
+        selection,
+    }
 }
 
 #[cfg(test)]

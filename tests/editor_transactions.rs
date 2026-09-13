@@ -76,3 +76,37 @@ fn list_drag_uses_rendered_markers_and_one_undo_transaction(cx: &mut TestAppCont
         })
     });
 }
+
+#[cfg(feature = "editor-diagnostics")]
+#[gpui::test]
+fn list_drop_keeps_scrolled_viewport_with_offscreen_caret(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let mut editor = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let input = cx.new(|cx| {
+            let source: String = (0..150)
+                .map(|row| format!("{}- [ ] item {row}\n", if row == 44 { "  " } else { "" }))
+                .collect();
+            let mut state = InputState::new(window, cx)
+                .multi_line(true)
+                .default_value(source);
+            state.set_live_preview(true, cx);
+            state.focus(window, cx);
+            state
+        });
+        editor = Some(input.clone());
+        let view = cx.new(|_| EditorView(input));
+        Root::new(view, window, cx)
+    });
+    cx.run_until_parked();
+    for phase in 0..3 {
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            editor.as_ref().unwrap().update(cx, |state, cx| {
+                state.diagnostic_scrolled_list_drag(phase, window, cx)
+            })
+        });
+        cx.run_until_parked();
+    }
+}

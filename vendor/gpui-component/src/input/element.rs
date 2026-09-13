@@ -1251,6 +1251,7 @@ impl Element for TextElement {
                 state.selected_range.into(),
                 window.rem_size() * 0.75 / line_height,
             );
+            state.restore_list_viewport(line_height);
         });
 
         let state = self.state.read(cx);
@@ -1274,6 +1275,7 @@ impl Element for TextElement {
                     state.deferred_scroll_offset = Some(offset);
                 }
             }
+            state.restore_list_viewport(line_height);
         });
         let state = self.state.read(cx);
         let visible_top = state.text_wrapper.lines.prefix(visible_range.start) * line_height;
