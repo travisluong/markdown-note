@@ -606,3 +606,10 @@ The separate test target avoids a locked default-output mithril.exe. The only
 reported toolchain notice is the existing dependency future-compatibility notice
 for proc-macro-error2. No native application, Explorer window, or desktop input
 was used. Native visual and Explorer confirmation remain user-run.
+## Live checkbox border alignment (2026-09-12)
+
+Checkbox squares and strokes now align to physical pixels after layout/scroll
+translation. Logical layout and interaction bounds remain unchanged. The new
+geometry test covers fractional positions, 100/125/150/200% scale, and interface
+font sizes 10 through 24. The focused editor and editor_transactions suites pass:
+79 tests, zero failures. Native visual confirmation remains user-run.

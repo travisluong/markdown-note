@@ -1561,6 +1561,7 @@ impl LineLayout {
             use crate::ActiveTheme as _;
             use gpui::Half as _;
             bounds.origin += pos;
+            let (bounds, border_width) = task_paint_geometry(bounds, window.scale_factor());
             let checked = self.task.unwrap().1;
             window.paint_quad(gpui::quad(
                 bounds,
@@ -1570,7 +1571,7 @@ impl LineLayout {
                 } else {
                     gpui::transparent_black()
                 },
-                px(1.),
+                border_width,
                 cx.theme().primary,
                 gpui::BorderStyle::Solid,
             ));
@@ -1618,6 +1619,23 @@ impl LineLayout {
     }
 }
 
+/// Snap only the final painted square, leaving source layout and hit targets unchanged.
+/// Integer physical edges and stroke widths give opposite borders equal coverage.
+fn task_paint_geometry(
+    bounds: gpui::Bounds<Pixels>,
+    scale_factor: f32,
+) -> (gpui::Bounds<Pixels>, Pixels) {
+    let snap = |value: Pixels| px((f32::from(value) * scale_factor).round() / scale_factor);
+    let side = snap(bounds.size.width);
+    (
+        gpui::Bounds::new(
+            point(snap(bounds.origin.x), snap(bounds.origin.y)),
+            size(side, side),
+        ),
+        px(scale_factor.round().max(1.) / scale_factor),
+    )
+}
+
 /// Give the mapped object replacement character an exact advance, independent of font or state.
 pub(super) fn reserve_task_slot(line: &mut ShapedLine, offset: usize, width: Pixels) {
     let delta = width - (line.x_for_index(offset + 3) - line.x_for_index(offset));
@@ -1643,6 +1661,37 @@ pub(super) fn reserve_task_slot(line: &mut ShapedLine, offset: usize, width: Pix
 mod tests {
     use super::*;
     use gpui::{Boundary, FontFeatures, FontStyle, FontWeight, px};
+
+    #[test]
+    fn task_borders_align_to_physical_pixels_at_fractional_positions() {
+        for scale in [1., 1.25, 1.5, 2.] {
+            for font_size in 10..=24 {
+                for offset in [-12.7, 0., 0.3, 100.6] {
+                    let side = px(font_size as f32 * 0.875);
+                    let original = gpui::Bounds::new(
+                        point(px(offset), px(offset + font_size as f32 * 0.4)),
+                        size(side, side),
+                    );
+                    let (painted, stroke) = task_paint_geometry(original, scale);
+                    assert_eq!(painted.size.width, painted.size.height);
+                    for edge in [
+                        painted.left(),
+                        painted.right(),
+                        painted.top(),
+                        painted.bottom(),
+                        stroke,
+                    ] {
+                        let physical = f32::from(edge) * scale;
+                        assert!((physical - physical.round()).abs() < 0.0001);
+                    }
+                    assert!((painted.left() - original.left()).abs() <= px(0.501 / scale));
+                    assert!((painted.top() - original.top()).abs() <= px(0.501 / scale));
+                    assert!((painted.size.width - side).abs() <= px(0.501 / scale));
+                    assert!(stroke > px(0.) && stroke * 2. < painted.size.width);
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_update() {

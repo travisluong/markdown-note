@@ -328,3 +328,9 @@ containers. Select's outer/state containers also use flex layout so percentage
 widths reach the trigger on narrow windows. Input and Select expose debug-only
 bounds selectors for the actual controls; the SettingsPanel headless tests check
 text inputs and all three font selectors at 800, 560 and 480 pixel viewports.
+Live-preview task checkbox painting snaps its final screen origin, square size,
+and uniform border width to physical pixels. Layout and pointer hit targets stay
+unchanged; the checkmark is centered within the snapped square. The geometry test
+in text_wrapper.rs covers fractional positions, 100/125/150/200% display scales,
+and every supported interface font size. Existing editor transaction tests cover
+checkbox state changes and undo. Reading rendering is unchanged.

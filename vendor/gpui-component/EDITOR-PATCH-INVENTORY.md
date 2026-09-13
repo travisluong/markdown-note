@@ -175,3 +175,8 @@ Selection changes hide or reveal fence glyphs only; font, padding, source mappin
 background and downstream positions stay fixed. Outer fence rows own rounded
 corners. `tests/code_highlighting.rs` covers caret/selection movement, themes,
 long info strings, empty/unfinished/nested blocks, Unicode, CRLF and history.
+Live checkbox border alignment: input/text_wrapper.rs snaps final paint geometry
+using the window scale factor. Regression: tests/editor.rs,
+text_wrapper::tests::task_borders_align_to_physical_pixels_at_fractional_positions;
+existing tests/editor_transactions.rs covers task interactions and undo. Preserve
+physical pixel alignment when reconciling upstream paint changes.
