@@ -2803,6 +2803,9 @@ impl Render for InputState {
 
         div()
             .id("input-state")
+            // A block container can resolve the text leaf's percentage width to
+            // zero inside a flex-sized form field. Allocate its width with flex.
+            .when(self.mode.is_single_line(), |this| this.flex())
             .flex_1()
             .when(self.mode.is_multi_line(), |this| this.h_full())
             .flex_grow()
@@ -2816,6 +2819,23 @@ impl Render for InputState {
 
 #[cfg(feature = "editor-diagnostics")]
 impl InputState {
+    /// Headless geometry probe; never enabled in normal builds.
+    #[doc(hidden)]
+    pub fn diagnostic_input_paint(&self) -> (Bounds<Pixels>, String, Point<Pixels>) {
+        let layout = self.last_layout.as_ref().expect("input was painted");
+        let text = layout
+            .lines
+            .iter()
+            .flat_map(|line| line.wrapped_lines.iter())
+            .map(|line| line.text.as_ref())
+            .collect::<String>();
+        (
+            self.last_bounds.expect("input bounds"),
+            text,
+            self.scroll_handle.offset(),
+        )
+    }
+
     /// Headless geometry probe; never enabled in normal builds.
     #[doc(hidden)]
     pub fn diagnostic_range_visible(&self, range: Range<usize>) -> bool {

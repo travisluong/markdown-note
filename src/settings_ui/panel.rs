@@ -245,6 +245,10 @@ impl SettingsPanel {
         }
         cx.notify();
     }
+    fn date_example(&self, cx: &gpui::App) -> Option<String> {
+        templates::current(self.date.read(cx).value().as_ref()).ok()
+    }
+
     fn edit_date(&mut self, value: &str, cx: &mut Context<Self>) {
         match templates::current(value) {
             Ok(_) if !self.values.busy => {

@@ -117,6 +117,77 @@ fn intent(panel: &Entity<SettingsPanel>, intent: SettingsIntent, cx: &mut Visual
 struct Events(Vec<SettingsIntent>);
 
 #[gpui::test]
+fn date_input_paints_typed_text(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let panel = panel(&notes, cx);
+    let date = cx.update(|window, cx| {
+        panel.update(cx, |panel, cx| {
+            panel.select_section(super::Section::Templates, cx);
+            panel.date.update(cx, |date, cx| date.focus(window, cx));
+            panel.date.clone()
+        })
+    });
+    let assert_painted = |expected: &str, cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            let date = date.read(cx);
+            let (bounds, painted, scroll) = date.diagnostic_input_paint();
+            assert_eq!(date.value().as_ref(), expected);
+            assert_eq!(
+                painted,
+                if expected.is_empty() {
+                    "YYYY-MM-DD"
+                } else {
+                    expected
+                }
+            );
+            assert!(bounds.size.width > gpui::px(200.), "{bounds:?}, {scroll:?}");
+            assert!(
+                bounds.size.height >= gpui::px(16.),
+                "{bounds:?}, {scroll:?}"
+            );
+            assert_eq!(scroll.y, gpui::px(0.));
+        });
+    };
+    assert_painted("YYYY-MM-DD", cx);
+    for theme in [notebook::ThemeChoice::Light, notebook::ThemeChoice::Dark] {
+        intent(&panel, SettingsIntent::Theme(theme), cx);
+        for width in [800., 480.] {
+            cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(800.)));
+            cx.refresh().unwrap();
+            cx.simulate_keystrokes("ctrl-a");
+            cx.simulate_input("MM/DD/YYYY");
+            assert_painted("MM/DD/YYYY", cx);
+            cx.update(|_, cx| assert_eq!(notes.read(cx).date_format(), "MM/DD/YYYY"));
+            cx.simulate_keystrokes("ctrl-a backspace");
+            assert_painted("", cx);
+            cx.update(|_, cx| assert!(panel.read(cx).date_example(cx).is_none()));
+            cx.update(|_, cx| assert_eq!(notes.read(cx).date_format(), "MM/DD/YYYY"));
+            cx.simulate_input("YYYY[");
+            assert_painted("YYYY[", cx);
+            cx.update(|_, cx| assert!(panel.read(cx).date_example(cx).is_none()));
+            for section in [super::Section::General, super::Section::Templates] {
+                cx.update(|_, cx| panel.update(cx, |panel, cx| panel.select_section(section, cx)));
+                cx.refresh().unwrap();
+            }
+            assert_painted("YYYY[", cx);
+            cx.simulate_input("date]");
+            assert_painted("YYYY[date]", cx);
+            cx.update(|_, cx| assert!(panel.read(cx).date_example(cx).is_some()));
+            cx.update(|_, cx| assert_eq!(notes.read(cx).date_format(), "YYYY[date]"));
+            let long = format!("[{}] YYYY-MM-DD", "long literal ".repeat(12));
+            cx.simulate_keystrokes("ctrl-a");
+            cx.simulate_input(&long);
+            assert_painted(&long, cx);
+            cx.update(|_, cx| assert!(date.read(cx).diagnostic_input_paint().2.x < gpui::px(0.)));
+            cx.simulate_keystrokes("ctrl-a backspace");
+            assert_painted("", cx);
+            cx.update(|_, cx| assert_eq!(date.read(cx).diagnostic_input_paint().2.x, gpui::px(0.)));
+        }
+    }
+}
+#[gpui::test]
 fn settings_content_keeps_usable_width_and_stacks_on_small_windows(cx: &mut TestAppContext) {
     let (_fixture, notes, cx) = fixture(cx, true, false);
     let panel = panel(&notes, cx);

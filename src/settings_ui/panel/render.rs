@@ -9,7 +9,7 @@ use gpui_component::{
     select::Select,
     switch::Switch,
 };
-use mithril::{notebook, templates};
+use mithril::notebook;
 
 impl Render for SettingsPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -116,7 +116,9 @@ impl Render for SettingsPanel {
             .child("Current date format")
             .child(Input::new(&self.date).w_full().flex_shrink_0())
             .when_some(self.date_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
-            .child(format!("Example: {}", templates::current(&self.values.date_format).unwrap_or_default()))
+            .when_some(self.date_example(cx), |view, example| {
+                view.child(div().debug_selector(|| "date-format-example".into()).child(format!("Example: {example}")))
+            })
             .child(div().text_sm().child("Moment-style tokens, local time, English names. Use [brackets] for literal text. See README for supported tokens."));
         let mut theme_body = div()
             .w_full()

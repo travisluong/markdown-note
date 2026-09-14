@@ -1188,6 +1188,7 @@ impl Element for TextElement {
 
         let mut style = Style::default();
         style.size.width = relative(1.).into();
+        style.flex_grow = 1.;
         if state.mode.is_multi_line() {
             style.flex_grow = 1.0;
             style.size.height = relative(1.).into();

@@ -222,3 +222,7 @@ so the reveal remains pending until analysis settles. Coverage:
 tests/search_reveal.rs and tests/editor.rs scroll range tests. Preserve focus
 independence, bounded endpoint measurement, and editor-interaction cancellation
 when reconciling upstream changes.
+Single-line form sizing follow-up: input/state.rs uses flex for single-line
+containers and exposes diagnostic_input_paint under editor-diagnostics;
+input/element.rs allows the text leaf to grow. Regression entry point:
+src/settings_ui/panel/tests.rs::date_input_paints_typed_text.

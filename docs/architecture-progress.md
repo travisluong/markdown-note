@@ -849,3 +849,18 @@ denied); the integration suite could not complete through that command. No
 application process was stopped and no desktop or native harness was used.
 Native layout, themes, narrow windows, toolbar interaction, and Explorer drops
 remain manual validation. The pre-existing Cargo.lock change is excluded.
+
+### Date input rendering correction (2026-09-14)
+
+A headless SettingsPanel test reproduced a populated date input whose text
+paint bounds were 0 px wide while the field itself was 454 px wide. Explicit
+single-line flex layout and text-leaf growth restore usable inner geometry.
+The example now reads the current raw draft and disappears for invalid input;
+only valid drafts emit date preference intents.
+
+Verification: all 18 settings_ui tests passed with --locked --offline and
+editor-diagnostics, including actual TestPlatform typing, empty/invalid input,
+correction, section changes, Light/Dark themes, 800/480 px windows and long
+horizontal scrolling. Tests inspect shaped text and inner geometry. No desktop
+interaction or native application harness was used. Full gates follow the
+reference addition. Existing Cargo.lock changes remain excluded.

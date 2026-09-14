@@ -376,3 +376,10 @@ The existing select_source_range keeps its focusing behavior. Search selection
 is painted while focus remains outside the editor. tests/search_reveal.rs covers
 initial layout, distant Unicode, wrapped/horizontal matches, code, tables,
 oversized selections, invalid ranges, superseding targets and undo/redo.
+Single-line InputState now uses a flex container and its text leaf can grow to
+the available width. A percentage-width leaf inside the previous block layout
+could paint at zero width even while the outer field had a usable width.
+SettingsPanel TestPlatform coverage types into the real input and checks shaped
+text, inner geometry, deletion, invalid drafts, section changes, both themes,
+narrow layouts, and horizontal scrolling. The diagnostic_input_paint accessor is
+available only with editor-diagnostics; document input layout retains its mode.
