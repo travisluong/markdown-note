@@ -919,3 +919,27 @@ editor-diagnostics suite passed. cargo check --locked --offline, cargo fmt
 --check, and strict all-target clippy with editor-diagnostics passed as well.
 No desktop interaction or native app harness was used; native visual validation
 remains with the user. The pre-existing Cargo.lock change is excluded.
+
+### Horizontal-rule flash while entering new lines (2026-09-14)
+
+Every edit previously cleared all divider metadata, exposing source syntax
+until background analysis completed. TextWrapper now retains byte-unchanged
+source lines and remaps their ranges across edits. Source-line boundary checks
+handle newline insertion at either edge, shifted Unicode/CRLF content and
+multiple rules, and immediately retire changed or joined lines. No document
+copy or Markdown parse is added to the input thread. Exact analysis still
+resolves structural context changes; older results never replace retained ranges.
+
+The delayed-worker regressions failed under the original global invalidation
+and pass with retention. They exercise repeated newlines, quoted/list-contained
+rules, shifted source ranges, edited markers and heading/code context changes.
+TestPlatform also exercises four consecutive real Enter actions after a rule.
+
+The full cargo test --locked --offline --target-dir target/headless --features
+editor-diagnostics suite passed, including all 96 editor module tests and both
+horizontal-rule TestPlatform tests. cargo check and strict all-target clippy
+with editor-diagnostics passed in the same target directory; cargo fmt --check
+also passed. The ordinary target build hit a locked mithril.exe, so validation
+used the existing separate headless target without stopping or interacting with
+the running application. Native visual confirmation remains with the user.
+The pre-existing Cargo.lock change remains excluded from the commit.

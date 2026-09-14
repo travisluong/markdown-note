@@ -385,8 +385,11 @@ narrow layouts, and horizontal scrolling. The diagnostic_input_paint accessor is
 available only with editor-diagnostics; document input layout retains its mode.
 
 Live-preview thematic breaks use the existing background GFM tree, including
-spaced markers, underscores, quotes and list containers. Only exact-revision
-ranges can decorate lines; edits and mode/document resets invalidate them.
+spaced markers, underscores, quotes and list containers. Exact-revision parses
+supply authoritative ranges. Edits retain and rebase byte-unchanged divider
+lines, including newline insertion at either edge, until current context
+analysis arrives. Changed/joined lines retire immediately; mode/document resets
+clear all ranges. Stale results cannot replace the retained projection.
 Literal shaping and UTF-8 mappings are identical on and off the caret row:
 painting substitutes a 2 px theme.border rule across the available content
 width, starting at the measured marker indentation. The caret row paints source

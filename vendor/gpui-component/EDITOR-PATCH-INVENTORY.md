@@ -236,3 +236,9 @@ source geometry and rule painting. `src/input/element.rs` carries presentation
 and content width into layout. `src/input/state.rs` adds feature-gated headless
 geometry inspection. Regression entry points: `tests/horizontal_rules.rs` and
 the shared-analysis and sustained-edit suites compiled by `tests/editor.rs`.
+
+Divider follow-up: TextWrapper rebases unchanged divider source lines through
+pending edits instead of clearing them globally. Boundary checks retire changed
+or joined lines without copying/parsing document text. The delayed-newline and
+exact-context regressions are in tests/editor.rs; tests/horizontal_rules.rs also
+exercises repeated Enter through the real action in TestPlatform.

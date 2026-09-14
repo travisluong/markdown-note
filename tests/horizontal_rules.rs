@@ -2,7 +2,7 @@
 use gpui::{Context, Entity, Render, TestAppContext, Window, div, prelude::*, px};
 use gpui_component::{
     Root, Theme, ThemeMode,
-    input::{Input, InputState, Redo, Undo},
+    input::{Enter, Input, InputState, Redo, Undo},
 };
 
 struct RuleView(Entity<InputState>);
@@ -170,6 +170,24 @@ fn rule_edits_history_and_modes_preserve_the_markdown(cx: &mut TestAppContext) {
             let state = editor.read(cx);
             assert_eq!(state.value().as_ref(), source);
             assert_eq!(state.diagnostic_divider_row(2).is_some(), live);
+        });
+    }
+    cx.update(|window, cx| {
+        editor.update(cx, |state, cx| {
+            state.select_source_range(11..11, window, cx);
+            state.diagnostic_settle_preview();
+        })
+    });
+    for count in 1..=4 {
+        cx.dispatch_action(Enter { secondary: false });
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            let state = editor.read(cx);
+            assert!(state.diagnostic_divider_row(2).unwrap().0);
+            assert_eq!(
+                state.value().as_ref(),
+                format!("before\n\n---{}\n\nafter", "\n".repeat(count))
+            );
         });
     }
 }

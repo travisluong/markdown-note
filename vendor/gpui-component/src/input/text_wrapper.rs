@@ -432,7 +432,38 @@ impl TextWrapper {
             return;
         }
         if !self.dividers.is_empty() {
-            self.dividers = Default::default();
+            // Keep byte-unchanged source lines projected while context analysis is
+            // pending, just like links and tables. Newlines at either boundary
+            // may move the line but must not briefly expose its syntax.
+            let line_range = |text: &Rope, at: usize| {
+                let row = text.offset_to_point(at).row;
+                let start = text.line_start_offset(row);
+                let mut end = text.line_end_offset(row);
+                if end > start && text.byte(end - 1) == b'\r' {
+                    end -= 1;
+                }
+                start..end
+            };
+            let delta = inserted.len() as isize - range.len() as isize;
+            std::sync::Arc::make_mut(&mut self.dividers).retain_mut(|divider| {
+                let old_line = line_range(&self.text, divider.start);
+                let shift = if range.end <= old_line.start {
+                    delta
+                } else if range.start >= old_line.end {
+                    0
+                } else {
+                    return false;
+                };
+                let mapped = old_line.start.saturating_add_signed(shift)
+                    ..old_line.end.saturating_add_signed(shift);
+                // Retire lines joined to other text or extended at their edges.
+                if mapped.end > changed.len() || line_range(changed, mapped.start) != mapped {
+                    return false;
+                }
+                divider.start = divider.start.saturating_add_signed(shift);
+                divider.end = divider.end.saturating_add_signed(shift);
+                true
+            });
             self.syntax_revision += 1;
         }
         if !self.inline_code.is_empty() {
@@ -2675,38 +2706,82 @@ mod sustained_edit_tests {
     }
 
     #[test]
-    fn divider_analysis_rejects_stale_results_and_invalidates_presentation() {
+    fn divider_edits_retire_changed_lines_and_wait_for_exact_context() {
         let source = "intro\n\n---\n";
-        for (range, inserted, expected) in [(7..8, "", 0), (6..6, "heading", 0), (1..1, "x", 1)] {
+        for (range, inserted, pending, expected) in [
+            (7..8, "", 0, 0),
+            (6..6, "heading", 1, 0),
+            (1..1, "x", 1, 1),
+            (7..7, "text", 0, 0),
+            (10..10, "text", 0, 0),
+            (6..7, "", 1, 0),
+            (0..0, "```\n", 1, 0),
+        ] {
             let mut wrapper = make(source);
-            assert_eq!(wrapper.dividers.len(), 1);
-            measure(&mut wrapper, 0..4);
-            assert!(
-                wrapper.lines[2]
-                    .presentation
-                    .as_ref()
-                    .unwrap()
-                    .divider
-                    .is_some()
-            );
             wrapper.analysis.request(&wrapper.text.clone());
             let stale = wrapper.analysis.start().unwrap();
             edit(&mut wrapper, range, inserted);
-            assert!(wrapper.dividers.is_empty());
-            measure(&mut wrapper, 0..4);
-            assert!(
-                wrapper.lines[2]
-                    .presentation
-                    .as_ref()
-                    .unwrap()
-                    .divider
-                    .is_none()
-            );
+            assert_eq!(wrapper.dividers.len(), pending);
             wrapper.apply_analysis(stale.parse());
-            assert!(wrapper.dividers.is_empty());
+            assert_eq!(
+                wrapper.dividers.len(),
+                pending,
+                "old results must not replace retained ranges"
+            );
             let current = wrapper.analysis.start().unwrap();
             assert!(wrapper.apply_analysis(current.parse()));
             assert_eq!(wrapper.dividers.len(), expected);
+        }
+    }
+
+    #[test]
+    fn unchanged_dividers_stay_projected_through_pending_newlines() {
+        for source in [
+            "---",
+            "café\n\n---\n\nafter",
+            "café\r\n\r\n> ---\r\n\r\nafter",
+            "- item\n\n  ***\n\nafter",
+            "___\n\n---",
+        ] {
+            for before in [false, true] {
+                let mut wrapper = make(source);
+                let expected = wrapper.dividers.len();
+                let markers = wrapper
+                    .dividers
+                    .iter()
+                    .map(|range| wrapper.text.slice(range.clone()).to_string())
+                    .collect::<Vec<_>>();
+                wrapper.analysis.request(&wrapper.text.clone());
+                let stale = wrapper.analysis.start().unwrap();
+                for _ in 0..4 {
+                    let at = if before { 0 } else { wrapper.text.len() };
+                    edit(&mut wrapper, at..at, "\n");
+                    wrapper.reveal_row = wrapper.text.offset_to_point(at + 1).row;
+                    // The production reveal method remeasures the previous and new caret rows.
+                    wrapper.syntax_revision += 1;
+                    assert_eq!(wrapper.dividers.len(), expected);
+                    let count = wrapper.text.lines_len();
+                    measure(&mut wrapper, 0..count);
+                    for (range, marker) in wrapper.dividers.iter().zip(&markers) {
+                        assert_eq!(wrapper.text.slice(range.clone()).to_string(), *marker);
+                        let row = wrapper.text.offset_to_point(range.start).row;
+                        let divider = wrapper.lines[row]
+                            .presentation
+                            .as_ref()
+                            .unwrap()
+                            .divider
+                            .as_ref()
+                            .unwrap();
+                        assert_eq!(divider.hidden, row != wrapper.reveal_row);
+                    }
+                }
+                let retained = wrapper.dividers.clone();
+                wrapper.apply_analysis(stale.parse());
+                assert_eq!(wrapper.dividers, retained);
+                let current = wrapper.analysis.start().unwrap();
+                assert!(wrapper.apply_analysis(current.parse()));
+                assert_eq!(wrapper.dividers, retained);
+            }
         }
     }
     #[test]
