@@ -383,3 +383,14 @@ SettingsPanel TestPlatform coverage types into the real input and checks shaped
 text, inner geometry, deletion, invalid drafts, section changes, both themes,
 narrow layouts, and horizontal scrolling. The diagnostic_input_paint accessor is
 available only with editor-diagnostics; document input layout retains its mode.
+
+Live-preview thematic breaks use the existing background GFM tree, including
+spaced markers, underscores, quotes and list containers. Only exact-revision
+ranges can decorate lines; edits and mode/document resets invalidate them.
+Literal shaping and UTF-8 mappings are identical on and off the caret row:
+painting substitutes a 2 px theme.border rule across the available content
+width, starting at the measured marker indentation. The caret row paints source
+syntax. Wrapping, selection, copy and history remain source-based. Reading's
+existing divider renderer is unchanged. tests/horizontal_rules.rs exercises
+headless reveal, geometry, clicking, themes, modes and undo/redo; tests/editor.rs
+covers GFM contexts, single-parse accounting and stale-result rejection.

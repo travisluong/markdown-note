@@ -900,3 +900,22 @@ including date input painting and reference formatter checks. cargo check
 --locked --offline, cargo fmt --check, and strict all-target clippy with
 editor-diagnostics passed. No desktop interaction was used; native visual
 confirmation remains with the user. Cargo.lock remains excluded.
+
+### Live-preview horizontal rules (2026-09-14)
+
+The existing worker GFM tree now supplies exact-revision thematic-break ranges.
+Live preview paints a 2 px theme.border divider with measured indentation and
+available content width; the caret row shows its Markdown. Literal shaping and
+source mappings stay fixed across reveal, including wrapped markers. Edits and
+mode/document resets invalidate the ranges; stale results cannot reinstall them.
+Source and Reading behavior are unchanged.
+
+The 95-test editor suite covers valid markers, quotes/lists, Unicode/CRLF,
+heading/table/code exclusions, one shared parse, delayed results and structural
+context edits. Two new TestPlatform tests cover Light/Dark themes, indentation,
+wrapped geometry, every marker caret position, clicking, edits, mode switches
+and undo/redo. The complete cargo test --locked --offline --features
+editor-diagnostics suite passed. cargo check --locked --offline, cargo fmt
+--check, and strict all-target clippy with editor-diagnostics passed as well.
+No desktop interaction or native app harness was used; native visual validation
+remains with the user. The pre-existing Cargo.lock change is excluded.

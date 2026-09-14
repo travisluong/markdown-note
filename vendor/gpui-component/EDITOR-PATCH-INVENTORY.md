@@ -226,3 +226,13 @@ Single-line form sizing follow-up: input/state.rs uses flex for single-line
 containers and exposes diagnostic_input_paint under editor-diagnostics;
 input/element.rs allows the text leaf to grow. Regression entry point:
 src/settings_ui/panel/tests.rs::date_input_paints_typed_text.
+
+## Live-preview thematic breaks (2026-09-14)
+
+No additional vendor files. `src/input/preview_syntax.rs` extracts divider ranges
+from the shared worker tree. `src/input/live_preview.rs` retains literal divider
+presentation; `src/input/text_wrapper.rs` owns revision guards, invalidation,
+source geometry and rule painting. `src/input/element.rs` carries presentation
+and content width into layout. `src/input/state.rs` adds feature-gated headless
+geometry inspection. Regression entry points: `tests/horizontal_rules.rs` and
+the shared-analysis and sustained-edit suites compiled by `tests/editor.rs`.

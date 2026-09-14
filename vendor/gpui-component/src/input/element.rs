@@ -650,6 +650,7 @@ impl TextElement {
         display_text: &Rope,
         last_layout: &LastLayout,
         font_size: Pixels,
+        content_width: Pixels,
         runs: &[TextRun],
         bg_segments: &[(Range<usize>, Hsla)],
         window: &mut Window,
@@ -819,6 +820,8 @@ impl TextElement {
             line_layout.image = line_item.image.clone();
             line_layout.scale = line_item.scale;
             if let Some(p) = &line_item.presentation {
+                line_layout.divider = p.divider.clone();
+                line_layout.divider_width = content_width;
                 line_layout.indent = px(p.quote_indent(font_size.into()));
                 line_layout.quote_depth = p.quote_depth;
                 line_layout.task = p.task.map(|state| {
@@ -1448,6 +1451,7 @@ impl Element for TextElement {
             &display_text,
             &last_layout,
             text_size,
+            (bounds.size.width - line_number_width - RIGHT_MARGIN).max(px(0.)),
             &runs,
             &document_colors,
             window,

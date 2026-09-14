@@ -1,8 +1,15 @@
 //! Deliberately line-local Markdown presentation. All offsets are UTF-8 bytes.
 use std::ops::Range;
 
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Divider {
+    pub marker: usize,
+    pub hidden: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Presentation {
+    pub divider: Option<Divider>,
     pub inline_code: Vec<Range<usize>>,
     pub code: Option<crate::highlighter::code::CodeTokens>,
     pub links: Vec<super::markdown_links::MarkdownLink>,
@@ -182,6 +189,15 @@ pub(super) fn list_enter(line: &str, cursor: usize) -> Option<(Range<usize>, Str
 }
 
 impl Presentation {
+    pub fn divider(source: &str, marker: usize, hidden: bool) -> Self {
+        // Retain literal shaping and source mapping in both states. Painting alone
+        // switches between the rule and its syntax, preserving wrapped geometry.
+        Self {
+            divider: Some(Divider { marker, hidden }),
+            quote_depth: quote_prefixes(source).len(),
+            ..Default::default()
+        }
+    }
     pub fn literal(
         source: &str,
         prefix: usize,

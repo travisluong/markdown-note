@@ -3270,6 +3270,14 @@ impl InputState {
             line.height_units(),
         )
     }
+    /// Divider visibility and the same local geometry used by its paint path.
+    #[doc(hidden)]
+    pub fn diagnostic_divider_row(&self, row: usize) -> Option<(bool, Option<Bounds<Pixels>>)> {
+        let layout = self.last_layout.as_ref()?;
+        let line = layout.line(row)?;
+        let divider = line.divider.as_ref()?;
+        Some((divider.hidden, line.divider_bounds(layout.line_height)))
+    }
     #[doc(hidden)]
     pub fn diagnostic_code_point(&self, row: usize, column: usize) -> Point<Pixels> {
         let layout = self.last_layout.as_ref().unwrap();

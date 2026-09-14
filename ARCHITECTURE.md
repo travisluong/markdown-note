@@ -320,3 +320,12 @@ SearchPanel restores query focus for clicks, Enter and arrows, and restores the
 previous result on cancelled/failed navigation. Successful clicks preserve list
 scroll. Reading initializes its find state without focusing its input when the
 navigation comes from notebook search.
+
+Live-preview thematic breaks come from the shared worker GFM tree. TextWrapper
+accepts divider ranges only for the exact source revision and invalidates them
+on edits and mode/document resets. Presentation retains literal source shaping
+and mappings; LineLayout paints a 2 px theme.border rule outside the caret row,
+using the available content width and measured marker indentation. Revealing
+syntax changes painting only, keeping wrapped height and downstream positions
+stable. Source mode and the Reading divider renderer retain their behavior.
+Headless coverage lives in tests/horizontal_rules.rs and tests/editor.rs.

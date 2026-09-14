@@ -98,6 +98,7 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    pub(super) dividers: std::sync::Arc<Vec<Range<usize>>>,
     pub(super) list_items: std::sync::Arc<Vec<super::list_reorder::Item>>,
     pub(super) inline_code: std::sync::Arc<Vec<super::inline_code::CodeSpan>>,
     pub(super) code: super::fenced_code::Index,
@@ -144,6 +145,7 @@ impl TextWrapper {
     pub(super) fn new(font: Font, font_size: Pixels, wrap_width: Option<Pixels>) -> Self {
         Self {
             code: Default::default(),
+            dividers: Default::default(),
             list_items: Default::default(),
             inline_code: Default::default(),
             retired_code: Vec::new(),
@@ -181,6 +183,7 @@ impl TextWrapper {
     }
 
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
+        self.dividers = Default::default();
         self.inline_code = Default::default();
         self.list_items = Default::default();
         self.images.clear();
@@ -308,6 +311,7 @@ impl TextWrapper {
 
     #[inline]
     pub(super) fn set_default_text(&mut self, text: &Rope) {
+        self.dividers = Default::default();
         self.retired_code.push(std::mem::take(&mut self.code));
         self.analysis.reset();
         self.links = Default::default();
@@ -427,6 +431,10 @@ impl TextWrapper {
         if !self.live_preview {
             return;
         }
+        if !self.dividers.is_empty() {
+            self.dividers = Default::default();
+            self.syntax_revision += 1;
+        }
         if !self.inline_code.is_empty() {
             self.inline_code = Default::default();
             self.syntax_revision += 1;
@@ -489,6 +497,7 @@ impl TextWrapper {
         let current = parsed.revision == self.analysis.revision && self.live_preview;
         let code = super::fenced_code::Index::new(parsed.code);
         if current {
+            self.dividers = parsed.dividers;
             self.list_items = parsed.list_items;
             self.inline_code = parsed.inline_code;
             self.analysis.code_cache = code.snapshot.cache.clone();
@@ -696,7 +705,16 @@ impl TextWrapper {
             };
             let presentation = self.live_preview.then(|| {
                 let start = changed_text.line_start_offset(new_start_row + ix);
-                if let Some(code) = self.code.line(start) {
+                let divider = self.dividers.partition_point(|range| range.start < start);
+                if let Some(range) = self.dividers.get(divider).filter(|range| {
+                    range.start < start + source.len() && range.end <= start + source.len()
+                }) {
+                    super::live_preview::Presentation::divider(
+                        &source,
+                        range.start - start,
+                        new_start_row + ix != self.reveal_row,
+                    )
+                } else if let Some(code) = self.code.line(start) {
                     super::live_preview::Presentation::literal(&source, code.prefix, code.tokens)
                 } else {
                     super::live_preview::Presentation::parse(&source)
@@ -1119,6 +1137,8 @@ impl DisplayPoint {
 
 /// The layout info of a line with soft wrapped lines.
 pub(crate) struct LineLayout {
+    pub(super) divider: Option<super::live_preview::Divider>,
+    pub(super) divider_width: Pixels,
     pub(super) code_block: Option<super::fenced_code::Decoration>,
     pub(super) code_width: Pixels,
     pub(super) image: Option<ImageLayout>,
@@ -1159,6 +1179,8 @@ impl LineLayout {
     }
     pub(crate) fn new() -> Self {
         Self {
+            divider: None,
+            divider_width: px(0.),
             code_block: None,
             code_width: px(0.),
             table: None,
@@ -1462,6 +1484,15 @@ impl LineLayout {
         )
     }
 
+    pub(super) fn divider_bounds(&self, line_height: Pixels) -> Option<gpui::Bounds<Pixels>> {
+        let divider = self.divider.as_ref().filter(|divider| divider.hidden)?;
+        let x = self.position_for_index(divider.marker, line_height)?.x;
+        Some(gpui::Bounds::new(
+            point(x, (self.size(line_height).height - px(2.)) / 2.),
+            size((self.divider_width - x).max(px(0.)), px(2.)),
+        ))
+    }
+
     pub(super) fn paint(
         &self,
         pos: Point<Pixels>,
@@ -1572,6 +1603,12 @@ impl LineLayout {
                     cx.theme().border,
                 ));
             }
+        }
+        if let Some(mut bounds) = self.divider_bounds(line_height / self.scale) {
+            use crate::ActiveTheme as _;
+            bounds.origin += pos;
+            window.paint_quad(gpui::fill(bounds, cx.theme().border));
+            return;
         }
         for (ix, line) in self.wrapped_lines.iter().enumerate() {
             _ = line.paint(
@@ -2638,6 +2675,41 @@ mod sustained_edit_tests {
     }
 
     #[test]
+    fn divider_analysis_rejects_stale_results_and_invalidates_presentation() {
+        let source = "intro\n\n---\n";
+        for (range, inserted, expected) in [(7..8, "", 0), (6..6, "heading", 0), (1..1, "x", 1)] {
+            let mut wrapper = make(source);
+            assert_eq!(wrapper.dividers.len(), 1);
+            measure(&mut wrapper, 0..4);
+            assert!(
+                wrapper.lines[2]
+                    .presentation
+                    .as_ref()
+                    .unwrap()
+                    .divider
+                    .is_some()
+            );
+            wrapper.analysis.request(&wrapper.text.clone());
+            let stale = wrapper.analysis.start().unwrap();
+            edit(&mut wrapper, range, inserted);
+            assert!(wrapper.dividers.is_empty());
+            measure(&mut wrapper, 0..4);
+            assert!(
+                wrapper.lines[2]
+                    .presentation
+                    .as_ref()
+                    .unwrap()
+                    .divider
+                    .is_none()
+            );
+            wrapper.apply_analysis(stale.parse());
+            assert!(wrapper.dividers.is_empty());
+            let current = wrapper.analysis.start().unwrap();
+            assert!(wrapper.apply_analysis(current.parse()));
+            assert_eq!(wrapper.dividers.len(), expected);
+        }
+    }
+    #[test]
     fn inline_code_analysis_rejects_stale_results() {
         let source = "intro\n`*café*`\n";
         let mut wrapper = make(source);
@@ -3146,6 +3218,7 @@ impl TextWrapper {
             text: self.text.clone(),
         }
         .parse();
+        self.dividers = parsed.dividers;
         self.analysis.code_cache = parsed.code.cache.clone();
         self.list_items = parsed.list_items;
         self.inline_code = parsed.inline_code;

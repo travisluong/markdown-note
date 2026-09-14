@@ -23,6 +23,7 @@ pub(super) struct Request {
     pub text: Rope,
 }
 pub(super) struct Parsed {
+    pub dividers: Arc<Vec<Range<usize>>>,
     pub list_items: Arc<Vec<super::list_reorder::Item>>,
     pub inline_code: Arc<Vec<super::inline_code::CodeSpan>>,
     pub code: Arc<super::fenced_code::Snapshot>,
@@ -55,7 +56,9 @@ impl Request {
             || code_needed
             || images_needed
             || source.contains('`')
-            || source.lines().any(|line| line.contains(['-', '*', '+']))
+            || source
+                .lines()
+                .any(|line| line.contains(['-', '*', '+', '_']))
             || source.lines().any(super::list_edit::numeric_marker)
         {
             work.gfm_calls += 1;
@@ -84,6 +87,11 @@ impl Request {
         // The tree stays on this worker and is dropped before returning derived indexes.
         (
             Parsed {
+                dividers: Arc::new(
+                    root.as_ref()
+                        .map(|root| thematic_breaks(&source, root))
+                        .unwrap_or_default(),
+                ),
                 list_items: Arc::new(
                     root.as_ref()
                         .map(|root| super::list_reorder::from_ast(&source, root))
@@ -103,6 +111,26 @@ impl Request {
             work,
         )
     }
+}
+
+/// Reuse the worker's GFM tree so setext headings, tables and code stay literal.
+fn thematic_breaks(source: &str, root: &markdown::mdast::Node) -> Vec<Range<usize>> {
+    fn visit(source: &str, node: &markdown::mdast::Node, ranges: &mut Vec<Range<usize>>) {
+        if let markdown::mdast::Node::ThematicBreak(rule) = node {
+            if let Some(position) = &rule.position {
+                let mut range = position.start.offset..position.end.offset;
+                range.start += source[range.clone()].find(['-', '*', '_']).unwrap_or(0);
+                ranges.push(range);
+            }
+        } else if let Some(children) = node.children() {
+            for child in children {
+                visit(source, child, ranges);
+            }
+        }
+    }
+    let mut ranges = Vec::new();
+    visit(source, root, &mut ranges);
+    ranges
 }
 
 /// Exercise the production request parser without starting a native editor or window.
@@ -489,6 +517,40 @@ mod shared_analysis_tests {
             code_cache: cache,
             revision: 42,
             text: Rope::from(source),
+        }
+    }
+
+    #[test]
+    fn thematic_breaks_use_gfm_context_and_one_shared_parse() {
+        for (source, marker) in [
+            ("---", "---"),
+            ("***", "***"),
+            ("___", "___"),
+            ("  - - -  ", "- - -"),
+            ("café 你好\r\n\r\n> > ***\r\n", "***"),
+            ("- item\n\n  ---\n", "---"),
+            ("- ***\n", "***"),
+        ] {
+            let (parsed, work) = request(source, Arc::default()).parse_with_work();
+            assert_eq!(parsed.dividers.len(), 1, "{source:?}");
+            assert_eq!(source[parsed.dividers[0].clone()].trim(), marker);
+            assert_eq!(work.gfm_calls, 1);
+            assert_eq!(work.gfm_bytes, source.len());
+        }
+        for source in [
+            "heading\n---",
+            "inline --- dashes",
+            "--",
+            "\\---",
+            "- * -",
+            "```\n---\n```",
+            "~~~\n***\n~~~",
+            "    ___",
+            "| a | b |\n| --- | --- |\n| c | d |",
+            "`---`",
+        ] {
+            let parsed = request(source, Arc::default()).parse();
+            assert!(parsed.dividers.is_empty(), "{source:?}");
         }
     }
 
