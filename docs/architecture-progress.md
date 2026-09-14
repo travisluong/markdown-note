@@ -883,3 +883,20 @@ with editor-diagnostics also passed. Earlier transient Windows linker failures
 on test executables cleared on retry; no processes were stopped. Verification
 used TestPlatform and noninteractive commands only; native visual confirmation
 remains for the user. Cargo.lock remains excluded from both task commits.
+
+### Date reference row overlap correction (2026-09-14)
+
+The quick reference now uses two equal grid columns with top-aligned cells
+and nonshrinking rows/groups. Tokens and descriptions wrap inside their own
+columns instead of moving between flex lines. This keeps wrapped labels from
+overlapping the preceding token or following row.
+
+An isolated TestPlatform regression, with all rows onscreen to avoid stale
+debug bounds from clipped dialog frames, checks both example and token cells
+at narrow/regular widths and UI sizes 14 and 24. Restoring the old wrapping
+layout makes the regression fail: a description begins before its preceding
+token's bottom. The corrected layout passes. All 20 settings_ui tests passed,
+including date input painting and reference formatter checks. cargo check
+--locked --offline, cargo fmt --check, and strict all-target clippy with
+editor-diagnostics passed. No desktop interaction was used; native visual
+confirmation remains with the user. Cargo.lock remains excluded.
