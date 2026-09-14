@@ -276,6 +276,9 @@ notebook root, explorer generation and relative path. File operations live in
 Rename uses the existing move owner. Session owns approved `EntryOperation`
 lifetimes, write barriers and deletion/installation outcomes. OS Trash is isolated
 behind the storage adapter and replaced with a fixture backend in UI tests.
+On Windows, the adapter runs Trash on a dedicated thread so its STA COM setup
+never runs on GPUI's MTA worker pool. Thread creation failures, shell errors and
+backend panics return through the normal failed-entry path, preserving content.
 
 Live-preview fenced blocks reserve the full wrapped geometry of both fence lines.
 Selection changes hide or reveal fence glyphs only; font, padding, source mapping,

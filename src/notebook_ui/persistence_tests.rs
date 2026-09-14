@@ -54,7 +54,11 @@ pub(super) fn fixture(cx: &mut TestAppContext) -> (Fixture, Entity<Notes>, &mut 
             );
         });
         notes = Some(entity.clone());
-        Root::new(entity, window, cx)
+        let view = cx.new(|cx| crate::NotesWindow {
+            _subscription: cx.observe(&entity, |_, _, cx| cx.notify()),
+            notes: entity,
+        });
+        Root::new(view, window, cx)
     });
     cx.refresh().unwrap();
     cx.run_until_parked();

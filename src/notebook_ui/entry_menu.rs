@@ -559,6 +559,46 @@ mod tests {
         let from = notebook::entry_path(root, relative)?;
         fs::rename(from, root.join("trashed-fixture"))
     }
+    #[gpui::test]
+    fn trash_confirmation_cancels_reports_failure_and_completes(cx: &mut TestAppContext) {
+        use gpui_component::WindowExt;
+
+        let (fixture, notes, cx) = fixture(cx);
+        for (confirm, succeeds) in [(false, false), (true, false), (true, true)] {
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    if succeeds {
+                        this.notebooks.trash_backend = fake_trash;
+                    }
+                    this.entry_action(
+                        target(this, "note.md", false),
+                        EntryAction::Trash,
+                        window,
+                        cx,
+                    );
+                    assert!(window.has_active_dialog(cx));
+                });
+            });
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            assert!(fixture.note.exists(), "Opening the dialog must not delete");
+            if confirm {
+                cx.simulate_keystrokes("enter");
+            } else {
+                cx.simulate_keystrokes("escape");
+            }
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                assert!(!window.has_active_dialog(cx));
+                let this = notes.read(cx);
+                assert!(!this.is_busy());
+                assert_eq!(this.document().is_none(), succeeds);
+                assert_eq!(this.notebooks.notice.is_some(), confirm && !succeeds);
+            });
+            assert_eq!(fixture.note.exists(), !succeeds);
+        }
+        assert!(fixture.root.join("trashed-fixture").exists());
+    }
     #[::core::prelude::v1::test]
     fn menus_have_the_requested_order_and_folder_specific_actions() {
         let file = actions(false, false);

@@ -114,12 +114,86 @@ pub fn duplicate_entry(root: &Path, source: &Path, bytes: Option<&[u8]>) -> io::
 }
 pub fn trash_entry(root: &Path, relative: &Path) -> io::Result<()> {
     let path = entry_path(root, relative)?;
+    #[cfg(windows)]
+    return run_trash_operation(move || trash::delete(path).map_err(io::Error::other));
+    #[cfg(not(windows))]
     trash::delete(path).map_err(io::Error::other)
+}
+
+#[cfg(windows)]
+fn run_trash_operation(
+    operation: impl FnOnce() -> io::Result<()> + Send + 'static,
+) -> io::Result<()> {
+    // GPUI uses Windows Runtime MTA workers, but trash initializes COM as STA.
+    // A fresh thread lets trash own its apartment and keeps any dependency
+    // panic out of the executor. Callers already run this blocking I/O off UI.
+    std::thread::Builder::new()
+        .name("mithril-trash".into())
+        .spawn(operation)?
+        .join()
+        .map_err(|_| io::Error::other("Trash operation failed unexpectedly."))?
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn trash_operation_can_initialize_sta_from_an_mta_caller() {
+        use windows_sys::Win32::System::Com::{
+            COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize,
+        };
+
+        // Match GPUI's Windows Runtime worker apartment without launching GPUI
+        // or touching the real Recycle Bin. Only probe COM initialization.
+        std::thread::spawn(|| {
+            // SAFETY: null reserved pointer and a valid apartment flag. Each
+            // successful initialization is balanced on the same thread below.
+            let initialized =
+                unsafe { CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED as u32) };
+            assert!(initialized >= 0);
+            let result = run_trash_operation(|| {
+                // SAFETY: as above; this mirrors trash's default STA setup.
+                let initialized =
+                    unsafe { CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+                if initialized < 0 {
+                    return Err(io::Error::other(format!(
+                        "Trash STA initialization failed: {initialized:#x}"
+                    )));
+                }
+                // SAFETY: balance this thread's successful initialization.
+                unsafe { CoUninitialize() };
+                Ok(())
+            });
+            // SAFETY: balance the caller's successful MTA initialization.
+            unsafe { CoUninitialize() };
+            result.unwrap();
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn trash_operation_returns_errors_and_contains_backend_panics() {
+        let error = run_trash_operation(|| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "fixture denial",
+            ))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(error.to_string(), "fixture denial");
+        let error = run_trash_operation(|| panic!("fixture shell failure")).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Trash operation failed unexpectedly")
+        );
+        run_trash_operation(|| Ok(())).unwrap();
+    }
+
     #[test]
     fn creation_rename_and_copy_guard_names_and_preserve_bytes() {
         let temp = tempfile::tempdir().unwrap();

@@ -943,3 +943,28 @@ also passed. The ordinary target build hit a locked mithril.exe, so validation
 used the existing separate headless target without stopping or interacting with
 the running application. Native visual confirmation remains with the user.
 The pre-existing Cargo.lock change remains excluded from the commit.
+
+### Windows Move to Trash crash (2026-09-14)
+
+The Windows trash adapter now runs the shell operation on a dedicated thread.
+GPUI schedules background work on Windows Runtime MTA workers, while trash
+5.2.8 initializes COM as STA and panics if that fails. The fresh thread lets
+trash own its apartment; thread creation failures, ordinary shell errors and
+backend panics return as I/O errors through the existing session failure path.
+The editor and unsaved text remain available on failure.
+
+A headless Windows regression reproduced the incompatible apartment error
+0x80010106 with direct execution and passes with the dedicated thread. A second
+regression covers error propagation, panic containment and a subsequent
+successful operation. Neither calls the real Recycle Bin. The notebook UI
+fixture now uses NotesWindow to render actual modal layers; a dialog regression
+covers Escape cancellation, confirmation failure and successful fixture deletion.
+Existing coverage verifies preservation of unsaved edits after failed deletion.
+
+The full cargo test --locked --offline --target-dir target/headless --features
+editor-diagnostics suite passed. cargo check with the same locked/offline target,
+cargo fmt --check, and strict all-target clippy with editor-diagnostics also
+passed. An initial parallel test build hit a transient linker lock; the full
+rerun with -j 2 passed. No desktop interaction or native application launch was
+used. Native Recycle Bin validation remains with the user. The pre-existing
+Cargo.lock change is excluded from this fix.
