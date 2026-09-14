@@ -112,14 +112,25 @@ impl Render for SettingsPanel {
             .when_some(self.values.notice.clone(), |view, notice| view.child(div().text_sm().child(notice)))
             .child(Button::new("close-settings").label("Close")
                 .on_click(cx.listener(|this, _, _, cx| this.emit_intent(SettingsIntent::Close, cx))));
-        let templates_body = div().w_full().min_w_0().flex().flex_col().gap_3()
+        let templates_body = div()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap_3()
             .child("Current date format")
             .child(Input::new(&self.date).w_full().flex_shrink_0())
-            .when_some(self.date_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
-            .when_some(self.date_example(cx), |view, example| {
-                view.child(div().debug_selector(|| "date-format-example".into()).child(format!("Example: {example}")))
+            .when_some(self.date_error.clone(), |view, error| {
+                view.child(div().text_sm().text_color(cx.theme().danger).child(error))
             })
-            .child(div().text_sm().child("Moment-style tokens, local time, English names. Use [brackets] for literal text. See README for supported tokens."));
+            .when_some(self.date_example(cx), |view, example| {
+                view.child(
+                    div()
+                        .debug_selector(|| "date-format-example".into())
+                        .child(format!("Example: {example}")),
+                )
+            })
+            .child(super::reference::render(cx));
         let mut theme_body = div()
             .w_full()
             .min_w_0()

@@ -8,6 +8,7 @@ use gpui_component::{
 };
 use mithril::{notebook, templates};
 
+mod reference;
 mod render;
 #[cfg(test)]
 mod tests;

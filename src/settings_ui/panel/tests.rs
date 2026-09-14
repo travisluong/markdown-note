@@ -159,6 +159,9 @@ fn date_input_paints_typed_text(cx: &mut TestAppContext) {
             cx.simulate_keystrokes("ctrl-a");
             cx.simulate_input("MM/DD/YYYY");
             assert_painted("MM/DD/YYYY", cx);
+            let content = cx.debug_bounds("settings-content").unwrap();
+            let reference = cx.debug_bounds("date-format-reference").unwrap();
+            assert!(reference.left() >= content.left() && reference.right() <= content.right());
             cx.update(|_, cx| assert_eq!(notes.read(cx).date_format(), "MM/DD/YYYY"));
             cx.simulate_keystrokes("ctrl-a backspace");
             assert_painted("", cx);

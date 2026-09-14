@@ -864,3 +864,22 @@ correction, section changes, Light/Dark themes, 800/480 px windows and long
 horizontal scrolling. Tests inspect shaped text and inner geometry. No desktop
 interaction or native application harness was used. Full gates follow the
 reference addition. Existing Cargo.lock changes remain excluded.
+
+### Date format quick reference and integrated verification (2026-09-14)
+
+Settings Templates now includes six read-only common formats with fixed sample
+output and a compact token guide covering years, numeric/named months, days,
+weekdays, 12/24-hour time, minutes, seconds and AM/PM. The reference calls out
+case sensitivity, MM versus mm, English/local-time behavior and bracketed
+literal text. It wraps inside the existing scrollable settings dialog.
+Reference data and presentation are private to SettingsPanel; format syntax,
+preference schema and ownership are unchanged.
+
+All 19 settings tests passed, including formatter checks for every reference
+example and token row, and reference containment at narrow widths. The complete
+cargo test --locked --offline --features editor-diagnostics suite passed.
+cargo check --locked --offline, cargo fmt --check, and strict all-target clippy
+with editor-diagnostics also passed. Earlier transient Windows linker failures
+on test executables cleared on retry; no processes were stopped. Verification
+used TestPlatform and noninteractive commands only; native visual confirmation
+remains for the user. Cargo.lock remains excluded from both task commits.
