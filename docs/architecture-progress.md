@@ -1114,3 +1114,28 @@ passed. Transient Windows linker LNK1104 output-access errors cleared on retry;
 the complete suite passed in the default target directory. No native application
 launch or desktop interaction was used. Unrelated lockfile/vendor link-menu edits,
 their tests and their architecture-map addition remain outside this commit.
+
+## 2026-09-15 — Toolbar reset and Medium default
+
+The Toolbar settings section now provides Reset toolbar to defaults beside the
+size presets. One typed ResetToolbar intent restores complete ordering, enabled
+states and Medium size in the current preference scope. The adapter retains the
+existing notebook/session, dialog-lifetime and foreground-busy guards, and skips
+notebook persistence when preferences already equal the defaults. Missing and
+invalid icon-size values now use Medium; explicitly saved Small and Large values
+remain unchanged until reset.
+
+Headless TestPlatform coverage exercises the actual reset button, stale form and
+notebook-scope rejection, form/adapter busy guards, persisted reset and observable
+no-op writes. Settings serialization coverage checks Medium defaults and invalid
+values alongside round trips for every explicit preset.
+Verification on Windows: cargo check --locked --offline, cargo fmt --check, and
+cargo clippy --locked --offline --all-targets --features editor-diagnostics --
+-D warnings passed. The full cargo test --locked --offline -j 1 --features
+editor-diagnostics --target-dir target/headless suite passed all 429 tests.
+The default target directory hit Windows LNK1104/output-access errors, including
+an inaccessible target/debug/mithril.exe; the existing separate headless cache
+completed without changing or stopping any application process. No desktop
+interaction or native application launch was used. Unrelated lockfile/vendor
+link-menu changes and their architecture-map addition remain outside this commit;
+their tests were present in the full-suite run.

@@ -124,6 +124,16 @@ fn toolbar_moves_match_insertion_for_all_items_and_representative_orders() {
 #[test]
 fn toolbar_icon_sizes_default_normalize_and_persist() {
     use mithril::notebook::ToolbarIconSize;
+    assert_eq!(
+        ToolbarSettings::default().icon_size,
+        ToolbarIconSize::Medium
+    );
+    assert_eq!(
+        serde_json::from_str::<ToolbarSettings>("{}")
+            .unwrap()
+            .icon_size,
+        ToolbarIconSize::Medium
+    );
     for invalid in [
         serde_json::json!(null),
         serde_json::json!("huge"),
@@ -134,7 +144,7 @@ fn toolbar_icon_sizes_default_normalize_and_persist() {
         let settings: ToolbarSettings =
             serde_json::from_value(serde_json::json!({ "icon_size": invalid, "search": false }))
                 .unwrap();
-        assert_eq!(settings.icon_size, ToolbarIconSize::Small);
+        assert_eq!(settings.icon_size, ToolbarIconSize::Medium);
         assert!(!settings.search);
     }
     let directory = tempfile::tempdir().unwrap();

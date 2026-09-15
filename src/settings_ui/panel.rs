@@ -35,6 +35,7 @@ pub(super) enum ColorRole {
 
 #[derive(Clone, Debug)]
 pub(super) enum SettingsIntent {
+    ResetToolbar,
     ToolbarIconSize(notebook::ToolbarIconSize),
     ToolbarItemEnabled(notebook::ToolbarItem, bool),
     ToolbarItemMoved {

@@ -1345,7 +1345,7 @@ fn toolbar_size_buttons_apply_immediately_and_preserve_session_scope(cx: &mut Te
             this.notebooks.active = Some(fixture.first.clone());
             assert_eq!(
                 this.toolbar_settings().icon_size,
-                notebook::ToolbarIconSize::Small
+                notebook::ToolbarIconSize::Medium
             );
             this.notebooks.active = None;
             assert_eq!(
@@ -1370,7 +1370,7 @@ fn toolbar_size_buttons_apply_immediately_and_preserve_session_scope(cx: &mut Te
 
 #[gpui::test]
 fn toolbar_size_persists_for_notebook_and_rejects_scope_and_busy_events(cx: &mut TestAppContext) {
-    use notebook::ToolbarIconSize::{Large, Medium, Small};
+    use notebook::ToolbarIconSize::{Large, Medium};
     let (fixture, notes, cx) = fixture(cx, true, true);
     cx.update(|_, cx| {
         notes.update(cx, |this, _| {
@@ -1394,11 +1394,11 @@ fn toolbar_size_persists_for_notebook_and_rejects_scope_and_busy_events(cx: &mut
             .settings
             .toolbar
             .icon_size,
-        Small
+        Medium
     );
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            assert_eq!(this.session_toolbar.icon_size, Small);
+            assert_eq!(this.session_toolbar.icon_size, Medium);
             this.notebooks.active = Some(fixture.second.clone());
             this.handle_settings_intent(
                 form.entity_id(),
@@ -1406,7 +1406,7 @@ fn toolbar_size_persists_for_notebook_and_rejects_scope_and_busy_events(cx: &mut
                 window,
                 cx,
             );
-            assert_eq!(this.toolbar_settings().icon_size, Small);
+            assert_eq!(this.toolbar_settings().icon_size, Medium);
             assert!(this.settings_panel.is_none());
             this.open_settings(window, cx);
         })
@@ -1421,7 +1421,7 @@ fn toolbar_size_persists_for_notebook_and_rejects_scope_and_busy_events(cx: &mut
                 window,
                 cx,
             );
-            assert_eq!(this.toolbar_settings().icon_size, Small);
+            assert_eq!(this.toolbar_settings().icon_size, Medium);
             assert!(form.read(cx).values.busy);
         })
     });
@@ -1513,4 +1513,132 @@ fn formatting_toolbar_items_toggle_reorder_and_keep_their_saved_position(cx: &mu
         cx,
     );
     cx.update(|_, cx| assert!(notes.read(cx).toolbar_settings().bold));
+}
+
+#[gpui::test]
+fn toolbar_reset_button_restores_every_setting_and_rejects_stale_form(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton};
+    let (fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::ToolbarIconSize(notebook::ToolbarIconSize::Large),
+        cx,
+    );
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Search, false),
+        cx,
+    );
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemMoved {
+            item: notebook::ToolbarItem::Sort,
+            target: notebook::ToolbarItem::Sidebar,
+            after: false,
+        },
+        cx,
+    );
+    toolbar_section(&form, cx);
+    let bounds = cx.debug_bounds("reset-toolbar").unwrap();
+    cx.simulate_mouse_down(bounds.center(), MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_up(bounds.center(), MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert_eq!(
+            form.read(cx).values.toolbar,
+            notebook::ToolbarSettings::default()
+        );
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.session_toolbar, notebook::ToolbarSettings::default());
+            assert_eq!(
+                fixture.first.settings.toolbar,
+                notebook::ToolbarSettings::default()
+            );
+            window.close_dialog(cx);
+            this.open_settings(window, cx);
+            this.session_toolbar.icon_size = notebook::ToolbarIconSize::Small;
+            this.handle_settings_intent(form.entity_id(), SettingsIntent::ResetToolbar, window, cx);
+            assert_eq!(
+                this.session_toolbar.icon_size,
+                notebook::ToolbarIconSize::Small
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn toolbar_reset_persists_atomically_skips_defaults_and_rejects_scope_and_busy(
+    cx: &mut TestAppContext,
+) {
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::ToolbarIconSize(notebook::ToolbarIconSize::Small),
+        cx,
+    );
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Bold, false),
+        cx,
+    );
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemMoved {
+            item: notebook::ToolbarItem::Sort,
+            target: notebook::ToolbarItem::Sidebar,
+            after: false,
+        },
+        cx,
+    );
+    intent(&form, SettingsIntent::ResetToolbar, cx);
+    assert_eq!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .toolbar,
+        notebook::ToolbarSettings::default()
+    );
+    // Removing this fixture file makes an unnecessary write observable, without timing assumptions.
+    let settings_path = fixture.first.root.join(".mithril/settings.json");
+    fs::remove_file(&settings_path).unwrap();
+    intent(&form, SettingsIntent::ResetToolbar, cx);
+    assert!(!settings_path.exists());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.session_toolbar, notebook::ToolbarSettings::default());
+            let mut second = fixture.second.clone();
+            second.settings.toolbar.icon_size = notebook::ToolbarIconSize::Large;
+            this.notebooks.active = Some(second);
+            this.handle_settings_intent(form.entity_id(), SettingsIntent::ResetToolbar, window, cx);
+            assert_eq!(
+                this.toolbar_settings().icon_size,
+                notebook::ToolbarIconSize::Large
+            );
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            this.handle_settings_intent(form.entity_id(), SettingsIntent::ResetToolbar, window, cx);
+            assert_eq!(
+                this.toolbar_settings().icon_size,
+                notebook::ToolbarIconSize::Large
+            );
+            assert!(form.read(cx).values.busy);
+        })
+    });
+    let (events, _subscription) = watch(&form, cx);
+    intent(&form, SettingsIntent::ResetToolbar, cx);
+    cx.update(|_, cx| assert!(events.read(cx).0.is_empty()));
 }

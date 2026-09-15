@@ -206,7 +206,17 @@ impl Render for SettingsPanel {
             .gap_3()
             .child(self.values.subtitle.clone())
             .child("Icon size")
-            .child(toolbar_sizes)
+            .child(
+                toolbar_sizes.child(
+                    Button::new("reset-toolbar")
+                        .debug_selector(|| "reset-toolbar".into())
+                        .label("Reset toolbar to defaults")
+                        .disabled(self.values.busy)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.emit_intent(SettingsIntent::ResetToolbar, cx)
+                        })),
+                ),
+            )
             .child("Choose which items appear in the toolbar. Drag the grips to reorder.");
         for item in self.values.toolbar.order {
             toolbar_body = toolbar_body.child(self.render_toolbar_item(item, cx));

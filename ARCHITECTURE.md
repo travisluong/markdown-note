@@ -323,8 +323,11 @@ the adapter retains dialog lifetime, notebook scope and busy guards. Both the
 settings list and toolbar follow the saved order, including positions for hidden
 items. Disabling all items removes the row and border.
 ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
-invalid values default to Small. Toolbar-tab size intents use the same notebook/session
-scope, lifetime and busy guards. The toolbar owns exact 14/20/28 px icons in
+invalid values default to Medium; explicitly stored Small or Large values survive.
+Toolbar-tab size intents use the same notebook/session
+scope, lifetime and busy guards. Reset toolbar to defaults emits one typed intent
+restoring the complete order, visibility and Medium size together, skipping
+unchanged notebook writes. The toolbar owns exact 14/20/28 px icons in
 24/32/40 px button targets and wraps controls as needed; its height follows the
 button rows and padding. Theme UI font size does not scale these logical-pixel targets.
 An enabled toolbar remains visible with the sidebar collapsed or no notebook open;
