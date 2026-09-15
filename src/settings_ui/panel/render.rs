@@ -183,6 +183,21 @@ impl Render for SettingsPanel {
                     this.emit_intent(SettingsIntent::ResetPalettes, cx)
                 })),
         );
+        let mut toolbar_sizes = div().flex().flex_wrap().gap_2();
+        for (index, (size, label)) in notebook::ToolbarIconSize::OPTIONS.into_iter().enumerate() {
+            toolbar_sizes = toolbar_sizes.child(
+                Button::new(("toolbar-icon-size", index))
+                    .debug_selector(move || format!("toolbar-icon-size-{index}"))
+                    .label(label)
+                    .when(self.values.toolbar.icon_size == size, |button| {
+                        button.primary()
+                    })
+                    .disabled(self.values.busy)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.emit_intent(SettingsIntent::ToolbarIconSize(size), cx)
+                    })),
+            );
+        }
         let mut toolbar_body = div()
             .w_full()
             .min_w_0()
@@ -190,6 +205,8 @@ impl Render for SettingsPanel {
             .flex_col()
             .gap_3()
             .child(self.values.subtitle.clone())
+            .child("Icon size")
+            .child(toolbar_sizes)
             .child("Choose which items appear in the toolbar. Drag the grips to reorder.");
         for item in self.values.toolbar.order {
             toolbar_body = toolbar_body.child(self.render_toolbar_item(item, cx));

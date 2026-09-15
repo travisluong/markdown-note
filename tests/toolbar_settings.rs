@@ -126,3 +126,33 @@ fn toolbar_moves_match_insertion_for_every_permutation_and_visibility_mask() {
         }
     }
 }
+
+#[test]
+fn toolbar_icon_sizes_default_normalize_and_persist() {
+    use mithril::notebook::ToolbarIconSize;
+    for invalid in [
+        serde_json::json!(null),
+        serde_json::json!("huge"),
+        serde_json::json!(20),
+        serde_json::json!([]),
+        serde_json::json!(false),
+    ] {
+        let settings: ToolbarSettings =
+            serde_json::from_value(serde_json::json!({ "icon_size": invalid, "search": false }))
+                .unwrap();
+        assert_eq!(settings.icon_size, ToolbarIconSize::Small);
+        assert!(!settings.search);
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut book = Notebook::open(&directory.path().join("book"), true).unwrap();
+    for (size, label) in ToolbarIconSize::OPTIONS {
+        book.settings.toolbar.icon_size = size;
+        save_book(&book).unwrap();
+        let saved = Notebook::open(&book.root, false).unwrap();
+        assert_eq!(saved.settings.toolbar.icon_size, size);
+        assert_eq!(
+            serde_json::to_value(saved.settings.toolbar).unwrap()["icon_size"],
+            label.to_lowercase()
+        );
+    }
+}

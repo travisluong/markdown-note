@@ -366,6 +366,17 @@ impl Notes {
         }
         let mut appearance = self.appearance();
         let appearance_changed = match intent {
+            SettingsIntent::ToolbarIconSize(size) => {
+                if let Some(book) = &mut self.notebooks.active {
+                    if book.settings.toolbar.icon_size != size {
+                        book.settings.toolbar.icon_size = size;
+                        self.persist_notebooks(cx);
+                    }
+                } else {
+                    self.session_toolbar.icon_size = size;
+                }
+                false
+            }
             SettingsIntent::ToolbarItemMoved {
                 item,
                 target,

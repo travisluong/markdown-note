@@ -1055,3 +1055,28 @@ existing target/headless dependency directory is a junction to target/debug/deps
 No native application launch or desktop interaction was used; native visual
 validation remains manual. Unrelated lockfile and vendor link-menu changes,
 including their architecture-map addition, are excluded from this commit.
+
+## 2026-09-14 — Toolbar icon size presets
+
+Settings → Toolbar now offers Small, Medium and Large presets. ToolbarSettings
+stores a typed icon_size with lowercase JSON values; missing and invalid values
+fall back to Small. Typed form intents apply immediately through the existing
+notebook/session preference scope, dialog-lifetime and busy guards. Unchanged
+notebook size selections do not enqueue a write.
+
+The application toolbar owns exact 14/20/28 logical-pixel icons and 24/32/40-pixel
+button targets. Explicit Icon children preserve the requested icon-to-target
+sizes independently of component defaults. The row wraps at narrow widths and
+its height follows button rows, padding and border instead of a fixed height.
+
+Four new tests cover invalid/missing values and persistence, preset clicks and
+exact headless icon/button/toolbar geometry, notebook versus session isolation,
+stale dialog/scope events, busy form and adapter guards, and two-row wrapping
+for all three sizes. Existing toolbar visibility, reorder and persistence tests
+continue to pass.
+Verification on Windows: cargo check --locked --offline, cargo test --locked
+--offline -j 1 --features editor-diagnostics (409 tests), cargo fmt --check, and
+cargo clippy --locked --offline --all-targets --features editor-diagnostics --
+-D warnings passed. No desktop automation or native application launch was used.
+Unrelated lockfile/vendor link-menu changes and their architecture-map addition
+remain outside this commit; their tests were present during the full-suite run.

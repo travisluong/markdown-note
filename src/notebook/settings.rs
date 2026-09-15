@@ -218,6 +218,47 @@ impl ThemePalette {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolbarIconSize {
+    #[default]
+    Small,
+    Medium,
+    Large,
+}
+
+impl ToolbarIconSize {
+    pub const OPTIONS: [(Self, &'static str); 3] = [
+        (Self::Small, "Small"),
+        (Self::Medium, "Medium"),
+        (Self::Large, "Large"),
+    ];
+
+    pub fn icon_pixels(self) -> f32 {
+        match self {
+            Self::Small => 14.,
+            Self::Medium => 20.,
+            Self::Large => 28.,
+        }
+    }
+
+    pub fn button_pixels(self) -> f32 {
+        match self {
+            Self::Small => 24.,
+            Self::Medium => 32.,
+            Self::Large => 40.,
+        }
+    }
+}
+
+fn deserialize_toolbar_icon_size<'de, D>(deserializer: D) -> Result<ToolbarIconSize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolbarItem {
@@ -249,6 +290,8 @@ impl ToolbarItem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolbarSettings {
+    #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
+    pub icon_size: ToolbarIconSize,
     #[serde(deserialize_with = "deserialize_toolbar_order")]
     pub order: [ToolbarItem; 4],
     pub sidebar: bool,
@@ -260,6 +303,7 @@ pub struct ToolbarSettings {
 impl Default for ToolbarSettings {
     fn default() -> Self {
         Self {
+            icon_size: ToolbarIconSize::default(),
             order: ToolbarItem::DEFAULT_ORDER,
             sidebar: true,
             explorer: true,

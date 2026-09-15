@@ -1269,3 +1269,190 @@ fn toolbar_order_persists_with_notebook_and_rejects_old_dialog_drags(cx: &mut Te
         expected
     );
 }
+
+#[gpui::test]
+fn toolbar_size_buttons_apply_immediately_and_preserve_session_scope(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton, px};
+    let (fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    toolbar_section(&form, cx);
+    for (index, (size, _)) in notebook::ToolbarIconSize::OPTIONS.into_iter().enumerate() {
+        let bounds = cx
+            .debug_bounds(
+                [
+                    "toolbar-icon-size-0",
+                    "toolbar-icon-size-1",
+                    "toolbar-icon-size-2",
+                ][index],
+            )
+            .unwrap();
+        cx.simulate_mouse_down(bounds.center(), MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(bounds.center(), MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            assert_eq!(notes.read(cx).session_toolbar.icon_size, size);
+            assert_eq!(form.read(cx).values.toolbar.icon_size, size);
+        });
+        let mut first = None;
+        for selector in [
+            "toolbar-sidebar-toggle",
+            "sidebar-explorer",
+            "sidebar-search",
+            "sidebar-sort",
+        ] {
+            let button = cx.debug_bounds(selector).unwrap();
+            let icon = cx
+                .debug_bounds(match selector {
+                    "toolbar-sidebar-toggle" => "toolbar-sidebar-toggle-icon",
+                    "sidebar-explorer" => "sidebar-explorer-icon",
+                    "sidebar-search" => "sidebar-search-icon",
+                    _ => "sidebar-sort-icon",
+                })
+                .unwrap();
+            assert_eq!(
+                button.size,
+                gpui::size(px(size.button_pixels()), px(size.button_pixels()))
+            );
+            assert_eq!(
+                icon.size,
+                gpui::size(px(size.icon_pixels()), px(size.icon_pixels()))
+            );
+            if let Some(top) = first {
+                assert_eq!(button.top(), top);
+            } else {
+                first = Some(button.top());
+            }
+        }
+        let toolbar = cx.debug_bounds("window-toolbar").unwrap();
+        // Four-pixel padding on both sides and one border pixel at the default rem size.
+        assert_eq!(toolbar.size.height, px(size.button_pixels() + 9.));
+    }
+    cx.update(|window, cx| {
+        window.close_dialog(cx);
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.first.clone());
+            assert_eq!(
+                this.toolbar_settings().icon_size,
+                notebook::ToolbarIconSize::Small
+            );
+            this.notebooks.active = None;
+            assert_eq!(
+                this.toolbar_settings().icon_size,
+                notebook::ToolbarIconSize::Large
+            );
+            this.open_settings(window, cx);
+        });
+    });
+    intent(
+        &form,
+        SettingsIntent::ToolbarIconSize(notebook::ToolbarIconSize::Small),
+        cx,
+    );
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).session_toolbar.icon_size,
+            notebook::ToolbarIconSize::Large
+        )
+    });
+}
+
+#[gpui::test]
+fn toolbar_size_persists_for_notebook_and_rejects_scope_and_busy_events(cx: &mut TestAppContext) {
+    use notebook::ToolbarIconSize::{Large, Medium, Small};
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"))
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::ToolbarIconSize(Large), cx);
+    assert_eq!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .toolbar
+            .icon_size,
+        Large
+    );
+    assert_eq!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .toolbar
+            .icon_size,
+        Small
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.session_toolbar.icon_size, Small);
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::ToolbarIconSize(Medium),
+                window,
+                cx,
+            );
+            assert_eq!(this.toolbar_settings().icon_size, Small);
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::ToolbarIconSize(Large),
+                window,
+                cx,
+            );
+            assert_eq!(this.toolbar_settings().icon_size, Small);
+            assert!(form.read(cx).values.busy);
+        })
+    });
+    let (events, _subscription) = watch(&form, cx);
+    intent(&form, SettingsIntent::ToolbarIconSize(Medium), cx);
+    cx.update(|_, cx| assert!(events.read(cx).0.is_empty()));
+}
+
+#[gpui::test]
+fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext) {
+    use gpui::{px, size};
+    cx.update(gpui_component::init);
+    for (icon_size, _) in notebook::ToolbarIconSize::OPTIONS {
+        let (_, view) = cx.add_window_view(|window, cx| {
+            let notes = cx.new(|cx| {
+                let mut notes = Notes::new(window, cx);
+                notes.session_toolbar.icon_size = icon_size;
+                notes
+            });
+            let root = cx.new(|cx| NotesWindow {
+                _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),
+                notes,
+            });
+            Root::new(root, window, cx)
+        });
+        // Fit exactly two targets and their gap on each row.
+        let width = icon_size.button_pixels() * 2. + 12.;
+        view.simulate_resize(size(px(width), px(800.)));
+        view.refresh().unwrap();
+        let toolbar = view.debug_bounds("window-toolbar").unwrap();
+        let first = view.debug_bounds("toolbar-sidebar-toggle").unwrap();
+        let second = view.debug_bounds("sidebar-explorer").unwrap();
+        let third = view.debug_bounds("sidebar-search").unwrap();
+        let fourth = view.debug_bounds("sidebar-sort").unwrap();
+        assert_eq!(first.top(), second.top());
+        assert_eq!(third.top(), fourth.top());
+        assert_eq!(third.top(), first.bottom() + px(4.));
+        assert_eq!(first.left(), third.left());
+        assert!(fourth.right() <= toolbar.right());
+        assert_eq!(
+            toolbar.size.height,
+            px(icon_size.button_pixels() * 2. + 13.)
+        );
+    }
+}

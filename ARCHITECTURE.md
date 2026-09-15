@@ -317,6 +317,11 @@ The panel owns drag presentation and validates the originating panel identity;
 the adapter retains dialog lifetime, notebook scope and busy guards. Both the
 settings list and toolbar follow the saved order, including positions for hidden
 items. Disabling all four removes the row and border.
+ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
+invalid values default to Small. Toolbar-tab size intents use the same notebook/session
+scope, lifetime and busy guards. The toolbar owns exact 14/20/28 px icons in
+24/32/40 px button targets and wraps controls as needed; its height follows the
+button rows and padding. Theme UI font size does not scale these logical-pixel targets.
 An enabled toolbar remains visible with the sidebar collapsed or no notebook open;
 notebook actions are disabled without a notebook or while busy. Only a visible
 sidebar panel is highlighted. Menu commands and shortcuts remain available.
