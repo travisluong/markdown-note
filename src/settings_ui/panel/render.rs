@@ -109,6 +109,16 @@ impl Render for SettingsPanel {
             .child(div().text_sm().text_color(cx.theme().muted_foreground)
                 .child("Hide these extensions even when Show file extensions is on. Example: md, txt."))
             .when_some(self.hidden_extensions_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
+            .child("Exclude files and folders (regex)")
+            .child(Input::new(&self.excluded_patterns).w_full().flex_shrink_0()
+                .disabled(self.values.busy || self.values.excluded_patterns.is_none()))
+            .child(div().text_sm().text_color(cx.theme().muted_foreground).child(
+                if self.values.excluded_patterns.is_none() {
+                    "Open a notebook to configure exclusions."
+                } else {
+                    r"Hide matches from the sidebar, notebook search, and Go to File. Use comma-separated regexes against relative paths with /. Folders exclude their contents. Case-sensitive; use (?i) to ignore case. Example: ^archive$, \.tmp$. Commas inside [a,b], {1,3}, or escaped as \, stay in the pattern."
+                }))
+            .when_some(self.excluded_patterns_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
             .when_some(self.values.notice.clone(), |view, notice| view.child(div().text_sm().child(notice)))
             .child(Button::new("close-settings").label("Close")
                 .on_click(cx.listener(|this, _, _, cx| this.emit_intent(SettingsIntent::Close, cx))));

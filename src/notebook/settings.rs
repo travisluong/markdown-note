@@ -220,6 +220,8 @@ impl ThemePalette {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub excluded_patterns: Vec<String>,
     #[serde(default = "default_show_file_extensions")]
     pub show_file_extensions: bool,
     #[serde(default = "default_always_hide_extensions")]
@@ -244,6 +246,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            excluded_patterns: Vec::new(),
             file_sort: FileSort::default(),
             show_file_extensions: default_show_file_extensions(),
             always_hide_extensions: default_always_hide_extensions(),

@@ -2422,6 +2422,7 @@ dependencies = [
  "gpui-component-assets",
  "image",
  "markdown",
+ "regex",
  "serde",
  "serde_json",
  "smallvec",

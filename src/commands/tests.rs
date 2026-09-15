@@ -268,14 +268,20 @@ fn recursive_duplicates_and_settings() {
     ] {
         fs::write(temp.path().join(file), "").unwrap();
     }
-    let entries = discover(temp.path()).unwrap();
+    let entries = discover(temp.path(), &crate::notebook::Exclusions::default()).unwrap();
     assert_eq!(entries.iter().filter(|e| !e.directory).count(), 2);
     assert!(
         entries
             .iter()
             .any(|e| e.relative == Path::new("a/deep/Note.md"))
     );
-    assert!(discover(&temp.path().join("missing")).is_err());
+    assert!(
+        discover(
+            &temp.path().join("missing"),
+            &crate::notebook::Exclusions::default()
+        )
+        .is_err()
+    );
 }
 
 #[test]

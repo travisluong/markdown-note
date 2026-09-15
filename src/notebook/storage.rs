@@ -159,6 +159,18 @@ impl Notebook {
 }
 
 pub fn read_directory(root: &Path, relative: &Path) -> io::Result<Vec<Entry>> {
+    read_directory_filtered(root, relative, &super::Exclusions::default())
+}
+
+/// Discovery-only filtering; explicit file access retains its usual path guards.
+pub fn read_directory_filtered(
+    root: &Path,
+    relative: &Path,
+    exclusions: &super::Exclusions,
+) -> io::Result<Vec<Entry>> {
+    if exclusions.excludes(relative) {
+        return Ok(Vec::new());
+    }
     let directory = if relative.as_os_str().is_empty() {
         root.to_path_buf()
     } else {
@@ -170,11 +182,15 @@ pub fn read_directory(root: &Path, relative: &Path) -> io::Result<Vec<Entry>> {
         if entry.file_name().eq_ignore_ascii_case(".mithril") {
             continue;
         }
+        let relative = relative.join(entry.file_name());
+        if exclusions.excludes(&relative) {
+            continue;
+        }
         let metadata = fs::symlink_metadata(entry.path())?;
         entries.push(Entry {
             modified: metadata.modified().ok(),
             created: metadata.created().ok(),
-            relative: relative.join(entry.file_name()),
+            relative,
             directory: metadata.is_dir(),
             link: is_link(&metadata),
         });

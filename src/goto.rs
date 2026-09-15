@@ -111,6 +111,7 @@ impl Notes {
             return;
         };
         let root = book.root.clone();
+        let exclusions = self.notebooks.exclusions.clone();
         self.open_palette(
             PaletteMode::Files,
             Vec::new(),
@@ -122,7 +123,7 @@ impl Notes {
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { discover(&root) })
+                .spawn(async move { discover(&root, &exclusions) })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 if let Some(palette) = &mut this.palette {

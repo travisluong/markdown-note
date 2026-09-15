@@ -93,6 +93,7 @@ enum Field {
     Delay,
     Date,
     Extensions,
+    Exclusions,
 }
 fn input(panel: &Entity<SettingsPanel>, field: Field, value: &str, cx: &mut VisualTestContext) {
     cx.update(|window, cx| {
@@ -101,6 +102,7 @@ fn input(panel: &Entity<SettingsPanel>, field: Field, value: &str, cx: &mut Visu
             Field::Delay => &panel.delay,
             Field::Date => &panel.date,
             Field::Extensions => &panel.hidden_extensions,
+            Field::Exclusions => &panel.excluded_patterns,
         }
         .clone();
         input.update(cx, |input, cx| {
@@ -609,5 +611,161 @@ fn border_preference_targets_notebook_and_rejects_changed_scope(cx: &mut TestApp
             );
             assert!(this.settings_panel.is_none());
         });
+    });
+}
+
+#[gpui::test]
+fn exclusions_validate_and_reject_stale_dialog_edits(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, false);
+    let old = panel(&notes, cx);
+    input(
+        &old,
+        Field::Exclusions,
+        r"^archive$, a{1,3}, report\,old",
+        cx,
+    );
+    let expected = notebook::parse_excluded_patterns(r"^archive$, a{1,3}, report\,old").unwrap();
+    input(&old, Field::Exclusions, "valid, [broken", cx);
+    intent(&old, SettingsIntent::Theme(notebook::ThemeChoice::Dark), cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes
+                .read(cx)
+                .notebooks
+                .active
+                .as_ref()
+                .unwrap()
+                .settings
+                .excluded_patterns,
+            expected
+        );
+        assert_eq!(
+            old.read(cx).excluded_patterns.read(cx).value().as_ref(),
+            "valid, [broken"
+        );
+        assert!(
+            old.read(cx)
+                .excluded_patterns_error
+                .as_ref()
+                .unwrap()
+                .contains("pattern 2")
+        );
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.second.clone());
+            this.notebooks.reload_exclusions();
+            this.handle_settings_intent(
+                old.entity_id(),
+                SettingsIntent::ExcludedPatterns(vec![".*".into()]),
+                window,
+                cx,
+            );
+            assert!(
+                this.notebooks
+                    .active
+                    .as_ref()
+                    .unwrap()
+                    .settings
+                    .excluded_patterns
+                    .is_empty()
+            );
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let current = panel(&notes, cx);
+    input(&current, Field::Exclusions, "^note", cx);
+    input(&current, Field::Exclusions, " , , ", cx);
+    cx.update(|_, cx| {
+        assert!(
+            notes
+                .read(cx)
+                .notebooks
+                .active
+                .as_ref()
+                .unwrap()
+                .settings
+                .excluded_patterns
+                .is_empty()
+        )
+    });
+}
+
+#[gpui::test]
+fn exclusions_are_disabled_without_a_notebook_and_while_busy(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let panel = panel(&notes, cx);
+    let (events, _subscription) = watch(&panel, cx);
+    input(&panel, Field::Exclusions, ".*", cx);
+    cx.update(|_, cx| {
+        assert!(panel.read(cx).values.excluded_patterns.is_none());
+        assert!(events.read(cx).0.is_empty());
+        assert!(notes.read(cx).notebooks.active.is_none());
+        panel.update(cx, |panel, cx| {
+            panel.values.excluded_patterns = Some(Vec::new());
+            panel.values.busy = true;
+            panel.edit_excluded_patterns(".*", cx);
+        });
+        assert!(events.read(cx).0.is_empty());
+    });
+}
+
+#[gpui::test]
+fn externally_invalid_exclusions_are_visible_and_correctable(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, true, false);
+    let old = panel(&notes, cx);
+    intent(&old, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .active
+                .as_mut()
+                .unwrap()
+                .settings
+                .excluded_patterns = vec!["^note".into(), "[broken".into()];
+            this.notebooks.reload_exclusions();
+            assert!(
+                !this
+                    .notebooks
+                    .exclusions
+                    .excludes(std::path::Path::new("note.md"))
+            );
+            assert!(
+                this.notebooks
+                    .notice
+                    .as_ref()
+                    .unwrap()
+                    .contains("Custom exclusions are disabled")
+            );
+            this.open_settings(window, cx);
+        })
+    });
+    let current = panel(&notes, cx);
+    cx.update(|_, cx| {
+        assert!(
+            current
+                .read(cx)
+                .excluded_patterns_error
+                .as_ref()
+                .unwrap()
+                .contains("pattern 2")
+        );
+        assert_eq!(
+            current.read(cx).excluded_patterns.read(cx).value().as_ref(),
+            "^note, [broken"
+        );
+    });
+    input(&current, Field::Exclusions, "^note", cx);
+    cx.update(|_, cx| {
+        assert!(
+            notes
+                .read(cx)
+                .notebooks
+                .exclusions
+                .excludes(std::path::Path::new("note.md"))
+        );
+        assert!(notes.read(cx).notebooks.notice.is_none());
+        assert!(current.read(cx).excluded_patterns_error.is_none());
     });
 }

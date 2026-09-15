@@ -118,3 +118,42 @@ fn old_file_scan_cannot_replace_a_new_command_palette(cx: &mut TestAppContext) {
         );
     });
 }
+
+#[gpui::test]
+fn go_to_file_uses_current_notebook_exclusions(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    fs::create_dir(directory.path().join("archive")).unwrap();
+    fs::write(directory.path().join("archive/hidden.md"), "hidden").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_excluded_patterns(vec!["^archive$".into()], window, cx);
+            this.go_to(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| notes.update(cx, |this, cx| {
+        let entries = this.palette.as_ref().unwrap().model.results();
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(&entries[0], PaletteEntry::File(entry) if entry.relative == Path::new("note.md")));
+        window.close_dialog(cx);
+        this.close_palette(window, cx);
+        this.update_excluded_patterns(Vec::new(), window, cx);
+        this.go_to(window, cx);
+    }));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes
+                .read(cx)
+                .palette
+                .as_ref()
+                .unwrap()
+                .model
+                .results()
+                .len(),
+            3
+        )
+    });
+}

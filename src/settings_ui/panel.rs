@@ -38,6 +38,7 @@ pub(super) enum SettingsIntent {
     AutosaveDelay(u64),
     ShowExtensions(bool),
     HiddenExtensions(Vec<String>),
+    ExcludedPatterns(Vec<String>),
     DateFormat(String),
     Font(FontRole, Option<String>),
     FontSizeStep(FontSizeRole, i8),
@@ -60,6 +61,7 @@ pub(super) struct SettingsValues {
     pub date_format: String,
     pub show_extensions: bool,
     pub hidden_extensions: Vec<String>,
+    pub excluded_patterns: Option<Vec<String>>,
     pub startup_dark: bool,
     pub busy: bool,
     pub subtitle: String,
@@ -80,6 +82,8 @@ pub(super) struct SettingsPanel {
     values: SettingsValues,
     section: Section,
     hidden_extensions: Entity<InputState>,
+    excluded_patterns: Entity<InputState>,
+    excluded_patterns_error: Option<String>,
     date: Entity<InputState>,
     delay: Entity<InputState>,
     hidden_extensions_error: Option<String>,
@@ -103,6 +107,20 @@ impl SettingsPanel {
                 .placeholder("md, txt")
                 .default_value(values.hidden_extensions.join(", "))
         });
+        let excluded_patterns = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(r"^archive$, \.tmp$, (^|/)drafts$")
+                .default_value(
+                    values
+                        .excluded_patterns
+                        .as_deref()
+                        .unwrap_or_default()
+                        .join(", "),
+                )
+        });
+        let excluded_patterns_error =
+            notebook::Exclusions::compile(values.excluded_patterns.as_deref().unwrap_or_default())
+                .err();
         let date = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("YYYY-MM-DD")
@@ -114,6 +132,11 @@ impl SettingsPanel {
                 .default_value(values.autosave.delay_ms.to_string())
         });
         let mut subscriptions = vec![
+            cx.subscribe(&excluded_patterns, |this, input, event, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.edit_excluded_patterns(input.read(cx).value().as_ref(), cx);
+                }
+            }),
             cx.subscribe(&hidden_extensions, |this, input, event, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.edit_hidden_extensions(input.read(cx).value().as_ref(), cx);
@@ -189,6 +212,8 @@ impl SettingsPanel {
             values,
             section: Section::General,
             hidden_extensions,
+            excluded_patterns,
+            excluded_patterns_error,
             date,
             delay,
             hidden_extensions_error: None,
@@ -231,6 +256,20 @@ impl SettingsPanel {
         if !self.values.busy || intent.is_autosave() || matches!(intent, SettingsIntent::Close) {
             cx.emit(intent);
         }
+    }
+
+    fn edit_excluded_patterns(&mut self, value: &str, cx: &mut Context<Self>) {
+        if self.values.busy || self.values.excluded_patterns.is_none() {
+            return;
+        }
+        match notebook::parse_excluded_patterns(value) {
+            Ok(patterns) => {
+                self.excluded_patterns_error = None;
+                self.emit_intent(SettingsIntent::ExcludedPatterns(patterns), cx);
+            }
+            Err(error) => self.excluded_patterns_error = Some(error),
+        }
+        cx.notify();
     }
 
     fn edit_hidden_extensions(&mut self, value: &str, cx: &mut Context<Self>) {

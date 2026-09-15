@@ -968,3 +968,34 @@ passed. An initial parallel test build hit a transient linker lock; the full
 rerun with -j 2 passed. No desktop interaction or native application launch was
 used. Native Recycle Bin validation remains with the user. The pre-existing
 Cargo.lock change is excluded from this fix.
+
+### Notebook regex exclusions (2026-09-14)
+
+General settings now accept a comma-separated, notebook-specific regex list.
+The parser preserves escaped commas, nested character classes and repetition
+counts; invalid drafts retain the last valid settings. The additive
+`excluded_patterns` field defaults to empty for existing notebooks. The shared
+pure matcher uses slash-separated notebook-relative paths and folder ancestors,
+with case-sensitive matching unless a regex opts into `(?i)`.
+
+NotebookState owns the active compiled policy. Explorer reads, notebook search
+(including unsaved overlays), and Go to File capture that policy. Preference
+changes invalidate directory generations and restart search; expanded folders
+cannot bypass excluded ancestors. Explicit file opening, last-file restoration
+and document editing/saving keep their existing behavior. Invalid external
+patterns preserve the notebook and stored list, disable all custom exclusions,
+and expose a notice and settings validation error for recovery.
+
+Twelve new headless tests cover parsing, matching, legacy settings, persistence,
+all discovery surfaces, invalid drafts, disabled and stale dialogs, notebook
+activation, stale workers, clearing exclusions, and saving an excluded open note.
+
+Verification on Windows: locked/offline `cargo check` in `target/headless`,
+`cargo fmt --check`, strict all-target Clippy with
+`editor-diagnostics`, and the full locked/offline test suite with
+`--target-dir target/headless -j 2 --features editor-diagnostics` passed
+(394 tests). Initial linking attempts encountered transient LNK1104
+locks in the default and headless build directories; retrying after the locks
+cleared passed. No native application launch or desktop interaction was used.
+Existing unrelated changes, including the lockfile package reorder and vendor
+link-menu work, are excluded from this feature's commit.

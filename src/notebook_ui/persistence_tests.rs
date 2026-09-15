@@ -228,3 +228,135 @@ fn border_colors_persist_through_the_settings_writer(cx: &mut TestAppContext) {
     assert_eq!(loaded.settings.appearance.light.unwrap().border, 0x123456);
     assert_eq!(loaded.settings.appearance.dark.unwrap().border, 0xabcdef);
 }
+
+#[gpui::test]
+fn activation_loads_exclusions_without_blocking_last_file_restoration(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let mut other = notebook::Notebook::open(&fixture.other, false).unwrap();
+    other.settings.excluded_patterns = vec![r"^note\.md$".into()];
+    notebook::save_book(&other).unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.request(
+                Next::Notebook {
+                    path: fixture.other.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            )
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(
+            this.notebooks
+                .exclusions
+                .excludes(std::path::Path::new("note.md"))
+        );
+        assert!(
+            this.notebooks
+                .explorer
+                .rows()
+                .iter()
+                .all(|row| row.path != std::path::Path::new("note.md"))
+        );
+        assert_eq!(this.document().unwrap().path, fixture.other.join("note.md"));
+    });
+    // Return to a notebook with invalid external rules; all custom exclusions are disabled.
+    let mut first = notebook::Notebook::open(&fixture.root, false).unwrap();
+    first.settings.excluded_patterns = vec!["^note".into(), "[broken".into()];
+    notebook::save_book(&first).unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.request(
+                Next::Notebook {
+                    path: fixture.root.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            )
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(
+            !this
+                .notebooks
+                .exclusions
+                .excludes(std::path::Path::new("note.md"))
+        );
+        assert!(
+            this.notebooks
+                .notice
+                .as_ref()
+                .unwrap()
+                .contains("Custom exclusions are disabled")
+        );
+        assert_eq!(this.document().unwrap().path, fixture.note);
+        assert_eq!(
+            this.notebooks
+                .active
+                .as_ref()
+                .unwrap()
+                .settings
+                .excluded_patterns,
+            first.settings.excluded_patterns
+        );
+    });
+}
+
+#[gpui::test]
+fn exclusions_persist_through_the_writer_and_stay_scoped_to_the_notebook(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let patterns = notebook::parse_excluded_patterns(r"^archive$, a{1,3}, report\,old").unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_excluded_patterns(patterns.clone(), window, cx)
+        })
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        notebook::Notebook::open(&fixture.root, false)
+            .unwrap()
+            .settings
+            .excluded_patterns,
+        patterns
+    );
+    assert!(
+        notebook::Notebook::open(&fixture.other, false)
+            .unwrap()
+            .settings
+            .excluded_patterns
+            .is_empty()
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_excluded_patterns(vec!["[broken".into()], window, cx)
+        })
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        notebook::Notebook::open(&fixture.root, false)
+            .unwrap()
+            .settings
+            .excluded_patterns,
+        patterns
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_excluded_patterns(Vec::new(), window, cx)
+        })
+    });
+    cx.run_until_parked();
+    assert!(
+        notebook::Notebook::open(&fixture.root, false)
+            .unwrap()
+            .settings
+            .excluded_patterns
+            .is_empty()
+    );
+}

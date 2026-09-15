@@ -52,6 +52,8 @@ type RevealBackend = dyn FnMut(&Path) -> io::Result<()>;
 
 pub(super) struct NotebookState {
     pub active: Option<notebook::Notebook>,
+    pub(super) exclusions: notebook::Exclusions,
+    exclusion_error: Option<String>,
     pub(super) context_menu: Option<(gpui::Point<Pixels>, Entity<PopupMenu>)>,
     context_subscription: Option<Subscription>,
     select_after_refresh: Option<PathBuf>,
@@ -86,6 +88,29 @@ pub(super) struct NotebookState {
 }
 
 impl NotebookState {
+    pub(super) fn reload_exclusions(&mut self) {
+        if self.notice == self.exclusion_error {
+            self.notice = None;
+        }
+        let patterns = self
+            .active
+            .as_ref()
+            .map_or(&[][..], |book| book.settings.excluded_patterns.as_slice());
+        match notebook::Exclusions::compile(patterns) {
+            Ok(exclusions) => {
+                self.exclusions = exclusions;
+                self.exclusion_error = None;
+            }
+            Err(error) => {
+                self.exclusions = notebook::Exclusions::default();
+                let message =
+                    format!("Custom exclusions are disabled. Fix them in Settings. {error}");
+                self.exclusion_error = Some(message.clone());
+                self.notice = Some(message);
+            }
+        }
+    }
+
     pub(super) fn registered_paths(&self) -> &[PathBuf] {
         &self.index.notebooks
     }
@@ -95,6 +120,8 @@ impl NotebookState {
         let subscription = cx.subscribe(&name, |_, _, _: &InputEvent, cx| cx.notify());
         Self {
             active: None,
+            exclusions: notebook::Exclusions::default(),
+            exclusion_error: None,
             context_menu: None,
             context_subscription: None,
             select_after_refresh: None,
@@ -136,6 +163,29 @@ impl NotebookState {
 }
 
 impl Notes {
+    pub(super) fn update_excluded_patterns(
+        &mut self,
+        patterns: Vec<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_busy() || notebook::Exclusions::compile(&patterns).is_err() {
+            return;
+        }
+        let Some(book) = &mut self.notebooks.active else {
+            return;
+        };
+        if book.settings.excluded_patterns == patterns {
+            return;
+        }
+        book.settings.excluded_patterns = patterns;
+        self.notebooks.reload_exclusions();
+        self.persist_notebooks(cx);
+        self.refresh_tree(window, cx);
+        self.schedule_search(window, cx);
+        cx.notify();
+    }
+
     pub(super) fn focus_folder(
         &mut self,
         path: PathBuf,
@@ -518,6 +568,7 @@ impl Notes {
             for effect in effects {
                 if let app::session::Effect::Load(operation) = effect {
                     self.notebooks.active = None;
+                    self.notebooks.reload_exclusions();
                     self.search = None;
                     self.search_subscription = None;
                     self.apply_appearance(window, cx);
@@ -770,6 +821,7 @@ impl Notes {
                         this.notebooks.index.register(book.root.clone());
                         this.mode = book.settings.view_mode;
                         this.notebooks.active = Some(book);
+                        this.notebooks.reload_exclusions();
                         this.apply_appearance(window, cx);
                         this.complete_content_load(
                             operation,
@@ -1338,6 +1390,10 @@ impl Notes {
             return;
         };
         let root = book.root.clone();
+        let exclusions = self.notebooks.exclusions.clone();
+        if exclusions.excludes(&relative) {
+            return;
+        }
         let generation = self
             .notebooks
             .explorer
@@ -1346,7 +1402,7 @@ impl Notes {
             let path = relative.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move { notebook::read_directory(&root, &path) })
+                .spawn(async move { notebook::read_directory_filtered(&root, &path, &exclusions) })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
                 let Some(book) = &this.notebooks.active else {
@@ -1941,7 +1997,9 @@ impl Notes {
             return;
         };
         let root = book.root.clone();
+        let exclusions = self.notebooks.exclusions.clone();
         let mut paths = book.settings.expanded.clone();
+        paths.retain(|path| !exclusions.excludes(path));
         paths.insert(PathBuf::new());
         let generation = self.notebooks.explorer.begin_refresh();
         cx.spawn_in(window, async move |this, cx| {
@@ -1951,7 +2009,8 @@ impl Notes {
                     paths
                         .into_iter()
                         .map(|path| {
-                            let result = notebook::read_directory(&root, &path);
+                            let result =
+                                notebook::read_directory_filtered(&root, &path, &exclusions);
                             (path, result.map_err(|error| error.to_string()))
                         })
                         .collect::<Vec<_>>()

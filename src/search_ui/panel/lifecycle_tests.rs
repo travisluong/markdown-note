@@ -463,3 +463,76 @@ fn successful_click_preserves_result_list_scroll(cx: &mut TestAppContext) {
         assert_eq!(panel.read(cx).scroll.offset(), before);
     });
 }
+
+#[gpui::test]
+fn exclusions_cancel_old_searches_and_keep_the_open_document_editable(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "original").unwrap();
+    fs::write(dir.path().join("b.md"), "disk hit").unwrap();
+    let (notes, cx) = fixture(cx, dir.path());
+    edit(&notes, "unsaved hit", cx);
+    search(&notes, cx);
+    finish_search(cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).search.as_ref().unwrap().read(cx).hits.len(),
+            2
+        )
+    });
+    // Retain an old worker after it has scanned the now-excluded overlay.
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.search.as_ref().unwrap().update(cx, |panel, _| {
+                panel.completion_delay = Duration::from_secs(2)
+            });
+            this.schedule_search(window, cx);
+        })
+    });
+    finish_search(cx);
+    let old_cancelled = cx.update(|_, cx| {
+        notes
+            .read(cx)
+            .search
+            .as_ref()
+            .unwrap()
+            .read(cx)
+            .cancelled
+            .clone()
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_excluded_patterns(vec![r"^a\.md$".into()], window, cx);
+            assert!(this.dirty(cx));
+            assert_eq!(this.editor.text(cx).as_ref(), "unsaved hit");
+        })
+    });
+    finish_search(cx);
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(old_cancelled.load(Ordering::Relaxed));
+        let panel = notes.read(cx).search.as_ref().unwrap().read(cx);
+        assert_eq!(panel.hits.len(), 1);
+        assert_eq!(panel.hits[0].relative, Path::new("b.md"));
+    });
+    edit(&notes, "edited excluded hit", cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.save(Next::Nothing, window, cx)));
+    cx.run_until_parked();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.md")).unwrap(),
+        "edited excluded hit"
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(!this.dirty(cx));
+            this.update_excluded_patterns(Vec::new(), window, cx);
+        })
+    });
+    finish_search(cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).search.as_ref().unwrap().read(cx).hits.len(),
+            2
+        )
+    });
+}

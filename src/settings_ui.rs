@@ -192,6 +192,11 @@ impl Notes {
             date_format: self.date_format().to_owned(),
             show_extensions: self.show_file_extensions(),
             hidden_extensions: self.hidden_extensions().to_vec(),
+            excluded_patterns: self
+                .notebooks
+                .active
+                .as_ref()
+                .map(|book| book.settings.excluded_patterns.clone()),
             startup_dark: self.startup_dark,
             busy: self.is_busy(),
             subtitle: self.notebooks.active.as_ref().map_or_else(
@@ -373,6 +378,10 @@ impl Notes {
                 if self.show_file_extensions() {
                     self.update_sidebar_extensions(true, extensions, cx);
                 }
+                false
+            }
+            SettingsIntent::ExcludedPatterns(patterns) => {
+                self.update_excluded_patterns(patterns, window, cx);
                 false
             }
             SettingsIntent::DateFormat(value) => {

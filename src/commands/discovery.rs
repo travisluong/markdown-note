@@ -5,14 +5,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn discover(root: &Path) -> io::Result<Vec<notebook::Entry>> {
+pub fn discover(
+    root: &Path,
+    exclusions: &notebook::Exclusions,
+) -> io::Result<Vec<notebook::Entry>> {
     if notebook::is_link(&fs::symlink_metadata(root)?) {
         return Err(io::Error::other("Notebook links are not traversed."));
     }
     let mut pending = vec![PathBuf::new()];
     let mut found = Vec::new();
     while let Some(path) = pending.pop() {
-        for entry in notebook::read_directory(root, &path)? {
+        for entry in notebook::read_directory_filtered(root, &path, exclusions)? {
             if entry.link {
                 continue;
             }

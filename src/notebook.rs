@@ -2,6 +2,8 @@
 //! Callers use these exports; child modules name the owners and keep dependencies explicit.
 
 mod entry_ops;
+mod exclusions;
+pub use exclusions::{Exclusions, parse_excluded_patterns};
 mod paths;
 pub use entry_ops::{
     create_folder, duplicate_entry, entry_directory, entry_path, rename_destination, rename_entry,
@@ -21,8 +23,8 @@ pub use settings::{
     normalize_sidebar_width, parse_hidden_extensions,
 };
 pub use storage::{
-    Notebook, create_untitled, index_path, load_index, move_entry, read_directory, save_book,
-    save_index, save_state, settings_path, write_json,
+    Notebook, create_untitled, index_path, load_index, move_entry, read_directory,
+    read_directory_filtered, save_book, save_index, save_state, settings_path, write_json,
 };
 pub use tree::{Entry, FileSort, sidebar_file_name};
 pub use writer::{

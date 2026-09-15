@@ -57,7 +57,8 @@ impl Notes {
         self.reveal_sidebar(cx);
         if self.search.is_none() {
             let overlay = self.search_overlay(cx);
-            let panel = cx.new(|cx| SearchPanel::new(root, overlay, window, cx));
+            let exclusions = self.notebooks.exclusions.clone();
+            let panel = cx.new(|cx| SearchPanel::new(root, exclusions, overlay, window, cx));
             self.search_subscription = Some(cx.subscribe_in(
                 &panel,
                 window,
@@ -118,7 +119,8 @@ impl Notes {
     pub(super) fn schedule_search(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let overlay = self.search_overlay(cx);
         if let Some(panel) = &self.search {
-            panel.update(cx, |panel, cx| panel.rescan(overlay, cx));
+            let exclusions = self.notebooks.exclusions.clone();
+            panel.update(cx, |panel, cx| panel.rescan(overlay, exclusions, cx));
         }
     }
 

@@ -56,6 +56,7 @@ struct Navigation {
 pub(crate) struct SearchPanel {
     visible: bool,
     root: PathBuf,
+    exclusions: mithril::notebook::Exclusions,
     query: Entity<InputState>,
     _subscription: Subscription,
     case_sensitive: bool,
@@ -84,6 +85,7 @@ impl Drop for SearchPanel {
 impl SearchPanel {
     pub(super) fn new(
         root: PathBuf,
+        exclusions: mithril::notebook::Exclusions,
         overlay: Option<Overlay>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -97,6 +99,7 @@ impl SearchPanel {
         Self {
             visible: true,
             root,
+            exclusions,
             query,
             _subscription: subscription,
             case_sensitive: false,
@@ -144,7 +147,13 @@ impl SearchPanel {
         }
     }
 
-    pub(super) fn rescan(&mut self, overlay: Option<Overlay>, cx: &mut Context<Self>) {
+    pub(super) fn rescan(
+        &mut self,
+        overlay: Option<Overlay>,
+        exclusions: mithril::notebook::Exclusions,
+        cx: &mut Context<Self>,
+    ) {
+        self.exclusions = exclusions;
         self.overlay = overlay;
         self.schedule(cx);
     }
@@ -155,6 +164,7 @@ impl SearchPanel {
         self.cancelled = Arc::new(AtomicBool::new(false));
         let cancelled = self.cancelled.clone();
         let root = self.root.clone();
+        let exclusions = self.exclusions.clone();
         let query = self.query.read(cx).value().to_string();
         let case_sensitive = self.case_sensitive;
         let previous = self
@@ -187,7 +197,14 @@ impl SearchPanel {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    search::scan(&root, &query, case_sensitive, buffer, &worker_cancel)
+                    search::scan(
+                        &root,
+                        &exclusions,
+                        &query,
+                        case_sensitive,
+                        buffer,
+                        &worker_cancel,
+                    )
                 })
                 .await;
             #[cfg(test)]

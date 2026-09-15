@@ -17,7 +17,15 @@ fn fixture<'a>(
     cx.update(gpui_component::init);
     let mut panel = None;
     let (_, cx) = cx.add_window_view(|window, cx| {
-        let entity = cx.new(|cx| SearchPanel::new(root.to_path_buf(), overlay, window, cx));
+        let entity = cx.new(|cx| {
+            SearchPanel::new(
+                root.to_path_buf(),
+                mithril::notebook::Exclusions::default(),
+                overlay,
+                window,
+                cx,
+            )
+        });
         panel = Some(entity.clone());
         Root::new(entity, window, cx)
     });

@@ -110,6 +110,7 @@ fn collect(text: &str, relative: &Path, query: &str, case_sensitive: bool, resul
 
 pub fn scan(
     root: &Path,
+    exclusions: &notebook::Exclusions,
     query: &str,
     case_sensitive: bool,
     buffer: Option<(PathBuf, Rope)>,
@@ -128,7 +129,7 @@ pub fn scan(
         if cancelled.load(Ordering::Relaxed) {
             return result;
         }
-        let entries = match notebook::read_directory(root, &relative) {
+        let entries = match notebook::read_directory_filtered(root, &relative, exclusions) {
             Ok(entries) => entries,
             Err(_) => {
                 result.skipped += 1;
@@ -255,6 +256,7 @@ mod tests {
         fs::write(root.join("open.md"), "disk hit").unwrap();
         let result = scan(
             &root,
+            &crate::notebook::Exclusions::default(),
             "hit",
             false,
             Some((root.join("open.md"), Rope::from("unsaved"))),
@@ -265,9 +267,16 @@ mod tests {
         assert_eq!(result.hits[0].range, 6..9);
         assert_eq!(result.hits[1].line, 3);
         assert!(
-            scan(&root, "hit", false, None, &AtomicBool::new(true))
-                .hits
-                .is_empty()
+            scan(
+                &root,
+                &crate::notebook::Exclusions::default(),
+                "hit",
+                false,
+                None,
+                &AtomicBool::new(true)
+            )
+            .hits
+            .is_empty()
         );
     }
     #[test]

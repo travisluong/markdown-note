@@ -104,6 +104,15 @@ folder. The explorer, search and path guards exclude `.mithril`. Earlier storage
 directory names are not automatically migrated; preserve settings by renaming
 those directories before opening existing notebooks with Mithril.
 
+Notebook discovery exclusions belong to `notebook/exclusions.rs`. Settings store
+`excluded_patterns` per notebook; `NotebookState` compiles an immutable policy on
+activation and preference changes. Explorer directory reads, notebook search and
+Go to File capture that policy, matching slash-separated relative paths and their
+folder ancestors. Changes invalidate explorer generations and restart search;
+explicit opening, links, last-file restoration and document saves retain their
+existing access rules. Invalid external regexes preserve the stored list and
+disable the custom policy with a notice so Settings can repair it.
+
 ## Snapshot and coordinate rules
 
 - Markdown source is authoritative. Source/Live copy source selections; Reading
