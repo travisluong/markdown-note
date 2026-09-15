@@ -209,17 +209,17 @@ impl Notes {
 
     fn run_command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         match command {
-            Command::MoveLineUp => self.editor.move_lines(false, window, cx),
-            Command::MoveLineDown => self.editor.move_lines(true, window, cx),
+            Command::MoveLineUp => self.tabs.active.editor.move_lines(false, window, cx),
+            Command::MoveLineDown => self.tabs.active.editor.move_lines(true, window, cx),
             Command::InsertDate => {
                 if let Ok(date) = templates::current(self.date_format()) {
-                    self.editor.replace_selection(&date, window, cx);
+                    self.tabs.active.editor.replace_selection(&date, window, cx);
                 }
             }
             Command::EditLink => self.edit_link(window, cx),
             Command::SearchFile => self.search_current_file(window, cx),
             Command::SearchAllFiles => self.open_search_all(window, cx),
-            Command::ReplaceFile => self.editor.find_and_replace(window, cx),
+            Command::ReplaceFile => self.tabs.active.editor.find_and_replace(window, cx),
             Command::NewNote => {
                 if let Some(book) = &self.notebooks.active {
                     self.request(Next::NewNote(book.root.clone()), window, cx);
@@ -401,7 +401,7 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             this.set_mode(ViewMode::Source, window, cx);
-            let before = this.editor.text(cx);
+            let before = this.tabs.active.editor.text(cx);
             if let Some(book) = &this.notebooks.active {
                 let root = book.root.clone();
                 let count = fs::read_dir(&root).unwrap().count();
@@ -414,7 +414,7 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                     "cancel creates no note"
                 );
                 assert_eq!(this.document().map(|doc| doc.path.clone()), previous_path);
-                assert_eq!(this.editor.text(cx), before);
+                assert_eq!(this.tabs.active.editor.text(cx), before);
             }
             this.command_palette(window, cx);
             assert_eq!(this.palette.as_ref().unwrap().mode, PaletteMode::Commands);
@@ -426,8 +426,8 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
             assert_eq!(this.palette.as_ref().unwrap().model.results().len(), 1);
             window.close_dialog(cx);
             this.close_palette(window, cx);
-            assert!(this.editor.focus_handle(cx).is_focused(window));
-            assert_eq!(this.editor.text(cx), before);
+            assert!(this.tabs.active.editor.focus_handle(cx).is_focused(window));
+            assert_eq!(this.tabs.active.editor.text(cx), before);
             this.command_palette(window, cx);
             this.palette
                 .as_ref()
@@ -436,15 +436,19 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                 .update(cx, |q, cx| q.set_value("current date", window, cx));
             this.activate_palette(window, cx);
             assert!(this.palette.is_none());
-            assert!(this.editor.focus_handle(cx).is_focused(window));
+            assert!(this.tabs.active.editor.focus_handle(cx).is_focused(window));
             assert!(
-                this.editor
+                this.tabs
+                    .active
+                    .editor
                     .diagnostic_input()
                     .read(cx)
                     .value()
                     .contains(&templates::current(this.date_format()).unwrap())
             );
-            this.editor
+            this.tabs
+                .active
+                .editor
                 .diagnostic_input()
                 .update(cx, |editor, cx| editor.set_value(before, window, cx));
             this.set_mode(ViewMode::Reading, window, cx);
@@ -492,7 +496,7 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                 }
                 4 => {
                     assert_eq!(
-                        this.editor.text(cx).as_str(),
+                        this.tabs.active.editor.text(cx).as_str(),
                         "# Root",
                         "arrow keys do not open results"
                     );
@@ -501,16 +505,16 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                 }
                 6 => {
                     assert_eq!(
-                        this.editor.text(cx).as_str(),
+                        this.tabs.active.editor.text(cx).as_str(),
                         "# Saved",
                         "Enter opens result"
                     );
-                    assert!(this.editor.focus_handle(cx).is_focused(window));
+                    assert!(this.tabs.active.editor.focus_handle(cx).is_focused(window));
                 }
                 9 => {
                     assert!(this.palette.is_none(), "Escape closes palette");
                     assert!(
-                        this.editor.focus_handle(cx).is_focused(window),
+                        this.tabs.active.editor.focus_handle(cx).is_focused(window),
                         "Escape restores focus"
                     );
                 }
@@ -530,7 +534,7 @@ pub(super) async fn diagnostic_palette(notes: &Entity<Notes>, cx: &mut AsyncWind
                             .contains(Path::new("folder"))
                     );
                     assert!(
-                        !this.editor.focus_handle(cx).is_focused(window),
+                        !this.tabs.active.editor.focus_handle(cx).is_focused(window),
                         "folder activation focuses tree"
                     );
                 }
@@ -552,18 +556,20 @@ pub(super) async fn diagnostic_task_shortcut(notes: &Entity<Notes>, cx: &mut Asy
             _ => notes.update(cx, |this, cx| match step {
                 0 => {
                     this.set_mode(ViewMode::Source, window, cx);
-                    this.editor
+                    this.tabs
+                        .active
+                        .editor
                         .diagnostic_input()
                         .update(cx, |e, cx| e.set_value("- [ ] task", window, cx));
                 }
                 2 => {
-                    assert_eq!(this.editor.text(cx).as_str(), "- [x] task");
+                    assert_eq!(this.tabs.active.editor.text(cx).as_str(), "- [x] task");
                     this.set_mode(ViewMode::Reading, window, cx);
                 }
                 3 => {}
                 5 => {
                     assert_eq!(
-                        this.editor.text(cx).as_str(),
+                        this.tabs.active.editor.text(cx).as_str(),
                         "- [x] task",
                         "Reading has no task shortcut"
                     );
@@ -583,7 +589,7 @@ pub(super) async fn diagnostic_task_shortcut(notes: &Entity<Notes>, cx: &mut Asy
                         "",
                         "Palette input has no task shortcut"
                     );
-                    assert_eq!(this.editor.text(cx).as_str(), "- [x] task");
+                    assert_eq!(this.tabs.active.editor.text(cx).as_str(), "- [x] task");
                     window.close_dialog(cx);
                     this.close_palette(window, cx);
                 }

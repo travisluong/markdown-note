@@ -864,6 +864,22 @@ impl<D, I, A> Session<D, I, A> {
         Self::changed(vec![])
     }
 
+    /// Notebook activation can select a retained tab instead of replacing this
+    /// session. Only the matching successful notebook load releases its owner.
+    pub fn activation_retained(
+        &mut self,
+        operation: OperationId,
+        observed: Observed,
+    ) -> Vec<Effect<A>> {
+        if !self.owns(operation, PhaseKind::LoadingNotebook) || !self.matches(observed) {
+            return vec![];
+        }
+        self.phase = Phase::Idle;
+        let mut effects = vec![];
+        self.resume(observed, &mut effects);
+        Self::changed(effects)
+    }
+
     /// `Err(())` reports the adapter's retained load error through `ShowError`.
     /// Superseded results, including errors, never replace retained content.
     pub fn loaded(

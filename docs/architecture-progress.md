@@ -1197,3 +1197,42 @@ Stale Windows test executables were removed only from the verified headless buil
 output directory before relinking. Native desktop interaction was not used;
 visual confirmation remains user-run. Cargo reports the existing dependency
 future-incompatibility notice for proc-macro-error2.
+## Retained document tabs — 2026-09-15
+
+Implemented the fourth sequential toolbar/settings/navigation task. TabSet retains
+independent Session, editor/subscription, undo/cursor/scroll, Reading view/find,
+mode, navigation and save/dirty runtimes. Stable TabId qualifies all captured
+session-local identities. New tab, selection, close, duplicate-path focus and
+notebook activation preserve occupied tabs; tab selection permits background saves.
+Workspace close/move/Trash preparation drains writes, preserves discarded buffers
+until success, cancels owned preparation on failure, and resumes eligible timers.
+All affected paths and saved disk versions are remapped after successful moves;
+Trash clears content only after backend success. Inactive Duplicate uses its source
+buffer. Autosave uses each tab's owning canonical notebook or the shared session
+default, with explicit General Settings scope. Search receives all retained overlays.
+
+Windows headless verification:
+
+- Full locked/offline diagnostics-enabled suite: **453 passed, 0 failed, 0 ignored**
+  (81 library, 188 application, 184 integration tests; doc-tests contain no cases).
+- Default `cargo check --locked --offline -j 1 --target-dir target/headless`,
+  `cargo fmt --check`, and strict all-target diagnostics Clippy passed.
+- New cases cover real tab +/X/selection controls, retained edits/selection/undo,
+  Reading scroll, matching session-local write/operation IDs in different tabs,
+  inactive write failure and a queued failure during another tab's close prompt,
+  multiple Save/Discard/Cancel decisions and the preference barrier, notebook
+  switching/autosave scope, both histories on existing-tab focus, inactive Duplicate,
+  multi-tab move and failed/successful Trash, and the actual SearchPanel overlay and
+  result-focus pipeline. A pure Session test covers stale activation_retained events.
+- The full suite log is `target/headless/tabs-full-tests.log`. Existing headless deps
+  is a junction into workspace `target/debug/deps`; stale test executables there
+  were removed only after checking both exact paths. The running application and
+  `target/debug/mithril.exe` were not touched.
+- An automatic approval reviewer capacity failure delayed one test launch; retry
+  after path inspection succeeded. No native app, desktop input, or visible test
+  window was used. Native visual validation remains user-run.
+
+The three initial Toolbar Settings drag regressions came from adding an autosave
+scope sentence to every section's shared subtitle. Moving that sentence beside
+General's autosave controls restored the bounded Toolbar layout; all existing
+settings drag tests pass unchanged.

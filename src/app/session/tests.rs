@@ -1012,3 +1012,28 @@ fn unrelated_entry_operation_waits_for_write_without_prompting_for_late_edits() 
     assert_eq!(model.content().document_id(), fact.document);
     assert!(model.autosave().is_some());
 }
+
+#[test]
+fn notebook_activation_can_retain_content_only_for_the_matching_load() {
+    let mut model = document();
+    let fact = observed(&model, true);
+    let identity = fact.document;
+    model.set_autosave(true, fact);
+    model.request_retaining("notebook", fact);
+    let id = operation(&model, PhaseKind::Dispatching);
+    assert!(model.activation_retained(id, fact).is_empty());
+    model.dispatch(id, Stage::ActivateNotebook);
+    model.activation_resolved(id, true, fact);
+    model.activation_flushed(id, true);
+    assert_eq!(model.foreground(), Some((id, PhaseKind::LoadingNotebook)));
+    assert!(
+        model
+            .activation_retained(OperationId(id.0 + 1), fact)
+            .is_empty()
+    );
+    let effects = model.activation_retained(id, fact);
+    assert!(effects.iter().any(|e| matches!(e, Effect::ArmAutosave(_))));
+    assert_eq!(model.content().document_id(), identity);
+    assert!(!model.is_busy());
+    assert!(model.activation_retained(id, fact).is_empty());
+}

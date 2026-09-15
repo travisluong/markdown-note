@@ -212,7 +212,7 @@ fn standalone_document_autosave_choices_remain_session_scoped_during_reload(
     cx.update(|_, cx| {
         let notes = notes.read(cx);
         assert!(!notes.is_busy());
-        assert_eq!(notes.saves.session, session);
+        assert_eq!(notes.session_autosave, session);
         assert_eq!(
             notes.notebooks.active.as_ref().unwrap().settings.autosave,
             original

@@ -62,7 +62,7 @@ impl Notes {
                                 .disabled(
                                     self.is_busy()
                                         || window.has_active_dialog(cx)
-                                        || self.navigation.target(direction).is_none(),
+                                        || self.tabs.active.navigation.target(direction).is_none(),
                                 )
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.navigate_history(direction, window, cx)
@@ -192,7 +192,7 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         if self.can_edit_document() && !window.has_active_dialog(cx) {
-            self.editor.format_markdown(format, window, cx);
+            self.tabs.active.editor.format_markdown(format, window, cx);
         }
     }
 
@@ -202,11 +202,11 @@ impl Notes {
         owner: WeakEntity<Self>,
         cx: &gpui::App,
     ) -> PopupMenu {
-        menu = menu.action_context(self.editor.focus_handle(cx));
-        let editor = self.editor.id();
+        menu = menu.action_context(self.tabs.active.editor.focus_handle(cx));
+        let editor = self.tabs.active.editor.id();
         let document = self.document_id();
-        let snapshot = self.editor.snapshot(cx);
-        let selection = self.editor.selection(cx);
+        let snapshot = self.tabs.active.editor.snapshot(cx);
+        let selection = self.tabs.active.editor.selection(cx);
         for (level, label) in [
             (1, "Heading 1"),
             (2, "Heading 2"),
@@ -224,10 +224,10 @@ impl Notes {
                     .disabled(!self.can_edit_document())
                     .on_click(move |_, window, cx| {
                         let _ = owner.update(cx, |this, cx| {
-                            if this.editor.id() == editor
+                            if this.tabs.active.editor.id() == editor
                                 && this.document_id() == document
-                                && this.editor.snapshot(cx) == snapshot
-                                && this.editor.selection(cx) == selection
+                                && this.tabs.active.editor.snapshot(cx) == snapshot
+                                && this.tabs.active.editor.selection(cx) == selection
                             {
                                 this.apply_toolbar_format(Format::Heading(level), window, cx);
                             }

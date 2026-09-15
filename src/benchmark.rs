@@ -49,14 +49,15 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
         editor.set_cursor_position(Position::new(0, 0), window, cx);
     });
     notes.update(cx, |notes, cx| {
-        notes.saves.session.enabled = false;
+        notes.session_autosave.enabled = false;
         notes.install_document(
             Some(document_fixture("diagnostics.md", &fixture)),
             window,
             cx,
         );
         let editor = Editor::diagnostic_from_input(diagnostic);
-        notes.editor_subscription = Notes::subscribe_editor(&editor, window, cx);
+        notes.editor_subscription =
+            Notes::subscribe_tab_editor(notes.tabs.active.id, &editor, window, cx);
         notes.editor = editor;
         notes.set_mode(ViewMode::LivePreview, window, cx);
     });
@@ -121,7 +122,8 @@ fn install(notes: &mut Notes, long: bool, window: &mut Window, cx: &mut Context<
     });
     let editor = Editor::diagnostic_from_input(editor);
     notes.install_document(Some(document_fixture("benchmark.md", &text)), window, cx);
-    notes.editor_subscription = Notes::subscribe_editor(&editor, window, cx);
+    notes.editor_subscription =
+        Notes::subscribe_tab_editor(notes.tabs.active.id, &editor, window, cx);
     notes.editor = editor;
     notes.set_mode(ViewMode::LivePreview, window, cx);
 }

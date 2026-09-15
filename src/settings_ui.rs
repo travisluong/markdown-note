@@ -176,16 +176,8 @@ impl Notes {
                 PreferenceTarget::Notebook(book.root.clone())
             });
         let autosave = self
-            .notebooks
-            .active
-            .as_ref()
-            .filter(|book| {
-                self.document()
-                    .is_none_or(|document| document.path.starts_with(&book.root))
-            })
-            .map_or(PreferenceTarget::Session, |book| {
-                PreferenceTarget::Notebook(book.root.clone())
-            });
+            .autosave_root()
+            .map_or(PreferenceTarget::Session, PreferenceTarget::Notebook);
         SettingsScope {
             preferences,
             autosave,
@@ -210,6 +202,10 @@ impl Notes {
             subtitle: self.notebooks.active.as_ref().map_or_else(
                 || "Changes apply immediately for this session.".to_owned(),
                 |book| format!("Changes are saved for {}.", notebook::name(&book.root)),
+            ),
+            autosave_scope: self.autosave_root().map_or_else(
+                || "Autosave settings apply to this session.".to_owned(),
+                |root| format!("Autosave settings apply to {}.", notebook::name(&root)),
             ),
             notice: self.notebooks.notice.clone(),
         }
@@ -796,7 +792,7 @@ fn resolve_font(saved: Option<&str>, installed: &[String], fallback: &str) -> Sh
 impl Notes {
     pub(super) fn content_font(&self, _cx: &App) -> SharedString {
         let appearance = self.appearance();
-        if self.mode == ViewMode::Source {
+        if self.tabs.active.mode == ViewMode::Source {
             resolve_font(
                 appearance.monospace_font.as_deref(),
                 &self.installed_fonts,

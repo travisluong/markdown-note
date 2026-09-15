@@ -68,8 +68,8 @@ pub(crate) struct SearchPanel {
     scroll: UniformListScrollHandle,
     cancelled: Arc<AtomicBool>,
     task: Option<Task<()>>,
-    overlay: Option<Overlay>,
-    overlay_path: Option<PathBuf>,
+    overlays: Vec<Overlay>,
+    overlay_paths: BTreeSet<PathBuf>,
     #[cfg(test)]
     completion_delay: Duration,
 }
@@ -86,7 +86,7 @@ impl SearchPanel {
     pub(super) fn new(
         root: PathBuf,
         exclusions: mithril::notebook::Exclusions,
-        overlay: Option<Overlay>,
+        overlay: impl IntoIterator<Item = Overlay>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -111,8 +111,8 @@ impl SearchPanel {
             scroll: UniformListScrollHandle::new(),
             cancelled: Arc::new(AtomicBool::new(false)),
             task: None,
-            overlay,
-            overlay_path: None,
+            overlays: overlay.into_iter().collect(),
+            overlay_paths: BTreeSet::new(),
             #[cfg(test)]
             completion_delay: Duration::ZERO,
         }
@@ -135,26 +135,26 @@ impl SearchPanel {
 
     pub(super) fn document_installed(
         &mut self,
-        overlay: Option<Overlay>,
+        overlay: impl IntoIterator<Item = Overlay>,
         discarded: Option<&Path>,
         cx: &mut Context<Self>,
     ) {
-        self.overlay = overlay;
-        if discarded.is_some_and(|path| {
-            path.starts_with(&self.root) && self.overlay_path.as_deref() == Some(path)
-        }) {
+        self.overlays = overlay.into_iter().collect();
+        if discarded
+            .is_some_and(|path| path.starts_with(&self.root) && self.overlay_paths.contains(path))
+        {
             self.schedule(cx);
         }
     }
 
     pub(super) fn rescan(
         &mut self,
-        overlay: Option<Overlay>,
+        overlay: impl IntoIterator<Item = Overlay>,
         exclusions: mithril::notebook::Exclusions,
         cx: &mut Context<Self>,
     ) {
         self.exclusions = exclusions;
-        self.overlay = overlay;
+        self.overlays = overlay.into_iter().collect();
         self.schedule(cx);
     }
 
@@ -173,7 +173,7 @@ impl SearchPanel {
             .map(|hit| (hit.relative.clone(), hit.range.clone()));
         self.hits.clear();
         self.pending_opens.clear();
-        self.overlay_path = None;
+        self.overlay_paths.clear();
         self.selected = 0;
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
         if query.is_empty() {
@@ -182,12 +182,13 @@ impl SearchPanel {
             return;
         }
         self.status = "Searching…".into();
-        let buffer = self
-            .overlay
-            .clone()
+        let buffers = self
+            .overlays
+            .iter()
             .filter(|overlay| overlay.path.starts_with(&root))
-            .map(|overlay| (overlay.path, overlay.source));
-        self.overlay_path = buffer.as_ref().map(|(path, _)| path.clone());
+            .map(|overlay| (overlay.path.clone(), overlay.source.clone()))
+            .collect::<Vec<_>>();
+        self.overlay_paths = buffers.iter().map(|(path, _)| path.clone()).collect();
         let debounce = cx.background_executor().timer(Duration::from_millis(200));
         #[cfg(test)]
         let completion_delay = std::mem::take(&mut self.completion_delay);
@@ -197,12 +198,12 @@ impl SearchPanel {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    search::scan(
+                    search::scan_many(
                         &root,
                         &exclusions,
                         &query,
                         case_sensitive,
-                        buffer,
+                        buffers,
                         &worker_cancel,
                     )
                 })

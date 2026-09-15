@@ -14,7 +14,9 @@ pub(super) struct ReadingSearch {
 impl Notes {
     pub(super) fn open_reading_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.ensure_reading_search(window, cx);
-        self.reading_search
+        self.tabs
+            .active
+            .reading_search
             .as_ref()
             .unwrap()
             .query
@@ -23,31 +25,39 @@ impl Notes {
     }
 
     fn ensure_reading_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.reading_search.is_none() {
+        if self.tabs.active.reading_search.is_none() {
             let query = cx.new(|cx| InputState::new(window, cx).placeholder("Find in file"));
-            let subscription = cx.subscribe(&query, |this, _, event, cx| {
+            let tab_id = self.tabs.active.id;
+            let subscription = cx.subscribe(&query, move |this, _, event, cx| {
+                if this.tabs.active.id != tab_id {
+                    return;
+                }
                 if matches!(event, InputEvent::Change) {
                     this.update_reading_search(cx);
                 }
             });
-            self.reading_search = Some(ReadingSearch {
+            self.tabs.active.reading_search = Some(ReadingSearch {
                 query,
                 _subscription: subscription,
                 case_sensitive: false,
                 matches: Vec::new(),
                 active: 0,
-                highlights: SourceHighlights::new(self.reading_text.clone(), Vec::new(), None),
+                highlights: SourceHighlights::new(
+                    self.tabs.active.reading_text.clone(),
+                    Vec::new(),
+                    None,
+                ),
             });
         }
     }
 
     pub(super) fn update_reading_search(&mut self, cx: &mut Context<Self>) {
-        let Some(find) = &mut self.reading_search else {
+        let Some(find) = &mut self.tabs.active.reading_search else {
             return;
         };
         let previous = find.matches.get(find.active).cloned();
         find.matches = search::find_ranges(
-            &self.reading_text,
+            &self.tabs.active.reading_text,
             &find.query.read(cx).value(),
             find.case_sensitive,
             usize::MAX,
@@ -56,7 +66,7 @@ impl Notes {
             .and_then(|range| find.matches.iter().position(|item| *item == range))
             .unwrap_or(0);
         find.highlights = SourceHighlights::new(
-            self.reading_text.clone(),
+            self.tabs.active.reading_text.clone(),
             find.matches.clone(),
             find.matches.get(find.active).cloned(),
         );
@@ -72,24 +82,27 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         self.ensure_reading_search(window, cx);
-        let find = self.reading_search.as_mut().unwrap();
+        let find = self.tabs.active.reading_search.as_mut().unwrap();
         find.case_sensitive = case_sensitive;
         find.query
             .update(cx, |input, cx| input.set_value(query, window, cx));
         self.update_reading_search(cx);
-        let find = self.reading_search.as_mut().unwrap();
+        let find = self.tabs.active.reading_search.as_mut().unwrap();
         find.active = find
             .matches
             .iter()
             .position(|item| *item == range)
             .unwrap_or(0);
-        find.highlights =
-            SourceHighlights::new(self.reading_text.clone(), find.matches.clone(), Some(range));
+        find.highlights = SourceHighlights::new(
+            self.tabs.active.reading_text.clone(),
+            find.matches.clone(),
+            Some(range),
+        );
         cx.notify();
     }
 
     fn move_reading_match(&mut self, forward: bool, cx: &mut Context<Self>) {
-        let Some(find) = &mut self.reading_search else {
+        let Some(find) = &mut self.tabs.active.reading_search else {
             return;
         };
         if find.matches.is_empty() {
@@ -97,7 +110,7 @@ impl Notes {
         }
         find.active = next_match(find.active, find.matches.len(), forward);
         find.highlights = SourceHighlights::new(
-            self.reading_text.clone(),
+            self.tabs.active.reading_text.clone(),
             find.matches.clone(),
             find.matches.get(find.active).cloned(),
         );
@@ -105,7 +118,7 @@ impl Notes {
     }
 
     pub(super) fn render_reading_find(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let find = self.reading_search.as_ref().unwrap();
+        let find = self.tabs.active.reading_search.as_ref().unwrap();
         div()
             .id("reading-find")
             .flex()
@@ -120,7 +133,7 @@ impl Notes {
             )
             .capture_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
-                    this.reading_search = None;
+                    this.tabs.active.reading_search = None;
                     this.focus.focus(window);
                     cx.stop_propagation();
                     cx.notify();
@@ -142,7 +155,7 @@ impl Notes {
                                 "Match case: off"
                             })
                             .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(find) = &mut this.reading_search {
+                                if let Some(find) = &mut this.tabs.active.reading_search {
                                     find.case_sensitive = !find.case_sensitive;
                                 }
                                 this.update_reading_search(cx);
@@ -181,7 +194,7 @@ impl Notes {
                             .ghost()
                             .label("Close")
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.reading_search = None;
+                                this.tabs.active.reading_search = None;
                                 this.focus.focus(window);
                                 cx.notify();
                             })),

@@ -35,10 +35,16 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let effects = self.session.dispatch(operation, app::session::Stage::Load);
+        let effects = self
+            .tabs
+            .active
+            .session
+            .dispatch(operation, app::session::Stage::Load);
         for effect in effects {
             if let app::session::Effect::Load(operation) = effect {
                 let history_target = self
+                    .tabs
+                    .active
                     .navigation_pending
                     .as_ref()
                     .is_some_and(|(id, visit)| *id == operation && visit.path == path);
@@ -102,7 +108,7 @@ fn drop_allowed(mode: ViewMode, busy: bool, note: Option<&Path>, root: Option<&P
 impl Notes {
     fn can_drop_files(&self) -> bool {
         drop_allowed(
-            self.mode,
+            self.tabs.active.mode,
             self.is_busy(),
             self.document().map(|d| d.path.as_path()),
             self.notebooks
@@ -121,16 +127,22 @@ impl Notes {
         if !self.can_drop_files() || window.has_active_dialog(cx) {
             return;
         }
-        let Some(offset) = self.editor.drop_offset(window.mouse_position(), cx) else {
+        let Some(offset) = self
+            .tabs
+            .active
+            .editor
+            .drop_offset(window.mouse_position(), cx)
+        else {
             return;
         };
         let root = self.notebooks.active.as_ref().unwrap().root.clone();
         let note = self.document().unwrap().path.clone();
         let expected_note = note.clone();
         let identity = self.document_id();
-        let revision = self.dirty_revision;
-        let snapshot = self.editor.snapshot(cx);
+        let revision = self.tabs.active.dirty_revision;
+        let snapshot = self.tabs.active.editor.snapshot(cx);
         let worker_snapshot = snapshot.clone();
+        let tab_id = self.tabs.active.id;
         cx.spawn_in(window, async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
                 let source = worker_snapshot.to_string();
@@ -144,13 +156,14 @@ impl Notes {
             match result {
                 Ok((mut imported, offset, text)) => {
                     let _ = this.update_in(cx, |this, window, cx| {
-                        if !this.can_drop_files() || this.document_id() != identity || this.dirty_revision != revision
+                        if this.tabs.active.id != tab_id { return; }
+                        if !this.can_drop_files() || this.document_id() != identity || this.tabs.active.dirty_revision != revision
                             || this.document().is_none_or(|doc| doc.path != expected_note) {
                             this.notebooks.notice = Some("File drop canceled because the document changed. Drop the files again.".into());
                             cx.notify();
                             return;
                         }
-                        let inserted = this.editor.insert_at_snapshot(offset, &snapshot, &text, window, cx);
+                        let inserted = this.tabs.active.editor.insert_at_snapshot(offset, &snapshot, &text, window, cx);
                         if inserted {
                             imported.commit();
                             this.notebooks.notice = None;
@@ -165,6 +178,7 @@ impl Notes {
                 }
                 Err(error) => {
                     let _ = this.update_in(cx, |this, _, cx| {
+                        if this.tabs.active.id != tab_id { return; }
                         this.notebooks.notice = Some(format!("Could not insert dropped files: {error}"));
                         cx.notify();
                     });

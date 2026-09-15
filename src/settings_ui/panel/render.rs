@@ -92,6 +92,7 @@ impl Render for SettingsPanel {
             );
         }
         body = body
+            .child(div().text_sm().text_color(cx.theme().muted_foreground).child(self.values.autosave_scope.clone()))
             .child(Switch::new("autosave-enabled").label("Autosave").checked(self.values.autosave.enabled)
                 .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::AutosaveEnabled(*enabled), cx))))
             .child("Autosave delay (milliseconds)")

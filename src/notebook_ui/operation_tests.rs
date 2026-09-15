@@ -30,7 +30,7 @@ fn fixture<'a>(
                 .complete_directory(generation, PathBuf::new(), Ok(entries), &book.settings)
                 .unwrap();
             notes.notebooks.active = Some(book);
-            notes.saves.session.enabled = false;
+            notes.session_autosave.enabled = false;
             notes
         });
         entity.update(cx, |this, cx| {

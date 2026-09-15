@@ -44,10 +44,10 @@ impl Notes {
             }
         } else {
             self.sidebar_collapsed = true;
-            if self.mode == ViewMode::Reading || self.document().is_none() {
+            if self.tabs.active.mode == ViewMode::Reading || self.document().is_none() {
                 self.focus.focus(window);
             } else {
-                self.editor.focus(window, cx);
+                self.tabs.active.editor.focus(window, cx);
             }
         }
         cx.notify();

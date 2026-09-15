@@ -96,7 +96,7 @@ impl Notes {
             directory,
         };
         let busy = self.is_busy();
-        let writing = self.session.write().is_some();
+        let writing = self.tabs.active.session.write().is_some();
         let owner = cx.weak_entity();
         let menu = PopupMenu::build(window, cx, move |mut menu, _, _| {
             for (label, action) in actions(directory, background) {
@@ -117,16 +117,18 @@ impl Notes {
             menu
         });
         self.menu = None;
-        self.notebooks.context_subscription =
-            Some(
-                cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, window, cx| {
-                    this.notebooks.context_menu = None;
-                    if !window.has_active_dialog(cx) && !this.editor.is_focused(window, cx) {
-                        this.notebooks.tree_focus.focus(window);
-                    }
-                    cx.notify();
-                }),
-            );
+        self.notebooks.context_subscription = Some(cx.subscribe_in(
+            &menu,
+            window,
+            |this, _, _: &DismissEvent, window, cx| {
+                this.notebooks.context_menu = None;
+                if !window.has_active_dialog(cx) && !this.tabs.active.editor.is_focused(window, cx)
+                {
+                    this.notebooks.tree_focus.focus(window);
+                }
+                cx.notify();
+            },
+        ));
         menu.focus_handle(cx).focus(window);
         self.notebooks.context_menu = Some((position, menu));
         cx.notify();
@@ -311,20 +313,22 @@ impl Notes {
         if !self.entry_target_current(&target) || self.is_busy() {
             return;
         }
-        let absolute = target.root.join(&target.path);
-        let affects_content = matches!(action, EntryAction::NewNote)
-            || (matches!(action, EntryAction::Trash)
-                && self
-                    .document()
-                    .map(|doc| doc.path.as_path())
-                    .or(self.image_path())
-                    .is_some_and(|path| path.starts_with(&absolute)));
+        if matches!(action, EntryAction::Trash) {
+            self.begin_workspace(
+                crate::tabs::WorkspaceKind::Trash { target },
+                self.tabs.ids(),
+                window,
+                cx,
+            );
+            return;
+        }
+        let affects_content = matches!(action, EntryAction::NewNote);
         let observed = self.observed_document(cx);
         let next = Next::Entry { target, action };
         let effects = if affects_content {
-            self.session.request(next, observed)
+            self.tabs.active.session.request(next, observed)
         } else {
-            self.session.request_retaining(next, observed)
+            self.tabs.active.session.request_retaining(next, observed)
         };
         self.apply_session_effects(effects, window, cx);
     }
@@ -338,7 +342,7 @@ impl Notes {
     ) {
         if !self.entry_target_current(&target) {
             let observed = self.observed_document(cx);
-            let effects = self.session.continued(operation, observed);
+            let effects = self.tabs.active.session.continued(operation, observed);
             self.apply_session_effects(effects, window, cx);
             return;
         }
@@ -348,18 +352,20 @@ impl Notes {
             .map(|doc| doc.path.as_path())
             .or(self.image_path())
             .is_some_and(|path| path.starts_with(&absolute));
-        let overlay = self
-            .document()
-            .filter(|doc| doc.path == absolute)
-            .map(|doc| (self.editor.snapshot(cx), doc.format));
+        let overlay = self.tabs.iter().find_map(|tab| {
+            tab.document()
+                .filter(|doc| doc.path == absolute)
+                .map(|doc| (tab.editor.snapshot(cx), doc.format))
+        });
         let deleting = matches!(action, EntryAction::Trash);
-        let effects = self.session.begin_entry_operation(operation);
+        let effects = self.tabs.active.session.begin_entry_operation(operation);
         if effects.is_empty() {
             return;
         }
         self.apply_session_effects(effects, window, cx);
         #[cfg(test)]
         let trash_backend = self.notebooks.trash_backend;
+        let tab_id = self.tabs.active.id;
         cx.spawn_in(window, async move |this, cx| {
             let worker = target.clone();
             let result = cx
@@ -397,7 +403,10 @@ impl Notes {
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if this.session.foreground()
+                if this.tabs.active.id != tab_id {
+                    return;
+                }
+                if this.tabs.active.session.foreground()
                     != Some((operation, app::session::PhaseKind::EntryOperation))
                 {
                     return;
@@ -419,10 +428,14 @@ impl Notes {
                     }
                 };
                 let effects = if deleting {
-                    this.session
-                        .entry_deleted(operation, success, contains_active, observed)
+                    this.tabs.active.session.entry_deleted(
+                        operation,
+                        success,
+                        contains_active,
+                        observed,
+                    )
                 } else {
-                    this.session.entry_operation_finished(
+                    this.tabs.active.session.entry_operation_finished(
                         operation,
                         document.map(app::session::Loaded::Document),
                         observed,
@@ -433,7 +446,7 @@ impl Notes {
                         discarded_document, ..
                     } = effect
                     {
-                        if !deleting && this.mode == ViewMode::Reading {
+                        if !deleting && this.tabs.active.mode == ViewMode::Reading {
                             this.set_mode(ViewMode::Source, window, cx);
                         }
                         this.record_navigation_install(operation);
@@ -486,6 +499,98 @@ impl Notes {
                     this.schedule_search(window, cx);
                 }
                 cx.notify();
+            });
+        })
+        .detach();
+    }
+    pub(crate) fn trash_prepared_entry(
+        &mut self,
+        target: EntryTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.entry_target_current(&target) {
+            self.cancel_workspace(window, cx);
+            return;
+        }
+        let absolute = target.root.join(&target.path);
+        let mut operations = Vec::new();
+        for id in self.tabs.ids() {
+            let tab = self.tabs.get_mut(id).unwrap();
+            let observed = tab.observed(cx);
+            let effects = tab.session.request_retaining(
+                Next::Entry {
+                    target: target.clone(),
+                    action: EntryAction::Trash,
+                },
+                observed,
+            );
+            for effect in effects {
+                if let app::session::Effect::Continue { operation, .. } = effect {
+                    let effects = tab.session.begin_entry_operation(operation);
+                    debug_assert!(!effects.is_empty());
+                    operations.push((id, operation));
+                }
+            }
+        }
+        #[cfg(test)]
+        let trash_backend = self.notebooks.trash_backend;
+        cx.spawn_in(window, async move |this, cx| {
+            let worker = target.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    #[cfg(test)]
+                    {
+                        trash_backend(&worker.root, &worker.path)
+                    }
+                    #[cfg(not(test))]
+                    {
+                        notebook::trash_entry(&worker.root, &worker.path)
+                    }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let success = result.is_ok();
+                for (id, operation) in operations {
+                    let tab = this.tabs.get_mut(id).unwrap();
+                    let affected = tab.path().is_some_and(|p| p.starts_with(&absolute));
+                    let previous = tab.path().map(Path::to_path_buf);
+                    let observed = tab.observed(cx);
+                    let effects = tab
+                        .session
+                        .entry_deleted(operation, success, affected, observed);
+                    for effect in effects {
+                        if matches!(effect, app::session::Effect::Installed { .. }) {
+                            this.install_tab_editor(id, window, cx);
+                            this.search_document_installed(previous.as_deref(), window, cx);
+                        } else {
+                            this.apply_tab_effects(id, vec![effect], window, cx);
+                        }
+                    }
+                }
+                if let Err(error) = result {
+                    this.notebooks.notice = Some(format!("Could not update entry: {error}"));
+                } else {
+                    if let Some(book) = &mut this.notebooks.active {
+                        book.settings
+                            .expanded
+                            .retain(|p| !p.starts_with(&target.path));
+                        if book
+                            .settings
+                            .last_file
+                            .as_ref()
+                            .is_some_and(|p| p.starts_with(&target.path))
+                        {
+                            book.settings.last_file = None;
+                        }
+                    }
+                    this.notebooks.notice = None;
+                    this.persist_notebooks(cx);
+                    this.refresh_sorted_tree(window, cx);
+                    this.schedule_search(window, cx);
+                }
+                this.cancel_workspace(window, cx);
             });
         })
         .detach();
@@ -659,10 +764,16 @@ mod tests {
         let (fixture, notes, cx) = fixture(cx);
         let id = cx.update(|window, cx| {
             notes.update(cx, |this, cx| {
-                this.editor
-                    .select(0..this.editor.snapshot(cx).len(), window, cx);
-                this.editor.replace_selection("unsaved café\n", window, cx);
-                let id = this.editor.id();
+                this.tabs.active.editor.select(
+                    0..this.tabs.active.editor.snapshot(cx).len(),
+                    window,
+                    cx,
+                );
+                this.tabs
+                    .active
+                    .editor
+                    .replace_selection("unsaved café\n", window, cx);
+                let id = this.tabs.active.editor.id();
                 this.request_entry(
                     target(this, "note.md", false),
                     EntryAction::Duplicate,
@@ -680,7 +791,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&fixture.note).unwrap(), "original A");
         cx.update(|_, cx| {
             let this = notes.read(cx);
-            assert_eq!(this.editor.id(), id);
+            assert_eq!(this.tabs.active.editor.id(), id);
             assert!(this.dirty(cx));
             assert_eq!(
                 this.notebooks.explorer.selected().unwrap().path,
@@ -732,8 +843,11 @@ mod tests {
         let (fixture, notes, cx) = fixture(cx);
         let id = cx.update(|window, cx| {
             notes.update(cx, |this, cx| {
-                this.editor.replace_selection("draft", window, cx);
-                let id = this.editor.id();
+                this.tabs
+                    .active
+                    .editor
+                    .replace_selection("draft", window, cx);
+                let id = this.tabs.active.editor.id();
                 let target = target(this, "note.md", false);
                 this.diagnostic_answer_request(
                     Some(1),
@@ -750,7 +864,7 @@ mod tests {
         cx.run_until_parked();
         cx.update(|window, cx| {
             notes.update(cx, |this, cx| {
-                assert_eq!(this.editor.id(), id);
+                assert_eq!(this.tabs.active.editor.id(), id);
                 assert!(this.dirty(cx));
                 assert!(
                     this.notebooks
@@ -808,8 +922,11 @@ mod tests {
                     .settings
                     .expanded
                     .insert("folder".into());
-                this.editor.select(0..8, window, cx);
-                this.editor.replace_selection("draft", window, cx);
+                this.tabs.active.editor.select(0..8, window, cx);
+                this.tabs
+                    .active
+                    .editor
+                    .replace_selection("draft", window, cx);
                 this.move_sidebar_entry(
                     &EntryDrag {
                         root: fixture.root.clone(),
@@ -829,7 +946,7 @@ mod tests {
                     this.document().unwrap().path,
                     fixture.root.join("renamed/note.md")
                 );
-                assert_eq!(this.editor.text(cx).as_ref(), "draft");
+                assert_eq!(this.tabs.active.editor.text(cx).as_ref(), "draft");
                 assert!(
                     this.notebooks
                         .active
@@ -839,7 +956,7 @@ mod tests {
                         .expanded
                         .contains(Path::new("renamed"))
                 );
-                this.editor.focus(window, cx);
+                this.tabs.active.editor.focus(window, cx);
             })
         });
         cx.dispatch_action(gpui_component::input::Undo);

@@ -1,12 +1,14 @@
 # Document session contract
 
-[`Session<D, I, A>`](../src/app/session.rs) is the sole owner of active content,
+[`Session<D, I, A>`](../src/app/session.rs) is the sole owner of its tab's content,
 document identity, foreground phase, active document write, queued continuation,
 autosave ticket and automatic retry policy. Its fields are private. The model
 imports no GPUI, editor or application-root types and copies no source buffers.
 The application supplies `Document`, image paths and `Next` as its generic values.
 
-The live source remains in `InputState`. `Document` retains file metadata and the
+Each retained Tab owns one Session, Editor/subscription, dirty comparison runtime,
+save timer/error, mode, Reading view/find state, and navigation history. The live
+source remains in `InputState`. `Document` retains file metadata and the
 saved text/rope baseline. Feature adapters read `Notes::document()`,
 `image_path()` and `document_id()`; they cannot replace content through those
 accessors. `Content` is exactly one of Empty, Document or Image.
@@ -39,7 +41,10 @@ eventually disappear. Refresh notifications do not change session policy.
 
 ## Identity and foreground ownership
 
-DocumentId, OperationId and WriteId are separate monotonic, non-wrapping types.
+TabId is a stable application-level identity. DocumentId, OperationId and WriteId
+are separate monotonic, non-wrapping **session-local** types; their values may
+collide across tabs. Every async task or subscription captures TabId before
+checking the existing document/operation/write/source/path evidence.
 Installation creates a new content identity; moving preserves it. A WriteTicket
 contains both its write identity and document identity. Every asynchronous
 completion supplies its captured token to the matching model event.
@@ -174,3 +179,31 @@ installs record visits; repeated current paths are ignored and a new visit after
 Back drops the forward branch. Empty installation clears history. Sidebar note
 creation calls the same hook. Successful file/folder moves remap stored paths
 without creating a visit. History does not persist to notebook settings.
+## Retained tabs and workspace preparation
+
+TabSet owns one active tab and retained inactive tabs in strip order. User selection
+moves ownership without recreating the Editor or Reading TextView. Background
+completions directly address their captured TabId; the active slot is never
+temporarily swapped for an inactive callback. Foreground completions reject a
+different active TabId. Any foreground phase or workspace coordinator prevents
+user tab changes, while background autosaves continue during ordinary switches.
+
+Workspace preparation uses Session::request or request_retaining with a dedicated
+Prepared continuation. continued releases each approved session without replacing
+its content. Autosave is disabled for the barrier, so neither discarded buffers nor
+late write results restart timers. Close prepares every tab in strip order before
+request_retaining(Close) enters the existing preference barrier. Cancellation or
+failure keeps all tabs and unapplied discard decisions, while completed saves
+retain their real disk baselines; eligible timers resume afterward.
+
+Moves and Trash drain writes before filesystem work. Every retained session gets
+its own operation token. Successful moves update every affected path and saved
+disk version while preserving editor history. Failed revalidation pauses that
+tab's autosave. Trash installs Empty in affected sessions only after backend
+success; failure/cancellation preserves buffers and histories.
+
+Notebook activation uses activation_retained only for a matching LoadingNotebook
+operation when it will focus an already-open file or preserve an occupied tab.
+A new or reused empty tab uses the normal accepted installation hook. Selecting
+an existing path (including a history destination) focuses its tab before dirty
+replacement approval and leaves both histories unchanged.

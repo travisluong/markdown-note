@@ -8,142 +8,214 @@ use std::time::Duration;
 pub(super) struct SaveState {
     pub timer: Option<Task<()>>,
     pub error: Option<String>,
-    pub session: notebook::Autosave,
 }
 
 impl Notes {
-    pub(super) fn record_save_error(&mut self, error: document::SaveError) {
-        let recovery = if self.session.save_conflicted() {
-            "Your changes are still in the editor. Copy them before reopening the file to resolve the conflict."
-        } else {
-            "Your changes are still in the editor. Edit again or use Save to retry."
-        };
-        self.saves.error = Some(format!("Could not save file: {error}. {recovery}"));
-    }
-    fn notebook_autosave(&self) -> bool {
-        self.notebooks.active.as_ref().is_some_and(|book| {
-            self.document()
-                .is_none_or(|doc| doc.path.starts_with(&book.root))
-        })
+    pub(crate) fn autosave_root(&self) -> Option<PathBuf> {
+        self.tabs
+            .active
+            .notebook
+            .as_ref()
+            .map(|(root, _)| root.clone())
+            .or_else(|| {
+                self.notebooks
+                    .active
+                    .as_ref()
+                    .filter(|book| {
+                        self.tabs
+                            .active
+                            .path()
+                            .is_none_or(|path| path.starts_with(&book.root))
+                    })
+                    .map(|book| book.root.clone())
+            })
     }
     pub(super) fn autosave_settings(&self) -> notebook::Autosave {
-        self.notebooks
-            .active
+        self.tab_autosave_settings(self.tabs.active.id)
+    }
+    pub(crate) fn tab_autosave_settings(&self, id: tabs::TabId) -> notebook::Autosave {
+        let tab = self.tabs.get(id).expect("live tab");
+        tab.notebook
             .as_ref()
-            .filter(|_| self.notebook_autosave())
-            .map_or(self.saves.session, |book| book.settings.autosave)
+            .map_or_else(
+                || {
+                    self.notebooks
+                        .active
+                        .as_ref()
+                        .filter(|book| tab.path().is_none_or(|p| p.starts_with(&book.root)))
+                        .map_or(self.session_autosave, |book| book.settings.autosave)
+                },
+                |(root, cached)| {
+                    self.notebooks
+                        .active
+                        .as_ref()
+                        .filter(|book| &book.root == root)
+                        .map_or(*cached, |book| book.settings.autosave)
+                },
+            )
             .normalized()
     }
-
     pub(super) fn update_autosave(
         &mut self,
         settings: notebook::Autosave,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let notebook_scoped = self.notebook_autosave();
-        if notebook_scoped {
-            self.record_activation_preference(notebook_ui::PreferenceIntent::Autosave(settings));
-        }
-        if notebook_scoped && let Some(book) = &mut self.notebooks.active {
-            book.settings.autosave = settings;
-            self.persist_notebooks(cx);
+        let root = self.autosave_root();
+        if let Some(root) = &root {
+            if self
+                .notebooks
+                .active
+                .as_ref()
+                .is_some_and(|book| &book.root == root)
+            {
+                self.record_activation_preference(notebook_ui::PreferenceIntent::Autosave(
+                    settings,
+                ));
+                self.notebooks.active.as_mut().unwrap().settings.autosave = settings;
+                self.persist_notebooks(cx);
+            } else if let Some(book) = self.notebook_cache.get_mut(root) {
+                book.settings.autosave = settings;
+                let book = book.clone();
+                self.persist_cached_notebook(book, cx);
+            }
+            for id in self.tabs.ids() {
+                if let Some((tab_root, cached)) = &mut self.tabs.get_mut(id).unwrap().notebook
+                    && tab_root == root
+                {
+                    *cached = settings;
+                }
+            }
         } else {
-            self.saves.session = settings;
+            self.session_autosave = settings;
         }
-        self.schedule_autosave(window, cx);
+        for id in self.tabs.ids() {
+            self.schedule_tab_autosave(id, window, cx);
+        }
         cx.notify();
     }
 
     /// Rearm for retained content or a preference change. Edit events use
     /// Session::edit_notice directly, preserving the asynchronous dirty display.
+    #[cfg(any(test, feature = "editor-diagnostics"))]
     pub(super) fn schedule_autosave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let enabled = self.autosave_settings().enabled;
-        let observed = self.observed_document(cx);
-        let effects = self.session.set_autosave(enabled, observed);
-        self.apply_session_effects(effects, window, cx);
+        self.schedule_tab_autosave(self.tabs.active.id, window, cx);
     }
-
+    pub(crate) fn schedule_tab_autosave(
+        &mut self,
+        id: tabs::TabId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let enabled = self.workspace.is_none() && self.tab_autosave_settings(id).enabled;
+        let tab = self.tabs.get_mut(id).unwrap();
+        let observed = tab.observed(cx);
+        let effects = tab.session.set_autosave(enabled, observed);
+        self.apply_tab_effects(id, effects, window, cx);
+    }
     pub(crate) fn arm_session_autosave(
         &mut self,
         ticket: AutosaveTicket,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.session.autosave() != Some(ticket) {
+        self.arm_tab_autosave(self.tabs.active.id, ticket, window, cx);
+    }
+    pub(crate) fn arm_tab_autosave(
+        &mut self,
+        id: tabs::TabId,
+        ticket: AutosaveTicket,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.workspace.is_some()
+            || self
+                .tabs
+                .get(id)
+                .is_none_or(|tab| tab.session.autosave() != Some(ticket))
+        {
             return;
         }
-        let delay = cx
-            .background_executor()
-            .timer(Duration::from_millis(self.autosave_settings().delay_ms));
-        self.saves.timer = Some(cx.spawn_in(window, async move |this, cx| {
-            delay.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                let observed = this.observed_document(cx);
-                let effects = this.session.autosave_due(ticket, observed);
-                this.apply_session_effects(effects, window, cx);
-            });
-        }));
+        let delay = cx.background_executor().timer(Duration::from_millis(
+            self.tab_autosave_settings(id).delay_ms,
+        ));
+        self.tabs.get_mut(id).unwrap().saves.timer =
+            Some(cx.spawn_in(window, async move |this, cx| {
+                delay.await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.workspace.is_some() {
+                        return;
+                    }
+                    let Some(tab) = this.tabs.get_mut(id) else {
+                        return;
+                    };
+                    let observed = tab.observed(cx);
+                    let effects = tab.session.autosave_due(ticket, observed);
+                    this.apply_tab_effects(id, effects, window, cx);
+                });
+            }));
     }
-
     pub(crate) fn write_session_snapshot(
         &mut self,
         ticket: WriteTicket,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let document = self
-            .document()
-            .expect("Session only writes an active document");
-        debug_assert_eq!(self.document_id(), Some(ticket.document));
+        self.write_tab_snapshot(self.tabs.active.id, ticket, window, cx);
+    }
+    pub(crate) fn write_tab_snapshot(
+        &mut self,
+        id: tabs::TabId,
+        ticket: WriteTicket,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.get_mut(id) else {
+            return;
+        };
+        if tab.session.write() != Some(ticket) {
+            return;
+        }
+        let document = tab.document().expect("Session writes document");
         let (path, format, version) = (
             document.path.clone(),
             document.format,
             document.version.clone(),
         );
-        let snapshot = self.editor.snapshot(cx);
-        self.saves.error = None;
-        self.saves.timer = None;
+        let snapshot = tab.editor.snapshot(cx);
+        tab.saves.error = None;
+        tab.saves.timer = None;
         cx.spawn_in(window, async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let text = snapshot.to_string();
-                    document::save_file(&path, &text, format, &version)
-                        .map(|receipt| (text, snapshot, receipt))
-                })
-                .await;
+            let captured_path = path.clone();
+            let result = cx.background_executor().spawn(async move {
+                let text = snapshot.to_string();
+                document::save_file(&path, &text, format, &version).map(|receipt| (text, snapshot, receipt))
+            }).await;
             let _ = this.update_in(cx, |this, window, cx| {
+                let Some(tab) = this.tabs.get_mut(id) else { return; };
+                if tab.path() != Some(captured_path.as_path()) || tab.session.write() != Some(ticket) { return; }
                 let effects = match result {
                     Ok((text, snapshot, receipt)) => {
-                        let current = this.editor.snapshot(cx);
-                        this.session.write_succeeded(ticket, |document| {
-                            document.saved = text;
-                            document.saved_rope = snapshot;
-                            document.version = receipt.version;
+                        let current = tab.editor.snapshot(cx);
+                        tab.session.write_succeeded(ticket, |document| {
+                            document.saved = text; document.saved_rope = snapshot; document.version = receipt.version;
                             document.saved_rope != current
                         })
                     }
                     Err(error) => {
-                        let failure = if matches!(error, document::SaveError::Conflict(_)) {
-                            SaveFailure::Conflict
-                        } else {
-                            SaveFailure::Io
-                        };
-                        let observed = this.observed_document(cx);
-                        let effects = this.session.write_failed(ticket, failure, observed);
-                        if effects.iter().any(
-                            |effect| matches!(effect, Effect::WriteFailed(id) if *id == ticket),
-                        ) {
-                            this.record_save_error(error);
+                        let failure = if matches!(error, document::SaveError::Conflict(_)) { SaveFailure::Conflict } else { SaveFailure::Io };
+                        let observed = tab.observed(cx);
+                        let effects = tab.session.write_failed(ticket, failure, observed);
+                        if effects.iter().any(|effect| matches!(effect, Effect::WriteFailed(t) if *t == ticket)) {
+                            let recovery = if tab.session.save_conflicted() { "Copy your changes before reopening to resolve the conflict." } else { "Edit again or use Save to retry." };
+                            tab.saves.error = Some(format!("Could not save file: {error}. Your changes are still in the editor. {recovery}"));
                         }
                         effects
                     }
                 };
-                this.apply_session_effects(effects, window, cx);
+                this.apply_tab_effects(id, effects, window, cx);
             });
-        })
-        .detach();
+        }).detach();
     }
 
     pub(crate) fn saved_session_baseline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -172,14 +244,14 @@ impl Notes {
             return;
         }
         let observed = self.observed_document(cx);
-        let effects = self.session.set_autosave(true, observed);
+        let effects = self.tabs.active.session.set_autosave(true, observed);
         self.apply_session_effects(effects, window, cx);
-        if let Some(ticket) = self.session.autosave() {
-            let effects = self.session.autosave_due(ticket, observed);
+        if let Some(ticket) = self.tabs.active.session.autosave() {
+            let effects = self.tabs.active.session.autosave_due(ticket, observed);
             self.apply_session_effects(effects, window, cx);
         }
         let enabled = self.autosave_settings().enabled;
-        let effects = self.session.set_autosave(enabled, observed);
+        let effects = self.tabs.active.session.set_autosave(enabled, observed);
         self.apply_session_effects(effects, window, cx);
     }
 }

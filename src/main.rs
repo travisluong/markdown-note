@@ -20,6 +20,7 @@ mod reading_search;
 mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
+mod tabs;
 mod toolbar_ui;
 
 use std::{
@@ -76,6 +77,7 @@ actions!(
 
 #[derive(Clone)]
 enum Next {
+    Prepared,
     History(app::navigation::Visit),
     Nothing,
     Open,
@@ -132,6 +134,10 @@ impl Document {
 }
 
 struct Notes {
+    tabs: tabs::TabSet,
+    workspace: Option<tabs::WorkspaceOperation>,
+    session_autosave: notebook::Autosave,
+    notebook_cache: std::collections::HashMap<PathBuf, notebook::Notebook>,
     sidebar_collapsed: bool,
     sidebar_resize: Entity<gpui_component::resizable::ResizableState>,
     session_date_format: String,
@@ -140,23 +146,11 @@ struct Notes {
     session_always_hide_extensions: Vec<String>,
     settings_panel: Option<settings_ui::SettingsDialog>,
     installed_fonts: Vec<String>,
-    saves: autosave::SaveState,
     palette: Option<goto::Palette>,
     search: Option<Entity<search_ui::SearchPanel>>,
     search_subscription: Option<Subscription>,
     search_destination: Option<search::Destination>,
-    session: Session<Document, PathBuf, Next>,
-    navigation: app::navigation::NavigationHistory,
-    navigation_pending: Option<(OperationId, app::navigation::Visit)>,
-    editor: Editor,
-    editor_subscription: Subscription,
-    mode: ViewMode,
-    reading_text: SharedString,
-    reading_search: Option<reading_search::ReadingSearch>,
     focus: FocusHandle,
-    dirty_cached: bool,
-    dirty_revision: u64,
-    dirty_task: Option<Task<()>>,
     menu: Option<(MenuKind, Entity<PopupMenu>)>,
     menu_previous_focus: Option<FocusHandle>,
     menu_subscription: Option<Subscription>,
@@ -167,8 +161,7 @@ struct Notes {
 
 impl Notes {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let editor = Editor::new(SharedString::default(), window, cx);
-        let editor_subscription = Self::subscribe_editor(&editor, window, cx);
+        let tabs = tabs::TabSet::new(window, cx);
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| {
@@ -185,6 +178,10 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            tabs,
+            workspace: None,
+            session_autosave: Default::default(),
+            notebook_cache: Default::default(),
             sidebar_collapsed: false,
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),
             session_date_format: templates::default_format(),
@@ -193,23 +190,11 @@ impl Notes {
             session_always_hide_extensions: notebook::default_always_hide_extensions(),
             settings_panel: None,
             installed_fonts: cx.text_system().all_font_names(),
-            saves: autosave::SaveState::default(),
             palette: None,
             search: None,
             search_subscription: None,
             search_destination: None,
-            session: Session::default(),
-            navigation: Default::default(),
-            navigation_pending: None,
-            editor,
-            editor_subscription,
-            mode: ViewMode::default(),
-            reading_text: SharedString::default(),
-            reading_search: None,
             focus,
-            dirty_cached: false,
-            dirty_revision: 0,
-            dirty_task: None,
             menu: None,
             menu_previous_focus: None,
             menu_subscription: None,
@@ -222,52 +207,82 @@ impl Notes {
         }
     }
 
-    fn subscribe_editor(editor: &Editor, window: &Window, cx: &mut Context<Self>) -> Subscription {
-        editor.subscribe(window, cx, |this, event, window, cx| match event {
-            EditorEvent::OpenLink(destination) => this.open_link(destination, window, cx),
-            EditorEvent::Changed => {
-                this.check_dirty(window, cx);
-                if let Some(document) = this.document_id() {
-                    let effects = this.session.edit_notice(document);
-                    this.apply_session_effects(effects, window, cx);
+    fn subscribe_tab_editor(
+        id: tabs::TabId,
+        editor: &Editor,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Subscription {
+        let editor_id = editor.id();
+        editor.subscribe(window, cx, move |this, event, window, cx| {
+            if this
+                .tabs
+                .get(id)
+                .is_none_or(|tab| tab.editor.id() != editor_id)
+            {
+                return;
+            }
+            match event {
+                EditorEvent::OpenLink(destination) => {
+                    if this.tabs.active.id == id {
+                        this.open_link(destination, window, cx);
+                    }
                 }
-                this.schedule_search(window, cx);
-                if this.mode == ViewMode::Reading {
-                    this.reading_text = this.editor.text(cx);
-                    this.update_reading_search(cx);
+                EditorEvent::Changed => {
+                    this.check_tab_dirty(id, window, cx);
+                    let tab = this.tabs.get_mut(id).unwrap();
+                    if tab.mode == ViewMode::Reading {
+                        tab.reading_text = tab.editor.text(cx);
+                    }
+                    if let Some(document) = tab.session.content().document_id() {
+                        let effects = tab.session.edit_notice(document);
+                        this.apply_tab_effects(id, effects, window, cx);
+                    }
+                    this.schedule_search(window, cx);
+                    if this.tabs.active.id == id && this.tabs.active.mode == ViewMode::Reading {
+                        this.update_reading_search(cx);
+                    }
                 }
             }
         })
     }
-
     fn dirty(&self, cx: &App) -> bool {
-        self.document()
-            .is_some_and(|d| d.saved_rope != self.editor.snapshot(cx))
+        self.tabs.active.observed(cx).dirty
     }
-
     fn check_dirty(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(document) = self.document() else {
+        self.check_tab_dirty(self.tabs.active.id, window, cx);
+    }
+    fn check_tab_dirty(&mut self, id: tabs::TabId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(tab) = self.tabs.get_mut(id) else {
+            return;
+        };
+        let Some(document) = tab.document() else {
             return;
         };
         let saved = document.saved_rope.clone();
-        let current = self.editor.snapshot(cx);
-        self.dirty_revision += 1;
-        let revision = self.dirty_revision;
-        self.dirty_cached = true;
-        self.refresh(window, cx);
-        self.dirty_task = Some(cx.spawn_in(window, async move |this, cx| {
+        let current = tab.editor.snapshot(cx);
+        let identity = tab.session.content().document_id();
+        tab.dirty_revision += 1;
+        let revision = tab.dirty_revision;
+        tab.dirty_cached = true;
+        tab.dirty_task = Some(cx.spawn_in(window, async move |this, cx| {
             let dirty = cx
                 .background_executor()
                 .spawn(async move { saved != current })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if this.dirty_revision != revision {
+                let Some(tab) = this.tabs.get_mut(id) else {
+                    return;
+                };
+                if tab.dirty_revision != revision || tab.session.content().document_id() != identity
+                {
                     return;
                 }
-                this.dirty_cached = dirty;
+                tab.dirty_cached = dirty;
                 this.refresh(window, cx);
             });
         }));
+        self.refresh(window, cx);
     }
 
     fn window_title(&self) -> String {
@@ -280,7 +295,11 @@ impl Notes {
             .unwrap_or_else(|| "Mithril".into());
         format!(
             "{}{} — Mithril",
-            if self.dirty_cached { "* " } else { "" },
+            if self.tabs.active.dirty_cached {
+                "* "
+            } else {
+                ""
+            },
             name
         )
     }
@@ -291,11 +310,11 @@ impl Notes {
     }
 
     fn is_busy(&self) -> bool {
-        self.session.is_busy()
+        self.workspace.is_some() || self.tabs.iter().any(|tab| tab.session.is_busy())
     }
 
     fn document(&self) -> Option<&Document> {
-        match self.session.content() {
+        match self.tabs.active.session.content() {
             Content::Document { value, .. } => Some(value),
             _ => None,
         }
@@ -304,7 +323,7 @@ impl Notes {
     fn capabilities(&self) -> mithril::capabilities::Capabilities {
         mithril::capabilities::Capabilities {
             has_document: self.document().is_some(),
-            mode: self.mode,
+            mode: self.tabs.active.mode,
             busy: self.is_busy(),
             has_notebook: self.notebooks.active.is_some(),
         }
@@ -316,12 +335,12 @@ impl Notes {
 
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
         self.record_activation_preference(notebook_ui::PreferenceIntent::ViewMode(mode));
-        self.reading_text = if mode == ViewMode::Reading {
-            self.editor.text(cx)
+        self.tabs.active.reading_text = if mode == ViewMode::Reading {
+            self.tabs.active.editor.text(cx)
         } else {
             SharedString::default()
         };
-        self.mode = mode;
+        self.tabs.active.mode = mode;
         if mode == ViewMode::Reading {
             self.update_reading_search(cx);
         }
@@ -331,9 +350,9 @@ impl Notes {
             book.settings.view_mode = mode;
             self.persist_notebooks(cx);
         }
-        self.editor.set_mode(mode, cx);
+        self.tabs.active.editor.set_mode(mode, cx);
         if mode != ViewMode::Reading && self.document().is_some() {
-            self.editor.focus(window, cx);
+            self.tabs.active.editor.focus(window, cx);
         } else {
             self.focus.focus(window);
         }
@@ -347,7 +366,7 @@ impl Notes {
         self.menu_previous_focus = window.focused(cx);
         let busy = self.is_busy();
         let can_save = self.document().is_some() && !busy;
-        let mode = self.mode;
+        let mode = self.tabs.active.mode;
         let capabilities = self.capabilities();
         let focus = self.focus.clone();
         let owner = cx.weak_entity();
@@ -433,30 +452,36 @@ impl Render for Notes {
         let content = if let Some(path) = self.image_path() {
             images::viewer(path).into_any_element()
         } else if let Some(document_path) = self.document().map(|document| document.path.clone()) {
-            if self.mode != ViewMode::Reading {
+            if self.tabs.active.mode != ViewMode::Reading {
                 div()
                     .key_context("DocumentEditor")
                     .on_action(cx.listener(|this, _: &MoveLineUp, window, cx| {
-                        if this.can_edit_document() && this.editor.is_focused(window, cx) {
-                            this.editor.move_lines(false, window, cx);
+                        if this.can_edit_document()
+                            && this.tabs.active.editor.is_focused(window, cx)
+                        {
+                            this.tabs.active.editor.move_lines(false, window, cx);
                         }
                     }))
                     .on_action(cx.listener(|this, _: &MoveLineDown, window, cx| {
-                        if this.can_edit_document() && this.editor.is_focused(window, cx) {
-                            this.editor.move_lines(true, window, cx);
+                        if this.can_edit_document()
+                            && this.tabs.active.editor.is_focused(window, cx)
+                        {
+                            this.tabs.active.editor.move_lines(true, window, cx);
                         }
                     }))
                     .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {
                         if this.can_edit_document()
-                            && this.editor.focus_handle(cx).is_focused(window)
+                            && this.tabs.active.editor.focus_handle(cx).is_focused(window)
                         {
-                            this.editor.toggle_selected_tasks(window, cx);
+                            this.tabs.active.editor.toggle_selected_tasks(window, cx);
                         }
                     }))
                     .size_full()
                     .font_family(self.content_font(cx))
                     .child(
-                        self.editor
+                        self.tabs
+                            .active
+                            .editor
                             .widget()
                             .h_full()
                             .appearance(false)
@@ -466,6 +491,20 @@ impl Render for Notes {
                     )
                     .into_any_element()
             } else {
+                let reading = self
+                    .tabs
+                    .active
+                    .reading_view
+                    .get_or_insert_with(|| {
+                        TextView::markdown(
+                            ("reading", self.tabs.active.editor.id().as_u64() as usize),
+                            self.tabs.active.reading_text.clone(),
+                            window,
+                            cx,
+                        )
+                    })
+                    .clone()
+                    .text(self.tabs.active.reading_text.clone());
                 div()
                     .size_full()
                     .p_6()
@@ -475,67 +514,71 @@ impl Render for Notes {
                     .font_family(self.content_font(cx))
                     .key_context("ReadingContent")
                     .on_action(cx.listener(|this, _: &CloseReadingFind, window, cx| {
-                        this.reading_search = None;
+                        this.tabs.active.reading_search = None;
                         this.focus.focus(window);
                         cx.notify();
                     }))
-                    .when(self.reading_search.is_some(), |view| {
+                    .when(self.tabs.active.reading_search.is_some(), |view| {
                         view.child(self.render_reading_find(cx))
                     })
                     .child(
-                        TextView::markdown(
-                            ("reading", self.editor.id().as_u64() as usize),
-                            self.reading_text.clone(),
-                            window,
-                            cx,
-                        )
-                        .image_document(document_path)
-                        .source_highlights(
-                            self.reading_search
-                                .as_ref()
-                                .map(|find| find.highlights.clone()),
-                        )
-                        .on_link_open({
-                            let owner = cx.weak_entity();
-                            let identity = self.document_id();
-                            move |destination, source, window, cx| {
-                                let _ = owner.update(cx, |this, cx| {
-                                    if this.document_id() == identity
-                                        && this.editor.text(cx).as_ref() == source
-                                    {
-                                        this.open_link(destination, window, cx);
-                                    }
-                                });
-                            }
-                        })
-                        .on_task_toggle({
-                            let owner = cx.weak_entity();
-                            let document_path = self.document().map(|d| d.path.clone());
-                            move |offset, source, window, cx| {
-                                let _ = owner.update(cx, |this, cx| {
-                                    if this.is_busy()
-                                        || this.document().map(|d| &d.path)
-                                            != document_path.as_ref()
-                                    {
-                                        return;
-                                    }
-                                    this.editor.toggle_task(offset, source, window, cx);
-                                });
-                            }
-                        })
-                        .text_size(content_size)
-                        .line_height(relative(1.5))
-                        .style(gpui_component::text::TextViewStyle {
-                            heading_base_font_size: content_size,
-                            highlight_theme: cx.theme().highlight_theme.clone(),
-                            is_dark: cx.theme().mode.is_dark(),
-                            ..Default::default()
-                        })
-                        .selectable(true)
-                        .scrollable(true)
-                        .min_h_0()
-                        .flex_1()
-                        .size_full(),
+                        reading
+                            .image_document(document_path)
+                            .source_highlights(
+                                self.tabs
+                                    .active
+                                    .reading_search
+                                    .as_ref()
+                                    .map(|find| find.highlights.clone()),
+                            )
+                            .on_link_open({
+                                let owner = cx.weak_entity();
+                                let identity = self.document_id();
+                                let tab_id = self.tabs.active.id;
+                                move |destination, source, window, cx| {
+                                    let _ = owner.update(cx, |this, cx| {
+                                        if this.tabs.active.id == tab_id
+                                            && this.document_id() == identity
+                                            && this.tabs.active.editor.text(cx).as_ref() == source
+                                        {
+                                            this.open_link(destination, window, cx);
+                                        }
+                                    });
+                                }
+                            })
+                            .on_task_toggle({
+                                let owner = cx.weak_entity();
+                                let document_path = self.document().map(|d| d.path.clone());
+                                let tab_id = self.tabs.active.id;
+                                move |offset, source, window, cx| {
+                                    let _ = owner.update(cx, |this, cx| {
+                                        if this.is_busy()
+                                            || this.tabs.active.id != tab_id
+                                            || this.document().map(|d| &d.path)
+                                                != document_path.as_ref()
+                                        {
+                                            return;
+                                        }
+                                        this.tabs
+                                            .active
+                                            .editor
+                                            .toggle_task(offset, source, window, cx);
+                                    });
+                                }
+                            })
+                            .text_size(content_size)
+                            .line_height(relative(1.5))
+                            .style(gpui_component::text::TextViewStyle {
+                                heading_base_font_size: content_size,
+                                highlight_theme: cx.theme().highlight_theme.clone(),
+                                is_dark: cx.theme().mode.is_dark(),
+                                ..Default::default()
+                            })
+                            .selectable(true)
+                            .scrollable(true)
+                            .min_h_0()
+                            .flex_1()
+                            .size_full(),
                     )
                     .into_any_element()
             }
@@ -567,7 +610,7 @@ impl Render for Notes {
                     .is_none()
                     && !window.has_active_dialog(cx)
                 {
-                    this.editor.find_and_replace(window, cx);
+                    this.tabs.active.editor.find_and_replace(window, cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
@@ -698,7 +741,7 @@ impl Render for Notes {
             .when(self.toolbar_settings().any_enabled(), |view| {
                 view.child(self.render_toolbar(window, cx))
             })
-            .when_some(self.saves.error.clone(), |view, error| {
+            .when_some(self.tabs.active.saves.error.clone(), |view, error| {
                 view.child(div().p_2().text_sm().child(error))
             })
             .when_some(self.notebooks.notice.clone(), |view, notice| {
@@ -720,7 +763,16 @@ impl Render for Notes {
                                     this.drop_files(vec![drag.root.join(&drag.path)], window, cx);
                                 },
                             ))
-                            .child(content)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .min_h_0()
+                                    .child(self.render_tabs(cx))
+                                    .child(content),
+                            )
                             .into_any_element(),
                         window,
                         cx,

@@ -7,9 +7,9 @@ records verification and platform limits. Update this map when a contract moves.
 
 ## System shape
 
-Mithril is a single-window Markdown application with one active document,
-image, or empty view. Ordinary files hold notes, a per-user index lists notebooks,
-and each notebook has JSON preferences. Source and Live preview share one editor
+Mithril is a single-window Markdown application with retained document tabs.
+Each tab owns a document, image, or empty view. Ordinary files hold notes, a per-user index lists notebooks,
+and each notebook has JSON preferences. Source and Live preview share each tab's editor
 and undo history. Reading is derived from that editor's source.
 
 ```mermaid
@@ -39,6 +39,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Responsibility | Start here | Contract |
 | --- | --- | --- |
 | Startup, root rendering and action bindings | [main.rs](src/main.rs): `Notes`, `Next`, `NotesWindow` | Wire owners and dispatch actions. `NotesWindow` renders modal layers outside `Notes::render` to avoid a recursive entity borrow. |
+| Retained tabs and workspace close/move/delete coordination | [tabs.rs](src/tabs.rs): `TabSet`, `Tab`, `WorkspaceOperation` | Stable TabId qualifies session-local identities. Tab selection retains all document runtime state; preparation retains buffers until every required decision and I/O succeeds. |
 | Content, foreground phase, writes, autosave and continuations | [app/session.rs](src/app/session.rs): `Session`; [session contract](docs/document-session.md) | Pure private state; transitions return ordered effects. No mutable content accessor or generic begin/finish bypass. |
 | Session effects and captured I/O | [app/session_ui.rs](src/app/session_ui.rs), [autosave.rs](src/autosave.rs), [notebook_ui.rs](src/notebook_ui.rs) | Own prompts, task handles, captured data and operation-tagged barriers. They apply policy returned by Session. |
 | Current source, selection, history and source edits | [editor.rs](src/editor.rs): `Editor` | One wrapped `InputState`, no second buffer. Features use semantic snapshot/edit/task/link/find methods. |
@@ -49,7 +50,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Explorer cache, row projection and selection | [explorer.rs](src/explorer.rs): `Explorer` | Pure owner accepts settings and captured directory results. UI owns scroll/focus/workers, settings own persisted expansion and sort. |
 | Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; dialog lifetime rejects stale events. |
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
-| Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies current overlay and approves navigation. |
+| Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
 | Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners and Markdown controls through the semantic Editor boundary; heading menus retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
@@ -63,13 +64,43 @@ The title and section navigation remain fixed while the section body scrolls.
 Other dialogs retain their original sizing and entrance animation.
 
 Navigation history is a pure, session-only owner in `app/navigation.rs`, held by
-Notes. The session adapter proposes a revision-tagged history visit through Next;
+each Tab. The session adapter proposes a revision-tagged history visit through Next;
 only accepted document/image installation commits its cursor. Ordinary installs
 record canonical paths, and accepted Empty installation clears the history.
 Sidebar-created notes use the same hook; successful moves remap visited paths.
 Back/Forward work without an active notebook and recheck busy/dialog state.
 Known image visits remain available after switching notebooks, with path/link
 validation on traversal. Failed, cancelled and stale loads leave history intact.
+
+Document tabs have a horizontally scrollable strip above content, with New tab and
+close controls. New tab creates an empty session without a disk file. Existing
+paths focus their retained tab before replacement approval; history traversal to
+another open tab leaves both histories intact. Notebook activation preserves
+occupied tabs and reuses an existing path or empty active tab before appending.
+Source/Live editor state and Reading TextView state remain owned while inactive.
+Tabs are session-only; selection does not change the active notebook sidebar.
+
+Every editor subscription, dirty task and save timer/write captures TabId before
+checking its document, write, source or path evidence. Background callbacks address
+the retained tab directly and never swap active tabs or steal focus. Foreground
+callbacks additionally reject a changed active TabId. Any tab foreground phase or
+workspace operation blocks user tab changes; background writes permit switching.
+
+Workspace close, tab close, moves and Trash pause autosave and drain writes, then
+prepare sessions in strip order through their existing transitions. Save/Discard
+approval retains buffers until the complete operation succeeds. Failed writes or
+cancellation release the current preparation owner and resume eligible timers.
+Window close prepares every tab before the existing preference-flush barrier.
+Move results remap all retained sessions and histories and revalidate disk versions;
+Trash clears affected tabs only after filesystem success. Duplicate captures the
+source buffer even when its tab is inactive. Failure preserves every buffer.
+
+Canonical loaded notebooks are cached at application level. Each tab retains its
+owning notebook's autosave scope (the longest containing loaded root); preference
+changes persist that notebook and reschedule its tabs even when another sidebar
+notebook is active. Standalone tabs use the shared session autosave default.
+General Settings identifies autosave scope beside those controls; appearance,
+sidebar and toolbar preferences continue to use the active notebook.
 
 ## Lifecycle rules
 
@@ -146,8 +177,8 @@ disable the custom policy with a notice so Settings can repair it.
 - `Explorer` persists across notebook changes. Clear advances its generation.
   Refresh retains visible rows/selection and completed caches, but invalidates
   obsolete Loading markers so reopening a folder can request a current worker.
-- Search scans capture an unsaved rope overlay. Installation updates that overlay
-  even during clean navigation; explicit discarded-document signals invalidate
+- Search scans capture all open documents' rope overlays within the notebook root.
+  Installation updates those overlays even during clean navigation; explicit discarded-document signals invalidate
   stale dirty overlays. Opening a result preserves results, selection and scroll.
   Navigation proposals are approved in order and cannot outlive their query.
   Matching folds ASCII only; revalidation scans all occurrences despite result caps.

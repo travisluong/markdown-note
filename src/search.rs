@@ -116,6 +116,25 @@ pub fn scan(
     buffer: Option<(PathBuf, Rope)>,
     cancelled: &AtomicBool,
 ) -> Results {
+    scan_many(
+        root,
+        exclusions,
+        query,
+        case_sensitive,
+        buffer.into_iter().collect(),
+        cancelled,
+    )
+}
+
+/// Scan with every retained editor snapshot within the notebook root.
+pub fn scan_many(
+    root: &Path,
+    exclusions: &notebook::Exclusions,
+    query: &str,
+    case_sensitive: bool,
+    buffers: Vec<(PathBuf, Rope)>,
+    cancelled: &AtomicBool,
+) -> Results {
     let mut result = Results::default();
     if query.is_empty() || cancelled.load(Ordering::Relaxed) {
         return result;
@@ -157,7 +176,7 @@ pub fn scan(
                     continue;
                 }
             };
-            let text = if let Some((_, rope)) = buffer.as_ref().filter(|(p, _)| *p == path) {
+            let text = if let Some((_, rope)) = buffers.iter().find(|(p, _)| *p == path) {
                 if rope.len() as u64 > MAX_FILE_BYTES {
                     result.skipped += 1;
                     continue;

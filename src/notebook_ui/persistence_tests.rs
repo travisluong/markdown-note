@@ -42,7 +42,7 @@ pub(super) fn fixture(cx: &mut TestAppContext) -> (Fixture, Entity<Notes>, &mut 
             notes.notebooks.index = index;
             notes.notebooks.index_path = Some(fixture.index.clone());
             notes.notebooks.index_writable = true;
-            notes.saves.session.enabled = false;
+            notes.session_autosave.enabled = false;
             notes.mode = ViewMode::Source;
             notes
         });

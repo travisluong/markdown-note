@@ -17,14 +17,14 @@ use super::session::{
 
 impl Notes {
     pub(crate) fn image_path(&self) -> Option<&Path> {
-        match self.session.content() {
+        match self.tabs.active.session.content() {
             Content::Image { value, .. } => Some(value.as_path()),
             _ => None,
         }
     }
 
     pub(crate) fn document_id(&self) -> Option<DocumentId> {
-        self.session.content().document_id()
+        self.tabs.active.session.content().document_id()
     }
 
     /// Use at an actual save/navigation decision, never on every edit event.
@@ -47,7 +47,7 @@ impl Notes {
         for effect in effects {
             match effect {
                 Effect::StateChanged => self.refresh(window, cx),
-                Effect::CancelAutosave => self.saves.timer = None,
+                Effect::CancelAutosave => self.tabs.active.saves.timer = None,
                 Effect::ArmAutosave(ticket) => self.arm_session_autosave(ticket, window, cx),
                 Effect::Prompt(operation) => self.prompt_session_save(operation, window, cx),
                 Effect::Write(ticket) => self.write_session_snapshot(ticket, window, cx),
@@ -61,13 +61,16 @@ impl Notes {
                 }
                 Effect::Cancelled { operation, action } => {
                     if self
+                        .tabs
+                        .active
                         .navigation_pending
                         .as_ref()
                         .is_some_and(|(id, _)| *id == operation)
                     {
-                        self.navigation_pending = None;
+                        self.tabs.active.navigation_pending = None;
                     }
                     self.cancel_session_context(operation);
+                    self.cancel_workspace(window, cx);
                     self.finish_search_navigation(false, window, cx);
                     if matches!(action, Some(Next::TreeFile(_))) {
                         self.restore_tree_cursor(window, cx);
@@ -105,14 +108,62 @@ impl Notes {
     }
 
     pub(crate) fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(next, Next::Close) && self.workspace.is_none() {
+            if !self.is_busy() {
+                self.begin_workspace(
+                    crate::tabs::WorkspaceKind::Close,
+                    self.tabs.ids(),
+                    window,
+                    cx,
+                );
+            }
+            return;
+        }
+        if self.workspace.is_some() {
+            return;
+        }
+        if matches!(next, Next::Open) {
+            let effects = self.tabs.active.session.pick();
+            for effect in effects {
+                if let Effect::Pick(operation) = effect {
+                    self.show_file_picker(operation, window, cx);
+                } else {
+                    self.apply_session_effects(vec![effect], window, cx);
+                }
+            }
+            return;
+        }
+        let path = match &next {
+            Next::File(p) | Next::TreeFile(p) | Next::FileFromPicker(p) => Some(p),
+            Next::History(visit) => Some(&visit.path),
+            Next::SearchResult(d) => Some(&d.path),
+            _ => None,
+        };
+        if let Some(id) = path.and_then(|p| self.tabs.find_path(p)) {
+            if !self.is_busy() {
+                self.select_tab(id, window, cx);
+                if let Next::SearchResult(d) = next {
+                    self.reveal_search_result(d, window, cx);
+                    self.finish_search_navigation(true, window, cx);
+                }
+            }
+            return;
+        }
         let observed = self.observed_document(cx);
-        let effects = self.session.request(next, observed);
+        let effects = if matches!(next, Next::Notebook { .. }) {
+            self.tabs.active.session.request_retaining(next, observed)
+        } else {
+            self.tabs.active.session.request(next, observed)
+        };
         self.apply_session_effects(effects, window, cx);
     }
 
     pub(crate) fn save(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        if self.workspace.is_some() {
+            return;
+        }
         let next = (!matches!(next, Next::Nothing)).then_some(next);
-        let effects = self.session.save(next);
+        let effects = self.tabs.active.session.save(next);
         self.apply_session_effects(effects, window, cx);
     }
 
@@ -133,9 +184,13 @@ impl Notes {
             ],
             cx,
         );
+        let tab_id = self.tabs.active.id;
         cx.spawn_in(window, async move |this, cx| {
             let answer = prompt.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
+                if this.tabs.active.id != tab_id {
+                    return;
+                }
                 this.answer_request(operation, answer, window, cx);
             });
         })
@@ -155,7 +210,7 @@ impl Notes {
             _ => Choice::Cancel,
         };
         let observed = self.observed_document(cx);
-        let effects = self.session.answer(operation, choice, observed);
+        let effects = self.tabs.active.session.answer(operation, choice, observed);
         self.apply_session_effects(effects, window, cx);
     }
 
@@ -166,15 +221,36 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let existing_path = match &next {
+            Next::File(path) | Next::TreeFile(path) | Next::FileFromPicker(path) => Some(path),
+            Next::History(visit) => Some(&visit.path),
+            Next::SearchResult(destination) => Some(&destination.path),
+            _ => None,
+        };
+        if let Some(id) = existing_path.and_then(|path| self.tabs.find_path(path)) {
+            let observed = self.observed_document(cx);
+            let effects = self.tabs.active.session.continued(operation, observed);
+            if effects.is_empty() {
+                return;
+            }
+            self.apply_session_effects(effects, window, cx);
+            self.select_tab(id, window, cx);
+            if let Next::SearchResult(destination) = next {
+                self.reveal_search_result(destination, window, cx);
+                self.finish_search_navigation(true, window, cx);
+            }
+            return;
+        }
         match next {
+            Next::Prepared => unreachable!("workspace continuation uses tab-qualified effects"),
             Next::History(visit) => {
-                if self.navigation.accepts(&visit) {
+                if self.tabs.active.navigation.accepts(&visit) {
                     let path = visit.path.clone();
-                    self.navigation_pending = Some((operation, visit));
+                    self.tabs.active.navigation_pending = Some((operation, visit));
                     self.open_path_with_operation(operation, path, false, window, cx);
                 } else {
                     let observed = self.observed_document(cx);
-                    let effects = self.session.cancel(operation, observed);
+                    let effects = self.tabs.active.session.cancel(operation, observed);
                     self.apply_session_effects(effects, window, cx);
                 }
             }
@@ -183,7 +259,7 @@ impl Notes {
             }
             Next::Nothing => {
                 let observed = self.observed_document(cx);
-                let effects = self.session.continued(operation, observed);
+                let effects = self.tabs.active.session.continued(operation, observed);
                 self.apply_session_effects(effects, window, cx);
             }
             Next::Open => self.open_with_operation(operation, window, cx),
@@ -218,7 +294,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let effects = self.session.show_error();
+        let effects = self.tabs.active.session.show_error();
         for effect in effects {
             if let Effect::ShowError(operation) = effect {
                 self.show_session_error(operation, message, &error.to_string(), window, cx);
@@ -237,11 +313,15 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         let prompt = window.prompt(PromptLevel::Critical, title, Some(detail), &["OK"], cx);
+        let tab_id = self.tabs.active.id;
         cx.spawn_in(window, async move |this, cx| {
             let _ = prompt.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                if this.tabs.active.id != tab_id {
+                    return;
+                }
                 let observed = this.observed_document(cx);
-                let effects = this.session.cancel(operation, observed);
+                let effects = this.tabs.active.session.cancel(operation, observed);
                 this.apply_session_effects(effects, window, cx);
             });
         })
@@ -254,30 +334,41 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let effects = self.session.dispatch(operation, Stage::Pick);
+        let effects = self.tabs.active.session.dispatch(operation, Stage::Pick);
         for effect in effects {
             if let Effect::Pick(operation) = effect {
-                let picker = cx.prompt_for_paths(PathPromptOptions {
-                    files: true,
-                    directories: false,
-                    multiple: false,
-                    prompt: Some("Open".into()),
-                });
-                cx.spawn_in(window, async move |this, cx| {
-                    let result = match picker.await {
-                        Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
-                        Ok(Err(error)) => Err(io::Error::other(error.to_string())),
-                        Err(error) => Err(io::Error::other(error.to_string())),
-                    };
-                    let _ = this.update_in(cx, |this, window, cx| {
-                        this.finish_file_picker(operation, result, window, cx);
-                    });
-                })
-                .detach();
+                self.show_file_picker(operation, window, cx);
             } else {
                 self.apply_session_effects(vec![effect], window, cx);
             }
         }
+    }
+    fn show_file_picker(
+        &mut self,
+        operation: OperationId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let picker = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Open".into()),
+        });
+        let tab_id = self.tabs.active.id;
+        cx.spawn_in(window, async move |this, cx| {
+            let result = match picker.await {
+                Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
+                Ok(Err(error)) => Err(io::Error::other(error.to_string())),
+                Err(error) => Err(io::Error::other(error.to_string())),
+            };
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.tabs.active.id == tab_id {
+                    this.finish_file_picker(operation, result, window, cx);
+                }
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn finish_file_picker(
@@ -290,13 +381,24 @@ impl Notes {
         match result {
             Ok(path) => {
                 let observed = self.observed_document(cx);
-                let effects =
-                    self.session
-                        .picked(operation, path.map(Next::FileFromPicker), observed);
+                if self.tabs.active.session.foreground()
+                    == Some((operation, super::session::PhaseKind::Picking))
+                    && let Some(id) = path.as_ref().and_then(|path| self.tabs.find_path(path))
+                {
+                    let effects = self.tabs.active.session.picked(operation, None, observed);
+                    self.apply_session_effects(effects, window, cx);
+                    self.select_tab(id, window, cx);
+                    return;
+                }
+                let effects = self.tabs.active.session.picked(
+                    operation,
+                    path.map(Next::FileFromPicker),
+                    observed,
+                );
                 self.apply_session_effects(effects, window, cx);
             }
             Err(error) => {
-                let effects = self.session.pick_failed(operation);
+                let effects = self.tabs.active.session.pick_failed(operation);
                 for effect in effects {
                     if let Effect::ShowError(operation) = effect {
                         self.show_session_error(
@@ -330,6 +432,8 @@ impl Notes {
         let observed = self.observed_document(cx);
         let error = result.as_ref().err().map(ToString::to_string);
         let effects = self
+            .tabs
+            .active
             .session
             .loaded(operation, result.map_err(|_| ()), observed);
         let mut installed = false;
@@ -377,8 +481,42 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(next, Next::Close) && self.workspace.is_none() {
+            if !self.is_busy() {
+                self.begin_workspace(
+                    crate::tabs::WorkspaceKind::Close,
+                    self.tabs.ids(),
+                    window,
+                    cx,
+                );
+            }
+            return;
+        }
+        if self.workspace.is_some() {
+            return;
+        }
+        let path = match &next {
+            Next::File(p) | Next::TreeFile(p) | Next::FileFromPicker(p) => Some(p),
+            Next::History(visit) => Some(&visit.path),
+            Next::SearchResult(d) => Some(&d.path),
+            _ => None,
+        };
+        if let Some(id) = path.and_then(|p| self.tabs.find_path(p)) {
+            if !self.is_busy() {
+                self.select_tab(id, window, cx);
+                if let Next::SearchResult(d) = next {
+                    self.reveal_search_result(d, window, cx);
+                    self.finish_search_navigation(true, window, cx);
+                }
+            }
+            return;
+        }
         let observed = self.observed_document(cx);
-        let effects = self.session.request(next, observed);
+        let effects = if matches!(next, Next::Notebook { .. }) {
+            self.tabs.active.session.request_retaining(next, observed)
+        } else {
+            self.tabs.active.session.request(next, observed)
+        };
         let prompt = effects.iter().find_map(|effect| {
             if let Effect::Prompt(operation) = effect {
                 Some(*operation)
@@ -408,15 +546,22 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         let observed = self.observed_document(cx);
-        let _ = self.session.request(Next::Nothing, observed);
-        if let Some((operation, super::session::PhaseKind::Prompt)) = self.session.foreground() {
-            let _ = self.session.answer(operation, Choice::Discard, observed);
+        let _ = self.tabs.active.session.request(Next::Nothing, observed);
+        if let Some((operation, super::session::PhaseKind::Prompt)) =
+            self.tabs.active.session.foreground()
+        {
+            let _ = self
+                .tabs
+                .active
+                .session
+                .answer(operation, Choice::Discard, observed);
         }
-        let Some((operation, super::session::PhaseKind::Dispatching)) = self.session.foreground()
+        let Some((operation, super::session::PhaseKind::Dispatching)) =
+            self.tabs.active.session.foreground()
         else {
             panic!("fixture installation needs an idle session")
         };
-        let _ = self.session.dispatch(operation, Stage::Load);
+        let _ = self.tabs.active.session.dispatch(operation, Stage::Load);
         self.complete_content_load(
             operation,
             Ok(document.map_or(Loaded::Empty, Loaded::Document)),
@@ -436,7 +581,7 @@ impl Notes {
         if self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
-        if let Some(visit) = self.navigation.target(direction) {
+        if let Some(visit) = self.tabs.active.navigation.target(direction) {
             self.request(crate::Next::History(visit), window, cx);
         }
     }
@@ -448,17 +593,19 @@ impl Notes {
             .map(|doc| doc.path.clone())
             .or_else(|| self.image_path().map(ToOwned::to_owned));
         let pending = self
+            .tabs
+            .active
             .navigation_pending
             .take()
             .filter(|(id, _)| *id == operation);
         if let Some(path) = path {
             if let Some((_, visit)) = pending {
-                self.navigation.commit(&visit, &path);
+                self.tabs.active.navigation.commit(&visit, &path);
             } else {
-                self.navigation.record(path);
+                self.tabs.active.navigation.record(path);
             }
         } else {
-            self.navigation = Default::default();
+            self.tabs.active.navigation = Default::default();
         }
     }
 }

@@ -18,18 +18,23 @@ impl Notes {
         if self.document().is_none() || self.is_busy() || window.has_active_dialog(cx) {
             return;
         }
-        if self.mode == ViewMode::Reading {
+        if self.tabs.active.mode == ViewMode::Reading {
             self.open_reading_search(window, cx);
         } else {
-            self.editor.find(window, cx);
+            self.tabs.active.editor.find(window, cx);
         }
     }
 
-    fn search_overlay(&self, cx: &App) -> Option<Overlay> {
-        self.document().map(|document| Overlay {
-            path: document.path.clone(),
-            source: self.editor.snapshot(cx),
-        })
+    fn search_overlay(&self, cx: &App) -> Vec<Overlay> {
+        self.tabs
+            .iter()
+            .filter_map(|tab| {
+                tab.document().map(|document| Overlay {
+                    path: document.path.clone(),
+                    source: tab.editor.snapshot(cx),
+                })
+            })
+            .collect()
     }
 
     pub(super) fn search_visible(&self, cx: &App) -> bool {
@@ -86,7 +91,7 @@ impl Notes {
                             }
                         }
                         SearchIntent::FocusEditor => {
-                            this.editor.focus(window, cx);
+                            this.tabs.active.editor.focus(window, cx);
                         }
                     }
                 },
@@ -149,13 +154,13 @@ impl Notes {
         {
             return;
         }
-        let text = self.editor.text(cx);
+        let text = self.tabs.active.editor.text(cx);
         let Some(range) = search::revalidate(&text, &destination) else {
             self.notebooks.notice = Some("The search match no longer exists in this file.".into());
             cx.notify();
             return;
         };
-        if self.mode == ViewMode::Reading {
+        if self.tabs.active.mode == ViewMode::Reading {
             self.reveal_reading_match(
                 destination.query,
                 destination.case_sensitive,
@@ -165,7 +170,7 @@ impl Notes {
             );
             return;
         }
-        self.editor.reveal_match(range, cx);
+        self.tabs.active.editor.reveal_match(range, cx);
         cx.notify();
     }
 

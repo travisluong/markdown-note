@@ -76,6 +76,7 @@ pub(super) struct SettingsValues {
     pub startup_dark: bool,
     pub busy: bool,
     pub subtitle: String,
+    pub autosave_scope: String,
     pub notice: Option<String>,
 }
 

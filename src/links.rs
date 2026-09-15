@@ -114,9 +114,9 @@ impl Notes {
         if !self.can_edit_document() || window.has_active_dialog(cx) {
             return;
         }
-        let expected = self.editor.snapshot(cx);
+        let expected = self.tabs.active.editor.snapshot(cx);
         let snapshot = expected.to_string();
-        let selection = self.editor.selection(cx);
+        let selection = self.tabs.active.editor.selection(cx);
         let links = markdown_links::parse(&snapshot);
         let existing = links.iter().find(|link| {
             link.source.contains(&selection.start) && selection.end <= link.source.end
@@ -135,6 +135,7 @@ impl Notes {
             target.clone()
         };
         let identity = self.document_id();
+        let tab_id = self.tabs.active.id;
         let owner = cx.weak_entity();
         let error = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
         window.open_dialog(cx, move |dialog, _, _| {
@@ -164,7 +165,7 @@ impl Notes {
                 )
                 .on_close(move |_, window, cx| {
                     let _ = close_owner.update(cx, |this, cx| {
-                        this.editor.focus(window, cx)
+                        if this.tabs.active.id == tab_id { this.tabs.active.editor.focus(window, cx); }
                     });
                 })
                 .on_ok(move |_, window, cx| {
@@ -175,8 +176,8 @@ impl Notes {
                                 &target.read(cx).value(),
                                 title.as_deref(),
                             );
-                            if this.document_id() != identity
-                                || this.editor.snapshot(cx) != expected
+                            if this.tabs.active.id != tab_id || this.document_id() != identity
+                                || this.tabs.active.editor.snapshot(cx) != expected
                                 || !this.can_edit_document()
                             {
                                 *error.borrow_mut() =
@@ -186,7 +187,7 @@ impl Notes {
                             }
                             match result {
                                 Ok(text) => {
-                                    if this.editor.replace_range_if_current(
+                                    if this.tabs.active.editor.replace_range_if_current(
                                         range.clone(), &expected, &text, window, cx,
                                     ) {
                                         true

@@ -1,6 +1,6 @@
 //! Search lifecycle checks use GPUI's in-memory TestPlatform and disposable files.
 use crate::{Document, Next, Notes, notebook};
-use gpui::{Entity, ScrollStrategy, TestAppContext, VisualTestContext, prelude::*};
+use gpui::{Entity, Focusable, ScrollStrategy, TestAppContext, VisualTestContext, prelude::*};
 use gpui_component::{Root, scroll::ScrollbarHandle};
 use std::{
     fs,
@@ -21,7 +21,7 @@ fn fixture<'a>(
             let mut book = notebook::Notebook::open(root, false).unwrap();
             book.settings.autosave.enabled = false;
             notes.notebooks.active = Some(book);
-            notes.saves.session.enabled = false;
+            notes.session_autosave.enabled = false;
             notes
         });
         entity.update(cx, |this, cx| {
@@ -534,5 +534,78 @@ fn exclusions_cancel_old_searches_and_keep_the_open_document_editable(cx: &mut T
             notes.read(cx).search.as_ref().unwrap().read(cx).hits.len(),
             2
         )
+    });
+}
+
+#[gpui::test]
+fn retained_unsaved_tabs_feed_real_search_and_open_existing_result(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    for name in ["a.md", "b.md"] {
+        fs::write(dir.path().join(name), "original").unwrap();
+    }
+    fs::write(outside.path().join("outside.md"), "original").unwrap();
+    let (notes, cx) = fixture(cx, dir.path());
+    edit(&notes, "first hit", cx);
+    let first = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let id = this.tabs.active.id;
+            this.new_tab(window, cx);
+            this.install_document(
+                Some(Document::open(dir.path().join("b.md")).unwrap()),
+                window,
+                cx,
+            );
+            id
+        })
+    });
+    edit(&notes, "second hit", cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            this.install_document(
+                Some(Document::open(outside.path().join("outside.md")).unwrap()),
+                window,
+                cx,
+            );
+        })
+    });
+    edit(&notes, "outside hit", cx);
+    search(&notes, cx);
+    finish_search(cx);
+    let panel = cx.update(|_, cx| notes.read(cx).search.as_ref().unwrap().clone());
+    cx.update(|_, cx| {
+        panel.update(cx, |panel, cx| {
+            assert_eq!(panel.hits.len(), 2);
+            assert!(
+                panel
+                    .hits
+                    .iter()
+                    .any(|hit| hit.relative == Path::new("b.md"))
+            );
+            let index = panel
+                .hits
+                .iter()
+                .position(|hit| hit.relative == Path::new("a.md"))
+                .unwrap();
+            panel.request_open(index, false, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|window, cx| {
+        let n = notes.read(cx);
+        assert_eq!(n.tabs.active.id, first);
+        assert_eq!(n.tabs.ids().len(), 3);
+        assert_eq!(n.tabs.active.editor.selection(cx), 6..9);
+        assert!(
+            panel
+                .read(cx)
+                .query
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+        assert_eq!(panel.read(cx).hits.len(), 2);
     });
 }

@@ -71,7 +71,7 @@ pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window,
                         _ => format!("before\n\n\n| name | value |\n| --- | --- |\n{}\n\nafter", "| café | 你好 |\n".repeat(10_000)),
                     };
                     cx.update(|window, cx| notes.update(cx, |notes, cx| {
-                        notes.saves.session.enabled = false;
+                        notes.session_autosave.enabled = false;
                         notes.editor.diagnostic_input().update(cx, |editor, cx| editor.set_value(source.clone(), window, cx));
                         notes.set_mode(ViewMode::LivePreview, window, cx);
                         let row = match (fixture, position) {
