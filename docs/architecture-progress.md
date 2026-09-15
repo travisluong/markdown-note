@@ -1236,3 +1236,31 @@ The three initial Toolbar Settings drag regressions came from adding an autosave
 scope sentence to every section's shared subtitle. Moving that sentence beside
 General's autosave controls restored the bounded Toolbar layout; all existing
 settings drag tests pass unchanged.
+
+## Tab content height regression (2026-09-15)
+
+The retained-tab layout added a heightless flex column inside a non-flex,
+full-height parent. The editor's percentage height consequently resolved to its
+intrinsic height. `file-drop-content` now owns the full-height flex column, with
+the non-shrinking tab strip above a flexing, bounded content container. Source,
+Live Preview, Reading, images and empty views share that remaining-space slot;
+drop handlers and retained tab ownership are unchanged.
+
+The new TestPlatform geometry regression failed before the fix with an editor
+height of **40 px** inside a **726 px** pane. It now checks the editor's actual
+input bounds, plus Reading and empty-view bounds, against the tab strip and pane
+within one pixel. Coverage includes Source/Live/Reading modes, repeated selection
+between two document tabs, expanded/collapsed sidebar and 1000x800/720x500 windows.
+
+Windows headless verification:
+
+- All **16 tab tests** passed, including the new regression.
+- Full locked/offline diagnostics suite: **454 passed, 0 failed, 0 ignored**
+  (81 library, 189 application, 184 integration; no doc-test cases).
+- `cargo check --locked --offline --target-dir target/headless -j 1`,
+  `cargo fmt --check`, and strict all-target diagnostics Clippy passed.
+- Full suite output: `target/headless/tab-layout-tests.log`; check and Clippy
+  outputs use the corresponding `tab-layout-check.log` and `tab-layout-clippy.log`.
+- A transient Windows LNK1104 on the test executable cleared on retry. No desktop
+  interaction or native application harness was used; native visual validation
+  remains user-run.

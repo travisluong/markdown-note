@@ -506,6 +506,7 @@ impl Render for Notes {
                     .clone()
                     .text(self.tabs.active.reading_text.clone());
                 div()
+                    .debug_selector(|| "reading-content".into())
                     .size_full()
                     .p_6()
                     .flex()
@@ -584,6 +585,7 @@ impl Render for Notes {
             }
         } else {
             div()
+                .debug_selector(|| "empty-content".into())
                 .size_full()
                 .flex()
                 .items_center()
@@ -752,7 +754,10 @@ impl Render for Notes {
                     self.render_sidebar_layout(
                         div()
                             .id("file-drop-content")
+                            .debug_selector(|| "file-drop-content".into())
                             .size_full()
+                            .flex()
+                            .flex_col()
                             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                                 cx.stop_propagation();
                                 this.drop_files(paths.paths().to_vec(), window, cx);
@@ -763,14 +768,13 @@ impl Render for Notes {
                                     this.drop_files(vec![drag.root.join(&drag.path)], window, cx);
                                 },
                             ))
+                            .child(self.render_tabs(cx))
                             .child(
                                 div()
-                                    .flex()
-                                    .flex_col()
                                     .flex_1()
                                     .min_w_0()
                                     .min_h_0()
-                                    .child(self.render_tabs(cx))
+                                    .overflow_hidden()
                                     .child(content),
                             )
                             .into_any_element(),

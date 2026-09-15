@@ -15,6 +15,75 @@ fn click(selector: &str, cx: &mut VisualTestContext) {
     cx.refresh().unwrap();
 }
 
+fn assert_content_fills_below_tabs(selector: &str, cx: &mut VisualTestContext) {
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let pane = cx.debug_bounds("file-drop-content").unwrap();
+    let tabs = cx.debug_bounds("document-tabs").unwrap();
+    let content = cx
+        .debug_bounds(Box::leak(selector.to_owned().into_boxed_str()))
+        .unwrap_or_else(|| panic!("missing {selector}"));
+    let tolerance = gpui::px(1.);
+    assert!(pane.size.height > gpui::px(200.));
+    assert!(tabs.size.height > gpui::px(0.));
+    assert!((tabs.top() - pane.top()).abs() <= tolerance);
+    assert!(
+        (content.top() - tabs.bottom()).abs() <= tolerance,
+        "{selector} must begin below tabs: content={content:?}, tabs={tabs:?}"
+    );
+    assert!(
+        (content.bottom() - pane.bottom()).abs() <= tolerance,
+        "{selector} must fill remaining pane height: content={content:?}, pane={pane:?}"
+    );
+    assert!((content.left() - pane.left()).abs() <= tolerance);
+    assert!((content.right() - pane.right()).abs() <= tolerance);
+}
+
+#[gpui::test]
+fn tab_content_fills_remaining_height_across_modes_resizes_and_selection(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let second = fixture.root.join("second.md");
+    fs::write(&second, "# Second\n\nA multiline note.\n\nMore text.").unwrap();
+    let (first, second) = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let first = this.tabs.active.id;
+            this.new_tab(window, cx);
+            this.install_document(Some(Document::open(second).unwrap()), window, cx);
+            (first, this.tabs.active.id)
+        })
+    });
+    for (width, height) in [(1000., 800.), (720., 500.)] {
+        cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(height)));
+        for collapsed in [false, true] {
+            for tab in [first, second, first] {
+                for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+                    let selector = cx.update(|window, cx| {
+                        notes.update(cx, |this, cx| {
+                            this.sidebar_collapsed = collapsed;
+                            this.select_tab(tab, window, cx);
+                            this.set_mode(mode, window, cx);
+                            if mode == ViewMode::Reading {
+                                "reading-content".to_owned()
+                            } else {
+                                format!("input-{}", this.tabs.active.editor.id())
+                            }
+                        })
+                    });
+                    assert_content_fills_below_tabs(&selector, cx);
+                }
+            }
+            let empty = cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    this.new_tab(window, cx);
+                    this.tabs.active.id
+                })
+            });
+            assert_content_fills_below_tabs("empty-content", cx);
+            cx.update(|window, cx| notes.update(cx, |this, cx| this.close_tab(empty, window, cx)));
+        }
+    }
+}
+
 #[gpui::test]
 fn tab_buttons_route_files_retain_editor_selection_mode_and_history(cx: &mut TestAppContext) {
     let (fixture, notes, cx) = fixture(cx);

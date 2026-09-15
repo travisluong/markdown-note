@@ -323,6 +323,7 @@ impl Notes {
         let busy = self.is_busy();
         div()
             .id("document-tabs")
+            .debug_selector(|| "document-tabs".into())
             .flex()
             .items_center()
             .flex_shrink_0()
