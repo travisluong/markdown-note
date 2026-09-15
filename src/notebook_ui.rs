@@ -88,6 +88,12 @@ pub(super) struct NotebookState {
 }
 
 impl NotebookState {
+    #[cfg(test)]
+    pub(crate) fn set_test_persistence_target(&mut self, path: PathBuf) {
+        self.index_path = Some(path);
+        self.index_writable = true;
+    }
+
     pub(super) fn reload_exclusions(&mut self) {
         if self.notice == self.exclusion_error {
             self.notice = None;

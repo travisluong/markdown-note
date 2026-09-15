@@ -218,8 +218,71 @@ impl ThemePalette {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolbarItem {
+    Sidebar,
+    Explorer,
+    Search,
+    Sort,
+}
+
+impl ToolbarItem {
+    pub const OPTIONS: [(Self, &'static str); 4] = [
+        (Self::Sidebar, "Toggle sidebar"),
+        (Self::Explorer, "Explorer"),
+        (Self::Search, "Search"),
+        (Self::Sort, "Sort files"),
+    ];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ToolbarSettings {
+    pub sidebar: bool,
+    pub explorer: bool,
+    pub search: bool,
+    pub sort: bool,
+}
+
+impl Default for ToolbarSettings {
+    fn default() -> Self {
+        Self {
+            sidebar: true,
+            explorer: true,
+            search: true,
+            sort: true,
+        }
+    }
+}
+
+impl ToolbarSettings {
+    pub fn enabled(self, item: ToolbarItem) -> bool {
+        match item {
+            ToolbarItem::Sidebar => self.sidebar,
+            ToolbarItem::Explorer => self.explorer,
+            ToolbarItem::Search => self.search,
+            ToolbarItem::Sort => self.sort,
+        }
+    }
+
+    pub fn set_enabled(&mut self, item: ToolbarItem, enabled: bool) {
+        *match item {
+            ToolbarItem::Sidebar => &mut self.sidebar,
+            ToolbarItem::Explorer => &mut self.explorer,
+            ToolbarItem::Search => &mut self.search,
+            ToolbarItem::Sort => &mut self.sort,
+        } = enabled;
+    }
+
+    pub fn any_enabled(self) -> bool {
+        self.sidebar || self.explorer || self.search || self.sort
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub toolbar: ToolbarSettings,
     #[serde(default)]
     pub excluded_patterns: Vec<String>,
     #[serde(default = "default_show_file_extensions")]
@@ -246,6 +309,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            toolbar: ToolbarSettings::default(),
             excluded_patterns: Vec::new(),
             file_sort: FileSort::default(),
             show_file_extensions: default_show_file_extensions(),

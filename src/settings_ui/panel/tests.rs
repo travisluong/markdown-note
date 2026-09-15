@@ -769,3 +769,210 @@ fn externally_invalid_exclusions_are_visible_and_correctable(cx: &mut TestAppCon
         assert!(current.read(cx).excluded_patterns_error.is_none());
     });
 }
+
+#[gpui::test]
+fn toolbar_switches_update_rendering_and_restore_an_empty_toolbar(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Toolbar, cx)
+        })
+    });
+    let selectors = [
+        "toolbar-sidebar-toggle",
+        "sidebar-explorer",
+        "sidebar-search",
+        "sidebar-sort",
+    ];
+    for mask in 0..16 {
+        for (index, (item, _)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
+            intent(
+                &form,
+                SettingsIntent::ToolbarItemEnabled(item, mask & (1 << index) != 0),
+                cx,
+            );
+        }
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            let settings = notes.read(cx).toolbar_settings();
+            assert_eq!(settings.any_enabled(), mask != 0);
+            for (index, (item, _)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
+                assert_eq!(settings.enabled(item), mask & (1 << index) != 0);
+            }
+        });
+        let mut previous_x = None;
+        for (index, selector) in selectors.into_iter().enumerate() {
+            let bounds = cx.debug_bounds(selector);
+            if mask & (1 << index) == 0 {
+                continue;
+            }
+            assert!(bounds.is_some(), "mask {mask}, {selector}");
+            if let Some(bounds) = bounds {
+                if let Some(x) = previous_x {
+                    assert!(bounds.origin.x > x);
+                }
+                previous_x = Some(bounds.origin.x);
+            }
+        }
+        cx.update(|_, cx| {
+            assert_eq!(form.read(cx).values.toolbar, notes.read(cx).session_toolbar);
+        });
+    }
+    for width in [800., 480.] {
+        cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(800.)));
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("settings-content").unwrap().size.width > gpui::px(240.));
+    }
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    let reopened = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Search, false),
+        cx,
+    );
+    cx.update(|_, cx| {
+        assert_eq!(
+            reopened.read(cx).values.toolbar,
+            notebook::ToolbarSettings::default()
+        );
+        assert_eq!(
+            notes.read(cx).session_toolbar,
+            notebook::ToolbarSettings::default()
+        );
+    });
+}
+
+#[gpui::test]
+fn toolbar_preferences_persist_for_notebook_and_reject_stale_scope(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Search, false),
+        cx,
+    );
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sort, false),
+        cx,
+    );
+    let expected = notebook::ToolbarSettings {
+        search: false,
+        sort: false,
+        ..notebook::ToolbarSettings::default()
+    };
+    assert_eq!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .toolbar,
+        expected
+    );
+    assert_eq!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .toolbar,
+        notebook::ToolbarSettings::default()
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.toolbar_settings(), expected);
+            assert_eq!(this.session_toolbar, notebook::ToolbarSettings::default());
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, false),
+                window,
+                cx,
+            );
+            assert_eq!(
+                this.toolbar_settings(),
+                notebook::ToolbarSettings::default()
+            );
+            assert!(this.settings_panel.is_none());
+            this.notebooks.active =
+                Some(notebook::Notebook::open(&fixture.first.root, false).unwrap());
+            this.open_settings(window, cx);
+        });
+    });
+    let reopened = panel(&notes, cx);
+    cx.update(|_, cx| assert_eq!(reopened.read(cx).values.toolbar, expected));
+}
+
+#[gpui::test]
+fn toolbar_form_ignores_changes_while_busy(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    let (events, _subscription) = watch(&form, cx);
+    cx.update(|_, cx| form.update(cx, |form, _| form.values.busy = true));
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Search, false),
+        cx,
+    );
+    cx.update(|_, cx| {
+        assert!(events.read(cx).0.is_empty());
+        assert_eq!(
+            notes.read(cx).toolbar_settings(),
+            notebook::ToolbarSettings::default()
+        );
+    });
+}
+
+#[gpui::test]
+fn toolbar_renders_only_enabled_buttons_in_order(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    for mask in 0..16 {
+        // GPUI retains old debug bounds, so each snapshot needs a fresh window.
+        let (_, view) = cx.add_window_view(|window, cx| {
+            let notes = cx.new(|cx| {
+                let mut notes = Notes::new(window, cx);
+                for (index, (item, _)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
+                    notes
+                        .session_toolbar
+                        .set_enabled(item, mask & (1 << index) != 0);
+                }
+                notes
+            });
+            let root = cx.new(|cx| NotesWindow {
+                _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),
+                notes,
+            });
+            Root::new(root, window, cx)
+        });
+        view.refresh().unwrap();
+        assert_eq!(view.debug_bounds("window-toolbar").is_some(), mask != 0);
+        let mut previous_x = None;
+        for (index, selector) in [
+            "toolbar-sidebar-toggle",
+            "sidebar-explorer",
+            "sidebar-search",
+            "sidebar-sort",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let bounds = view.debug_bounds(selector);
+            assert_eq!(
+                bounds.is_some(),
+                mask & (1 << index) != 0,
+                "mask {mask}, {selector}"
+            );
+            if let Some(bounds) = bounds {
+                if let Some(x) = previous_x {
+                    assert!(bounds.origin.x > x);
+                }
+                previous_x = Some(bounds.origin.x);
+            }
+        }
+    }
+}

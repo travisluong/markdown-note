@@ -9,6 +9,7 @@ use gpui_component::{
 
 impl Notes {
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let settings = self.toolbar_settings();
         let has_notebook = self.notebooks.active.is_some();
         let disabled = self.is_busy() || !has_notebook;
         let sidebar_visible = has_notebook && !self.sidebar_collapsed;
@@ -17,6 +18,7 @@ impl Notes {
 
         div()
             .id("window-toolbar")
+            .debug_selector(|| "window-toolbar".into())
             .flex()
             .items_center()
             .w_full()
@@ -25,57 +27,75 @@ impl Notes {
             .p_1()
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(
-                Button::new("toolbar-sidebar-toggle")
-                    .small()
-                    .ghost()
-                    .icon(if sidebar_visible {
-                        IconName::PanelLeftClose
-                    } else {
-                        IconName::PanelLeftOpen
-                    })
-                    .tooltip(if sidebar_visible {
-                        "Collapse sidebar"
-                    } else {
-                        "Show sidebar"
-                    })
-                    .disabled(disabled)
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx))),
-            )
-            .child(
-                Button::new("sidebar-explorer")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Folder)
-                    .tooltip("Explorer")
-                    .selected(sidebar_visible && !searching)
-                    .disabled(disabled)
-                    .on_click(cx.listener(|this, _, window, cx| this.show_explorer(window, cx))),
-            )
-            .child(
-                Button::new("sidebar-search")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Search)
-                    .tooltip("Search all files (Ctrl+Shift+F)")
-                    .selected(sidebar_visible && searching)
-                    .disabled(disabled)
-                    .on_click(cx.listener(|this, _, window, cx| this.open_search_all(window, cx))),
-            )
-            .child(
-                Button::new("sidebar-sort")
-                    .small()
-                    .ghost()
-                    .icon(IconName::SortAscending)
-                    .tooltip("Sort files")
-                    .disabled(disabled)
-                    .dropdown_menu(move |menu, _, cx| {
-                        if let Some(entity) = owner.upgrade() {
-                            entity.read(cx).file_sort_menu(menu, owner.clone())
+            .when(settings.sidebar, |view| {
+                view.child(
+                    Button::new("toolbar-sidebar-toggle")
+                        .debug_selector(|| "toolbar-sidebar-toggle".into())
+                        .small()
+                        .ghost()
+                        .icon(if sidebar_visible {
+                            IconName::PanelLeftClose
                         } else {
-                            menu
-                        }
-                    }),
-            )
+                            IconName::PanelLeftOpen
+                        })
+                        .tooltip(if sidebar_visible {
+                            "Collapse sidebar"
+                        } else {
+                            "Show sidebar"
+                        })
+                        .disabled(disabled)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)),
+                        ),
+                )
+            })
+            .when(settings.explorer, |view| {
+                view.child(
+                    Button::new("sidebar-explorer")
+                        .debug_selector(|| "sidebar-explorer".into())
+                        .small()
+                        .ghost()
+                        .icon(IconName::Folder)
+                        .tooltip("Explorer")
+                        .selected(sidebar_visible && !searching)
+                        .disabled(disabled)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.show_explorer(window, cx)),
+                        ),
+                )
+            })
+            .when(settings.search, |view| {
+                view.child(
+                    Button::new("sidebar-search")
+                        .debug_selector(|| "sidebar-search".into())
+                        .small()
+                        .ghost()
+                        .icon(IconName::Search)
+                        .tooltip("Search all files (Ctrl+Shift+F)")
+                        .selected(sidebar_visible && searching)
+                        .disabled(disabled)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_search_all(window, cx)),
+                        ),
+                )
+            })
+            .when(settings.sort, |view| {
+                view.child(
+                    Button::new("sidebar-sort")
+                        .debug_selector(|| "sidebar-sort".into())
+                        .small()
+                        .ghost()
+                        .icon(IconName::SortAscending)
+                        .tooltip("Sort files")
+                        .disabled(disabled)
+                        .dropdown_menu(move |menu, _, cx| {
+                            if let Some(entity) = owner.upgrade() {
+                                entity.read(cx).file_sort_menu(menu, owner.clone())
+                            } else {
+                                menu
+                            }
+                        }),
+                )
+            })
     }
 }

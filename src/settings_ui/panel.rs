@@ -34,6 +34,7 @@ pub(super) enum ColorRole {
 
 #[derive(Clone, Debug)]
 pub(super) enum SettingsIntent {
+    ToolbarItemEnabled(notebook::ToolbarItem, bool),
     AutosaveEnabled(bool),
     AutosaveDelay(u64),
     ShowExtensions(bool),
@@ -56,6 +57,7 @@ impl SettingsIntent {
 /// A display snapshot, never written back wholesale or used as disk evidence.
 #[derive(Clone, PartialEq)]
 pub(super) struct SettingsValues {
+    pub toolbar: notebook::ToolbarSettings,
     pub appearance: notebook::Appearance,
     pub autosave: notebook::Autosave,
     pub date_format: String,
@@ -71,6 +73,7 @@ pub(super) struct SettingsValues {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
     General,
+    Toolbar,
     Font,
     Templates,
     Theme,

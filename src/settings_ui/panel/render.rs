@@ -183,6 +183,25 @@ impl Render for SettingsPanel {
                     this.emit_intent(SettingsIntent::ResetPalettes, cx)
                 })),
         );
+        let mut toolbar_body = div()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(self.values.subtitle.clone())
+            .child("Choose which items appear in the toolbar.");
+        for (index, (item, label)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
+            toolbar_body = toolbar_body.child(
+                Switch::new(("toolbar-item", index))
+                    .label(label)
+                    .checked(self.values.toolbar.enabled(item))
+                    .disabled(self.values.busy)
+                    .on_click(cx.listener(move |this, enabled: &bool, _, cx| {
+                        this.emit_intent(SettingsIntent::ToolbarItemEnabled(item, *enabled), cx)
+                    })),
+            );
+        }
         let mut sidebar = div()
             .debug_selector(|| "settings-navigation".into())
             .w(px(104.))
@@ -195,6 +214,7 @@ impl Render for SettingsPanel {
         }
         for (id, section, label) in [
             ("settings-general", Section::General, "General"),
+            ("settings-toolbar", Section::Toolbar, "Toolbar"),
             ("settings-templates", Section::Templates, "Templates"),
             ("settings-font", Section::Font, "Font"),
             ("settings-theme", Section::Theme, "Theme"),
@@ -208,6 +228,7 @@ impl Render for SettingsPanel {
         }
         let content = match self.section {
             Section::General => body.w_full().min_w_0().into_any_element(),
+            Section::Toolbar => toolbar_body.into_any_element(),
             Section::Font => font_body.into_any_element(),
             Section::Templates => templates_body.into_any_element(),
             Section::Theme => theme_body.into_any_element(),

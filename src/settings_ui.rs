@@ -20,6 +20,13 @@ const DEFAULT_MONOSPACE_FONT: &str = if cfg!(target_os = "macos") {
     "DejaVu Sans Mono"
 };
 impl Notes {
+    pub(super) fn toolbar_settings(&self) -> notebook::ToolbarSettings {
+        self.notebooks
+            .active
+            .as_ref()
+            .map_or(self.session_toolbar, |book| book.settings.toolbar)
+    }
+
     fn show_file_extensions(&self) -> bool {
         self.notebooks
             .active
@@ -187,6 +194,7 @@ impl Notes {
 
     fn settings_values(&self) -> SettingsValues {
         SettingsValues {
+            toolbar: self.toolbar_settings(),
             appearance: self.appearance(),
             autosave: self.autosave_settings(),
             date_format: self.date_format().to_owned(),
@@ -358,6 +366,15 @@ impl Notes {
         }
         let mut appearance = self.appearance();
         let appearance_changed = match intent {
+            SettingsIntent::ToolbarItemEnabled(item, enabled) => {
+                if let Some(book) = &mut self.notebooks.active {
+                    book.settings.toolbar.set_enabled(item, enabled);
+                    self.persist_notebooks(cx);
+                } else {
+                    self.session_toolbar.set_enabled(item, enabled);
+                }
+                false
+            }
             SettingsIntent::AutosaveEnabled(enabled) => {
                 let mut settings = self.autosave_settings();
                 settings.enabled = enabled;

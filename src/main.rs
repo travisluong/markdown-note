@@ -134,6 +134,7 @@ struct Notes {
     sidebar_resize: Entity<gpui_component::resizable::ResizableState>,
     session_date_format: String,
     session_show_file_extensions: bool,
+    session_toolbar: notebook::ToolbarSettings,
     session_always_hide_extensions: Vec<String>,
     settings_panel: Option<settings_ui::SettingsDialog>,
     installed_fonts: Vec<String>,
@@ -184,6 +185,7 @@ impl Notes {
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),
             session_date_format: templates::default_format(),
             session_show_file_extensions: notebook::default_show_file_extensions(),
+            session_toolbar: notebook::ToolbarSettings::default(),
             session_always_hide_extensions: notebook::default_always_hide_extensions(),
             settings_panel: None,
             installed_fonts: cx.text_system().all_font_names(),
@@ -687,7 +689,9 @@ impl Render for Notes {
                             })),
                     ),
             )
-            .child(self.render_toolbar(cx))
+            .when(self.toolbar_settings().any_enabled(), |view| {
+                view.child(self.render_toolbar(cx))
+            })
             .when_some(self.saves.error.clone(), |view, error| {
                 view.child(div().p_2().text_sm().child(error))
             })

@@ -999,3 +999,27 @@ locks in the default and headless build directories; retrying after the locks
 cleared passed. No native application launch or desktop interaction was used.
 Existing unrelated changes, including the lockfile package reorder and vendor
 link-menu work, are excluded from this feature's commit.
+
+## Toolbar customization (2026-09-14)
+
+Settings now includes a Toolbar tab with independent switches for Toggle sidebar,
+Explorer, Search and Sort files. Typed intents update the active notebook through
+the existing settings writer, or session preferences without a notebook. All four
+items default to enabled, including missing fields in older JSON. Buttons retain
+their order, actions and availability rules; turning all four off removes the row
+and border. Existing menus and shortcuts remain available.
+
+Six new headless tests cover legacy and partial settings, invalid field types,
+all 16 visibility combinations, JSON/disk persistence, actual rendered buttons and
+order, empty-toolbar restoration, settings acknowledgement, narrow dialog layout,
+busy forms, expired dialogs and notebook scope changes. The settings fixture uses
+a temporary index through a test-only NotebookState helper. Fresh TestPlatform
+windows verify absence because GPUI retains old debug bounds between frames.
+
+Verification on Windows: locked/offline cargo check, cargo fmt --check, strict
+all-target Clippy with editor-diagnostics, and the complete locked/offline test
+suite with --target-dir target/headless -j 1 --features editor-diagnostics passed
+(400 tests). Transient Windows linker/executable file locks cleared on retry; the
+final full run passed without concurrent builds. No native application launch or
+desktop interaction was used. Native visual validation remains manual. Existing
+lockfile and vendor link-menu changes are excluded from this feature's commit.

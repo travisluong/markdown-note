@@ -18,7 +18,7 @@ pub use paths::{
     display_path, is_link, markdown, name, remap_path, resolve, safe_relative, validate_name,
 };
 pub use settings::{
-    Appearance, Autosave, Index, Settings, ThemeChoice, ThemePalette,
+    Appearance, Autosave, Index, Settings, ThemeChoice, ThemePalette, ToolbarItem, ToolbarSettings,
     default_always_hide_extensions, default_show_file_extensions, default_sidebar_width,
     normalize_sidebar_width, parse_hidden_extensions,
 };
