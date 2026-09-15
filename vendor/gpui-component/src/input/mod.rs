@@ -5,9 +5,9 @@ mod cursor;
 mod element;
 mod fenced_code;
 mod indent;
+mod inline_code;
 mod input;
 mod live_preview;
-mod inline_code;
 mod lsp;
 pub mod markdown_links;
 mod mask_pattern;
@@ -21,7 +21,9 @@ mod rope_ext;
 mod scroll;
 mod search;
 mod selection;
+mod shared_buffer;
 mod state;
+pub use shared_buffer::{InputBuffer, InputBufferEvent};
 #[doc(hidden)]
 pub mod table;
 mod table_edit;
@@ -47,6 +49,6 @@ pub use live_preview::{EditorWork, editor_work};
 #[doc(hidden)]
 pub use preview_syntax::{PreviewParseWork, diagnostic_preview_parse_work};
 
-mod list_reorder;
-mod list_edit;
 mod list_drag;
+mod list_edit;
+mod list_reorder;

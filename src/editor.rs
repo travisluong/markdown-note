@@ -32,6 +32,30 @@ impl Editor {
         Self { input }
     }
 
+    pub fn has_shared_buffer(&self, cx: &App) -> bool {
+        self.input.read(cx).has_shared_buffer()
+    }
+
+    pub fn shared_buffer(&self, cx: &mut App) -> Entity<gpui_component::input::InputBuffer> {
+        self.input.update(cx, |input, cx| input.shared_buffer(cx))
+    }
+    pub fn from_shared_buffer(
+        buffer: Entity<gpui_component::input::InputBuffer>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .searchable(true)
+                .with_shared_buffer(buffer, cx)
+        });
+        Self { input }
+    }
+    pub fn break_undo_group(&self, cx: &mut App) {
+        self.input.update(cx, |input, _| input.break_undo_group());
+    }
+
     pub fn subscribe<T: 'static>(
         &self,
         window: &Window,

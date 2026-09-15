@@ -80,6 +80,12 @@ where
         self.grouping = false;
     }
 
+    /// Start the next edit in a new group, independent of the typing timer.
+    pub(crate) fn break_group(&mut self) {
+        self.grouping = false;
+        self.version += 1;
+    }
+
     /// Increment the version number if the last change was made more than `GROUP_INTERVAL` milliseconds ago.
     fn inc_version(&mut self) -> usize {
         let t = Instant::now();

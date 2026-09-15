@@ -10,7 +10,7 @@ impl InputState {
         range: &std::ops::Range<usize>,
         input: &str,
     ) -> Option<String> {
-        if !self.live_preview || self.table_editing || self.history.ignore {
+        if !self.live_preview || self.table_editing || self.history.ignoring() {
             return Some(input.into());
         }
         let Some((t, r, c)) = self.text_wrapper.tables.at(self.cursor()) else {

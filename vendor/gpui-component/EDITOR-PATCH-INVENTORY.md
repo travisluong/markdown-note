@@ -248,3 +248,20 @@ pending edits instead of clearing them globally. Boundary checks retire changed
 or joined lines without copying/parsing document text. The delayed-newline and
 exact-context regressions are in tests/editor.rs; tests/horizontal_rules.rs also
 exercises repeated Enter through the real action in TestPlatform.
+
+
+## Shared document views
+
+`input/shared_buffer.rs` adds InputBuffer with shared rope/history and weak
+InputState view registrations. Each view keeps its own selection, scroll, find,
+mode and layout. Edit/IME/Undo/Redo publish synchronously to peer snapshots,
+remapping UTF-8 selections and viewport anchors without taking focus or adding
+history entries. InputBufferEvent::Changed lets document owners retain edit
+subscriptions independently of any view. View switches break typing groups.
+The application opts in through Editor; ordinary form inputs remain independent.
+
+Reconcile `input/shared_buffer.rs`, `input/state.rs`, `input/mod.rs`,
+`input/table_edit.rs`, `input/list_drag.rs`, and `history.rs` on upstream upgrades.
+The viewport anchor restore also supports Source views. Validate with
+`tests/editor_shared.rs`, existing editor/history/transaction tests and
+`notebook_ui::tabs_tests` on TestPlatform. No native UI testing is required.

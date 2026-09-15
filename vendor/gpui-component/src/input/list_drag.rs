@@ -23,7 +23,7 @@ impl InputState {
         let Some((offset, screen_y, selection)) = self.list_viewport_anchor else {
             return;
         };
-        if selection != self.selected_range || offset > self.text.len() || !self.live_preview {
+        if selection != self.selected_range || offset > self.text.len() {
             self.list_viewport_anchor = None;
             return;
         }

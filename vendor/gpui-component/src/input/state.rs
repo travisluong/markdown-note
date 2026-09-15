@@ -17,10 +17,12 @@ use std::rc::Rc;
 use sum_tree::Bias;
 use unicode_segmentation::*;
 
+use super::shared_buffer::{InputBuffer, SharedHistory as History};
 use super::{
     blink_cursor::BlinkCursor, change::Change, element::TextElement, mask_pattern::MaskPattern,
     mode::InputMode, number_input, text_wrapper::TextWrapper,
 };
+use crate::Root;
 use crate::Size;
 use crate::actions::{SelectDown, SelectLeft, SelectRight, SelectUp};
 use crate::input::movement::MoveDirection;
@@ -32,7 +34,6 @@ use crate::input::{
     text_wrapper::LineLayout,
 };
 use crate::input::{InlineCompletion, RopeExt as _, Selection};
-use crate::{Root, history::History};
 use crate::{highlighter::DiagnosticSet, input::text_wrapper::LineItem};
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -271,13 +272,14 @@ pub struct InputState {
     pub(super) preview_painted_at: Option<std::time::Instant>,
     nested_list_letters: bool,
     pub(super) table_editing: bool,
-    list_enter_boundary: bool,
+    pub(super) list_enter_boundary: bool,
     pub(super) focus_handle: FocusHandle,
     pub(super) mode: InputMode,
     pub(super) text: Rope,
     pub(super) text_wrapper: TextWrapper,
     preview_task: Option<Task<()>>,
-    pub(super) history: History<Change>,
+    pub(super) history: History,
+    pub(super) buffer: Option<Entity<InputBuffer>>,
     pub(super) blink_cursor: Entity<BlinkCursor>,
     pub(super) loading: bool,
     /// Range in UTF-8 length for the selected text.
@@ -339,7 +341,7 @@ pub struct InputState {
     /// A flag to indicate if we have a pending update to the text.
     ///
     /// If true, will call some update (for example LSP, Syntax Highlight) before render.
-    _pending_update: bool,
+    pub(super) _pending_update: bool,
     /// A flag to indicate if we should ignore the next completion event.
     pub(super) silent_replace_text: bool,
 
@@ -403,6 +405,7 @@ impl InputState {
             text_wrapper: TextWrapper::new(text_style.font(), window.rem_size(), None),
             blink_cursor,
             history,
+            buffer: None,
             selected_range: Selection::default(),
             search_panel: None,
             searchable: false,
@@ -647,12 +650,12 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.history.ignore = true;
+        self.history.set_ignore(true);
         let was_disabled = self.disabled;
         self.disabled = false;
         self.replace_text(value, window, cx);
         self.disabled = was_disabled;
-        self.history.ignore = false;
+        self.history.set_ignore(false);
 
         // Ensure cursor to start when set text
         if self.mode.is_single_line() {
@@ -2039,7 +2042,7 @@ impl InputState {
     }
 
     fn push_history(&mut self, text: &Rope, range: &Range<usize>, new_text: &str) {
-        if self.history.ignore {
+        if self.history.ignoring() {
             return;
         }
 
@@ -2056,25 +2059,72 @@ impl InputState {
     }
 
     pub(super) fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
-        self.history.ignore = true;
+        self.history.set_ignore(true);
         if let Some(changes) = self.history.undo() {
             for change in changes {
                 let range_utf16 = self.range_to_utf16(&change.new_range.into());
                 self.replace_text_in_range_silent(Some(range_utf16), &change.old_text, window, cx);
             }
         }
-        self.history.ignore = false;
+        self.history.set_ignore(false);
     }
 
     pub(super) fn redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
-        self.history.ignore = true;
+        self.history.set_ignore(true);
         if let Some(changes) = self.history.redo() {
             for change in changes {
                 let range_utf16 = self.range_to_utf16(&change.old_range.into());
                 self.replace_text_in_range_silent(Some(range_utf16), &change.new_text, window, cx);
             }
         }
-        self.history.ignore = false;
+        self.history.set_ignore(false);
+    }
+
+    pub(super) fn accept_buffer_edit(
+        &mut self,
+        text: Rope,
+        range: Range<usize>,
+        inserted: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let map = |offset: usize| {
+            if offset < range.start {
+                offset
+            } else if offset <= range.end {
+                range.start + inserted.len()
+            } else {
+                offset - range.len() + inserted.len()
+            }
+        };
+        self.selected_range = (map(self.selected_range.start)..map(self.selected_range.end)).into();
+        // Keep the same source line at the same viewport Y across peer edits.
+        self.list_viewport_anchor = self
+            .list_viewport_anchor
+            .map(|(offset, y, _)| (map(offset), y, self.selected_range))
+            .or_else(|| {
+                self.last_layout.as_ref().map(|layout| {
+                    (
+                        map(layout.visible_range_offset.start),
+                        layout.visible_top + self.scroll_handle.offset().y,
+                        self.selected_range,
+                    )
+                })
+            });
+        self.last_selected_range = Some(self.selected_range);
+        self.text = text;
+        self.ime_marked_range = None;
+        self.list_drag = None;
+        self.pending_range_reveal = None;
+        self.text_wrapper
+            .update(&self.text, &range, &Rope::from(inserted), cx);
+        self.schedule_preview(cx);
+        self.mode
+            .update_highlighter(&range, &self.text, inserted, true, cx);
+        self.lsp.update(&self.text, window, cx);
+        self.update_search(cx);
+        self.mode.update_auto_grow(&self.text_wrapper);
+        cx.notify();
     }
 
     /// The current selection as a forward UTF-8 byte range.
@@ -2618,6 +2668,7 @@ impl EntityInputHandler for InputState {
         if !self.silent_replace_text {
             self.handle_completion_trigger(&range, &new_text, window, cx);
         }
+        self.publish_buffer_edit(range, new_text, window, cx);
         cx.emit(InputEvent::Change);
         cx.notify();
     }
@@ -2701,6 +2752,8 @@ impl EntityInputHandler for InputState {
             self.pending_range_reveal = None;
         }
         self.push_history(&old_text, &range, new_text);
+        self.publish_buffer_edit(range, new_text, window, cx);
+        cx.emit(InputEvent::Change);
         cx.notify();
     }
 
