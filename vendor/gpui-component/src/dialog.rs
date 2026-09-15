@@ -1,10 +1,10 @@
-use std::{rc::Rc, time::Duration};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use gpui::{
     Animation, AnimationExt as _, AnyElement, App, Bounds, BoxShadow, ClickEvent, Div, Edges,
     FocusHandle, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement,
-    Pixels, Point, RenderOnce, SharedString, StyleRefinement, Styled, Window, anchored, div, hsla,
-    point, prelude::FluentBuilder, px, relative,
+    Pixels, Point, RenderOnce, SharedString, Size, StyleRefinement, Styled, Window, anchored, div,
+    hsla, point, prelude::FluentBuilder, px, relative,
 };
 use rust_i18n::t;
 
@@ -29,6 +29,75 @@ pub(crate) fn init(cx: &mut App) {
 type RenderButtonFn = Box<dyn FnOnce(&mut Window, &mut App) -> AnyElement>;
 type FooterFn =
     Box<dyn Fn(RenderButtonFn, RenderButtonFn, &mut Window, &mut App) -> Vec<AnyElement>>;
+
+/// Per-open placement for an opt-in movable dialog. Clone the handle when rebuilding
+/// the dialog; reset it only when the preferred content dimensions change.
+#[derive(Clone)]
+pub struct DialogPlacement(Rc<RefCell<Placement>>);
+
+struct Placement {
+    preferred: Size<Pixels>,
+    origin: Option<Point<Pixels>>,
+    resolved_size: Size<Pixels>,
+    drag: Option<(Point<Pixels>, Point<Pixels>)>,
+}
+
+impl DialogPlacement {
+    pub fn new(preferred: Size<Pixels>) -> Self {
+        Self(Rc::new(RefCell::new(Placement {
+            preferred,
+            origin: None,
+            resolved_size: preferred,
+            drag: None,
+        })))
+    }
+
+    /// Actual dimensions from the latest dialog layout, for responsive contents.
+    pub fn size(&self) -> Size<Pixels> {
+        self.0.borrow().resolved_size
+    }
+
+    /// Center the dialog again, using the given preferred dimensions.
+    pub fn reset(&self, preferred: Size<Pixels>) {
+        let mut state = self.0.borrow_mut();
+        state.preferred = preferred;
+        state.origin = None;
+        state.drag = None;
+    }
+
+    /// Resolve and retain placement inside a viewport, with 16 logical-pixel margins.
+    pub fn bounds(&self, viewport: Size<Pixels>) -> Bounds<Pixels> {
+        let mut state = self.0.borrow_mut();
+        let margin = px(16.);
+        let size = gpui::size(
+            state
+                .preferred
+                .width
+                .min((viewport.width - margin * 2.).max(px(0.))),
+            state
+                .preferred
+                .height
+                .min((viewport.height - margin * 2.).max(px(0.))),
+        );
+        let origin = state.origin.unwrap_or(point(
+            (viewport.width - size.width) / 2.,
+            (viewport.height - size.height) / 2.,
+        ));
+        let origin = point(
+            origin
+                .x
+                .max(margin)
+                .min((viewport.width - size.width - margin).max(px(0.))),
+            origin
+                .y
+                .max(margin)
+                .min((viewport.height - size.height - margin).max(px(0.))),
+        );
+        state.origin = Some(origin);
+        state.resolved_size = size;
+        Bounds { origin, size }
+    }
+}
 
 /// Dialog button props.
 pub struct DialogButtonProps {
@@ -85,6 +154,7 @@ pub struct Dialog {
     width: Pixels,
     max_width: Option<Pixels>,
     margin_top: Option<Pixels>,
+    placement: Option<DialogPlacement>,
 
     on_close: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
     on_ok: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) -> bool + 'static>>,
@@ -119,6 +189,7 @@ impl Dialog {
             footer: None,
             content: v_flex(),
             margin_top: None,
+            placement: None,
             width: px(480.),
             max_width: None,
             overlay: true,
@@ -137,6 +208,14 @@ impl Dialog {
     /// Sets the title of the dialog.
     pub fn title(mut self, title: impl IntoElement) -> Self {
         self.title = Some(title.into_any_element());
+        self
+    }
+
+    /// Enable title-bar dragging and bounded, fixed dimensions. The caller owns
+    /// the placement handle for this dialog's lifetime. Contents fill the body
+    /// and must provide their own scrolling. Other dialogs retain default layout.
+    pub fn movable(mut self, placement: DialogPlacement) -> Self {
+        self.placement = Some(placement);
         self
     }
 
@@ -366,6 +445,9 @@ impl RenderOnce for Dialog {
         let offset_top = px(layer_ix as f32 * 16.);
         let y = self.margin_top.unwrap_or(view_size.height / 10.) + offset_top;
         let x = bounds.center().x - self.width / 2.;
+        let placement = self.placement.clone();
+        let movable_bounds = placement.as_ref().map(|state| state.bounds(view_size));
+        let (x, y) = movable_bounds.map_or((x, y), |bounds| (bounds.origin.x, bounds.origin.y));
 
         let base_size = window.text_style().font_size;
         let rem_size = window.rem_size();
@@ -396,6 +478,52 @@ impl RenderOnce for Dialog {
                     .occlude()
                     .w(view_size.width)
                     .h(view_size.height)
+                    .when_some(placement.clone(), |this, placement| {
+                        this.child(
+                            gpui::canvas(
+                                |_, _, _| (),
+                                move |_, _, window, _| {
+                                    let move_state = placement.clone();
+                                    window.on_mouse_event(
+                                        move |event: &gpui::MouseMoveEvent, phase, window, cx| {
+                                            if !phase.capture() {
+                                                return;
+                                            }
+                                            let mut state = move_state.0.borrow_mut();
+                                            if let Some((pointer, origin)) = state.drag {
+                                                if event.pressed_button == Some(MouseButton::Left) {
+                                                    state.origin =
+                                                        Some(origin + event.position - pointer);
+                                                    window.refresh();
+                                                    cx.stop_propagation();
+                                                } else {
+                                                    state.drag = None;
+                                                }
+                                            }
+                                        },
+                                    );
+                                    let release_state = placement.clone();
+                                    window.on_mouse_event(
+                                        move |event: &gpui::MouseUpEvent, phase, _, cx| {
+                                            if phase.capture()
+                                                && event.button == MouseButton::Left
+                                                && release_state
+                                                    .0
+                                                    .borrow_mut()
+                                                    .drag
+                                                    .take()
+                                                    .is_some()
+                                            {
+                                                cx.stop_propagation();
+                                            }
+                                        },
+                                    );
+                                },
+                            )
+                            .absolute()
+                            .size_full(),
+                        )
+                    })
                     .when(self.overlay_visible, |this| {
                         this.bg(overlay_color(self.overlay, cx))
                     })
@@ -422,6 +550,7 @@ impl RenderOnce for Dialog {
                     .child(
                         v_flex()
                             .id(layer_ix)
+                            .debug_selector(|| "dialog-surface".into())
                             .bg(cx.theme().background)
                             .border_1()
                             .border_color(cx.theme().border)
@@ -472,10 +601,31 @@ impl RenderOnce for Dialog {
                             .left(x)
                             .top(y)
                             .w(self.width)
+                            .when_some(movable_bounds, |this, bounds| {
+                                this.w(bounds.size.width)
+                                    .h(bounds.size.height)
+                                    .min_h_0()
+                                    .overflow_hidden()
+                            })
                             .when_some(self.max_width, |this, w| this.max_w(w))
                             .when_some(self.title, |this, title| {
                                 this.child(
                                     div()
+                                        .id("dialog-title")
+                                        .debug_selector(|| "dialog-title".into())
+                                        .flex_shrink_0()
+                                        .when_some(placement.clone(), |this, placement| {
+                                            this.cursor_move().on_mouse_down(
+                                                MouseButton::Left,
+                                                move |event, _, cx| {
+                                                    let mut state = placement.0.borrow_mut();
+                                                    if let Some(origin) = state.origin {
+                                                        state.drag = Some((event.position, origin));
+                                                        cx.stop_propagation();
+                                                    }
+                                                },
+                                            )
+                                        })
                                         .pl(paddings.left)
                                         .pr(paddings.right)
                                         .line_height(relative(1.))
@@ -505,13 +655,22 @@ impl RenderOnce for Dialog {
                                     })
                             }))
                             .child(
-                                div().w_full().flex_1().overflow_hidden().child(
+                                div().w_full().flex_1().min_h_0().overflow_hidden().child(
                                     v_flex()
                                         .id("contents")
                                         .pl(paddings.left)
                                         .pr(paddings.right)
-                                        .overflow_y_scrollbar()
-                                        .child(self.content),
+                                        .when(placement.is_some(), |this| this.h_full().min_h_0())
+                                        .child(self.content.when(placement.is_some(), |this| {
+                                            this.h_full().min_h_0()
+                                        }))
+                                        .map(|this| {
+                                            if placement.is_none() {
+                                                this.overflow_y_scrollbar().into_any_element()
+                                            } else {
+                                                this.into_any_element()
+                                            }
+                                        }),
                                 ),
                             )
                             .when_some(self.footer, |this, footer| {
@@ -525,24 +684,35 @@ impl RenderOnce for Dialog {
                                         .children(footer(render_ok, render_cancel, window, cx)),
                                 )
                             })
-                            .with_animation("slide-down", animation.clone(), move |this, delta| {
-                                let y_offset = px(0.) + delta * px(30.);
-                                // This is equivalent to `shadow_xl` with an extra opacity.
-                                let shadow = vec![
-                                    BoxShadow {
-                                        color: hsla(0., 0., 0., 0.1 * delta),
-                                        offset: point(px(0.), px(20.)),
-                                        blur_radius: px(25.),
-                                        spread_radius: px(-5.),
-                                    },
-                                    BoxShadow {
-                                        color: hsla(0., 0., 0., 0.1 * delta),
-                                        offset: point(px(0.), px(8.)),
-                                        blur_radius: px(10.),
-                                        spread_radius: px(-6.),
-                                    },
-                                ];
-                                this.top(y + y_offset).shadow(shadow)
+                            .map(|this| {
+                                if placement.is_some() {
+                                    this.shadow_xl().into_any_element()
+                                } else {
+                                    this.with_animation(
+                                        "slide-down",
+                                        animation.clone(),
+                                        move |this, delta| {
+                                            let y_offset = px(0.) + delta * px(30.);
+                                            // This is equivalent to `shadow_xl` with an extra opacity.
+                                            let shadow = vec![
+                                                BoxShadow {
+                                                    color: hsla(0., 0., 0., 0.1 * delta),
+                                                    offset: point(px(0.), px(20.)),
+                                                    blur_radius: px(25.),
+                                                    spread_radius: px(-5.),
+                                                },
+                                                BoxShadow {
+                                                    color: hsla(0., 0., 0., 0.1 * delta),
+                                                    offset: point(px(0.), px(8.)),
+                                                    blur_radius: px(10.),
+                                                    spread_radius: px(-6.),
+                                                },
+                                            ];
+                                            this.top(y + y_offset).shadow(shadow)
+                                        },
+                                    )
+                                    .into_any_element()
+                                }
                             }),
                     )
                     .with_animation("fade-in", animation, move |this, delta| this.opacity(delta)),

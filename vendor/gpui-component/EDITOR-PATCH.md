@@ -1,5 +1,17 @@
 # Local editor patch
 
+## Movable dialogs
+
+`Dialog::movable(DialogPlacement)` opts into caller-owned per-open placement,
+fixed preferred dimensions and 16-pixel viewport clamping. Title presses capture
+pointer movement/release across the window; content and control presses keep
+normal behavior. Movable dialogs fill their body, with caller-owned scrolling,
+and skip the positional entrance animation. Ordinary dialogs preserve upstream
+layout, focus, keyboard, close callbacks and animation. Settings tests cover
+normal/small viewport bounds, scrolling, dragging/release, section resets and
+preference-edit placement retention. Reconcile `src/dialog.rs` on upgrades and
+rerun `settings_ui::panel::tests` on headless TestPlatform.
+
 The [file-level inventory](EDITOR-PATCH-INVENTORY.md) maps every modified and
 added file against the verified published 0.5.1 package, with regression entry
 points and upgrade reconciliation notes. Preserve both documents and the license.

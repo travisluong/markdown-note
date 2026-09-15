@@ -7,6 +7,12 @@ are relative to `vendor/gpui-component`; test paths are relative to the reposito
 root. Test references identify coverage entry points, not a claim that every
 behavior in a file has a dedicated test.
 
+## Movable dialog extension (2026-09-15)
+
+| File | Local contract and verification |
+| --- | --- |
+| `src/dialog.rs` | Optional `DialogPlacement` stores per-open preferred dimensions and drag position. Movable mode clamps placement/size, captures title drags and fills a caller-scrolled body without positional animation; ordinary dialogs retain existing behavior. `src/settings_ui/panel/tests.rs` verifies bounds, scrolling, drag/release, resize, section/open resets and preference retention on TestPlatform. Reconcile this opt-in extension when upgrading. |
+
 ## Baseline and completeness
 
 The baseline is the locally cached crates.io **gpui-component 0.5.1 package**,

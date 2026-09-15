@@ -1,20 +1,21 @@
 use super::{FontSizeRole, Section, SettingsIntent, SettingsPanel};
-use gpui::{Context, Entity, IntoElement, Render, Window, div, prelude::*, px};
+use gpui::{App, Context, Entity, IntoElement, Render, Window, div, prelude::*, px};
 use gpui_component::{
     ActiveTheme, Disableable,
     button::{Button, ButtonVariants},
     color_picker::ColorPicker,
     dialog::Dialog,
     input::Input,
+    scroll::ScrollableElement,
     select::Select,
     switch::Switch,
 };
 use mithril::notebook;
 
 impl Render for SettingsPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let appearance = &self.values.appearance;
-        let narrow = window.viewport_size().width < px(560.);
+        let narrow = self.placement.size().width - px(48.) < px(512.);
         let mut body = div().w_full().min_w_0().flex().flex_col().gap_3().child(
             div()
                 .text_sm()
@@ -61,12 +62,8 @@ impl Render for SettingsPanel {
                     .gap_2()
                     .child(
                         div()
-                            .when(window.viewport_size().width < px(560.), |view| {
-                                view.w_full()
-                            })
-                            .when(window.viewport_size().width >= px(560.), |view| {
-                                view.flex_1()
-                            })
+                            .when(narrow, |view| view.w_full())
+                            .when(!narrow, |view| view.flex_1())
                             .min_w_0()
                             .child(label),
                     )
@@ -254,6 +251,8 @@ impl Render for SettingsPanel {
         };
         div()
             .w_full()
+            .h_full()
+            .min_h_0()
             .min_w_0()
             .flex()
             .when(narrow, |view| view.flex_col())
@@ -261,27 +260,28 @@ impl Render for SettingsPanel {
             .child(sidebar)
             .child(
                 div()
+                    .id("settings-scroll")
                     .debug_selector(|| "settings-content".into())
                     .flex()
                     .flex_col()
                     .w_full()
                     .min_w_0()
+                    .min_h_0()
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.content_scroll)
                     .when(!narrow, |view| view.flex_1().min_w(px(240.)))
-                    .child(content),
+                    .child(content)
+                    .vertical_scrollbar(&self.content_scroll),
             )
     }
 }
 
 impl SettingsPanel {
-    pub(in crate::settings_ui) fn dialog(
-        panel: Entity<Self>,
-        dialog: Dialog,
-        window: &Window,
-    ) -> Dialog {
+    pub(in crate::settings_ui) fn dialog(panel: Entity<Self>, dialog: Dialog, cx: &App) -> Dialog {
         dialog
             .title("Settings")
-            .w(px(620.).min(window.viewport_size().width - px(32.)))
-            .max_h((window.viewport_size().height - px(100.)).max(px(120.)))
+            .movable(panel.read(cx).placement.clone())
             .child(panel)
     }
 }

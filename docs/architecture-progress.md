@@ -1139,3 +1139,35 @@ completed without changing or stopping any application process. No desktop
 interaction or native application launch was used. Unrelated lockfile/vendor
 link-menu changes and their architecture-map addition remain outside this commit;
 their tests were present in the full-suite run.
+
+## 2026-09-15 — Movable, bounded Settings
+
+Settings uses an opt-in vendored Dialog placement handle owned by the current
+form. Opening or changing sections centers the form at 620 logical pixels wide,
+with preferred heights of 600 for General/Toolbar, 560 for Templates, 460 for
+Font and 420 for Theme. Layout clamps size and placement to 16-pixel viewport
+margins and reclamps on resize. Preference edits and selecting the same section
+retain placement; section changes reset the content scroll position too.
+
+Only title presses begin a window-wide captured drag; release anywhere ends it
+without activating underlying controls. Movable dialogs omit positional entrance
+animation and provide a bounded body. Settings keeps title/navigation visible
+while the content has its own vertical scrollbar, and uses resolved dialog
+width for its narrow layout. Ordinary dialogs keep their original defaults.
+No document-session ownership or transition contracts changed.
+
+All 37 Settings tests passed on headless TestPlatform, including existing toolbar
+reorder/cancellation/scope coverage. The new geometry regression checks actual
+surface/title/navigation/body bounds, final-row scrolling, pointer dragging and
+corner clamping, release outside the header/window, resize at 480x360 and 320x240,
+all section sizes, preference/same-section retention, reopening and Escape.
+Cargo check --locked --offline -j 1 --target-dir target/headless, cargo fmt
+--check, and cargo clippy --locked --offline -j 1 --target-dir target/headless
+--all-targets --features editor-diagnostics -- -D warnings passed on Windows.
+The full cargo test --locked --offline -j 1 --features editor-diagnostics
+--target-dir target/headless suite passed all 430 tests. First-link LNK1104
+errors were resolved by removing stale .exe build outputs only from the verified
+`target/headless/debug/deps` directory, then rebuilding. No application process,
+native app output, or desktop interaction was used. Unrelated lockfile and vendor
+link-menu changes/tests remained outside this commit; their tests were included
+in the integrated run.

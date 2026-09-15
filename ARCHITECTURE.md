@@ -55,6 +55,13 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
+SettingsPanel owns a per-open `DialogPlacement` and section scroll handle. The
+vendored Dialog's optional movable mode resolves preferred dimensions within
+16-pixel viewport margins, captures title drags, and reclamps on resize. Section
+changes reset placement and scrolling; ordinary preference edits retain both.
+The title and section navigation remain fixed while the section body scrolls.
+Other dialogs retain their original sizing and entrance animation.
+
 ## Lifecycle rules
 
 The complete transition/effect rules are in the [session contract](docs/document-session.md).

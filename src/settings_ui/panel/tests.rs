@@ -1642,3 +1642,128 @@ fn toolbar_reset_persists_atomically_skips_defaults_and_rejects_scope_and_busy(
     intent(&form, SettingsIntent::ResetToolbar, cx);
     cx.update(|_, cx| assert!(events.read(cx).0.is_empty()));
 }
+
+#[gpui::test]
+fn movable_settings_bounds_drag_reset_and_scrolling(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton, point, px, size};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    cx.simulate_resize(size(px(1000.), px(800.)));
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Toolbar, cx)
+        })
+    });
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let surface = cx.debug_bounds("dialog-surface").unwrap();
+    assert_eq!(surface.size, size(px(620.), px(600.)));
+    assert_eq!(surface.origin, point(px(190.), px(100.)));
+    let title = cx.debug_bounds("dialog-title").unwrap();
+    let navigation = cx.debug_bounds("settings-navigation").unwrap();
+    let content = cx.debug_bounds("settings-content").unwrap();
+    assert!(
+        content.bottom() < surface.bottom(),
+        "{surface:?} {content:?}"
+    );
+    let last = notebook::ToolbarItem::DEFAULT_ORDER.last().unwrap();
+    let last_selector = format!("toolbar-row-{}", *last as usize);
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.content_scroll.set_offset(point(px(0.), px(-10000.)));
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    let last_bounds = cx.debug_bounds(last_selector.leak()).unwrap();
+    assert!(
+        last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom(),
+        "{last_bounds:?} {content:?}"
+    );
+    assert_eq!(cx.debug_bounds("dialog-title").unwrap(), title);
+    assert_eq!(cx.debug_bounds("settings-navigation").unwrap(), navigation);
+
+    let start = title.center();
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(
+        start + point(px(70.), px(40.)),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.refresh().unwrap();
+    let moved = cx.debug_bounds("dialog-surface").unwrap();
+    assert_eq!(moved.origin, surface.origin + point(px(70.), px(40.)));
+    // Release outside the header, then moving again with a pressed button must not drag.
+    cx.simulate_mouse_up(content.center(), MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(start, MouseButton::Left, Modifiers::default());
+    cx.refresh().unwrap();
+    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), moved);
+    intent(
+        &form,
+        SettingsIntent::ToolbarIconSize(notebook::ToolbarIconSize::Large),
+        cx,
+    );
+    cx.refresh().unwrap();
+    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), moved);
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Toolbar, cx)
+        })
+    });
+    cx.refresh().unwrap();
+    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), moved);
+
+    for (destination, expected) in [
+        (point(px(2000.), px(2000.)), point(px(364.), px(184.))),
+        (point(px(-1000.), px(-1000.)), point(px(16.), px(16.))),
+    ] {
+        let start = cx.debug_bounds("dialog-title").unwrap().center();
+        cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(destination, MouseButton::Left, Modifiers::default());
+        cx.refresh().unwrap();
+        assert_eq!(cx.debug_bounds("dialog-surface").unwrap().origin, expected);
+        cx.simulate_mouse_up(destination, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(start, MouseButton::Left, Modifiers::default());
+        cx.refresh().unwrap();
+        assert_eq!(cx.debug_bounds("dialog-surface").unwrap().origin, expected);
+    }
+    for (section, height) in [
+        (super::Section::Font, 460.),
+        (super::Section::Theme, 420.),
+        (super::Section::Templates, 560.),
+        (super::Section::General, 600.),
+    ] {
+        cx.update(|_, cx| form.update(cx, |form, cx| form.select_section(section, cx)));
+        cx.refresh().unwrap();
+        let bounds = cx.debug_bounds("dialog-surface").unwrap();
+        assert_eq!(bounds.size, size(px(620.), px(height)));
+        assert_eq!(bounds.origin, point(px(190.), px((800. - height) / 2.)));
+    }
+    for viewport in [size(px(480.), px(360.)), size(px(320.), px(240.))] {
+        cx.simulate_resize(viewport);
+        cx.refresh().unwrap();
+        let bounds = cx.debug_bounds("dialog-surface").unwrap();
+        assert!(
+            bounds.left() >= px(16.) && bounds.top() >= px(16.),
+            "{bounds:?}"
+        );
+        assert!(
+            bounds.right() <= viewport.width - px(16.)
+                && bounds.bottom() <= viewport.height - px(16.),
+            "{bounds:?}"
+        );
+        let content = cx.debug_bounds("settings-content").unwrap();
+        let navigation = cx.debug_bounds("settings-navigation").unwrap();
+        assert!(content.top() >= navigation.bottom());
+        assert!(content.bottom() <= bounds.bottom());
+        assert!(content.size.height > px(0.), "{content:?}");
+    }
+    intent(&form, SettingsIntent::Close, cx);
+    cx.simulate_resize(size(px(1000.), px(800.)));
+    cx.update(|window, cx| notes.update(cx, |notes, cx| notes.open_settings(window, cx)));
+    cx.refresh().unwrap();
+    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), surface);
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+}
