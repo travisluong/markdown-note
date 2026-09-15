@@ -8,7 +8,7 @@ use gpui::{
     UniformListScrollHandle, Window, div, px, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState, Rope},
 };
@@ -55,6 +55,7 @@ struct Navigation {
 
 pub(crate) struct SearchPanel {
     visible: bool,
+    interaction_enabled: bool,
     root: PathBuf,
     exclusions: mithril::notebook::Exclusions,
     query: Entity<InputState>,
@@ -98,6 +99,7 @@ impl SearchPanel {
         });
         Self {
             visible: true,
+            interaction_enabled: true,
             root,
             exclusions,
             query,
@@ -120,6 +122,13 @@ impl SearchPanel {
 
     pub(super) fn visible(&self) -> bool {
         self.visible
+    }
+
+    pub(crate) fn set_interaction_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.interaction_enabled != enabled {
+            self.interaction_enabled = enabled;
+            cx.notify();
+        }
     }
 
     pub(super) fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -270,6 +279,9 @@ impl SearchPanel {
     }
 
     fn request_open(&mut self, selected: usize, arrow: bool, cx: &mut Context<Self>) {
+        if !self.interaction_enabled {
+            return;
+        }
         let Some(hit) = self.hits.get(selected).cloned() else {
             return;
         };
@@ -345,7 +357,7 @@ impl SearchPanel {
                 self.scroll
                     .scroll_to_item(self.selected, ScrollStrategy::Top);
             }
-            if self.visible {
+            if self.visible && self.interaction_enabled {
                 self.query.update(cx, |query, cx| query.focus(window, cx));
             }
             cx.notify();
@@ -390,10 +402,11 @@ impl Render for SearchPanel {
                     cx.stop_propagation();
                 }),
             )
-            .child(Input::new(&panel.query))
+            .child(Input::new(&panel.query).disabled(!panel.interaction_enabled))
             .child(
                 div().flex().flex_wrap().gap_1().child(
                     Button::new("search-case")
+                        .disabled(!panel.interaction_enabled)
                         .small()
                         .ghost()
                         .label(if panel.case_sensitive {
@@ -402,6 +415,9 @@ impl Render for SearchPanel {
                             "Match case: off"
                         })
                         .on_click(cx.listener(|this, _, _window, cx| {
+                            if !this.interaction_enabled {
+                                return;
+                            }
                             this.case_sensitive = !this.case_sensitive;
                             this.schedule(cx);
                         })),
@@ -423,6 +439,7 @@ impl Render for SearchPanel {
                                 div()
                                     .id(i)
                                     .debug_selector(move || format!("notebook-search-result-{i}"))
+                                    .when(!panel.interaction_enabled, |view| view.opacity(0.5))
                                     .h(px(54.))
                                     .w_full()
                                     .min_w_0()

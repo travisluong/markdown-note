@@ -9,7 +9,7 @@ impl Notes {
             .active
             .as_ref()
             .map(|book| book.settings.file_sort);
-        let disabled = self.is_busy() || selected.is_none();
+        let disabled = self.document_interaction_blocked() || selected.is_none();
         for (sort, label) in notebook::FileSort::OPTIONS {
             let owner = owner.clone();
             menu = menu.item(
@@ -35,6 +35,13 @@ impl Notes {
         if self.is_busy() || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
             return;
         }
+        if self.settings_panel.is_some() {
+            self.sidebar_collapsed = !self.sidebar_collapsed;
+            self.reset_sidebar_resize(cx);
+            self.focus_settings(window, cx);
+            cx.notify();
+            return;
+        }
         if self.sidebar_collapsed {
             self.reveal_sidebar(cx);
             if self.search_visible(cx) {
@@ -54,6 +61,9 @@ impl Notes {
     }
 
     pub(super) fn show_explorer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings_panel.is_some() {
+            return;
+        }
         if self.is_busy() || window.has_active_dialog(cx) || self.notebooks.active.is_none() {
             return;
         }

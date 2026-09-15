@@ -1,10 +1,9 @@
 use super::{FontSizeRole, Section, SettingsIntent, SettingsPanel};
-use gpui::{App, Context, Entity, IntoElement, Render, Window, div, prelude::*, px};
+use gpui::{Context, IntoElement, Render, Window, canvas, div, prelude::*, px};
 use gpui_component::{
-    ActiveTheme, Disableable,
+    ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
     color_picker::ColorPicker,
-    dialog::Dialog,
     input::Input,
     scroll::ScrollableElement,
     select::Select,
@@ -15,7 +14,7 @@ use mithril::notebook;
 impl Render for SettingsPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let appearance = &self.values.appearance;
-        let narrow = self.placement.size().width - px(48.) < px(512.);
+        let narrow = self.narrow;
         let mut body = div().w_full().min_w_0().flex().flex_col().gap_3().child(
             div()
                 .text_sm()
@@ -117,9 +116,7 @@ impl Render for SettingsPanel {
                     r"Hide matches from the sidebar, notebook search, and Go to File. Use comma-separated regexes against relative paths with /. Folders exclude their contents. Case-sensitive; use (?i) to ignore case. Example: ^archive$, \.tmp$. Commas inside [a,b], {1,3}, or escaped as \, stay in the pattern."
                 }))
             .when_some(self.excluded_patterns_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
-            .when_some(self.values.notice.clone(), |view, notice| view.child(div().text_sm().child(notice)))
-            .child(Button::new("close-settings").label("Close")
-                .on_click(cx.listener(|this, _, _, cx| this.emit_intent(SettingsIntent::Close, cx))));
+            .when_some(self.values.notice.clone(), |view, notice| view.child(div().text_sm().child(notice)));
         let templates_body = div()
             .w_full()
             .min_w_0()
@@ -220,6 +217,7 @@ impl Render for SettingsPanel {
             toolbar_body = toolbar_body.child(self.render_toolbar_item(item, cx));
         }
         let mut sidebar = div()
+            .id("settings-section-tabs")
             .debug_selector(|| "settings-navigation".into())
             .w(px(104.))
             .flex_shrink_0()
@@ -227,7 +225,7 @@ impl Render for SettingsPanel {
             .flex_col()
             .gap_2();
         if narrow {
-            sidebar = sidebar.w_full().flex_row().flex_wrap();
+            sidebar = sidebar.w_full().flex_row().overflow_x_scroll();
         }
         for (id, section, label) in [
             ("settings-general", Section::General, "General"),
@@ -239,6 +237,7 @@ impl Render for SettingsPanel {
             sidebar = sidebar.child(
                 Button::new(id)
                     .label(label)
+                    .when(narrow, |button| button.small())
                     .when(self.section == section, |button| button.primary())
                     .on_click(cx.listener(move |this, _, _, cx| this.select_section(section, cx))),
             );
@@ -250,14 +249,14 @@ impl Render for SettingsPanel {
             Section::Templates => templates_body.into_any_element(),
             Section::Theme => theme_body.into_any_element(),
         };
-        div()
+        let sections = div()
             .w_full()
-            .h_full()
+            .flex_1()
             .min_h_0()
             .min_w_0()
             .flex()
             .when(narrow, |view| view.flex_col())
-            .gap_3()
+            .gap_2()
             .child(sidebar)
             .child(
                 div()
@@ -274,15 +273,59 @@ impl Render for SettingsPanel {
                     .when(!narrow, |view| view.flex_1().min_w(px(240.)))
                     .child(content)
                     .vertical_scrollbar(&self.content_scroll),
+            );
+        let owner = cx.weak_entity();
+        div()
+            .id("settings-screen")
+            .debug_selector(|| "settings-screen".into())
+            .key_context("SettingsScreen")
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &crate::CloseSettings, _, cx| {
+                this.emit_intent(SettingsIntent::Close, cx);
+            }))
+            .relative()
+            .size_full()
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .p_3()
+            .gap_2()
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, _, _, cx| {
+                        let narrow = bounds.size.width - px(24.) < px(512.);
+                        let _ = owner.update(cx, |this, cx| {
+                            if this.narrow != narrow {
+                                this.narrow = narrow;
+                                cx.notify();
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .size_full(),
             )
-    }
-}
-
-impl SettingsPanel {
-    pub(in crate::settings_ui) fn dialog(panel: Entity<Self>, dialog: Dialog, cx: &App) -> Dialog {
-        dialog
-            .title("Settings")
-            .movable(panel.read(cx).placement.clone())
-            .child(panel)
+            .child(
+                div()
+                    .debug_selector(|| "settings-header".into())
+                    .flex()
+                    .items_center()
+                    .flex_shrink_0()
+                    .gap_2()
+                    .child(div().flex_1().text_lg().child("Settings"))
+                    .child(
+                        Button::new("close-settings")
+                            .debug_selector(|| "close-settings".into())
+                            .label("Close")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.emit_intent(SettingsIntent::Close, cx);
+                            })),
+                    ),
+            )
+            .child(sections)
     }
 }

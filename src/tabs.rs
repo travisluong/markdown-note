@@ -281,13 +281,16 @@ impl Notes {
         }
     }
     pub(crate) fn select_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         self.tabs.select(id);
         self.focus_active_tab(window, cx);
     }
     fn focus_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.focus_settings(window, cx) {
+            return;
+        }
         if self.tabs.active.mode != ViewMode::Reading && self.document().is_some() {
             self.tabs.active.editor.focus(window, cx);
         } else {
@@ -310,7 +313,7 @@ impl Notes {
         self.refresh(window, cx);
     }
     pub(crate) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         self.tabs.add(window, cx);
@@ -320,7 +323,7 @@ impl Notes {
         self.focus_active_tab(window, cx);
     }
     pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let busy = self.is_busy();
+        let busy = self.document_interaction_blocked();
         div()
             .id("document-tabs")
             .debug_selector(|| "document-tabs".into())
@@ -391,7 +394,10 @@ impl Notes {
 
 impl Notes {
     pub(crate) fn close_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) || self.tabs.get(id).is_none() {
+        if self.document_interaction_blocked()
+            || window.has_active_dialog(cx)
+            || self.tabs.get(id).is_none()
+        {
             return;
         }
         self.begin_workspace(WorkspaceKind::CloseTab(id), vec![id], window, cx);

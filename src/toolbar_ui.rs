@@ -20,7 +20,7 @@ impl Notes {
     ) -> impl IntoElement {
         let settings = self.toolbar_settings();
         let has_notebook = self.notebooks.active.is_some();
-        let disabled = self.is_busy() || !has_notebook;
+        let disabled = self.document_interaction_blocked() || !has_notebook;
         let sidebar_visible = has_notebook && !self.sidebar_collapsed;
         let searching = self.search_visible(cx);
         let owner = cx.weak_entity();
@@ -60,7 +60,7 @@ impl Notes {
                             toolbar_button(id, icon, settings.icon_size)
                                 .tooltip(item.label())
                                 .disabled(
-                                    self.is_busy()
+                                    self.document_interaction_blocked()
                                         || window.has_active_dialog(cx)
                                         || self.tabs.active.navigation.target(direction).is_none(),
                                 )
@@ -83,7 +83,7 @@ impl Notes {
                         } else {
                             "Show sidebar"
                         })
-                        .disabled(disabled)
+                        .disabled(self.is_busy() || !has_notebook)
                         .on_click(
                             cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)),
                         )

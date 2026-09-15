@@ -46,7 +46,7 @@ impl Palette {
 
 impl Notes {
     pub(super) fn command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         self.open_palette(
@@ -103,7 +103,7 @@ impl Notes {
     }
 
     pub(super) fn go_to(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         let Some(book) = &self.notebooks.active else {
@@ -160,7 +160,7 @@ impl Notes {
     }
 
     fn activate_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() {
+        if self.document_interaction_blocked() {
             return;
         }
         let entry = self
@@ -208,6 +208,9 @@ impl Notes {
     }
 
     fn run_command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+        if self.command_unavailable(command).is_some() {
+            return;
+        }
         match command {
             Command::MoveLineUp => self.tabs.active.editor.move_lines(false, window, cx),
             Command::MoveLineDown => self.tabs.active.editor.move_lines(true, window, cx),

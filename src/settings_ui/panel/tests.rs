@@ -1,4 +1,4 @@
-//! Form and application event boundaries on TestPlatform, including real dialog rendering.
+//! Form and application event boundaries on TestPlatform, including inline screen rendering.
 use super::{ColorRole, FontSizeRole, SettingsIntent, SettingsPanel};
 use crate::{Notes, NotesWindow, notebook};
 use gpui::{AppContext, Entity, Subscription, TestAppContext, VisualTestContext};
@@ -83,8 +83,7 @@ fn panel(notes: &Entity<Notes>, cx: &mut VisualTestContext) -> Entity<SettingsPa
             .as_ref()
             .unwrap()
             .panel
-            .upgrade()
-            .unwrap()
+            .clone()
     })
 }
 
@@ -412,7 +411,11 @@ fn standalone_autosave_and_notebook_appearance_keep_separate_targets(cx: &mut Te
 fn programmatic_close_expires_form_authority_before_a_later_dialog(cx: &mut TestAppContext) {
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let old = panel(&notes, cx);
-    cx.update(|window, cx| window.close_dialog(cx));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.close_settings_panel(old.entity_id(), window, cx)
+        })
+    });
     input(&old, Field::Delay, "555", cx);
     cx.update(|window, cx| {
         assert_eq!(notes.read(cx).autosave_settings().delay_ms, 1_000);
@@ -421,7 +424,10 @@ fn programmatic_close_expires_form_authority_before_a_later_dialog(cx: &mut Test
     });
     let old = panel(&notes, cx);
     cx.update(|window, cx| {
-        window.close_dialog(cx);
+        notes.update(cx, |this, cx| {
+            let id = this.settings_panel.as_ref().unwrap().panel.entity_id();
+            this.close_settings_panel(id, window, cx);
+        });
         window.open_dialog(cx, |dialog, _, _| dialog.title("Unrelated dialog"));
     });
     intent(&old, SettingsIntent::Close, cx);
@@ -1340,7 +1346,10 @@ fn toolbar_size_buttons_apply_immediately_and_preserve_session_scope(cx: &mut Te
         assert_eq!(toolbar.size.height, px(size.button_pixels() + 9.));
     }
     cx.update(|window, cx| {
-        window.close_dialog(cx);
+        notes.update(cx, |this, cx| {
+            let id = this.settings_panel.as_ref().unwrap().panel.entity_id();
+            this.close_settings_panel(id, window, cx);
+        });
         notes.update(cx, |this, cx| {
             this.notebooks.active = Some(fixture.first.clone());
             assert_eq!(
@@ -1574,7 +1583,7 @@ fn toolbar_reset_button_restores_every_setting_and_rejects_stale_form(cx: &mut T
                 fixture.first.settings.toolbar,
                 notebook::ToolbarSettings::default()
             );
-            window.close_dialog(cx);
+            this.close_settings_panel(form.entity_id(), window, cx);
             this.open_settings(window, cx);
             this.session_toolbar.icon_size = notebook::ToolbarIconSize::Small;
             this.handle_settings_intent(form.entity_id(), SettingsIntent::ResetToolbar, window, cx);
@@ -1663,30 +1672,25 @@ fn toolbar_reset_persists_atomically_skips_defaults_and_rejects_scope_and_busy(
 }
 
 #[gpui::test]
-fn movable_settings_bounds_drag_reset_and_scrolling(cx: &mut TestAppContext) {
+fn inline_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
     use gpui::{Modifiers, MouseButton, point, px, size};
-    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let (_fixture, notes, cx) = fixture(cx, true, false);
     let form = panel(&notes, cx);
     cx.simulate_resize(size(px(1000.), px(800.)));
-    cx.update(|_, cx| {
-        form.update(cx, |form, cx| {
-            form.select_section(super::Section::Toolbar, cx)
-        })
-    });
+    toolbar_section(&form, cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-    let surface = cx.debug_bounds("dialog-surface").unwrap();
-    assert_eq!(surface.size, size(px(620.), px(600.)));
-    assert_eq!(surface.origin, point(px(190.), px(100.)));
-    let title = cx.debug_bounds("dialog-title").unwrap();
+    let surface = cx.debug_bounds("settings-screen").unwrap();
+    let tabs = cx.debug_bounds("document-tabs").unwrap();
+    assert_eq!(surface.top(), tabs.bottom());
+    assert_eq!(surface.left(), tabs.left());
+    assert_eq!(surface.right(), px(1000.));
+    assert_eq!(surface.bottom(), px(800.));
+    cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    assert!(cx.debug_bounds("dialog-surface").is_none());
+    let header = cx.debug_bounds("settings-header").unwrap();
     let navigation = cx.debug_bounds("settings-navigation").unwrap();
     let content = cx.debug_bounds("settings-content").unwrap();
-    assert!(
-        content.bottom() < surface.bottom(),
-        "{surface:?} {content:?}"
-    );
-    let last = notebook::ToolbarItem::DEFAULT_ORDER.last().unwrap();
-    let last_selector = format!("toolbar-row-{}", *last as usize);
     cx.update(|_, cx| {
         form.update(cx, |form, cx| {
             form.content_scroll.set_offset(point(px(0.), px(-10000.)));
@@ -1694,95 +1698,357 @@ fn movable_settings_bounds_drag_reset_and_scrolling(cx: &mut TestAppContext) {
         })
     });
     cx.refresh().unwrap();
-    let last_bounds = cx.debug_bounds(last_selector.leak()).unwrap();
-    assert!(
-        last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom(),
-        "{last_bounds:?} {content:?}"
-    );
-    assert_eq!(cx.debug_bounds("dialog-title").unwrap(), title);
+    let last = *notebook::ToolbarItem::DEFAULT_ORDER.last().unwrap();
+    let last_bounds = cx
+        .debug_bounds(format!("toolbar-row-{}", last as usize).leak())
+        .unwrap();
+    assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
+    assert_eq!(cx.debug_bounds("settings-header").unwrap(), header);
     assert_eq!(cx.debug_bounds("settings-navigation").unwrap(), navigation);
-
-    let start = title.center();
-    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
-    cx.simulate_mouse_move(
-        start + point(px(70.), px(40.)),
-        MouseButton::Left,
-        Modifiers::default(),
-    );
-    cx.refresh().unwrap();
-    let moved = cx.debug_bounds("dialog-surface").unwrap();
-    assert_eq!(moved.origin, surface.origin + point(px(70.), px(40.)));
-    // Release outside the header, then moving again with a pressed button must not drag.
-    cx.simulate_mouse_up(content.center(), MouseButton::Left, Modifiers::default());
-    cx.simulate_mouse_move(start, MouseButton::Left, Modifiers::default());
-    cx.refresh().unwrap();
-    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), moved);
-    intent(
-        &form,
-        SettingsIntent::ToolbarIconSize(notebook::ToolbarIconSize::Large),
-        cx,
-    );
-    cx.refresh().unwrap();
-    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), moved);
     cx.update(|_, cx| {
         form.update(cx, |form, cx| {
-            form.select_section(super::Section::Toolbar, cx)
+            form.select_section(super::Section::Theme, cx)
         })
     });
     cx.refresh().unwrap();
-    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), moved);
-
-    for (destination, expected) in [
-        (point(px(2000.), px(2000.)), point(px(364.), px(184.))),
-        (point(px(-1000.), px(-1000.)), point(px(16.), px(16.))),
-    ] {
-        let start = cx.debug_bounds("dialog-title").unwrap().center();
-        cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
-        cx.simulate_mouse_move(destination, MouseButton::Left, Modifiers::default());
-        cx.refresh().unwrap();
-        assert_eq!(cx.debug_bounds("dialog-surface").unwrap().origin, expected);
-        cx.simulate_mouse_up(destination, MouseButton::Left, Modifiers::default());
-        cx.simulate_mouse_move(start, MouseButton::Left, Modifiers::default());
-        cx.refresh().unwrap();
-        assert_eq!(cx.debug_bounds("dialog-surface").unwrap().origin, expected);
-    }
-    for (section, height) in [
-        (super::Section::Font, 460.),
-        (super::Section::Theme, 420.),
-        (super::Section::Templates, 560.),
-        (super::Section::General, 600.),
-    ] {
-        cx.update(|_, cx| form.update(cx, |form, cx| form.select_section(section, cx)));
-        cx.refresh().unwrap();
-        let bounds = cx.debug_bounds("dialog-surface").unwrap();
-        assert_eq!(bounds.size, size(px(620.), px(height)));
-        assert_eq!(bounds.origin, point(px(190.), px((800. - height) / 2.)));
-    }
-    for viewport in [size(px(480.), px(360.)), size(px(320.), px(240.))] {
+    assert_eq!(cx.debug_bounds("settings-screen").unwrap(), surface);
+    cx.update(|_, cx| assert_eq!(form.read(cx).content_scroll.offset(), point(px(0.), px(0.))));
+    // Sidebar changes alter the actual content allocation, without moving a window.
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_sidebar(window, cx)));
+    cx.refresh().unwrap();
+    assert_eq!(cx.debug_bounds("settings-screen").unwrap().left(), px(0.));
+    for viewport in [size(px(480.), px(360.)), size(px(320.), px(300.))] {
         cx.simulate_resize(viewport);
         cx.refresh().unwrap();
-        let bounds = cx.debug_bounds("dialog-surface").unwrap();
-        assert!(
-            bounds.left() >= px(16.) && bounds.top() >= px(16.),
-            "{bounds:?}"
-        );
-        assert!(
-            bounds.right() <= viewport.width - px(16.)
-                && bounds.bottom() <= viewport.height - px(16.),
-            "{bounds:?}"
-        );
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        let surface = cx.debug_bounds("settings-screen").unwrap();
         let content = cx.debug_bounds("settings-content").unwrap();
         let navigation = cx.debug_bounds("settings-navigation").unwrap();
+        let close = cx.debug_bounds("close-settings").unwrap();
         assert!(content.top() >= navigation.bottom());
-        assert!(content.bottom() <= bounds.bottom());
-        assert!(content.size.height > px(0.), "{content:?}");
+        assert!(
+            content.bottom() <= surface.bottom(),
+            "surface={surface:?} content={content:?} navigation={navigation:?}"
+        );
+        assert!(content.size.height > px(0.));
+        assert!(close.top() >= surface.top() && close.bottom() <= surface.bottom());
     }
-    intent(&form, SettingsIntent::Close, cx);
-    cx.simulate_resize(size(px(1000.), px(800.)));
-    cx.update(|window, cx| notes.update(cx, |notes, cx| notes.open_settings(window, cx)));
+    let close = cx.debug_bounds("close-settings").unwrap();
+    cx.simulate_mouse_down(close.center(), MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_up(close.center(), MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(notes.read(cx).settings_panel.is_none());
+        assert!(notes.read(cx).tabs.active.editor.is_focused(window, cx));
+    });
+}
+
+#[gpui::test]
+fn inline_settings_reopen_preserves_drafts_and_escape_closes(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Templates, cx)
+        })
+    });
+    input(&form, Field::Date, "YYYY[", cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    assert_eq!(panel(&notes, cx), form);
+    cx.update(|window, cx| {
+        assert!(form.read(cx).section == super::Section::Templates);
+        assert_eq!(form.read(cx).date.read(cx).value().as_ref(), "YYYY[");
+        form.read(cx)
+            .date
+            .clone()
+            .update(cx, |date, cx| date.focus(window, cx));
+    });
     cx.refresh().unwrap();
-    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), surface);
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    cx.update(|window, cx| {
+        assert!(notes.read(cx).settings_panel.is_none());
+        notes.update(cx, |this, cx| this.open_settings(window, cx));
+    });
+    let fresh = panel(&notes, cx);
+    assert_ne!(fresh, form);
+    cx.update(|_, cx| assert!(fresh.read(cx).section == super::Section::General));
+}
+
+#[gpui::test]
+fn inline_settings_preserves_document_modes_selection_and_undo(cx: &mut TestAppContext) {
+    use crate::ViewMode;
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::Close, cx);
+    for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+        let (tab, editor, selection) = cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.set_mode(ViewMode::Source, window, cx);
+                this.tabs.active.editor.select(0..8, window, cx);
+                this.tabs
+                    .active
+                    .editor
+                    .replace_selection("draft", window, cx);
+                this.tabs.active.editor.select(1..3, window, cx);
+                this.set_mode(mode, window, cx);
+                (
+                    this.tabs.active.id,
+                    this.tabs.active.editor.id(),
+                    this.tabs.active.editor.selection(cx),
+                )
+            })
+        });
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("settings-screen").is_some());
+        cx.simulate_input("must not edit document");
+        let form = panel(&notes, cx);
+        intent(&form, SettingsIntent::Close, cx);
+        cx.refresh().unwrap();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                assert_eq!(this.tabs.active.id, tab);
+                assert_eq!(this.tabs.active.editor.id(), editor);
+                assert_eq!(this.tabs.active.mode, mode);
+                assert_eq!(this.tabs.active.editor.text(cx).as_ref(), "draft");
+                assert_eq!(this.tabs.active.editor.selection(cx), selection);
+                assert!(this.dirty(cx));
+                if mode == ViewMode::Reading {
+                    assert!(this.focus.is_focused(window));
+                } else {
+                    assert!(this.tabs.active.editor.is_focused(window, cx));
+                }
+                this.set_mode(ViewMode::Source, window, cx);
+            })
+        });
+        cx.refresh().unwrap();
+        cx.dispatch_action(gpui_component::input::Undo);
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert_eq!(
+                notes.read(cx).tabs.active.editor.text(cx).as_ref(),
+                "original"
+            )
+        });
+    }
+}
+
+#[gpui::test]
+fn inline_settings_blocks_document_navigation_and_drops(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, false);
+    let form = panel(&notes, cx);
+    let (tab, editor) = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let tab = this.tabs.active.id;
+            let editor = this.tabs.active.editor.id();
+            this.new_tab(window, cx);
+            this.close_tab(tab, window, cx);
+            this.request(crate::Next::Open, window, cx);
+            this.request(crate::Next::File(fixture.standalone.clone()), window, cx);
+            this.request(
+                crate::Next::Notebook {
+                    path: fixture.second.root.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            );
+            this.set_mode(crate::ViewMode::Reading, window, cx);
+            this.search_current_file(window, cx);
+            this.open_search_all(window, cx);
+            this.drop_files(vec![fixture.standalone.clone()], window, cx);
+            this.save(crate::Next::Nothing, window, cx);
+            assert!(!this.is_busy());
+            assert!(!this.can_edit_document());
+            assert!(this.search.is_none());
+            (tab, editor)
+        })
+    });
+    cx.dispatch_action(crate::Open);
+    cx.dispatch_action(crate::SearchAllFiles);
+    cx.dispatch_action(crate::ReadingView);
+    cx.dispatch_action(crate::ReplaceFile);
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.tabs.active.id, tab);
+        assert_eq!(this.tabs.ids().len(), 1);
+        assert_eq!(this.tabs.active.editor.id(), editor);
+        assert_eq!(this.tabs.active.editor.text(cx).as_ref(), "original");
+        assert!(this.tabs.active.mode != crate::ViewMode::Reading);
+        assert_eq!(
+            this.notebooks.active.as_ref().unwrap().root,
+            fixture.first.root
+        );
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            assert_ne!(this.tabs.active.id, tab);
+        })
+    });
+}
+
+#[gpui::test]
+fn inline_settings_window_close_cancel_retains_screen_and_draft(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.tabs
+                .active
+                .editor
+                .replace_selection("draft", window, cx);
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    cx.run_until_parked();
+    assert!(!cx.simulate_close());
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(panel(&notes, cx), form);
+    cx.update(|_, cx| {
+        assert!(!notes.read(cx).is_busy());
+        assert!(notes.read(cx).tabs.active.editor.text(cx).contains("draft"));
+    });
+}
+
+#[gpui::test]
+fn inline_settings_escape_dismisses_font_picker_before_screen(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    let picker = cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Font, cx);
+            form.fonts[0].clone()
+        })
+    });
+    cx.refresh().unwrap();
+    let bounds = cx
+        .debug_bounds(format!("select-{}", picker.entity_id()).leak())
+        .unwrap();
+    cx.simulate_mouse_down(bounds.center(), MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_up(bounds.center(), MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(panel(&notes, cx), form);
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(notes.read(cx).settings_panel.is_none()));
+}
+
+#[gpui::test]
+fn inline_settings_restores_empty_and_image_content(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, false);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    let tab = cx.update(|_, cx| notes.read(cx).tabs.active.id);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.tabs.active.id, tab);
+        assert!(matches!(
+            this.tabs.active.session.content(),
+            crate::Content::Empty
+        ));
+        assert!(this.focus.is_focused(window));
+    });
+    // Content ownership is independent of whether the image decoder succeeds.
+    let path = fixture.first.root.join("image.png");
+    fs::write(&path, b"image fixture").unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.request(crate::Next::File(path.clone()), window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.image_path(), Some(path.as_path()));
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    let tab = cx.update(|_, cx| notes.read(cx).tabs.active.id);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.tabs.active.id, tab);
+        assert_eq!(this.image_path(), Some(path.as_path()));
+        assert!(this.focus.is_focused(window));
+    });
+}
+
+#[cfg(feature = "editor-diagnostics")]
+#[gpui::test]
+fn inline_settings_retains_editor_and_reading_scroll(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    intent(&panel(&notes, cx), SettingsIntent::Close, cx);
+    let editor = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.set_mode(crate::ViewMode::Source, window, cx);
+            this.tabs.active.editor.select(0..8, window, cx);
+            this.tabs
+                .active
+                .editor
+                .replace_selection(&"Paragraph\n\n".repeat(150), window, cx);
+            this.tabs.active.editor.diagnostic_input().clone()
+        })
+    });
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    cx.update(|_, cx| editor.update(cx, |input, cx| input.diagnostic_scroll(-300., cx)));
+    cx.refresh().unwrap();
+    let offset = cx.update(|_, cx| editor.read(cx).diagnostic_input_paint().2);
+    assert!(offset.y < gpui::px(0.));
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    cx.refresh().unwrap();
+    intent(&panel(&notes, cx), SettingsIntent::Close, cx);
+    cx.refresh().unwrap();
+    cx.update(|_, cx| assert_eq!(editor.read(cx).diagnostic_input_paint().2, offset));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.set_mode(crate::ViewMode::Reading, window, cx)
+        })
+    });
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let probe = cx.update(|_, cx| {
+        notes
+            .read(cx)
+            .tabs
+            .active
+            .reading_view
+            .as_ref()
+            .unwrap()
+            .diagnostic_probe()
+    });
+    cx.update(|_, cx| probe.scroll_to(60, cx));
+    cx.refresh().unwrap();
+    let before = cx.update(|_, cx| probe.snapshot(cx).unwrap().scroll_item);
+    assert!(before > 0);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    cx.refresh().unwrap();
+    intent(&panel(&notes, cx), SettingsIntent::Close, cx);
+    cx.refresh().unwrap();
+    cx.update(|_, cx| assert_eq!(probe.snapshot(cx).unwrap().scroll_item, before));
 }

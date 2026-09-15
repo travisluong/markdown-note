@@ -66,6 +66,7 @@ actions!(
         About,
         ManageNotebooks,
         OpenSettings,
+        CloseSettings,
         TreeUp,
         TreeDown,
         TreeLeft,
@@ -144,7 +145,7 @@ struct Notes {
     session_show_file_extensions: bool,
     session_toolbar: notebook::ToolbarSettings,
     session_always_hide_extensions: Vec<String>,
-    settings_panel: Option<settings_ui::SettingsDialog>,
+    settings_panel: Option<settings_ui::SettingsScreen>,
     installed_fonts: Vec<String>,
     palette: Option<goto::Palette>,
     search: Option<Entity<search_ui::SearchPanel>>,
@@ -161,6 +162,11 @@ struct Notes {
 
 impl Notes {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        cx.bind_keys([KeyBinding::new(
+            "escape",
+            crate::CloseSettings,
+            Some("SettingsScreen"),
+        )]);
         let tabs = tabs::TabSet::new(window, cx);
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
@@ -313,6 +319,11 @@ impl Notes {
         self.workspace.is_some() || self.tabs.iter().any(|tab| tab.session.is_busy())
     }
 
+    /// User interaction is paused independently of session I/O and autosave.
+    fn document_interaction_blocked(&self) -> bool {
+        self.is_busy() || self.settings_panel.is_some()
+    }
+
     fn document(&self) -> Option<&Document> {
         match self.tabs.active.session.content() {
             Content::Document { value, .. } => Some(value),
@@ -324,7 +335,7 @@ impl Notes {
         mithril::capabilities::Capabilities {
             has_document: self.document().is_some(),
             mode: self.tabs.active.mode,
-            busy: self.is_busy(),
+            busy: self.document_interaction_blocked(),
             has_notebook: self.notebooks.active.is_some(),
         }
     }
@@ -334,6 +345,9 @@ impl Notes {
     }
 
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings_panel.is_some() {
+            return;
+        }
         self.record_activation_preference(notebook_ui::PreferenceIntent::ViewMode(mode));
         self.tabs.active.reading_text = if mode == ViewMode::Reading {
             self.tabs.active.editor.text(cx)
@@ -364,7 +378,7 @@ impl Notes {
             return;
         }
         self.menu_previous_focus = window.focused(cx);
-        let busy = self.is_busy();
+        let busy = self.document_interaction_blocked();
         let can_save = self.document().is_some() && !busy;
         let mode = self.tabs.active.mode;
         let capabilities = self.capabilities();
@@ -376,28 +390,31 @@ impl Notes {
                 menu.menu_with_disabled("Open…", Box::new(Open), busy)
                     .menu_with_disabled("Save", Box::new(Save), !can_save)
                     .separator()
-                    .menu_with_disabled("Settings", Box::new(OpenSettings), busy)
+                    .menu_with_disabled("Settings", Box::new(OpenSettings), self.is_busy())
             } else if kind == MenuKind::View {
-                menu.menu_with_check(
+                menu.menu_with_check_and_disabled(
                     "Source mode",
                     mode == ViewMode::Source,
                     Box::new(SourceMode),
+                    busy,
                 )
-                .menu_with_check(
+                .menu_with_check_and_disabled(
                     "Live preview",
                     mode == ViewMode::LivePreview,
                     Box::new(LivePreview),
+                    busy,
                 )
-                .menu_with_check(
+                .menu_with_check_and_disabled(
                     "Reading view",
                     mode == ViewMode::Reading,
                     Box::new(ReadingView),
+                    busy,
                 )
                 .separator()
                 .item(
                     PopupMenuItem::new("Collapse sidebar")
                         .checked(self.sidebar_collapsed)
-                        .disabled(busy || self.notebooks.active.is_none())
+                        .disabled(self.is_busy() || self.notebooks.active.is_none())
                         .on_click(move |_, window, cx| {
                             let _ = owner.update(cx, |_, cx| {
                                 // Restore sidebar focus after the menu finishes dismissing.
@@ -449,7 +466,15 @@ impl Notes {
 impl Render for Notes {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content_size = px(self.appearance().content_font_size as f32);
-        let content = if let Some(path) = self.image_path() {
+        self.sync_settings_panel(window, cx);
+        if let Some(search) = &self.search {
+            search.update(cx, |panel, cx| {
+                panel.set_interaction_enabled(self.settings_panel.is_none(), cx);
+            });
+        }
+        let content = if let Some(settings) = &self.settings_panel {
+            settings.panel.clone().into_any_element()
+        } else if let Some(path) = self.image_path() {
             images::viewer(path).into_any_element()
         } else if let Some(document_path) = self.document().map(|document| document.path.clone()) {
             if self.tabs.active.mode != ViewMode::Reading {
@@ -553,7 +578,7 @@ impl Render for Notes {
                                 let tab_id = self.tabs.active.id;
                                 move |offset, source, window, cx| {
                                     let _ = owner.update(cx, |this, cx| {
-                                        if this.is_busy()
+                                        if this.document_interaction_blocked()
                                             || this.tabs.active.id != tab_id
                                             || this.document().map(|d| &d.path)
                                                 != document_path.as_ref()
@@ -600,7 +625,18 @@ impl Render for Notes {
         };
         div()
             .id("notes")
-            .key_context("Notes")
+            .key_context(if self.settings_panel.is_some() {
+                "Notes SettingsScreen"
+            } else {
+                "Notes"
+            })
+            .on_action(cx.listener(|this, _: &CloseSettings, window, cx| {
+                if let Some(open) = &this.settings_panel {
+                    this.close_settings_panel(open.panel.entity_id(), window, cx);
+                } else {
+                    cx.propagate();
+                }
+            }))
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &EditLink, window, cx| this.edit_link(window, cx)))
             .on_action(cx.listener(|this, _: &Search, window, cx| {

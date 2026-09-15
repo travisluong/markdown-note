@@ -78,7 +78,7 @@ fn link_text(label: &str, target: &str, title: Option<&str>) -> Result<String, S
 
 impl Notes {
     pub(super) fn open_link(&mut self, raw: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         let Some(doc) = self.document() else {

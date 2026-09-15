@@ -609,3 +609,54 @@ fn retained_unsaved_tabs_feed_real_search_and_open_existing_result(cx: &mut Test
         assert_eq!(panel.read(cx).hits.len(), 2);
     });
 }
+
+#[gpui::test]
+fn settings_pause_preserves_search_and_blocks_result_navigation(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "hit first").unwrap();
+    fs::write(dir.path().join("b.md"), "hit second").unwrap();
+    let (notes, cx) = fixture(cx, dir.path());
+    search(&notes, cx);
+    finish_search(cx);
+    let panel = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.open_settings(window, cx);
+            this.search.as_ref().unwrap().clone()
+        })
+    });
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        panel.update(cx, |panel, cx| {
+            assert!(!panel.interaction_enabled);
+            assert_eq!(panel.hits.len(), 2);
+            assert_eq!(panel.query.read(cx).value().as_ref(), "hit");
+            panel.request_open(1, false, cx);
+            assert!(panel.pending_opens.is_empty());
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).document().unwrap().path.file_name().unwrap(),
+            "a.md"
+        )
+    });
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        panel.update(cx, |panel, cx| {
+            assert!(panel.interaction_enabled);
+            assert_eq!(panel.hits.len(), 2);
+            assert_eq!(panel.query.read(cx).value().as_ref(), "hit");
+            panel.request_open(1, false, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).document().unwrap().path.file_name().unwrap(),
+            "b.md"
+        )
+    });
+}

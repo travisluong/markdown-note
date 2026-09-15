@@ -108,6 +108,9 @@ impl Notes {
     }
 
     pub(crate) fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings_panel.is_some() && !matches!(next, Next::Close) {
+            return;
+        }
         if matches!(next, Next::Close) && self.workspace.is_none() {
             if !self.is_busy() {
                 self.begin_workspace(
@@ -159,6 +162,9 @@ impl Notes {
     }
 
     pub(crate) fn save(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings_panel.is_some() {
+            return;
+        }
         if self.workspace.is_some() {
             return;
         }
@@ -578,7 +584,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         if let Some(visit) = self.tabs.active.navigation.target(direction) {

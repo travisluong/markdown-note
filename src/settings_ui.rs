@@ -1,12 +1,9 @@
 use crate::{Notes, ViewMode, notebook, templates};
 use gpui::{
-    App, Context, EntityId, SharedString, Subscription, WeakEntity, Window, prelude::*, px, rgb,
+    App, Context, Entity, EntityId, SharedString, Subscription, Window, prelude::*, px, rgb,
 };
-use gpui_component::{Theme, ThemeMode, WindowExt, dialog::Dialog};
-use std::{
-    path::PathBuf,
-    rc::{Rc, Weak},
-};
+use gpui_component::{Theme, ThemeMode, WindowExt};
+use std::path::PathBuf;
 
 mod panel;
 use panel::{ColorRole, FontRole, FontSizeRole, SettingsIntent, SettingsPanel, SettingsValues};
@@ -158,10 +155,9 @@ struct SettingsScope {
     autosave: PreferenceTarget,
 }
 
-/// The dialog builder owns the form; this handle only observes its authority.
-pub(super) struct SettingsDialog {
-    panel: WeakEntity<SettingsPanel>,
-    lifetime: Weak<()>,
+/// The application retains the form only while the settings screen is open.
+pub(super) struct SettingsScreen {
+    pub(super) panel: Entity<SettingsPanel>,
     scope: SettingsScope,
     _subscription: Subscription,
 }
@@ -216,6 +212,11 @@ impl Notes {
             return;
         }
         self.menu = None;
+        self.notebooks.context_menu = None;
+        if self.focus_settings(window, cx) {
+            cx.notify();
+            return;
+        }
         let scope = self.settings_scope();
         let values = self.settings_values();
         let panel = cx.new(|cx| SettingsPanel::new(values, &self.installed_fonts, window, cx));
@@ -226,98 +227,55 @@ impl Notes {
                 this.handle_settings_intent(sender.entity_id(), intent.clone(), window, cx);
             },
         );
-        let id = panel.entity_id();
-        let lifetime = Rc::new(());
-        self.settings_panel = Some(SettingsDialog {
-            panel: panel.downgrade(),
-            lifetime: Rc::downgrade(&lifetime),
+        panel.read(cx).focus.focus(window);
+        self.settings_panel = Some(SettingsScreen {
+            panel,
             scope,
             _subscription: subscription,
         });
-        let owner = cx.weak_entity();
-        window.open_dialog(cx, move |dialog, window, cx| {
-            // The dialog builder owns the form and its authority, including when
-            // Root::close_dialog bypasses the optional on_close callback.
-            let _keep_alive = (&panel, &lifetime);
-            owner
-                .update(cx, |this, cx| this.settings_dialog(id, dialog, window, cx))
-                .unwrap_or_else(|_| Dialog::new(window, cx))
-        });
         cx.notify();
     }
 
-    fn settings_dialog(
+    pub(super) fn focus_settings(&self, window: &mut Window, cx: &App) -> bool {
+        let Some(open) = &self.settings_panel else {
+            return false;
+        };
+        open.panel.read(cx).focus.focus(window);
+        true
+    }
+
+    pub(super) fn close_settings_panel(
         &mut self,
         id: EntityId,
-        dialog: Dialog,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Dialog {
-        let Some(open) = &self.settings_panel else {
-            return dialog;
-        };
-        if open.panel.entity_id() != id {
-            return dialog;
-        }
-        if open.scope != self.settings_scope() {
-            cx.defer_in(window, move |this, window, cx| {
-                this.close_settings_panel(id, window, cx)
-            });
-            return dialog;
-        }
-        let Some(panel) = open.panel.upgrade() else {
-            return dialog;
-        };
-        let values = self.settings_values();
-        let owner = cx.weak_entity();
-        let dialog = dialog.on_close(move |_, _, cx| {
-            let _ = owner.update(cx, |this, cx| {
-                if this
-                    .settings_panel
-                    .as_ref()
-                    .is_some_and(|open| open.panel.entity_id() == id)
-                {
-                    this.settings_panel = None;
-                    cx.notify();
-                }
-            });
-        });
-        panel.update(cx, |panel, cx| panel.sync_effective(values, window, cx));
-        SettingsPanel::dialog(panel, dialog, cx)
-    }
-
-    fn close_settings_panel(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {
+    ) {
         let Some(open) = &self.settings_panel else {
             return;
         };
         if open.panel.entity_id() != id {
             return;
         }
-        let active = open.lifetime.upgrade().is_some();
         self.settings_panel = None;
-        // An expired form must not close a later, unrelated dialog.
-        if active {
-            window.close_dialog(cx);
+        if !window.has_active_dialog(cx) {
+            if self.tabs.active.mode != ViewMode::Reading && self.document().is_some() {
+                self.tabs.active.editor.focus(window, cx);
+            } else {
+                self.focus.focus(window);
+            }
         }
         cx.notify();
     }
-    fn sync_settings_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn sync_settings_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(open) = &self.settings_panel else {
             return;
         };
-        if open.lifetime.upgrade().is_none() {
-            self.settings_panel = None;
-            cx.notify();
-            return;
-        }
         let id = open.panel.entity_id();
         if open.scope != self.settings_scope() {
             self.close_settings_panel(id, window, cx);
             return;
         }
-        let Some(panel) = open.panel.upgrade() else {
-            return;
-        };
+        let panel = open.panel.clone();
         let values = self.settings_values();
         panel.update(cx, |panel, cx| panel.sync_effective(values, window, cx));
     }
@@ -333,11 +291,6 @@ impl Notes {
             return;
         };
         if open.panel.entity_id() != sender {
-            return;
-        }
-        if open.lifetime.upgrade().is_none() {
-            self.settings_panel = None;
-            cx.notify();
             return;
         }
         if matches!(intent, SettingsIntent::Close) {
@@ -499,7 +452,7 @@ impl Notes {
     ) {
         self.settings_panel
             .as_ref()
-            .and_then(|open| open.panel.upgrade())
+            .map(|open| open.panel.clone())
             .expect("settings panel is open")
             .update(cx, |panel, cx| {
                 panel.diagnostic_set_delay(value, window, cx)
@@ -509,7 +462,7 @@ impl Notes {
     pub(super) fn diagnostic_settings_delay_invalid(&self, cx: &App) -> bool {
         self.settings_panel
             .as_ref()
-            .and_then(|open| open.panel.upgrade())
+            .map(|open| open.panel.clone())
             .is_some_and(|panel| panel.read(cx).diagnostic_delay_invalid())
     }
 }

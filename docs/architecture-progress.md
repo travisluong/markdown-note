@@ -1264,3 +1264,37 @@ Windows headless verification:
 - A transient Windows LNK1104 on the test executable cleared on retry. No desktop
   interaction or native application harness was used; native visual validation
   remains user-run.
+
+## Inline settings screen (2026-09-15)
+
+Settings now occupies the existing content slot below the retained document tabs.
+Notes owns the panel entity and subscription directly; sender identity and captured
+preference scope reject stale events. Closing restores the retained view, selection,
+scroll position, undo history and focus. Header/Close and section navigation stay
+fixed while the body scrolls. Narrow panes use a single scrolling row of section
+buttons so navigation does not consume the available body height.
+
+A separate document-interaction guard pauses tabs, notebook navigation, document
+commands, search interaction and drops without changing session busy state or
+stopping autosave/preferences. Sidebar geometry and application closing remain
+available. Escape works from settings fields and from application chrome; an open
+font picker consumes the first Escape. Late sidebar-menu dismissal cannot steal
+focus, and blocked sidebar clicks cannot change its cursor.
+
+Windows headless verification:
+
+- Full locked/offline diagnostics suite passed: **462 tests** (81 library,
+  197 application, 184 integration), zero failures or ignored tests.
+- After the final sidebar pointer/focus guard and chrome Escape regression, the
+  complete application suite passed again: **198 tests**, zero failures.
+- Final `cargo check --locked --offline`, `cargo fmt --check`, and
+  `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+  passed. The existing proc-macro-error2 future-compatibility notice remains.
+- TestPlatform coverage includes pane bounds and resize, fixed header/section
+  scrolling, repeated opening/drafts, stale panel events, nested Escape, retained
+  Source/Live/Reading state and scroll, image/empty views, blocked pointer/actions/
+  drops, retained notebook search, autosave and cancelled application closing.
+- Logs: `target/settings-full-test.log` and `target/settings-app-test.log`.
+  Transient Windows LNK1104 test-executable failures cleared on retry. No native
+  application or desktop interaction was used; native visual validation remains
+  user-run. The generic vendored dialog implementation was not changed.

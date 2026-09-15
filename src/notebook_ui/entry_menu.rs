@@ -75,7 +75,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if window.has_active_dialog(cx) {
+        if self.settings_panel.is_some() || window.has_active_dialog(cx) {
             return;
         }
         let Some(book) = &self.notebooks.active else {
@@ -95,7 +95,7 @@ impl Notes {
             generation: self.notebooks.explorer.generation(),
             directory,
         };
-        let busy = self.is_busy();
+        let busy = self.document_interaction_blocked();
         let writing = self.tabs.active.session.write().is_some();
         let owner = cx.weak_entity();
         let menu = PopupMenu::build(window, cx, move |mut menu, _, _| {
@@ -117,18 +117,19 @@ impl Notes {
             menu
         });
         self.menu = None;
-        self.notebooks.context_subscription = Some(cx.subscribe_in(
-            &menu,
-            window,
-            |this, _, _: &DismissEvent, window, cx| {
-                this.notebooks.context_menu = None;
-                if !window.has_active_dialog(cx) && !this.tabs.active.editor.is_focused(window, cx)
-                {
-                    this.notebooks.tree_focus.focus(window);
-                }
-                cx.notify();
-            },
-        ));
+        self.notebooks.context_subscription =
+            Some(
+                cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, window, cx| {
+                    this.notebooks.context_menu = None;
+                    if this.settings_panel.is_none()
+                        && !window.has_active_dialog(cx)
+                        && !this.tabs.active.editor.is_focused(window, cx)
+                    {
+                        this.notebooks.tree_focus.focus(window);
+                    }
+                    cx.notify();
+                }),
+            );
         menu.focus_handle(cx).focus(window);
         self.notebooks.context_menu = Some((position, menu));
         cx.notify();
@@ -141,7 +142,7 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         self.notebooks.context_menu = None;
-        if !self.entry_target_current(&target) || self.is_busy() {
+        if !self.entry_target_current(&target) || self.document_interaction_blocked() {
             return;
         }
         let validated = if target.path.as_os_str().is_empty() {
@@ -274,7 +275,9 @@ impl Notes {
                     }
                     owner
                         .update(cx, |this, cx| {
-                            if !this.entry_target_current(&target) || this.is_busy() {
+                            if !this.entry_target_current(&target)
+                                || this.document_interaction_blocked()
+                            {
                                 return true;
                             }
                             if rename {
@@ -310,7 +313,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.entry_target_current(&target) || self.is_busy() {
+        if !self.entry_target_current(&target) || self.document_interaction_blocked() {
             return;
         }
         if matches!(action, EntryAction::Trash) {
@@ -756,6 +759,63 @@ mod tests {
         cx.dispatch_action(crate::TreeContextMenu);
         cx.run_until_parked();
         cx.update(|_, cx| assert!(notes.read(cx).notebooks.context_menu.is_some()));
+    }
+    #[gpui::test]
+    fn settings_blocks_sidebar_clicks_and_late_menu_focus(cx: &mut TestAppContext) {
+        let (fixture, notes, cx) = fixture(cx);
+        fs::write(fixture.root.join("other.md"), "other").unwrap();
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.refresh_tree(window, cx)));
+        cx.run_until_parked();
+        let (menu, cursor, tab) = cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.open_entry_menu(
+                    Some("note.md".into()),
+                    gpui::point(gpui::px(20.), gpui::px(90.)),
+                    window,
+                    cx,
+                );
+                let menu = this.notebooks.context_menu.as_ref().unwrap().1.clone();
+                this.open_settings(window, cx);
+                (menu, this.notebooks.explorer.cursor(), this.tabs.active.id)
+            })
+        });
+        cx.refresh().unwrap();
+        let row = cx.debug_bounds("notebook-row-other.md").unwrap();
+        for button in [gpui::MouseButton::Left, gpui::MouseButton::Right] {
+            cx.simulate_mouse_down(row.center(), button, gpui::Modifiers::default());
+            cx.simulate_mouse_up(row.center(), button, gpui::Modifiers::default());
+            cx.run_until_parked();
+        }
+        for selector in ["tab-add", "sidebar-search", "toolbar-bold"] {
+            let button = cx.debug_bounds(selector).unwrap();
+            cx.simulate_mouse_down(
+                button.center(),
+                gpui::MouseButton::Left,
+                gpui::Modifiers::default(),
+            );
+            cx.simulate_mouse_up(
+                button.center(),
+                gpui::MouseButton::Left,
+                gpui::Modifiers::default(),
+            );
+            cx.run_until_parked();
+        }
+        let focus = cx.update(|window, cx| window.focused(cx));
+        cx.update(|_, cx| menu.update(cx, |_, cx| cx.emit(gpui::DismissEvent)));
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert_eq!(this.notebooks.explorer.cursor(), cursor);
+            assert_eq!(this.tabs.active.id, tab);
+            assert_eq!(this.tabs.ids().len(), 1);
+            assert_eq!(this.document().unwrap().path, fixture.note);
+            assert!(this.notebooks.context_menu.is_none());
+            assert!(this.search.is_none());
+            assert_eq!(window.focused(cx), focus);
+        });
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        cx.update(|_, cx| assert!(notes.read(cx).settings_panel.is_none()));
     }
     #[gpui::test]
     fn duplicate_copies_unsaved_source_and_selects_copy_without_navigation(

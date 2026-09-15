@@ -3,7 +3,6 @@ use gpui::{AppContext, Context, Entity, EventEmitter, Hsla, Subscription, Window
 use gpui_component::{
     IndexPath,
     color_picker::{ColorPickerEvent, ColorPickerState},
-    dialog::DialogPlacement,
     input::{InputEvent, InputState},
     select::{SearchableVec, SelectEvent, SelectState},
 };
@@ -89,26 +88,13 @@ enum Section {
     Theme,
 }
 
-impl Section {
-    fn preferred_size(self) -> gpui::Size<gpui::Pixels> {
-        gpui::size(
-            gpui::px(620.),
-            gpui::px(match self {
-                Self::General | Self::Toolbar => 600.,
-                Self::Templates => 560.,
-                Self::Font => 460.,
-                Self::Theme => 420.,
-            }),
-        )
-    }
-}
-
 type FontPicker = Entity<SelectState<SearchableVec<String>>>;
 
-pub(super) struct SettingsPanel {
+pub(crate) struct SettingsPanel {
     values: SettingsValues,
     section: Section,
-    placement: DialogPlacement,
+    pub(super) focus: gpui::FocusHandle,
+    narrow: bool,
     content_scroll: gpui::ScrollHandle,
     hidden_extensions: Entity<InputState>,
     excluded_patterns: Entity<InputState>,
@@ -240,7 +226,8 @@ impl SettingsPanel {
         Self {
             values,
             section: Section::General,
-            placement: DialogPlacement::new(Section::General.preferred_size()),
+            focus: cx.focus_handle(),
+            narrow: false,
             content_scroll: gpui::ScrollHandle::new(),
             hidden_extensions,
             excluded_patterns,
@@ -357,7 +344,6 @@ impl SettingsPanel {
             return;
         }
         self.section = section;
-        self.placement.reset(section.preferred_size());
         self.content_scroll.set_offset(gpui::Point::default());
         cx.notify();
     }

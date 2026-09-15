@@ -15,7 +15,10 @@ use std::path::Path;
 
 impl Notes {
     pub(super) fn search_current_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.document().is_none() || self.is_busy() || window.has_active_dialog(cx) {
+        if self.document().is_none()
+            || self.document_interaction_blocked()
+            || window.has_active_dialog(cx)
+        {
             return;
         }
         if self.tabs.active.mode == ViewMode::Reading {
@@ -50,7 +53,7 @@ impl Notes {
     }
 
     pub(super) fn open_search_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         let Some(book) = &self.notebooks.active else {
@@ -73,7 +76,7 @@ impl Notes {
                     }
                     match intent {
                         SearchIntent::Open(destination) => {
-                            if this.is_busy() || window.has_active_dialog(cx) {
+                            if this.document_interaction_blocked() || window.has_active_dialog(cx) {
                                 panel.update(cx, |panel, _| panel.reject_open(destination));
                                 return;
                             }
@@ -91,7 +94,9 @@ impl Notes {
                             }
                         }
                         SearchIntent::FocusEditor => {
-                            this.tabs.active.editor.focus(window, cx);
+                            if !this.focus_settings(window, cx) {
+                                this.tabs.active.editor.focus(window, cx);
+                            }
                         }
                     }
                 },

@@ -257,7 +257,7 @@ impl Notes {
         menu = menu.menu_with_disabled(
             "Manage notebooks",
             Box::new(ManageNotebooks),
-            self.is_busy() || !self.notebooks.index_writable,
+            self.document_interaction_blocked() || !self.notebooks.index_writable,
         );
         if !self.notebooks.index.notebooks.is_empty() {
             menu = menu.separator();
@@ -287,7 +287,7 @@ impl Notes {
             menu = menu.item(
                 PopupMenuItem::new(label)
                     .checked(checked)
-                    .disabled(self.is_busy())
+                    .disabled(self.document_interaction_blocked())
                     .on_click(move |_, window, cx| {
                         let _ = owner.update(cx, |this, cx| {
                             this.request(
@@ -306,7 +306,10 @@ impl Notes {
     }
 
     pub(super) fn manage_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() || !self.notebooks.index_writable || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked()
+            || !self.notebooks.index_writable
+            || window.has_active_dialog(cx)
+        {
             return;
         }
         self.menu = None;
@@ -533,7 +536,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_busy() || !self.notebooks.index_writable {
+        if self.document_interaction_blocked() || !self.notebooks.index_writable {
             return;
         }
         if self
@@ -613,7 +616,7 @@ impl Notes {
         self.refresh(window, cx);
     }
     fn create_from_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() {
+        if self.document_interaction_blocked() {
             return;
         }
         let name = self.notebooks.name.read(cx).value().to_string();
@@ -1563,7 +1566,7 @@ impl Notes {
     }
 
     fn activate_row(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() {
+        if self.document_interaction_blocked() {
             return;
         }
         let Some(row) = self.notebooks.explorer.rows().get(index).cloned() else {
@@ -1607,7 +1610,7 @@ impl Notes {
     }
 
     fn tree_move(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() && !self.tree_loading() {
+        if self.settings_panel.is_some() || (self.is_busy() && !self.tree_loading()) {
             return;
         }
         let Some(next) = self.notebooks.explorer.move_cursor(down) else {
@@ -1680,7 +1683,7 @@ impl Notes {
     }
 
     fn tree_horizontal(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_busy() && !self.tree_loading() {
+        if self.settings_panel.is_some() || (self.is_busy() && !self.tree_loading()) {
             return;
         }
         let Some(index) = self.notebooks.explorer.cursor() else {
@@ -1844,7 +1847,9 @@ impl Notes {
                                                   window,
                                                   cx| {
                                                 cx.stop_propagation();
-                                                if context_enabled {
+                                                if context_enabled
+                                                    && !this.document_interaction_blocked()
+                                                {
                                                     this.notebooks.explorer.select(Some(index));
                                                     this.open_entry_menu(
                                                         Some(context_path.clone()),
@@ -1875,31 +1880,55 @@ impl Notes {
                                         view.text_color(cx.theme().muted_foreground)
                                     })
                                     .relative()
+                                    .when(this.settings_panel.is_some(), |view| view.opacity(0.5))
                                     // Rows consume drops so only unoccupied space falls back to root.
-                                    .when(!row.draggable || !directory || this.is_busy(), |view| {
-                                        view.on_drop(|_: &EntryDrag, _, cx| cx.stop_propagation())
-                                    })
-                                    .when(row.draggable && !this.is_busy(), |view| {
-                                        view.on_drag(drag, |drag, _, _, cx| {
-                                            cx.stop_propagation();
-                                            cx.new(|_| drag.clone())
-                                        })
-                                    })
-                                    .when(row.draggable && directory && !this.is_busy(), |view| {
-                                        view.drag_over::<EntryDrag>(|view, _, _, cx| {
-                                            view.bg(cx.theme().accent)
-                                        })
-                                        .on_drop(
-                                            cx.listener(
-                                                move |this, drag: &EntryDrag, window, cx| {
-                                                    cx.stop_propagation();
-                                                    this.drop_entry(drag, path.clone(), window, cx);
-                                                },
-                                            ),
-                                        )
-                                    })
+                                    .when(
+                                        !row.draggable
+                                            || !directory
+                                            || this.document_interaction_blocked(),
+                                        |view| {
+                                            view.on_drop(|_: &EntryDrag, _, cx| {
+                                                cx.stop_propagation()
+                                            })
+                                        },
+                                    )
+                                    .when(
+                                        row.draggable && !this.document_interaction_blocked(),
+                                        |view| {
+                                            view.on_drag(drag, |drag, _, _, cx| {
+                                                cx.stop_propagation();
+                                                cx.new(|_| drag.clone())
+                                            })
+                                        },
+                                    )
+                                    .when(
+                                        row.draggable
+                                            && directory
+                                            && !this.document_interaction_blocked(),
+                                        |view| {
+                                            view.drag_over::<EntryDrag>(|view, _, _, cx| {
+                                                view.bg(cx.theme().accent)
+                                            })
+                                            .on_drop(
+                                                cx.listener(
+                                                    move |this, drag: &EntryDrag, window, cx| {
+                                                        cx.stop_propagation();
+                                                        this.drop_entry(
+                                                            drag,
+                                                            path.clone(),
+                                                            window,
+                                                            cx,
+                                                        );
+                                                    },
+                                                ),
+                                            )
+                                        },
+                                    )
                                     .child(format!("{prefix}{}", row.label))
                                     .on_click(cx.listener(move |this, _, window, cx| {
+                                        if this.document_interaction_blocked() {
+                                            return;
+                                        }
                                         this.notebooks.tree_focus.focus(window);
                                         this.activate_row(index, window, cx);
                                     }))
@@ -1938,7 +1967,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if window.has_active_dialog(cx) {
+        if self.settings_panel.is_some() || window.has_active_dialog(cx) {
             return;
         }
         self.move_sidebar_entry(drag, parent, None, window, cx);
@@ -1951,7 +1980,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_busy()
+        if self.document_interaction_blocked()
             || self
                 .notebooks
                 .active
@@ -2064,7 +2093,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_busy() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
         let Some(book) = &mut self.notebooks.active else {

@@ -109,7 +109,7 @@ impl Notes {
     fn can_drop_files(&self) -> bool {
         drop_allowed(
             self.tabs.active.mode,
-            self.is_busy(),
+            self.document_interaction_blocked(),
             self.document().map(|d| d.path.as_path()),
             self.notebooks
                 .active
