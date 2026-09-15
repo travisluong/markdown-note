@@ -25,7 +25,7 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
     let root = directory.path().join("notebook");
     let mut book = Notebook::open(&root, true).unwrap();
     book.settings.date_format = "MM/DD/YYYY".into();
-    for mask in 0..16 {
+    for mask in (0..16).chain((4..15).map(|i| 1 << i)).chain([0x7fff]) {
         let mut toolbar = ToolbarSettings::default();
         for (index, (item, _)) in ToolbarItem::OPTIONS.into_iter().enumerate() {
             toolbar.set_enabled(item, mask & (1 << index) != 0);
@@ -47,86 +47,80 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
 }
 
 #[test]
-fn toolbar_order_defaults_on_invalid_data_and_serializes_item_names() {
+fn toolbar_order_migrates_partial_duplicate_unknown_and_legacy_entries() {
     use ToolbarItem::*;
-    for order in [
-        serde_json::json!(null),
-        serde_json::json!([]),
-        serde_json::json!(["sidebar", "explorer", "search"]),
-        serde_json::json!(["sidebar", "sidebar", "search", "sort"]),
-        serde_json::json!(["sidebar", "explorer", "search", "unknown"]),
-        serde_json::json!(["sidebar", "explorer", "search", "sort", "sidebar"]),
-        serde_json::json!(false),
+    for (order, prefix) in [
+        (serde_json::json!(null), vec![]),
+        (serde_json::json!([]), vec![]),
+        (serde_json::json!(false), vec![]),
+        (
+            serde_json::json!(["sidebar", "sidebar", "search", "sort"]),
+            vec![Sidebar, Search, Sort],
+        ),
+        (
+            serde_json::json!(["sort", "unknown", "bold", 4, "sort"]),
+            vec![Sort, Bold],
+        ),
+        (
+            serde_json::json!(["sort", "search", "explorer", "sidebar"]),
+            vec![Sort, Search, Explorer, Sidebar],
+        ),
     ] {
-        let settings: ToolbarSettings = serde_json::from_value(serde_json::json!({
-            "order": order, "search": false
-        }))
-        .unwrap();
-        assert_eq!(settings.order, ToolbarItem::DEFAULT_ORDER);
+        let settings: ToolbarSettings =
+            serde_json::from_value(serde_json::json!({ "order": order, "search": false })).unwrap();
+        let mut expected = prefix;
+        for item in ToolbarItem::DEFAULT_ORDER {
+            if !expected.contains(&item) {
+                expected.push(item);
+            }
+        }
+        assert_eq!(settings.order.as_slice(), expected);
         assert!(!settings.search);
+        for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(4) {
+            assert!(settings.enabled(item));
+        }
+        let json = serde_json::to_value(settings).unwrap();
+        assert_eq!(json["order"].as_array().unwrap().len(), 15);
+        assert_eq!(
+            serde_json::from_value::<ToolbarSettings>(json).unwrap(),
+            settings
+        );
     }
-    let settings = ToolbarSettings {
-        order: [Sort, Search, Explorer, Sidebar],
-        ..Default::default()
-    };
-    let json = serde_json::to_value(settings).unwrap();
-    assert_eq!(
-        json["order"],
-        serde_json::json!(["sort", "search", "explorer", "sidebar"])
-    );
-    assert_eq!(
-        serde_json::from_value::<ToolbarSettings>(json).unwrap(),
-        settings
-    );
 }
 
 #[test]
-fn toolbar_moves_match_insertion_for_every_permutation_and_visibility_mask() {
+fn toolbar_moves_match_insertion_for_all_items_and_representative_orders() {
     let items = ToolbarItem::DEFAULT_ORDER;
-    for a in items {
-        for b in items.into_iter().filter(|item| *item != a) {
-            for c in items.into_iter().filter(|item| *item != a && *item != b) {
-                let d = *items
-                    .iter()
-                    .find(|item| **item != a && **item != b && **item != c)
-                    .unwrap();
-                for mask in 0..16 {
-                    let mut initial = ToolbarSettings {
-                        order: [a, b, c, d],
-                        ..Default::default()
-                    };
-                    for (index, item) in items.into_iter().enumerate() {
-                        initial.set_enabled(item, mask & (1 << index) != 0);
+    for rotation in 0..items.len() {
+        let mut initial = ToolbarSettings::default();
+        initial.order.rotate_left(rotation);
+        for (i, entry) in items.into_iter().enumerate() {
+            initial.set_enabled(entry, i % 2 == rotation % 2);
+        }
+        for item in items {
+            for target in items {
+                for after in [false, true] {
+                    let mut expected = initial.order.to_vec();
+                    if item != target {
+                        expected.retain(|entry| *entry != item);
+                        let insertion = expected.iter().position(|entry| *entry == target).unwrap()
+                            + usize::from(after);
+                        expected.insert(insertion, item);
                     }
-                    for item in items {
-                        for target in items {
-                            for after in [false, true] {
-                                let mut expected = initial.order.to_vec();
-                                if item != target {
-                                    expected.retain(|entry| *entry != item);
-                                    let insertion =
-                                        expected.iter().position(|entry| *entry == target).unwrap()
-                                            + usize::from(after);
-                                    expected.insert(insertion, item);
-                                }
-                                let mut actual = initial;
-                                assert_eq!(
-                                    actual.move_item(item, target, after),
-                                    expected != initial.order
-                                );
-                                assert_eq!(actual.order.as_slice(), expected);
-                                for entry in items {
-                                    assert_eq!(actual.enabled(entry), initial.enabled(entry));
-                                }
-                            }
-                        }
+                    let mut actual = initial;
+                    assert_eq!(
+                        actual.move_item(item, target, after),
+                        expected != initial.order
+                    );
+                    assert_eq!(actual.order.as_slice(), expected);
+                    for entry in items {
+                        assert_eq!(actual.enabled(entry), initial.enabled(entry));
                     }
                 }
             }
         }
     }
 }
-
 #[test]
 fn toolbar_icon_sizes_default_normalize_and_persist() {
     use mithril::notebook::ToolbarIconSize;

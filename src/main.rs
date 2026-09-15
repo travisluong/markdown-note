@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod app;
+mod assets;
 mod autosave;
 #[cfg(feature = "editor-diagnostics")]
 mod benchmark;
@@ -790,7 +791,7 @@ fn main() {
         }));
     }
     Application::new()
-        .with_assets(gpui_component_assets::Assets)
+        .with_assets(assets::Assets)
         .run(|cx: &mut App| {
             gpui_component::init(cx);
             cx.bind_keys(

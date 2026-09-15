@@ -8,6 +8,7 @@ pub mod commands;
 pub mod document;
 pub mod editor;
 pub mod explorer;
+pub mod markdown_edit;
 pub mod notebook;
 pub mod search;
 pub mod templates;

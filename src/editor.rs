@@ -102,6 +102,32 @@ impl Editor {
             input.replace_selection_isolated(text, window, cx)
         });
     }
+    /// Format the remembered UTF-8 selection in one normal isolated editor edit.
+    pub fn format_markdown(
+        &self,
+        format: crate::markdown_edit::Format,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        self.input.update(cx, |input, cx| {
+            if input.is_disabled() {
+                return false;
+            }
+            let source = input.value();
+            let Some(edit) =
+                crate::markdown_edit::transform(&source, input.source_selection(), format)
+            else {
+                return false;
+            };
+            if !input.select_source_range(edit.range, window, cx) {
+                return false;
+            }
+            input.replace_selection_isolated(&edit.text, window, cx);
+            input.select_source_range(edit.selection, window, cx);
+            input.focus(window, cx);
+            true
+        })
+    }
     /// Apply one isolated transaction only to the captured source. Failed guards
     /// leave text, selection and history unchanged. The caller checks document ID.
     pub fn replace_range_if_current(

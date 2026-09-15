@@ -819,6 +819,9 @@ fn toolbar_switches_update_rendering_and_restore_an_empty_toolbar(cx: &mut TestA
             assert_eq!(form.read(cx).values.toolbar, notes.read(cx).session_toolbar);
         });
     }
+    for (item, _) in notebook::ToolbarItem::OPTIONS {
+        intent(&form, SettingsIntent::ToolbarItemEnabled(item, true), cx);
+    }
     for width in [800., 480.] {
         cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(800.)));
         cx.refresh().unwrap();
@@ -936,7 +939,7 @@ fn toolbar_renders_only_enabled_buttons_in_order(cx: &mut TestAppContext) {
         let (_, view) = cx.add_window_view(|window, cx| {
             let notes = cx.new(|cx| {
                 let mut notes = Notes::new(window, cx);
-                notes.session_toolbar.order.rotate_right(1);
+                notes.session_toolbar.order[..4].rotate_right(1);
                 for (index, (item, _)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
                     notes
                         .session_toolbar
@@ -995,6 +998,7 @@ fn start_toolbar_drag(item: notebook::ToolbarItem, cx: &mut VisualTestContext) {
                 "toolbar-grip-1",
                 "toolbar-grip-2",
                 "toolbar-grip-3",
+                "toolbar-grip-4",
             ][item as usize],
         )
         .unwrap()
@@ -1019,6 +1023,7 @@ fn finish_toolbar_drag(target: notebook::ToolbarItem, after: bool, cx: &mut Visu
                 "toolbar-row-1",
                 "toolbar-row-2",
                 "toolbar-row-3",
+                "toolbar-row-4",
             ][target as usize],
         )
         .unwrap();
@@ -1039,10 +1044,14 @@ fn finish_toolbar_drag(target: notebook::ToolbarItem, after: bool, cx: &mut Visu
                 ["toolbar-drop-1-false", "toolbar-drop-1-true"],
                 ["toolbar-drop-2-false", "toolbar-drop-2-true"],
                 ["toolbar-drop-3-false", "toolbar-drop-3-true"],
+                ["toolbar-drop-4-false", "toolbar-drop-4-true"],
             ][target as usize][usize::from(after)],
         )
         .unwrap();
-    assert!(drop.contains(&destination));
+    // Long settings lists can finish dialog layout after the first hover frame.
+    // Use the current insertion target, not the preceding row snapshot.
+    let destination = drop.center();
+    cx.simulate_mouse_move(destination, MouseButton::Left, Modifiers::default());
     cx.simulate_mouse_up(destination, MouseButton::Left, Modifiers::default());
     cx.run_until_parked();
     cx.refresh().unwrap();
@@ -1065,7 +1074,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
     cx.update(|_, cx| {
         assert_eq!(
             notes.read(cx).toolbar_settings().order,
-            [Sort, Sidebar, Explorer, Search]
+            legacy_toolbar_order([Sort, Sidebar, Explorer, Search])
         )
     });
     assert!(
@@ -1088,7 +1097,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
         assert!(!cx.has_active_drag());
         assert_eq!(
             notes.read(cx).toolbar_settings().order,
-            [Sort, Sidebar, Explorer, Search]
+            legacy_toolbar_order([Sort, Sidebar, Explorer, Search])
         );
     });
     // Hidden tools can still be moved, and re-enabling keeps the new position.
@@ -1109,7 +1118,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
     cx.update(|_, cx| {
         assert_eq!(
             reopened.read(cx).values.toolbar.order,
-            [Explorer, Sidebar, Search, Sort]
+            legacy_toolbar_order([Explorer, Sidebar, Search, Sort])
         );
         assert!(!reopened.read(cx).values.toolbar.sort);
     });
@@ -1121,7 +1130,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
     cx.update(|_, cx| {
         assert_eq!(
             notes.read(cx).toolbar_settings().order,
-            [Explorer, Sidebar, Search, Sort]
+            legacy_toolbar_order([Explorer, Sidebar, Search, Sort])
         )
     });
 }
@@ -1190,6 +1199,8 @@ fn toolbar_drag_cancellation_same_position_and_busy_are_noops(cx: &mut TestAppCo
 fn toolbar_order_persists_with_notebook_and_rejects_old_dialog_drags(cx: &mut TestAppContext) {
     use notebook::ToolbarItem::*;
     let (fixture, notes, cx) = fixture(cx, true, false);
+    cx.simulate_resize(gpui::size(gpui::px(1000.), gpui::px(1400.)));
+    cx.refresh().unwrap();
     cx.update(|_, cx| {
         notes.update(cx, |this, _| {
             this.notebooks
@@ -1200,7 +1211,7 @@ fn toolbar_order_persists_with_notebook_and_rejects_old_dialog_drags(cx: &mut Te
     toolbar_section(&form, cx);
     start_toolbar_drag(Search, cx);
     finish_toolbar_drag(Sidebar, false, cx);
-    let expected = [Search, Sidebar, Explorer, Sort];
+    let expected = legacy_toolbar_order([Search, Sidebar, Explorer, Sort]);
     assert_eq!(
         notebook::Notebook::open(&fixture.first.root, false)
             .unwrap()
@@ -1428,6 +1439,9 @@ fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext)
             let notes = cx.new(|cx| {
                 let mut notes = Notes::new(window, cx);
                 notes.session_toolbar.icon_size = icon_size;
+                for item in notebook::ToolbarItem::DEFAULT_ORDER.into_iter().skip(4) {
+                    notes.session_toolbar.set_enabled(item, false);
+                }
                 notes
             });
             let root = cx.new(|cx| NotesWindow {
@@ -1455,4 +1469,48 @@ fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext)
             px(icon_size.button_pixels() * 2. + 13.)
         );
     }
+}
+
+fn legacy_toolbar_order(first: [notebook::ToolbarItem; 4]) -> [notebook::ToolbarItem; 15] {
+    let mut order = notebook::ToolbarItem::DEFAULT_ORDER;
+    order[..4].copy_from_slice(&first);
+    order
+}
+#[gpui::test]
+fn formatting_toolbar_items_toggle_reorder_and_keep_their_saved_position(cx: &mut TestAppContext) {
+    use notebook::ToolbarItem::{Bold, Sidebar};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    cx.simulate_resize(gpui::size(gpui::px(1000.), gpui::px(1400.)));
+    let form = panel(&notes, cx);
+    toolbar_section(&form, cx);
+    start_toolbar_drag(Bold, cx);
+    finish_toolbar_drag(Sidebar, false, cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[0], Bold));
+    assert!(
+        cx.debug_bounds("toolbar-bold").unwrap().left()
+            < cx.debug_bounds("toolbar-sidebar-toggle").unwrap().left()
+    );
+    let switch = cx.debug_bounds("toolbar-switch-4").unwrap();
+    cx.simulate_click(
+        gpui::point(switch.left() + gpui::px(8.), switch.center().y),
+        gpui::Modifiers::default(),
+    );
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(!notes.read(cx).toolbar_settings().bold);
+        assert_eq!(notes.read(cx).toolbar_settings().order[0], Bold);
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    let reopened = panel(&notes, cx);
+    cx.update(|_, cx| {
+        assert!(!reopened.read(cx).values.toolbar.bold);
+        assert_eq!(reopened.read(cx).values.toolbar.order[0], Bold);
+    });
+    intent(
+        &reopened,
+        SettingsIntent::ToolbarItemEnabled(Bold, true),
+        cx,
+    );
+    cx.update(|_, cx| assert!(notes.read(cx).toolbar_settings().bold));
 }

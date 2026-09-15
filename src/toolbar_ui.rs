@@ -1,12 +1,16 @@
 //! Window-wide toolbar presentation; sidebar state and actions retain their owners.
 use crate::Notes;
-use gpui::{Context, IntoElement, div, prelude::*, px};
+use gpui::{Context, IntoElement, WeakEntity, Window, div, prelude::*, px};
+use gpui_component::WindowExt;
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable,
     button::{Button, ButtonVariants},
-    menu::DropdownMenu,
+    menu::{DropdownMenu, PopupMenu, PopupMenuItem},
 };
-use mithril::notebook::{ToolbarIconSize, ToolbarItem};
+use mithril::{
+    markdown_edit::Format,
+    notebook::{ToolbarIconSize, ToolbarItem},
+};
 
 impl Notes {
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -94,13 +98,48 @@ impl Notes {
                             }
                         })
                         .into_any_element(),
+                        item => {
+                            let (id, path, format) = formatting_item(item);
+                            let button =
+                                toolbar_button(id, Icon::default().path(path), settings.icon_size)
+                                    .tooltip(item.label())
+                                    .disabled(!self.can_edit_document());
+                            if item == ToolbarItem::Heading {
+                                button
+                                    .dropdown_menu({
+                                        let owner = owner.clone();
+                                        move |menu, _, cx| {
+                                            if let Some(entity) = owner.upgrade() {
+                                                entity.read(cx).heading_menu(
+                                                    menu,
+                                                    owner.clone(),
+                                                    cx,
+                                                )
+                                            } else {
+                                                menu
+                                            }
+                                        }
+                                    })
+                                    .into_any_element()
+                            } else {
+                                button
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        if item == ToolbarItem::Link {
+                                            this.edit_link(window, cx);
+                                        } else if let Some(format) = format {
+                                            this.apply_toolbar_format(format, window, cx);
+                                        }
+                                    }))
+                                    .into_any_element()
+                            }
+                        }
                     }),
             )
     }
 }
 
 /// Keep icon geometry independent of Button's built-in icon-to-target ratio.
-fn toolbar_button(id: &'static str, icon: IconName, size: ToolbarIconSize) -> Button {
+fn toolbar_button(id: &'static str, icon: impl Into<Icon>, size: ToolbarIconSize) -> Button {
     Button::new(id)
         .debug_selector(move || id.into())
         .ghost()
@@ -114,3 +153,105 @@ fn toolbar_button(id: &'static str, icon: IconName, size: ToolbarIconSize) -> Bu
                 .child(Icon::new(icon).with_size(px(size.icon_pixels()))),
         )
 }
+
+impl Notes {
+    fn apply_toolbar_format(
+        &mut self,
+        format: Format,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.can_edit_document() && !window.has_active_dialog(cx) {
+            self.editor.format_markdown(format, window, cx);
+        }
+    }
+
+    fn heading_menu(
+        &self,
+        mut menu: PopupMenu,
+        owner: WeakEntity<Self>,
+        cx: &gpui::App,
+    ) -> PopupMenu {
+        menu = menu.action_context(self.editor.focus_handle(cx));
+        let editor = self.editor.id();
+        let document = self.document_id();
+        let snapshot = self.editor.snapshot(cx);
+        let selection = self.editor.selection(cx);
+        for (level, label) in [
+            (1, "Heading 1"),
+            (2, "Heading 2"),
+            (3, "Heading 3"),
+            (4, "Heading 4"),
+            (5, "Heading 5"),
+            (6, "Heading 6"),
+            (0, "Paragraph"),
+        ] {
+            let owner = owner.clone();
+            let snapshot = snapshot.clone();
+            let selection = selection.clone();
+            menu = menu.item(
+                PopupMenuItem::new(label)
+                    .disabled(!self.can_edit_document())
+                    .on_click(move |_, window, cx| {
+                        let _ = owner.update(cx, |this, cx| {
+                            if this.editor.id() == editor
+                                && this.document_id() == document
+                                && this.editor.snapshot(cx) == snapshot
+                                && this.editor.selection(cx) == selection
+                            {
+                                this.apply_toolbar_format(Format::Heading(level), window, cx);
+                            }
+                        });
+                    }),
+            );
+        }
+        menu
+    }
+}
+
+fn formatting_item(item: ToolbarItem) -> (&'static str, &'static str, Option<Format>) {
+    match item {
+        ToolbarItem::Bold => ("toolbar-bold", "toolbar/bold.svg", Some(Format::Bold)),
+        ToolbarItem::Italic => ("toolbar-italic", "toolbar/italic.svg", Some(Format::Italic)),
+        ToolbarItem::Strikethrough => (
+            "toolbar-strikethrough",
+            "toolbar/strikethrough.svg",
+            Some(Format::Strikethrough),
+        ),
+        ToolbarItem::Heading => ("toolbar-heading", "toolbar/heading.svg", None),
+        ToolbarItem::InlineCode => (
+            "toolbar-inline-code",
+            "toolbar/inlinecode.svg",
+            Some(Format::InlineCode),
+        ),
+        ToolbarItem::CodeBlock => (
+            "toolbar-code-block",
+            "toolbar/codeblock.svg",
+            Some(Format::CodeBlock),
+        ),
+        ToolbarItem::Link => ("toolbar-link", "toolbar/link.svg", None),
+        ToolbarItem::Blockquote => (
+            "toolbar-blockquote",
+            "toolbar/blockquote.svg",
+            Some(Format::Blockquote),
+        ),
+        ToolbarItem::OrderedList => (
+            "toolbar-ordered-list",
+            "toolbar/orderedlist.svg",
+            Some(Format::OrderedList),
+        ),
+        ToolbarItem::UnorderedList => (
+            "toolbar-unordered-list",
+            "toolbar/unorderedlist.svg",
+            Some(Format::UnorderedList),
+        ),
+        ToolbarItem::TaskList => (
+            "toolbar-task-list",
+            "toolbar/tasklist.svg",
+            Some(Format::TaskList),
+        ),
+        _ => unreachable!("navigation controls use their existing owners"),
+    }
+}
+#[cfg(test)]
+mod tests;

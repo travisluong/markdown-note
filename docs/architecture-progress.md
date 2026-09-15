@@ -1080,3 +1080,37 @@ cargo clippy --locked --offline --all-targets --features editor-diagnostics --
 -D warnings passed. No desktop automation or native application launch was used.
 Unrelated lockfile/vendor link-menu changes and their architecture-map addition
 remain outside this commit; their tests were present during the full-suite run.
+## 2026-09-14 — Markdown formatting toolbar
+
+Added eleven independently configurable formatting controls after the four existing
+navigation controls: bold, italic, strikethrough, heading, inline code, code block,
+link, blockquote, ordered list, unordered list and task list. The toolbar retains
+all three icon presets and wrapping. Preferences preserve known saved order and
+visibility, skip duplicate/unknown order entries and append missing items, so old
+notebooks gain the enabled formatting controls without losing existing choices.
+Application-owned monochrome SVGs are embedded by an asset source that delegates
+other icons to the existing component bundle.
+
+The pure markdown_edit module returns UTF-8 replacement ranges, replacement text
+and resulting selections. Editor::format_markdown applies one isolated edit with
+normal Change events, shared Source/Live history, selection restoration and focus.
+Inline syntax toggles, safe backtick delimiters, container-preserving line edits,
+list conversion/numbering and fenced code wrap/unwrap have focused regression
+coverage. The heading menu supports levels 1–6 and Paragraph with captured document,
+editor, source and selection guards. Link uses the existing guarded edit dialog.
+Controls and handlers reject Reading, empty/image views and busy sessions, while
+standalone Source/Live documents remain editable.
+
+Headless tests exercise toolbar clicks, selection/focus, dirty tracking and history,
+all heading levels and stale source, link-dialog cancellation, unavailable states,
+all presets and wrapping, formatting settings switches/drag/reopen, preference
+migration/persistence and asset lookup/fallback. Pure UTF-8 tests cover Unicode,
+empty carets, nested lists/quotes, CRLF, line-end selection boundaries and backticks.
+
+Verification on Windows: cargo check --locked --offline, cargo test --locked
+--offline --features editor-diagnostics (427 tests), cargo fmt --check, and cargo
+clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings
+passed. Transient Windows linker LNK1104 output-access errors cleared on retry;
+the complete suite passed in the default target directory. No native application
+launch or desktop interaction was used. Unrelated lockfile/vendor link-menu edits,
+their tests and their architecture-map addition remain outside this commit.

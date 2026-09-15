@@ -266,10 +266,37 @@ pub enum ToolbarItem {
     Explorer,
     Search,
     Sort,
+    Bold,
+    Italic,
+    Strikethrough,
+    Heading,
+    InlineCode,
+    CodeBlock,
+    Link,
+    Blockquote,
+    OrderedList,
+    UnorderedList,
+    TaskList,
 }
 
 impl ToolbarItem {
-    pub const DEFAULT_ORDER: [Self; 4] = [Self::Sidebar, Self::Explorer, Self::Search, Self::Sort];
+    pub const DEFAULT_ORDER: [Self; 15] = [
+        Self::Sidebar,
+        Self::Explorer,
+        Self::Search,
+        Self::Sort,
+        Self::Bold,
+        Self::Italic,
+        Self::Strikethrough,
+        Self::Heading,
+        Self::InlineCode,
+        Self::CodeBlock,
+        Self::Link,
+        Self::Blockquote,
+        Self::OrderedList,
+        Self::UnorderedList,
+        Self::TaskList,
+    ];
 
     pub fn label(self) -> &'static str {
         Self::OPTIONS
@@ -279,11 +306,22 @@ impl ToolbarItem {
             .1
     }
 
-    pub const OPTIONS: [(Self, &'static str); 4] = [
+    pub const OPTIONS: [(Self, &'static str); 15] = [
         (Self::Sidebar, "Toggle sidebar"),
         (Self::Explorer, "Explorer"),
         (Self::Search, "Search"),
         (Self::Sort, "Sort files"),
+        (Self::Bold, "Bold"),
+        (Self::Italic, "Italic"),
+        (Self::Strikethrough, "Strikethrough"),
+        (Self::Heading, "Heading"),
+        (Self::InlineCode, "Inline code"),
+        (Self::CodeBlock, "Code block"),
+        (Self::Link, "Insert / Edit Link"),
+        (Self::Blockquote, "Blockquote"),
+        (Self::OrderedList, "Ordered list"),
+        (Self::UnorderedList, "Unordered list"),
+        (Self::TaskList, "Task list"),
     ];
 }
 
@@ -293,11 +331,22 @@ pub struct ToolbarSettings {
     #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
     pub icon_size: ToolbarIconSize,
     #[serde(deserialize_with = "deserialize_toolbar_order")]
-    pub order: [ToolbarItem; 4],
+    pub order: [ToolbarItem; 15],
     pub sidebar: bool,
     pub explorer: bool,
     pub search: bool,
     pub sort: bool,
+    pub bold: bool,
+    pub italic: bool,
+    pub strikethrough: bool,
+    pub heading: bool,
+    pub inline_code: bool,
+    pub code_block: bool,
+    pub link: bool,
+    pub blockquote: bool,
+    pub ordered_list: bool,
+    pub unordered_list: bool,
+    pub task_list: bool,
 }
 
 impl Default for ToolbarSettings {
@@ -309,6 +358,17 @@ impl Default for ToolbarSettings {
             explorer: true,
             search: true,
             sort: true,
+            bold: true,
+            italic: true,
+            strikethrough: true,
+            heading: true,
+            inline_code: true,
+            code_block: true,
+            link: true,
+            blockquote: true,
+            ordered_list: true,
+            unordered_list: true,
+            task_list: true,
         }
     }
 }
@@ -345,6 +405,17 @@ impl ToolbarSettings {
             ToolbarItem::Explorer => self.explorer,
             ToolbarItem::Search => self.search,
             ToolbarItem::Sort => self.sort,
+            ToolbarItem::Bold => self.bold,
+            ToolbarItem::Italic => self.italic,
+            ToolbarItem::Strikethrough => self.strikethrough,
+            ToolbarItem::Heading => self.heading,
+            ToolbarItem::InlineCode => self.inline_code,
+            ToolbarItem::CodeBlock => self.code_block,
+            ToolbarItem::Link => self.link,
+            ToolbarItem::Blockquote => self.blockquote,
+            ToolbarItem::OrderedList => self.ordered_list,
+            ToolbarItem::UnorderedList => self.unordered_list,
+            ToolbarItem::TaskList => self.task_list,
         }
     }
 
@@ -354,27 +425,48 @@ impl ToolbarSettings {
             ToolbarItem::Explorer => &mut self.explorer,
             ToolbarItem::Search => &mut self.search,
             ToolbarItem::Sort => &mut self.sort,
+            ToolbarItem::Bold => &mut self.bold,
+            ToolbarItem::Italic => &mut self.italic,
+            ToolbarItem::Strikethrough => &mut self.strikethrough,
+            ToolbarItem::Heading => &mut self.heading,
+            ToolbarItem::InlineCode => &mut self.inline_code,
+            ToolbarItem::CodeBlock => &mut self.code_block,
+            ToolbarItem::Link => &mut self.link,
+            ToolbarItem::Blockquote => &mut self.blockquote,
+            ToolbarItem::OrderedList => &mut self.ordered_list,
+            ToolbarItem::UnorderedList => &mut self.unordered_list,
+            ToolbarItem::TaskList => &mut self.task_list,
         } = enabled;
     }
 
     pub fn any_enabled(self) -> bool {
-        self.sidebar || self.explorer || self.search || self.sort
+        ToolbarItem::DEFAULT_ORDER
+            .into_iter()
+            .any(|item| self.enabled(item))
     }
 }
 
-fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 4], D::Error>
+fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 15], D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value::<[ToolbarItem; 4]>(value)
-        .ok()
-        .filter(|order| {
-            ToolbarItem::DEFAULT_ORDER
-                .iter()
-                .all(|item| order.contains(item))
-        })
-        .unwrap_or(ToolbarItem::DEFAULT_ORDER))
+    let mut order = Vec::new();
+    if let Some(items) = value.as_array() {
+        for value in items {
+            if let Ok(item) = serde_json::from_value::<ToolbarItem>(value.clone())
+                && !order.contains(&item)
+            {
+                order.push(item);
+            }
+        }
+    }
+    for item in ToolbarItem::DEFAULT_ORDER {
+        if !order.contains(&item) {
+            order.push(item);
+        }
+    }
+    Ok(order.try_into().unwrap())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

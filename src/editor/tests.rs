@@ -218,3 +218,85 @@ fn disabled_range_transaction_preserves_text_selection_and_history(cx: &mut Test
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), "café"));
 }
+
+#[gpui::test]
+fn markdown_formats_are_single_edits_with_shared_history_and_change_events(
+    cx: &mut TestAppContext,
+) {
+    use crate::markdown_edit::Format;
+    let (host, cx) = fixture(cx, "café\n茶");
+    let editor = cx.update(|_, cx| host.read(cx).editor.clone());
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        for format in [
+            Format::Bold,
+            Format::Italic,
+            Format::Strikethrough,
+            Format::InlineCode,
+            Format::Heading(2),
+            Format::Heading(0),
+            Format::Blockquote,
+            Format::OrderedList,
+            Format::UnorderedList,
+            Format::TaskList,
+            Format::CodeBlock,
+        ] {
+            let before = cx.update(|window, cx| {
+                editor.set_mode(mode, cx);
+                editor.select(0..9, window, cx);
+                let before = host.read(cx).changes;
+                assert!(editor.format_markdown(format, window, cx));
+                assert!(editor.is_focused(window, cx));
+                before
+            });
+            cx.run_until_parked();
+            let formatted = cx.update(|_, cx| {
+                let formatted = editor.text(cx).to_string();
+                if formatted != "café\n茶" {
+                    assert_eq!(host.read(cx).changes, before + 1);
+                }
+                formatted
+            });
+            if formatted == "café\n茶" {
+                continue;
+            }
+            cx.dispatch_action(Undo);
+            cx.run_until_parked();
+            cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), "café\n茶"));
+            cx.dispatch_action(Redo);
+            cx.run_until_parked();
+            cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), formatted));
+            cx.dispatch_action(Undo);
+            cx.run_until_parked();
+        }
+    }
+    cx.update(|window, cx| {
+        editor.select(0..5, window, cx);
+        editor.format_markdown(Format::Bold, window, cx);
+        editor.format_markdown(Format::Italic, window, cx);
+        assert_eq!(editor.text(cx).as_ref(), "***café***\n茶");
+    });
+    cx.run_until_parked();
+    cx.dispatch_action(Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), "**café**\n茶"));
+    cx.dispatch_action(Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), "café\n茶"));
+}
+
+#[gpui::test]
+fn markdown_format_rejects_disabled_input(cx: &mut TestAppContext) {
+    let (host, cx) = fixture(cx, "café");
+    cx.update(|_, cx| {
+        host.update(cx, |host, cx| {
+            host.disabled = true;
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    cx.update(|window, cx| {
+        let editor = host.read(cx).editor.clone();
+        assert!(!editor.format_markdown(crate::markdown_edit::Format::Bold, window, cx));
+        assert_eq!(editor.text(cx).as_ref(), "café");
+    });
+}

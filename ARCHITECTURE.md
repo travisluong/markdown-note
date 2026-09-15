@@ -51,7 +51,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies current overlay and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
-| Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective toolbar visibility from the settings adapter and dispatches existing sidebar, search and sort actions; owns no panel state or preferences. |
+| Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners and Markdown controls through the semantic Editor boundary; heading menus retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
@@ -305,18 +305,23 @@ The top Sort menu and window toolbar sort button share `Notes::file_sort_menu` i
 order, dispatching through `set_file_sort` for explorer updates and persistence.
 
 The window toolbar uses `ToolbarSettings` in `notebook/settings.rs` for independent
-sidebar, Explorer, Search and Sort visibility, all enabled by default. SettingsPanel's
+sidebar, Explorer, Search and Sort visibility plus eleven Markdown formatting
+controls (bold, italic, strikethrough, heading, inline code, code block, link,
+blockquote, ordered list, unordered list and task list), all enabled by default.
+SettingsPanel's
 Toolbar tab emits typed item intents; the settings adapter applies them immediately
 to the active notebook through SettingsWriter, or to session defaults without a
 notebook. Missing settings and missing item fields preserve enabled defaults.
-ToolbarSettings also owns a complete four-item order, serialized as lowercase item
-names. Missing or invalid orders fall back to Sidebar, Explorer, Search, Sort
-without changing visibility. Toolbar-tab grips emit typed relative move intents
+ToolbarSettings owns a complete 15-item order, serialized as lowercase item
+names. Loading preserves valid known entries, skips duplicates and unknown entries,
+and appends missing items in default order without changing visibility. Legacy
+four-item orders retain their order and gain the enabled Markdown controls.
+Toolbar-tab grips emit typed relative move intents
 only on drop; the adapter updates current preferences and skips unchanged writes.
 The panel owns drag presentation and validates the originating panel identity;
 the adapter retains dialog lifetime, notebook scope and busy guards. Both the
 settings list and toolbar follow the saved order, including positions for hidden
-items. Disabling all four removes the row and border.
+items. Disabling all items removes the row and border.
 ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
 invalid values default to Small. Toolbar-tab size intents use the same notebook/session
 scope, lifetime and busy guards. The toolbar owns exact 14/20/28 px icons in
@@ -326,6 +331,17 @@ An enabled toolbar remains visible with the sidebar collapsed or no notebook ope
 notebook actions are disabled without a notebook or while busy. Only a visible
 sidebar panel is highlighted. Menu commands and shortcuts remain available.
 Notebook-root file drops remain within Explorer; the toolbar is not a drop target.
+
+Markdown formatting transformations belong to `markdown_edit.rs`, a pure UTF-8
+range/text/selection interface. `Editor::format_markdown` applies a transform as
+one isolated normal editor replacement, restores its selection and focuses the
+editor. Source and Live share edits, Change notifications and undo/redo. Toolbar
+editing is enabled for documents (including standalone files) in Source and Live,
+and rechecks current capability/dialog state on invocation. Reading, empty/image
+views and busy sessions reject edits. The heading menu captures editor/document
+identity, source and selection; Link reuses the existing guarded link dialog.
+Application assets in `assets/toolbar` are embedded by `src/assets.rs`, which
+falls back to the existing component bundle for navigation and other icons.
 
 Theme palettes persist independent Light and Dark background, font, primary, and
 border RGB colors. Missing/invalid border values normalize using the containing
