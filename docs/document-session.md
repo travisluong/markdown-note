@@ -161,3 +161,16 @@ history and resume eligible autosave. Successful deletion installs Empty only
 when the deleted entry contained the active content; successful note creation
 installs the new document. Installation forwards the exact discarded document
 path to search. Preference changes apply to current settings after completion.
+
+## File navigation history
+
+`NavigationHistory` owns session-only canonical file visits independently of
+editor undo. `Next::History(Visit)` carries a revision-tagged proposal through the
+normal write barrier, Save/Discard/Cancel decision and loading operation. The
+adapter captures that visit with OperationId at approved dispatch; the shared
+accepted-install hook commits it only after matching content installation.
+Cancelled, failed and stale work cannot move the cursor. Ordinary file/image
+installs record visits; repeated current paths are ignored and a new visit after
+Back drops the forward branch. Empty installation clears history. Sidebar note
+creation calls the same hook. Successful file/folder moves remap stored paths
+without creating a visit. History does not persist to notebook settings.

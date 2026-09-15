@@ -9,6 +9,7 @@ use std::{
 use gpui::{App, Context, PathPromptOptions, PromptButton, PromptLevel, Window};
 
 use crate::{Document, Next, Notes, search};
+use gpui_component::WindowExt;
 
 use super::session::{
     Choice, Content, DocumentId, Effect, Loaded, Observed, OperationId, Rejection, Stage,
@@ -59,6 +60,13 @@ impl Notes {
                     self.continue_operation(operation, action, window, cx);
                 }
                 Effect::Cancelled { operation, action } => {
+                    if self
+                        .navigation_pending
+                        .as_ref()
+                        .is_some_and(|(id, _)| *id == operation)
+                    {
+                        self.navigation_pending = None;
+                    }
                     self.cancel_session_context(operation);
                     self.finish_search_navigation(false, window, cx);
                     if matches!(action, Some(Next::TreeFile(_))) {
@@ -159,6 +167,17 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         match next {
+            Next::History(visit) => {
+                if self.navigation.accepts(&visit) {
+                    let path = visit.path.clone();
+                    self.navigation_pending = Some((operation, visit));
+                    self.open_path_with_operation(operation, path, false, window, cx);
+                } else {
+                    let observed = self.observed_document(cx);
+                    let effects = self.session.cancel(operation, observed);
+                    self.apply_session_effects(effects, window, cx);
+                }
+            }
             Next::Entry { target, action } => {
                 self.entry_with_operation(operation, target, action, window, cx)
             }
@@ -323,6 +342,7 @@ impl Notes {
                         .as_ref()
                         .filter(|(id, _)| Some(*id) == discarded_document)
                         .map(|(_, path)| path.as_path());
+                    self.record_navigation_install(operation);
                     self.install_session_editor(window, cx);
                     self.search_document_installed(discarded_path, window, cx);
                     installed = true;
@@ -403,5 +423,42 @@ impl Notes {
             window,
             cx,
         );
+    }
+}
+
+impl Notes {
+    pub(crate) fn navigate_history(
+        &mut self,
+        direction: crate::app::navigation::Direction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_busy() || window.has_active_dialog(cx) {
+            return;
+        }
+        if let Some(visit) = self.navigation.target(direction) {
+            self.request(crate::Next::History(visit), window, cx);
+        }
+    }
+
+    /// Called exclusively for accepted installations, including sidebar-created notes.
+    pub(crate) fn record_navigation_install(&mut self, operation: crate::OperationId) {
+        let path = self
+            .document()
+            .map(|doc| doc.path.clone())
+            .or_else(|| self.image_path().map(ToOwned::to_owned));
+        let pending = self
+            .navigation_pending
+            .take()
+            .filter(|(id, _)| *id == operation);
+        if let Some(path) = path {
+            if let Some((_, visit)) = pending {
+                self.navigation.commit(&visit, &path);
+            } else {
+                self.navigation.record(path);
+            }
+        } else {
+            self.navigation = Default::default();
+        }
     }
 }

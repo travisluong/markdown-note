@@ -38,17 +38,35 @@ impl Notes {
         let effects = self.session.dispatch(operation, app::session::Stage::Load);
         for effect in effects {
             if let app::session::Effect::Load(operation) = effect {
-                let result = self
-                    .notebooks
-                    .active
+                let history_target = self
+                    .navigation_pending
                     .as_ref()
-                    .ok_or_else(|| io::Error::other("Open a notebook first."))
-                    .and_then(|book| {
-                        path.strip_prefix(&book.root)
-                            .map_err(io::Error::other)
-                            .and_then(|relative| notebook::resolve(&book.root, relative))
-                    })
-                    .map(app::session::Loaded::Image);
+                    .is_some_and(|(id, visit)| *id == operation && visit.path == path);
+                let result = if history_target {
+                    path.parent()
+                        .zip(path.file_name())
+                        .ok_or_else(|| io::Error::other("Invalid image path"))
+                        .and_then(|(parent, name)| notebook::resolve(parent, Path::new(name)))
+                        .and_then(|resolved| {
+                            if resolved.is_file() && fs::canonicalize(&resolved)? == path {
+                                Ok(resolved)
+                            } else {
+                                Err(io::Error::other("The image path has changed"))
+                            }
+                        })
+                } else {
+                    self.notebooks
+                        .active
+                        .as_ref()
+                        .ok_or_else(|| io::Error::other("Open a notebook first."))
+                        .and_then(|book| {
+                            path.strip_prefix(&book.root)
+                                .map_err(io::Error::other)
+                                .and_then(|relative| notebook::resolve(&book.root, relative))
+                        })
+                }
+                .and_then(fs::canonicalize)
+                .map(app::session::Loaded::Image);
                 if self.complete_content_load(operation, result, window, cx) && tree_focus {
                     self.notebooks.tree_focus.focus(window);
                 }

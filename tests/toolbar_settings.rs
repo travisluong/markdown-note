@@ -25,7 +25,7 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
     let root = directory.path().join("notebook");
     let mut book = Notebook::open(&root, true).unwrap();
     book.settings.date_format = "MM/DD/YYYY".into();
-    for mask in (0..16).chain((4..15).map(|i| 1 << i)).chain([0x7fff]) {
+    for mask in (0..16).chain((4..17).map(|i| 1 << i)).chain([0x1ffff]) {
         let mut toolbar = ToolbarSettings::default();
         for (index, (item, _)) in ToolbarItem::OPTIONS.into_iter().enumerate() {
             toolbar.set_enabled(item, mask & (1 << index) != 0);
@@ -76,11 +76,11 @@ fn toolbar_order_migrates_partial_duplicate_unknown_and_legacy_entries() {
         }
         assert_eq!(settings.order.as_slice(), expected);
         assert!(!settings.search);
-        for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(4) {
+        for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(6) {
             assert!(settings.enabled(item));
         }
         let json = serde_json::to_value(settings).unwrap();
-        assert_eq!(json["order"].as_array().unwrap().len(), 15);
+        assert_eq!(json["order"].as_array().unwrap().len(), 17);
         assert_eq!(
             serde_json::from_value::<ToolbarSettings>(json).unwrap(),
             settings

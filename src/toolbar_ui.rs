@@ -13,7 +13,11 @@ use mithril::{
 };
 
 impl Notes {
-    pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_toolbar(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let settings = self.toolbar_settings();
         let has_notebook = self.notebooks.active.is_some();
         let disabled = self.is_busy() || !has_notebook;
@@ -39,6 +43,32 @@ impl Notes {
                     .into_iter()
                     .filter(|item| settings.enabled(*item))
                     .map(|item| match item {
+                        ToolbarItem::Back | ToolbarItem::Forward => {
+                            let (id, icon, direction) = if item == ToolbarItem::Back {
+                                (
+                                    "toolbar-back",
+                                    IconName::ArrowLeft,
+                                    crate::app::navigation::Direction::Back,
+                                )
+                            } else {
+                                (
+                                    "toolbar-forward",
+                                    IconName::ArrowRight,
+                                    crate::app::navigation::Direction::Forward,
+                                )
+                            };
+                            toolbar_button(id, icon, settings.icon_size)
+                                .tooltip(item.label())
+                                .disabled(
+                                    self.is_busy()
+                                        || window.has_active_dialog(cx)
+                                        || self.navigation.target(direction).is_none(),
+                                )
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.navigate_history(direction, window, cx)
+                                }))
+                                .into_any_element()
+                        }
                         ToolbarItem::Sidebar => toolbar_button(
                             "toolbar-sidebar-toggle",
                             if sidebar_visible {

@@ -194,7 +194,7 @@ fn all_formatting_controls_inherit_presets_and_wrap(cx: &mut TestAppContext) {
         cx.refresh().unwrap();
         let toolbar = cx.debug_bounds("window-toolbar").unwrap();
         let mut previous = None;
-        for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(4) {
+        for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(6) {
             let (id, _, _) = formatting_item(item);
             let bounds = cx.debug_bounds(id).unwrap();
             assert_eq!(
@@ -215,7 +215,7 @@ fn all_formatting_controls_inherit_presets_and_wrap(cx: &mut TestAppContext) {
 #[test]
 fn application_assets_load_all_formatting_icons_and_component_fallback() {
     let assets = crate::assets::Assets;
-    for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(4) {
+    for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(6) {
         let (_, path, _) = formatting_item(item);
         let bytes = assets.load(path).unwrap().unwrap();
         let svg = std::str::from_utf8(&bytes).unwrap();
@@ -276,4 +276,174 @@ fn formatting_controls_reject_empty_and_image_views(cx: &mut TestAppContext) {
             })
         });
     }
+}
+
+#[gpui::test]
+fn history_buttons_navigate_standalone_files_and_branch(cx: &mut TestAppContext) {
+    use crate::app::navigation::Direction;
+    let (dir, notes, cx) = fixture(cx);
+    let first = std::fs::canonicalize(dir.path().join("standalone.md")).unwrap();
+    let second = dir.path().join("second.md");
+    let third = dir.path().join("third.md");
+    std::fs::write(&second, "second").unwrap();
+    std::fs::write(&third, "third").unwrap();
+    click("toolbar-back", cx); // Disabled at the first visit.
+    for path in [&second, &second, &third] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.open_path(path.clone(), false, window, cx)
+            })
+        });
+        cx.run_until_parked();
+    }
+    cx.refresh().unwrap();
+    click("toolbar-back", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
+    click("toolbar-back", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).document().unwrap().path, first));
+    click("toolbar-forward", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.open_path(first.clone(), false, window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(
+            notes
+                .read(cx)
+                .navigation
+                .target(Direction::Forward)
+                .is_none()
+        )
+    });
+}
+
+#[gpui::test]
+fn history_clicks_save_discard_cancel_and_failed_load_keep_cursor(cx: &mut TestAppContext) {
+    use crate::app::navigation::Direction;
+    let (dir, notes, cx) = fixture(cx);
+    let first = std::fs::canonicalize(dir.path().join("standalone.md")).unwrap();
+    let second = dir.path().join("second.md");
+    std::fs::write(&second, "second").unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.open_path(second.clone(), false, window, cx)
+        })
+    });
+    cx.run_until_parked();
+    for answer in ["Cancel", "Discard", "Save"] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.editor
+                    .select(0..this.editor.snapshot(cx).len(), window, cx);
+                this.editor.replace_selection("draft", window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        click("toolbar-back", cx);
+        assert!(cx.has_pending_prompt());
+        cx.update(|_, cx| {
+            assert_eq!(
+                notes
+                    .read(cx)
+                    .navigation
+                    .target(Direction::Back)
+                    .unwrap()
+                    .path,
+                first
+            )
+        });
+        cx.simulate_prompt_answer(answer);
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            let this = notes.read(cx);
+            if answer == "Cancel" {
+                assert!(this.dirty(cx));
+                assert_eq!(this.navigation.target(Direction::Back).unwrap().path, first);
+            } else {
+                assert_eq!(this.document().unwrap().path, first);
+                assert!(this.navigation.target(Direction::Back).is_none());
+            }
+        });
+        if answer != "Cancel" {
+            click("toolbar-forward", cx);
+        }
+    }
+    assert_eq!(std::fs::read_to_string(&second).unwrap(), "draft");
+    std::fs::remove_file(&first).unwrap();
+    click("toolbar-back", cx);
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Ok");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.navigation.target(Direction::Back).unwrap().path, first);
+        assert_eq!(this.editor.text(cx).as_ref(), "draft");
+        assert!(this.navigation_pending.is_none());
+    });
+}
+
+#[gpui::test]
+fn history_rejects_dialog_busy_and_stale_completion(cx: &mut TestAppContext) {
+    use crate::app::{
+        navigation::Direction,
+        session::{Loaded, Stage},
+    };
+    let (dir, notes, cx) = fixture(cx);
+    let second = dir.path().join("second.md");
+    std::fs::write(&second, "second").unwrap();
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_path(second, false, window, cx)));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let visit = this.navigation.target(Direction::Back).unwrap();
+            this.open_settings(window, cx);
+            this.navigate_history(Direction::Back, window, cx);
+            assert_eq!(this.editor.text(cx).as_ref(), "second");
+            window.close_dialog(cx);
+            let observed = this.observed_document(cx);
+            let _ = this.session.request(crate::Next::Nothing, observed);
+            let operation = this.session.foreground().unwrap().0;
+            let _ = this.session.dispatch(operation, Stage::Load);
+            this.navigate_history(Direction::Back, window, cx);
+            assert_eq!(this.navigation.target(Direction::Back), Some(visit.clone()));
+            let effects = this.session.cancel(operation, observed);
+            this.apply_session_effects(effects, window, cx);
+            assert!(!this.complete_content_load(operation, Ok(Loaded::Empty), window, cx));
+            assert_eq!(this.navigation.target(Direction::Back), Some(visit));
+            this.install_document(None, window, cx);
+            assert!(this.navigation.target(Direction::Back).is_none());
+            assert!(this.navigation.target(Direction::Forward).is_none());
+        })
+    });
+}
+
+#[gpui::test]
+fn history_revisits_images_after_notebook_switch(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    let book = notebook::Notebook::open(&dir.path().join("book"), true).unwrap();
+    let other = notebook::Notebook::open(&dir.path().join("other"), true).unwrap();
+    let image = book.root.join("image.png");
+    std::fs::write(&image, b"fixture").unwrap(); // Decoding is independent of accepted path installation.
+    let second = other.root.join("second.md");
+    std::fs::write(&second, "second").unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            this.open_path(image.clone(), false, window, cx);
+            assert_eq!(this.image_path(), Some(image.as_path()));
+            this.notebooks.active = Some(other);
+            this.open_path(second, false, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    click("toolbar-back", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).image_path(), Some(image.as_path())));
+    click("toolbar-forward", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
 }

@@ -1927,6 +1927,7 @@ impl Notes {
                             if effects.is_empty() {
                                 return;
                             }
+                            this.navigation.remap(&root.join(&from), &root.join(&to));
                             if let Some(error) = move_error {
                                 this.record_save_error(error);
                             }

@@ -62,6 +62,15 @@ changes reset placement and scrolling; ordinary preference edits retain both.
 The title and section navigation remain fixed while the section body scrolls.
 Other dialogs retain their original sizing and entrance animation.
 
+Navigation history is a pure, session-only owner in `app/navigation.rs`, held by
+Notes. The session adapter proposes a revision-tagged history visit through Next;
+only accepted document/image installation commits its cursor. Ordinary installs
+record canonical paths, and accepted Empty installation clears the history.
+Sidebar-created notes use the same hook; successful moves remap visited paths.
+Back/Forward work without an active notebook and recheck busy/dialog state.
+Known image visits remain available after switching notebooks, with path/link
+validation on traversal. Failed, cancelled and stale loads leave history intact.
+
 ## Lifecycle rules
 
 The complete transition/effect rules are in the [session contract](docs/document-session.md).
@@ -319,10 +328,11 @@ SettingsPanel's
 Toolbar tab emits typed item intents; the settings adapter applies them immediately
 to the active notebook through SettingsWriter, or to session defaults without a
 notebook. Missing settings and missing item fields preserve enabled defaults.
-ToolbarSettings owns a complete 15-item order, serialized as lowercase item
+ToolbarSettings owns a complete 17-item order, serialized as lowercase item
 names. Loading preserves valid known entries, skips duplicates and unknown entries,
 and appends missing items in default order without changing visibility. Legacy
-four-item orders retain their order and gain the enabled Markdown controls.
+four-item orders retain their order and gain missing enabled controls. Back and
+Forward lead the default order; saved custom orders append them.
 Toolbar-tab grips emit typed relative move intents
 only on drop; the adapter updates current preferences and skips unchanged writes.
 The panel owns drag presentation and validates the originating panel identity;

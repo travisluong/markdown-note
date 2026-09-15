@@ -76,6 +76,7 @@ actions!(
 
 #[derive(Clone)]
 enum Next {
+    History(app::navigation::Visit),
     Nothing,
     Open,
     Close,
@@ -145,6 +146,8 @@ struct Notes {
     search_subscription: Option<Subscription>,
     search_destination: Option<search::Destination>,
     session: Session<Document, PathBuf, Next>,
+    navigation: app::navigation::NavigationHistory,
+    navigation_pending: Option<(OperationId, app::navigation::Visit)>,
     editor: Editor,
     editor_subscription: Subscription,
     mode: ViewMode,
@@ -196,6 +199,8 @@ impl Notes {
             search_subscription: None,
             search_destination: None,
             session: Session::default(),
+            navigation: Default::default(),
+            navigation_pending: None,
             editor,
             editor_subscription,
             mode: ViewMode::default(),
@@ -691,7 +696,7 @@ impl Render for Notes {
                     ),
             )
             .when(self.toolbar_settings().any_enabled(), |view| {
-                view.child(self.render_toolbar(cx))
+                view.child(self.render_toolbar(window, cx))
             })
             .when_some(self.saves.error.clone(), |view, error| {
                 view.child(div().p_2().text_sm().child(error))

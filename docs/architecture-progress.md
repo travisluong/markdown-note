@@ -1171,3 +1171,29 @@ errors were resolved by removing stale .exe build outputs only from the verified
 native app output, or desktop interaction was used. Unrelated lockfile and vendor
 link-menu changes/tests remained outside this commit; their tests were included
 in the integrated run.
+
+## Toolbar Back and Forward — 2026-09-15
+
+Added enabled-by-default Back/Forward controls to toolbar visibility, order, size
+and reset settings. Defaults lead with navigation; existing saved orders retain
+their entries and append new items. The pure session-only navigation owner uses
+revision-tagged proposals, and the session adapter commits only accepted installs.
+Sidebar-created notes share that hook. Empty installs clear history, successful
+moves remap it, and canonical image visits work after notebook switches.
+
+Verification on Windows used GPUI TestPlatform only: the full diagnostics-enabled
+suite passed **436 tests**, including **171 application tests**. New coverage
+exercises history boundaries, duplicate visits, branches, move remapping, real
+Back/Forward clicks for standalone notes, Save/Discard/Cancel, missing-file errors,
+dialog/busy guards, stale loads, Empty installation and cross-notebook image
+history. Existing sidebar note creation now asserts its recorded previous visit;
+settings migration/persistence tests include all 17 controls.
+
+Passed `cargo check --locked --offline -j 1 --target-dir target/headless`,
+`cargo test --locked --offline -j 1 --features editor-diagnostics --target-dir target/headless`,
+`cargo fmt --check`, and
+`cargo clippy --locked --offline -j 1 --all-targets --features editor-diagnostics --target-dir target/headless -- -D warnings`.
+Stale Windows test executables were removed only from the verified headless build
+output directory before relinking. Native desktop interaction was not used;
+visual confirmation remains user-run. Cargo reports the existing dependency
+future-incompatibility notice for proc-macro-error2.

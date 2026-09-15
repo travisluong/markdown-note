@@ -436,6 +436,7 @@ impl Notes {
                         if !deleting && this.mode == ViewMode::Reading {
                             this.set_mode(ViewMode::Source, window, cx);
                         }
+                        this.record_navigation_install(operation);
                         this.install_session_editor(window, cx);
                         this.search_document_installed(
                             previous
@@ -712,7 +713,16 @@ mod tests {
             assert_eq!(
                 notes.read(cx).document().unwrap().path,
                 fixture.root.join("folder/Untitled.md")
-            )
+            );
+            assert_eq!(
+                notes
+                    .read(cx)
+                    .navigation
+                    .target(crate::app::navigation::Direction::Back)
+                    .unwrap()
+                    .path,
+                fixture.note
+            );
         });
     }
     #[gpui::test]

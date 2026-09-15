@@ -939,7 +939,7 @@ fn toolbar_renders_only_enabled_buttons_in_order(cx: &mut TestAppContext) {
         let (_, view) = cx.add_window_view(|window, cx| {
             let notes = cx.new(|cx| {
                 let mut notes = Notes::new(window, cx);
-                notes.session_toolbar.order[..4].rotate_right(1);
+                notes.session_toolbar.order[2..6].rotate_right(1);
                 for (index, (item, _)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
                     notes
                         .session_toolbar
@@ -1439,7 +1439,18 @@ fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext)
             let notes = cx.new(|cx| {
                 let mut notes = Notes::new(window, cx);
                 notes.session_toolbar.icon_size = icon_size;
-                for item in notebook::ToolbarItem::DEFAULT_ORDER.into_iter().skip(4) {
+                for item in notebook::ToolbarItem::DEFAULT_ORDER
+                    .into_iter()
+                    .filter(|item| {
+                        ![
+                            notebook::ToolbarItem::Sidebar,
+                            notebook::ToolbarItem::Explorer,
+                            notebook::ToolbarItem::Search,
+                            notebook::ToolbarItem::Sort,
+                        ]
+                        .contains(item)
+                    })
+                {
                     notes.session_toolbar.set_enabled(item, false);
                 }
                 notes
@@ -1471,9 +1482,9 @@ fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext)
     }
 }
 
-fn legacy_toolbar_order(first: [notebook::ToolbarItem; 4]) -> [notebook::ToolbarItem; 15] {
+fn legacy_toolbar_order(first: [notebook::ToolbarItem; 4]) -> [notebook::ToolbarItem; 17] {
     let mut order = notebook::ToolbarItem::DEFAULT_ORDER;
-    order[..4].copy_from_slice(&first);
+    order[2..6].copy_from_slice(&first);
     order
 }
 #[gpui::test]
@@ -1483,9 +1494,17 @@ fn formatting_toolbar_items_toggle_reorder_and_keep_their_saved_position(cx: &mu
     cx.simulate_resize(gpui::size(gpui::px(1000.), gpui::px(1400.)));
     let form = panel(&notes, cx);
     toolbar_section(&form, cx);
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.content_scroll
+                .set_offset(gpui::point(gpui::px(0.), gpui::px(-100.)));
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
     start_toolbar_drag(Bold, cx);
     finish_toolbar_drag(Sidebar, false, cx);
-    cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[0], Bold));
+    cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[2], Bold));
     assert!(
         cx.debug_bounds("toolbar-bold").unwrap().left()
             < cx.debug_bounds("toolbar-sidebar-toggle").unwrap().left()
@@ -1498,14 +1517,14 @@ fn formatting_toolbar_items_toggle_reorder_and_keep_their_saved_position(cx: &mu
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(!notes.read(cx).toolbar_settings().bold);
-        assert_eq!(notes.read(cx).toolbar_settings().order[0], Bold);
+        assert_eq!(notes.read(cx).toolbar_settings().order[2], Bold);
     });
     intent(&form, SettingsIntent::Close, cx);
     cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
     let reopened = panel(&notes, cx);
     cx.update(|_, cx| {
         assert!(!reopened.read(cx).values.toolbar.bold);
-        assert_eq!(reopened.read(cx).values.toolbar.order[0], Bold);
+        assert_eq!(reopened.read(cx).values.toolbar.order[2], Bold);
     });
     intent(
         &reopened,

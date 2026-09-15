@@ -277,10 +277,14 @@ pub enum ToolbarItem {
     OrderedList,
     UnorderedList,
     TaskList,
+    Back,
+    Forward,
 }
 
 impl ToolbarItem {
-    pub const DEFAULT_ORDER: [Self; 15] = [
+    pub const DEFAULT_ORDER: [Self; 17] = [
+        Self::Back,
+        Self::Forward,
         Self::Sidebar,
         Self::Explorer,
         Self::Search,
@@ -306,7 +310,7 @@ impl ToolbarItem {
             .1
     }
 
-    pub const OPTIONS: [(Self, &'static str); 15] = [
+    pub const OPTIONS: [(Self, &'static str); 17] = [
         (Self::Sidebar, "Toggle sidebar"),
         (Self::Explorer, "Explorer"),
         (Self::Search, "Search"),
@@ -322,6 +326,8 @@ impl ToolbarItem {
         (Self::OrderedList, "Ordered list"),
         (Self::UnorderedList, "Unordered list"),
         (Self::TaskList, "Task list"),
+        (Self::Back, "Back"),
+        (Self::Forward, "Forward"),
     ];
 }
 
@@ -331,7 +337,9 @@ pub struct ToolbarSettings {
     #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
     pub icon_size: ToolbarIconSize,
     #[serde(deserialize_with = "deserialize_toolbar_order")]
-    pub order: [ToolbarItem; 15],
+    pub order: [ToolbarItem; 17],
+    pub back: bool,
+    pub forward: bool,
     pub sidebar: bool,
     pub explorer: bool,
     pub search: bool,
@@ -354,6 +362,8 @@ impl Default for ToolbarSettings {
         Self {
             icon_size: ToolbarIconSize::default(),
             order: ToolbarItem::DEFAULT_ORDER,
+            back: true,
+            forward: true,
             sidebar: true,
             explorer: true,
             search: true,
@@ -401,6 +411,8 @@ impl ToolbarSettings {
 
     pub fn enabled(self, item: ToolbarItem) -> bool {
         match item {
+            ToolbarItem::Back => self.back,
+            ToolbarItem::Forward => self.forward,
             ToolbarItem::Sidebar => self.sidebar,
             ToolbarItem::Explorer => self.explorer,
             ToolbarItem::Search => self.search,
@@ -421,6 +433,8 @@ impl ToolbarSettings {
 
     pub fn set_enabled(&mut self, item: ToolbarItem, enabled: bool) {
         *match item {
+            ToolbarItem::Back => &mut self.back,
+            ToolbarItem::Forward => &mut self.forward,
             ToolbarItem::Sidebar => &mut self.sidebar,
             ToolbarItem::Explorer => &mut self.explorer,
             ToolbarItem::Search => &mut self.search,
@@ -446,7 +460,7 @@ impl ToolbarSettings {
     }
 }
 
-fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 15], D::Error>
+fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 17], D::Error>
 where
     D: serde::Deserializer<'de>,
 {
