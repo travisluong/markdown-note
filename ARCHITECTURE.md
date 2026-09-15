@@ -309,7 +309,14 @@ sidebar, Explorer, Search and Sort visibility, all enabled by default. SettingsP
 Toolbar tab emits typed item intents; the settings adapter applies them immediately
 to the active notebook through SettingsWriter, or to session defaults without a
 notebook. Missing settings and missing item fields preserve enabled defaults.
-The buttons keep their fixed order; disabling all four removes the row and border.
+ToolbarSettings also owns a complete four-item order, serialized as lowercase item
+names. Missing or invalid orders fall back to Sidebar, Explorer, Search, Sort
+without changing visibility. Toolbar-tab grips emit typed relative move intents
+only on drop; the adapter updates current preferences and skips unchanged writes.
+The panel owns drag presentation and validates the originating panel identity;
+the adapter retains dialog lifetime, notebook scope and busy guards. Both the
+settings list and toolbar follow the saved order, including positions for hidden
+items. Disabling all four removes the row and border.
 An enabled toolbar remains visible with the sidebar collapsed or no notebook open;
 notebook actions are disabled without a notebook or while busy. Only a visible
 sidebar panel is highlighted. Menu commands and shortcuts remain available.

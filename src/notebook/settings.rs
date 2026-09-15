@@ -218,7 +218,8 @@ impl ThemePalette {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ToolbarItem {
     Sidebar,
     Explorer,
@@ -227,6 +228,16 @@ pub enum ToolbarItem {
 }
 
 impl ToolbarItem {
+    pub const DEFAULT_ORDER: [Self; 4] = [Self::Sidebar, Self::Explorer, Self::Search, Self::Sort];
+
+    pub fn label(self) -> &'static str {
+        Self::OPTIONS
+            .into_iter()
+            .find(|(item, _)| *item == self)
+            .unwrap()
+            .1
+    }
+
     pub const OPTIONS: [(Self, &'static str); 4] = [
         (Self::Sidebar, "Toggle sidebar"),
         (Self::Explorer, "Explorer"),
@@ -238,6 +249,8 @@ impl ToolbarItem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolbarSettings {
+    #[serde(deserialize_with = "deserialize_toolbar_order")]
+    pub order: [ToolbarItem; 4],
     pub sidebar: bool,
     pub explorer: bool,
     pub search: bool,
@@ -247,6 +260,7 @@ pub struct ToolbarSettings {
 impl Default for ToolbarSettings {
     fn default() -> Self {
         Self {
+            order: ToolbarItem::DEFAULT_ORDER,
             sidebar: true,
             explorer: true,
             search: true,
@@ -256,6 +270,31 @@ impl Default for ToolbarSettings {
 }
 
 impl ToolbarSettings {
+    /// Insert an item on either side of a target without changing visibility.
+    /// Returns false when the item already occupies that insertion position.
+    pub fn move_item(&mut self, item: ToolbarItem, target: ToolbarItem, after: bool) -> bool {
+        if item == target {
+            return false;
+        }
+        let Some(from) = self.order.iter().position(|entry| *entry == item) else {
+            return false;
+        };
+        let Some(target) = self.order.iter().position(|entry| *entry == target) else {
+            return false;
+        };
+        let insertion = target + usize::from(after);
+        let to = insertion - usize::from(from < insertion);
+        if from == to {
+            return false;
+        }
+        if from < to {
+            self.order[from..=to].rotate_left(1);
+        } else {
+            self.order[to..=from].rotate_right(1);
+        }
+        true
+    }
+
     pub fn enabled(self, item: ToolbarItem) -> bool {
         match item {
             ToolbarItem::Sidebar => self.sidebar,
@@ -277,6 +316,21 @@ impl ToolbarSettings {
     pub fn any_enabled(self) -> bool {
         self.sidebar || self.explorer || self.search || self.sort
     }
+}
+
+fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 4], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value::<[ToolbarItem; 4]>(value)
+        .ok()
+        .filter(|order| {
+            ToolbarItem::DEFAULT_ORDER
+                .iter()
+                .all(|item| order.contains(item))
+        })
+        .unwrap_or(ToolbarItem::DEFAULT_ORDER))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

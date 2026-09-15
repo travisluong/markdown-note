@@ -366,6 +366,20 @@ impl Notes {
         }
         let mut appearance = self.appearance();
         let appearance_changed = match intent {
+            SettingsIntent::ToolbarItemMoved {
+                item,
+                target,
+                after,
+            } => {
+                if let Some(book) = &mut self.notebooks.active {
+                    if book.settings.toolbar.move_item(item, target, after) {
+                        self.persist_notebooks(cx);
+                    }
+                } else {
+                    self.session_toolbar.move_item(item, target, after);
+                }
+                false
+            }
             SettingsIntent::ToolbarItemEnabled(item, enabled) => {
                 if let Some(book) = &mut self.notebooks.active {
                     book.settings.toolbar.set_enabled(item, enabled);

@@ -12,6 +12,7 @@ mod reference;
 mod render;
 #[cfg(test)]
 mod tests;
+mod toolbar;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum FontRole {
@@ -35,6 +36,11 @@ pub(super) enum ColorRole {
 #[derive(Clone, Debug)]
 pub(super) enum SettingsIntent {
     ToolbarItemEnabled(notebook::ToolbarItem, bool),
+    ToolbarItemMoved {
+        item: notebook::ToolbarItem,
+        target: notebook::ToolbarItem,
+        after: bool,
+    },
     AutosaveEnabled(bool),
     AutosaveDelay(u64),
     ShowExtensions(bool),

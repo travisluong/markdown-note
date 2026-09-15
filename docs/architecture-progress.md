@@ -1023,3 +1023,35 @@ suite with --target-dir target/headless -j 1 --features editor-diagnostics passe
 final full run passed without concurrent builds. No native application launch or
 desktop interaction was used. Native visual validation remains manual. Existing
 lockfile and vendor link-menu changes are excluded from this feature's commit.
+
+## Toolbar drag ordering (2026-09-14)
+
+Settings > Toolbar now presents ordered rows with dedicated drag grips and
+independent visibility switches. GPUI drag previews show the tool label; upper
+and lower insertion targets paint a line without shifting row geometry. A drop
+emits a relative move intent, which the settings adapter applies to the current
+notebook or session defaults. Hidden items retain their positions and remain
+reorderable. Unchanged moves do not enqueue preference writes.
+
+ToolbarSettings stores a four-item order using lowercase serialized item names.
+Missing, incomplete, duplicate, unknown or otherwise invalid order values restore
+the original default order without changing visibility. The toolbar filters its
+buttons from that order while retaining existing actions and availability rules.
+Drag payloads identify their originating panel, and the existing adapter guards
+reject expired dialogs, changed preference scopes and busy sessions.
+
+Five new tests cover order normalization, every move across all 24 permutations
+and 16 visibility masks, headless grip and switch gestures, before/after drop
+placement, cancellation, unchanged drops, busy sessions, notebook persistence,
+session defaults, hidden-item movement, reopened dialogs and stale drag origins.
+Existing persistence and render tests now exercise non-default order as well.
+
+Verification on Windows: locked/offline cargo check, cargo fmt --check, strict
+all-target Clippy with editor-diagnostics, all 11 focused toolbar tests, and the
+complete locked/offline suite with -j 1 --features editor-diagnostics passed
+(405 tests). Initial LNK1104 executable locks cleared after sequential target
+retries; the final full suite passed from the default target directory. The
+existing target/headless dependency directory is a junction to target/debug/deps.
+No native application launch or desktop interaction was used; native visual
+validation remains manual. Unrelated lockfile and vendor link-menu changes,
+including their architecture-map addition, are excluded from this commit.

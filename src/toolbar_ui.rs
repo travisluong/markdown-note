@@ -6,6 +6,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     menu::DropdownMenu,
 };
+use mithril::notebook::ToolbarItem;
 
 impl Notes {
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -27,75 +28,74 @@ impl Notes {
             .p_1()
             .border_b_1()
             .border_color(cx.theme().border)
-            .when(settings.sidebar, |view| {
-                view.child(
-                    Button::new("toolbar-sidebar-toggle")
-                        .debug_selector(|| "toolbar-sidebar-toggle".into())
-                        .small()
-                        .ghost()
-                        .icon(if sidebar_visible {
-                            IconName::PanelLeftClose
-                        } else {
-                            IconName::PanelLeftOpen
-                        })
-                        .tooltip(if sidebar_visible {
-                            "Collapse sidebar"
-                        } else {
-                            "Show sidebar"
-                        })
-                        .disabled(disabled)
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)),
-                        ),
-                )
-            })
-            .when(settings.explorer, |view| {
-                view.child(
-                    Button::new("sidebar-explorer")
-                        .debug_selector(|| "sidebar-explorer".into())
-                        .small()
-                        .ghost()
-                        .icon(IconName::Folder)
-                        .tooltip("Explorer")
-                        .selected(sidebar_visible && !searching)
-                        .disabled(disabled)
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.show_explorer(window, cx)),
-                        ),
-                )
-            })
-            .when(settings.search, |view| {
-                view.child(
-                    Button::new("sidebar-search")
-                        .debug_selector(|| "sidebar-search".into())
-                        .small()
-                        .ghost()
-                        .icon(IconName::Search)
-                        .tooltip("Search all files (Ctrl+Shift+F)")
-                        .selected(sidebar_visible && searching)
-                        .disabled(disabled)
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.open_search_all(window, cx)),
-                        ),
-                )
-            })
-            .when(settings.sort, |view| {
-                view.child(
-                    Button::new("sidebar-sort")
-                        .debug_selector(|| "sidebar-sort".into())
-                        .small()
-                        .ghost()
-                        .icon(IconName::SortAscending)
-                        .tooltip("Sort files")
-                        .disabled(disabled)
-                        .dropdown_menu(move |menu, _, cx| {
-                            if let Some(entity) = owner.upgrade() {
-                                entity.read(cx).file_sort_menu(menu, owner.clone())
+            .children(
+                settings
+                    .order
+                    .into_iter()
+                    .filter(|item| settings.enabled(*item))
+                    .map(|item| match item {
+                        ToolbarItem::Sidebar => Button::new("toolbar-sidebar-toggle")
+                            .debug_selector(|| "toolbar-sidebar-toggle".into())
+                            .small()
+                            .ghost()
+                            .icon(if sidebar_visible {
+                                IconName::PanelLeftClose
                             } else {
-                                menu
-                            }
-                        }),
-                )
-            })
+                                IconName::PanelLeftOpen
+                            })
+                            .tooltip(if sidebar_visible {
+                                "Collapse sidebar"
+                            } else {
+                                "Show sidebar"
+                            })
+                            .disabled(disabled)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)),
+                            )
+                            .into_any_element(),
+                        ToolbarItem::Explorer => Button::new("sidebar-explorer")
+                            .debug_selector(|| "sidebar-explorer".into())
+                            .small()
+                            .ghost()
+                            .icon(IconName::Folder)
+                            .tooltip("Explorer")
+                            .selected(sidebar_visible && !searching)
+                            .disabled(disabled)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.show_explorer(window, cx)),
+                            )
+                            .into_any_element(),
+                        ToolbarItem::Search => Button::new("sidebar-search")
+                            .debug_selector(|| "sidebar-search".into())
+                            .small()
+                            .ghost()
+                            .icon(IconName::Search)
+                            .tooltip("Search all files (Ctrl+Shift+F)")
+                            .selected(sidebar_visible && searching)
+                            .disabled(disabled)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.open_search_all(window, cx)),
+                            )
+                            .into_any_element(),
+                        ToolbarItem::Sort => Button::new("sidebar-sort")
+                            .debug_selector(|| "sidebar-sort".into())
+                            .small()
+                            .ghost()
+                            .icon(IconName::SortAscending)
+                            .tooltip("Sort files")
+                            .disabled(disabled)
+                            .dropdown_menu({
+                                let owner = owner.clone();
+                                move |menu, _, cx| {
+                                    if let Some(entity) = owner.upgrade() {
+                                        entity.read(cx).file_sort_menu(menu, owner.clone())
+                                    } else {
+                                        menu
+                                    }
+                                }
+                            })
+                            .into_any_element(),
+                    }),
+            )
     }
 }

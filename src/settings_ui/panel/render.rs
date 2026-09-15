@@ -190,17 +190,9 @@ impl Render for SettingsPanel {
             .flex_col()
             .gap_3()
             .child(self.values.subtitle.clone())
-            .child("Choose which items appear in the toolbar.");
-        for (index, (item, label)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
-            toolbar_body = toolbar_body.child(
-                Switch::new(("toolbar-item", index))
-                    .label(label)
-                    .checked(self.values.toolbar.enabled(item))
-                    .disabled(self.values.busy)
-                    .on_click(cx.listener(move |this, enabled: &bool, _, cx| {
-                        this.emit_intent(SettingsIntent::ToolbarItemEnabled(item, *enabled), cx)
-                    })),
-            );
+            .child("Choose which items appear in the toolbar. Drag the grips to reorder.");
+        for item in self.values.toolbar.order {
+            toolbar_body = toolbar_body.child(self.render_toolbar_item(item, cx));
         }
         let mut sidebar = div()
             .debug_selector(|| "settings-navigation".into())
