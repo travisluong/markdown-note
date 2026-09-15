@@ -328,7 +328,7 @@ impl Notes {
         let affects_content = matches!(action, EntryAction::NewNote);
         let observed = self.observed_document(cx);
         let next = Next::Entry { target, action };
-        let effects = if affects_content {
+        let effects = if affects_content && !self.retains_active_document() {
             self.tabs.active.session.request(next, observed)
         } else {
             self.tabs.active.session.request_retaining(next, observed)
@@ -358,7 +358,7 @@ impl Notes {
         let overlay = self.tabs.iter().find_map(|tab| {
             tab.document()
                 .filter(|doc| doc.path == absolute)
-                .map(|doc| (tab.editor.snapshot(cx), doc.format))
+                .map(|doc| (tab.editor.snapshot(cx), doc.format()))
         });
         let deleting = matches!(action, EntryAction::Trash);
         let effects = self.tabs.active.session.begin_entry_operation(operation);

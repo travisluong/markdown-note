@@ -47,7 +47,7 @@ impl Notes {
         for effect in effects {
             match effect {
                 Effect::StateChanged => self.refresh(window, cx),
-                Effect::CancelAutosave => self.tabs.active.saves.timer = None,
+                Effect::CancelAutosave => self.save_state_mut(self.tabs.active.id).timer = None,
                 Effect::ArmAutosave(ticket) => self.arm_session_autosave(ticket, window, cx),
                 Effect::Prompt(operation) => self.prompt_session_save(operation, window, cx),
                 Effect::Write(ticket) => self.write_session_snapshot(ticket, window, cx),
@@ -136,24 +136,20 @@ impl Notes {
             }
             return;
         }
-        let path = match &next {
-            Next::File(p) | Next::TreeFile(p) | Next::FileFromPicker(p) => Some(p),
-            Next::History(visit) => Some(&visit.path),
-            Next::SearchResult(d) => Some(&d.path),
+        if let Some(path) = match &next {
+            Next::File(path) | Next::TreeFile(path) | Next::FileFromPicker(path) => Some(path),
             _ => None,
-        };
-        if let Some(id) = path.and_then(|p| self.tabs.find_path(p)) {
-            if !self.is_busy() {
-                self.select_tab(id, window, cx);
-                if let Next::SearchResult(d) = next {
-                    self.reveal_search_result(d, window, cx);
-                    self.finish_search_navigation(true, window, cx);
-                }
-            }
+        } && self.tabs.active.path()
+            == Some(
+                std::fs::canonicalize(path)
+                    .unwrap_or_else(|_| path.clone())
+                    .as_path(),
+            )
+        {
             return;
         }
         let observed = self.observed_document(cx);
-        let effects = if matches!(next, Next::Notebook { .. }) {
+        let effects = if matches!(next, Next::Notebook { .. }) || self.retains_active_document() {
             self.tabs.active.session.request_retaining(next, observed)
         } else {
             self.tabs.active.session.request(next, observed)
@@ -227,26 +223,6 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let existing_path = match &next {
-            Next::File(path) | Next::TreeFile(path) | Next::FileFromPicker(path) => Some(path),
-            Next::History(visit) => Some(&visit.path),
-            Next::SearchResult(destination) => Some(&destination.path),
-            _ => None,
-        };
-        if let Some(id) = existing_path.and_then(|path| self.tabs.find_path(path)) {
-            let observed = self.observed_document(cx);
-            let effects = self.tabs.active.session.continued(operation, observed);
-            if effects.is_empty() {
-                return;
-            }
-            self.apply_session_effects(effects, window, cx);
-            self.select_tab(id, window, cx);
-            if let Next::SearchResult(destination) = next {
-                self.reveal_search_result(destination, window, cx);
-                self.finish_search_navigation(true, window, cx);
-            }
-            return;
-        }
         match next {
             Next::Prepared => unreachable!("workspace continuation uses tab-qualified effects"),
             Next::History(visit) => {
@@ -387,20 +363,23 @@ impl Notes {
         match result {
             Ok(path) => {
                 let observed = self.observed_document(cx);
-                if self.tabs.active.session.foreground()
-                    == Some((operation, super::session::PhaseKind::Picking))
-                    && let Some(id) = path.as_ref().and_then(|path| self.tabs.find_path(path))
-                {
-                    let effects = self.tabs.active.session.picked(operation, None, observed);
-                    self.apply_session_effects(effects, window, cx);
-                    self.select_tab(id, window, cx);
-                    return;
-                }
-                let effects = self.tabs.active.session.picked(
-                    operation,
-                    path.map(Next::FileFromPicker),
-                    observed,
-                );
+                let same = path.as_ref().is_some_and(|path| {
+                    self.tabs.active.path()
+                        == Some(
+                            std::fs::canonicalize(path)
+                                .unwrap_or_else(|_| path.clone())
+                                .as_path(),
+                        )
+                });
+                let action = path.filter(|_| !same).map(Next::FileFromPicker);
+                let effects = if self.retains_active_document() {
+                    self.tabs
+                        .active
+                        .session
+                        .picked_retaining(operation, action, observed)
+                } else {
+                    self.tabs.active.session.picked(operation, action, observed)
+                };
                 self.apply_session_effects(effects, window, cx);
             }
             Err(error) => {
@@ -436,6 +415,12 @@ impl Notes {
             .zip(self.document_id())
             .map(|(document, id)| (id, document.path.clone()));
         let observed = self.observed_document(cx);
+        let result = result.map(|loaded| match loaded {
+            Loaded::Document(document) => {
+                Loaded::Document(self.retained_document(&document.path).unwrap_or(document))
+            }
+            other => other,
+        });
         let error = result.as_ref().err().map(ToString::to_string);
         let effects = self
             .tabs
@@ -501,24 +486,20 @@ impl Notes {
         if self.workspace.is_some() {
             return;
         }
-        let path = match &next {
-            Next::File(p) | Next::TreeFile(p) | Next::FileFromPicker(p) => Some(p),
-            Next::History(visit) => Some(&visit.path),
-            Next::SearchResult(d) => Some(&d.path),
+        if let Some(path) = match &next {
+            Next::File(path) | Next::TreeFile(path) | Next::FileFromPicker(path) => Some(path),
             _ => None,
-        };
-        if let Some(id) = path.and_then(|p| self.tabs.find_path(p)) {
-            if !self.is_busy() {
-                self.select_tab(id, window, cx);
-                if let Next::SearchResult(d) = next {
-                    self.reveal_search_result(d, window, cx);
-                    self.finish_search_navigation(true, window, cx);
-                }
-            }
+        } && self.tabs.active.path()
+            == Some(
+                std::fs::canonicalize(path)
+                    .unwrap_or_else(|_| path.clone())
+                    .as_path(),
+            )
+        {
             return;
         }
         let observed = self.observed_document(cx);
-        let effects = if matches!(next, Next::Notebook { .. }) {
+        let effects = if matches!(next, Next::Notebook { .. }) || self.retains_active_document() {
             self.tabs.active.session.request_retaining(next, observed)
         } else {
             self.tabs.active.session.request(next, observed)

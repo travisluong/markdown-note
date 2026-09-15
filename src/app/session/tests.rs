@@ -552,24 +552,24 @@ fn operation_write_timer_and_document_exhaustion_never_wrap() {
     assert_eq!(model.last_operation, u64::MAX);
 
     let mut model = document();
-    model.last_write = u64::MAX;
+    model.saving.borrow_mut().last_write = u64::MAX;
     assert_eq!(
         relevant(model.save(None)),
         vec![Effect::Rejected(Rejection::IdentityExhausted)]
     );
     assert!(model.write().is_none());
     assert!(!model.is_busy());
-    assert_eq!(model.last_write, u64::MAX);
+    assert_eq!(model.saving.borrow().last_write, u64::MAX);
 
     let mut model = document();
-    model.last_autosave = u64::MAX;
+    model.saving.borrow_mut().last_autosave = u64::MAX;
     let fact = observed(&model, true);
     assert_eq!(
         relevant(model.set_autosave(true, fact)),
         vec![Effect::Rejected(Rejection::IdentityExhausted)]
     );
     assert!(model.autosave().is_none());
-    assert_eq!(model.last_autosave, u64::MAX);
+    assert_eq!(model.saving.borrow().last_autosave, u64::MAX);
 
     let mut model = document();
     let prior = model.content().identity();
@@ -1036,4 +1036,54 @@ fn notebook_activation_can_retain_content_only_for_the_matching_load() {
     assert_eq!(model.content().document_id(), identity);
     assert!(!model.is_busy());
     assert!(model.activation_retained(id, fact).is_empty());
+}
+#[test]
+fn shared_write_owner_serializes_views_and_releases_only_matching_continuations() {
+    let mut first = document();
+    let mut second = document();
+    second.attach_saving(
+        first.saving_policy(),
+        first.content().document_id().unwrap(),
+    );
+    let write = background_write(&mut first);
+    let fact = observed(&second, true);
+    assert_eq!(second.write(), Some(write));
+    second.request_retaining("leave second", fact);
+    assert_eq!(operation(&second, PhaseKind::WaitingForWrite).0, 2);
+    let effects = first.write_succeeded(write, |_| false);
+    assert!(effects.contains(&Effect::BaselineAccepted(write)));
+    let fact = observed(&second, false);
+    let effects = second.shared_write_finished(write, true, fact);
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        Effect::Continue {
+            action: "leave second",
+            ..
+        }
+    )));
+    assert!(second.shared_write_finished(write, true, fact).is_empty());
+    assert!(
+        first
+            .write_succeeded(write, |_| panic!("duplicate baseline"))
+            .is_empty()
+    );
+}
+
+#[test]
+fn shared_conflict_pause_survives_edits_in_either_view() {
+    let mut first = document();
+    let mut second = document();
+    second.attach_saving(
+        first.saving_policy(),
+        first.content().document_id().unwrap(),
+    );
+    let write = background_write(&mut first);
+    let fact = observed(&first, true);
+    first.write_failed(write, SaveFailure::Conflict, fact);
+    assert!(second.save_conflicted());
+    second.edit_notice(second.content().document_id().unwrap());
+    assert!(first.autosave().is_none());
+    assert!(second.autosave().is_none());
+    second.save(None);
+    assert!(first.write().is_some());
 }

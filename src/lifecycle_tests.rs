@@ -77,7 +77,7 @@ fn cancelled_file_picker_resumes_retained_dirty_document(cx: &mut TestAppContext
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             // request() cancels this timer before opening a picker.
-            this.saves.timer = None;
+            this.active_saves_mut().timer = None;
             let operation = begin_picker(this, window, cx);
             this.finish_file_picker(operation, Ok(None), window, cx);
         })
@@ -124,7 +124,7 @@ fn failed_notebook_activation_resumes_autosave(cx: &mut TestAppContext) {
     edit(&notes, "retained", cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.saves.timer = None;
+            this.active_saves_mut().timer = None;
             this.diagnostic_answer_request(
                 Some(1),
                 Next::Notebook {
@@ -151,7 +151,7 @@ fn failed_file_open_resumes_only_after_error_dismissal(cx: &mut TestAppContext) 
     edit(&notes, "retained", cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.saves.timer = None;
+            this.active_saves_mut().timer = None;
             let operation = begin_picker(this, window, cx);
             this.finish_file_picker(
                 operation,
@@ -231,7 +231,7 @@ fn background_save_finishing_does_not_release_a_picker(cx: &mut TestAppContext) 
     edit(&notes, "saved snapshot", cx);
     let picker = cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.saves.timer = None;
+            this.active_saves_mut().timer = None;
             this.start_write(None, window, cx);
             assert!(this.session.write().is_some());
             assert!(!this.is_busy());
@@ -265,7 +265,7 @@ fn queued_manual_save_writes_the_newest_snapshot(cx: &mut TestAppContext) {
     edit(&notes, "older snapshot", cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.saves.timer = None;
+            this.active_saves_mut().timer = None;
             this.start_write(None, window, cx);
             this.editor.diagnostic_input().update(cx, |editor, cx| {
                 editor.select_source_range(0..editor.value().len(), window, cx);
@@ -300,7 +300,7 @@ fn queued_navigation_releases_its_wait_owner_before_loading(cx: &mut TestAppCont
     edit(&notes, "save before navigating", cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.saves.timer = None;
+            this.active_saves_mut().timer = None;
             this.start_write(None, window, cx);
             this.request(Next::File(target.clone()), window, cx);
             assert!(matches!(
@@ -334,7 +334,7 @@ fn stale_pending_navigation_keeps_saved_baseline_and_new_owner(cx: &mut TestAppC
     edit(&notes, "saved snapshot", cx);
     let newer = cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.saves.timer = None;
+            this.active_saves_mut().timer = None;
             this.start_write(None, window, cx);
             this.request(Next::File(target), window, cx);
             let old = this.session.foreground().unwrap().0;
@@ -352,7 +352,7 @@ fn stale_pending_navigation_keeps_saved_baseline_and_new_owner(cx: &mut TestAppC
                 this.document().unwrap().path,
                 fs::canonicalize(&path).unwrap()
             );
-            assert_eq!(this.document().unwrap().saved, "saved snapshot");
+            assert_eq!(this.document().unwrap().saved(), "saved snapshot");
             assert!(!this.dirty(cx));
             assert!(this.session.foreground().is_some_and(|(id, _)| id == newer));
             assert!(this.session.write().is_none());
@@ -452,9 +452,9 @@ fn disk_conflict_retains_text_and_pauses_autosave_until_explicit_save(cx: &mut T
     cx.update(|_, cx| {
         let notes = notes.read(cx);
         assert!(notes.session.save_conflicted());
-        assert!(notes.saves.error.is_some());
+        assert!(notes.active_saves().error.is_some());
         assert!(notes.dirty(cx));
-        assert_eq!(notes.document().unwrap().saved, "original");
+        assert_eq!(notes.document().unwrap().saved(), "original");
         assert_eq!(notes.editor.text(cx).as_ref(), "retained edit");
     });
     // Restoring the matching disk bytes does not silently resume a paused save.
@@ -468,7 +468,7 @@ fn disk_conflict_retains_text_and_pauses_autosave_until_explicit_save(cx: &mut T
     cx.update(|_, cx| {
         let notes = notes.read(cx);
         assert!(!notes.session.save_conflicted());
-        assert!(notes.saves.error.is_none());
+        assert!(notes.active_saves().error.is_none());
         assert!(!notes.dirty(cx));
     });
     edit(&notes, "autosave after receipt", cx);
@@ -515,7 +515,7 @@ fn conflict_completion_cancels_autosave_queued_while_the_write_was_running(
     cx.update(|_, cx| {
         let notes = notes.read(cx);
         assert!(notes.session.save_conflicted());
-        assert!(notes.saves.timer.is_none());
+        assert!(notes.active_saves().timer.is_none());
     });
     fs::write(&path, "original").unwrap();
     elapse(cx);

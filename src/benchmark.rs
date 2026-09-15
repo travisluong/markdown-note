@@ -104,7 +104,7 @@ fn document_fixture(name: &str, text: &str) -> Document {
     let path = directory.path().join(name);
     fs::write(&path, text).expect("benchmark fixture file");
     let mut document = Document::open(path).expect("benchmark fixture document");
-    document._diagnostic_fixture = Some(directory);
+    document._diagnostic_fixture = Some(std::sync::Arc::new(directory));
     document
 }
 

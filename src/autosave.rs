@@ -1,5 +1,5 @@
 use super::*;
-use app::session::{AutosaveTicket, Effect, SaveFailure, WriteTicket};
+use app::session::{AutosaveTicket, SaveFailure, WriteTicket};
 use std::time::Duration;
 
 /// Executor handle and user-facing configuration/messages only. Session owns
@@ -129,6 +129,7 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         if self.workspace.is_some()
+            || self.document_write_blocked(id)
             || self
                 .tabs
                 .get(id)
@@ -136,24 +137,40 @@ impl Notes {
         {
             return;
         }
+        let document_id = self
+            .tabs
+            .get(id)
+            .and_then(|tab| tab.document())
+            .map(|doc| doc.id);
         let delay = cx.background_executor().timer(Duration::from_millis(
             self.tab_autosave_settings(id).delay_ms,
         ));
-        self.tabs.get_mut(id).unwrap().saves.timer =
-            Some(cx.spawn_in(window, async move |this, cx| {
-                delay.await;
-                let _ = this.update_in(cx, |this, window, cx| {
-                    if this.workspace.is_some() {
-                        return;
+        self.save_state_mut(id).timer = Some(cx.spawn_in(window, async move |this, cx| {
+            delay.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.workspace.is_some() {
+                    return;
+                }
+                let id = match document_id {
+                    Some(document) => {
+                        let Some(id) = this.document_tabs(document).first().copied() else {
+                            return;
+                        };
+                        id
                     }
-                    let Some(tab) = this.tabs.get_mut(id) else {
-                        return;
-                    };
-                    let observed = tab.observed(cx);
-                    let effects = tab.session.autosave_due(ticket, observed);
-                    this.apply_tab_effects(id, effects, window, cx);
-                });
-            }));
+                    None => id,
+                };
+                if this.document_write_blocked(id) {
+                    return;
+                }
+                let Some(tab) = this.tabs.get_mut(id) else {
+                    return;
+                };
+                let observed = tab.observed(cx);
+                let effects = tab.session.autosave_due(ticket, observed);
+                this.apply_tab_effects(id, effects, window, cx);
+            });
+        }));
     }
     pub(crate) fn write_session_snapshot(
         &mut self,
@@ -170,50 +187,60 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(tab) = self.tabs.get_mut(id) else {
+        let Some(tab) = self.tabs.get(id) else {
             return;
         };
         if tab.session.write() != Some(ticket) {
             return;
         }
-        let document = tab.document().expect("Session writes document");
-        let (path, format, version) = (
-            document.path.clone(),
-            document.format,
-            document.version.clone(),
-        );
+        let document = tab.document().expect("Session writes document").clone();
+        let path = document.path.clone();
+        let format = document.format();
+        let version = document.version();
         let snapshot = tab.editor.snapshot(cx);
-        tab.saves.error = None;
-        tab.saves.timer = None;
+        self.save_state_mut(id).error = None;
+        self.save_state_mut(id).timer = None;
         cx.spawn_in(window, async move |this, cx| {
             let captured_path = path.clone();
             let result = cx.background_executor().spawn(async move {
                 let text = snapshot.to_string();
-                document::save_file(&path, &text, format, &version).map(|receipt| (text, snapshot, receipt))
+                document::save_file(&path, &text, format, &version).map(|receipt| (snapshot, receipt))
             }).await;
             let _ = this.update_in(cx, |this, window, cx| {
-                let Some(tab) = this.tabs.get_mut(id) else { return; };
+                let ids = this.document_tabs(document.id);
+                let Some(&owner) = ids.first() else { return; };
+                let tab = this.tabs.get_mut(owner).unwrap();
                 if tab.path() != Some(captured_path.as_path()) || tab.session.write() != Some(ticket) { return; }
+                let success = result.is_ok();
+                let mut error_message = None;
                 let effects = match result {
-                    Ok((text, snapshot, receipt)) => {
+                    Ok((snapshot, receipt)) => {
                         let current = tab.editor.snapshot(cx);
                         tab.session.write_succeeded(ticket, |document| {
-                            document.saved = text; document.saved_rope = snapshot; document.version = receipt.version;
-                            document.saved_rope != current
+                            document.accept_save(snapshot, receipt.version);
+                            document.saved_rope() != current
                         })
                     }
                     Err(error) => {
                         let failure = if matches!(error, document::SaveError::Conflict(_)) { SaveFailure::Conflict } else { SaveFailure::Io };
                         let observed = tab.observed(cx);
                         let effects = tab.session.write_failed(ticket, failure, observed);
-                        if effects.iter().any(|effect| matches!(effect, Effect::WriteFailed(t) if *t == ticket)) {
-                            let recovery = if tab.session.save_conflicted() { "Copy your changes before reopening to resolve the conflict." } else { "Edit again or use Save to retry." };
-                            tab.saves.error = Some(format!("Could not save file: {error}. Your changes are still in the editor. {recovery}"));
-                        }
+                        let recovery = if tab.session.save_conflicted() { "Copy your changes before reopening to resolve the conflict." } else { "Edit again or use Save to retry." };
+                        error_message = Some(format!("Could not save file: {error}. Your changes are still in the editor. {recovery}"));
                         effects
                     }
                 };
-                this.apply_tab_effects(id, effects, window, cx);
+                let mut completions = vec![(owner, effects)];
+                for &id in ids.iter().skip(1) {
+                    let tab = this.tabs.get_mut(id).unwrap();
+                    let observed = tab.observed(cx);
+                    completions.push((id, tab.session.shared_write_finished(ticket, success, observed)));
+                }
+                this.save_state_mut(owner).error = error_message;
+                for (id, effects) in completions { this.apply_tab_effects(id, effects, window, cx); }
+                if let Some(id) = this.document_tabs(document.id).first().copied() {
+                    this.check_tab_dirty(id, window, cx);
+                }
             });
         }).detach();
     }

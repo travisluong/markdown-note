@@ -64,7 +64,7 @@ impl Tab {
             document: self.session.content().document_id(),
             dirty: self
                 .document()
-                .is_some_and(|d| d.saved_rope != self.editor.snapshot(cx)),
+                .is_some_and(|d| d.saved_rope() != self.editor.snapshot(cx)),
         }
     }
 }
@@ -105,12 +105,6 @@ impl TabSet {
     }
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Tab> {
         self.order.iter().filter_map(|id| self.get(*id))
-    }
-    pub(crate) fn find_path(&self, path: &Path) -> Option<TabId> {
-        let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        self.iter()
-            .find(|tab| tab.path() == Some(canonical.as_path()))
-            .map(|tab| tab.id)
     }
     fn select(&mut self, id: TabId) {
         if let Some(index) = self.inactive.iter().position(|t| t.id == id) {
@@ -170,10 +164,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let existing = document
-            .as_ref()
-            .and_then(|doc| self.tabs.find_path(&doc.path));
-        if existing.is_none() && self.tabs.active.path().is_none() {
+        if self.tabs.active.path().is_none() {
             self.tabs.active.mode = mode;
             self.complete_content_load(
                 operation,
@@ -193,11 +184,6 @@ impl Notes {
             return;
         }
         self.apply_session_effects(effects, window, cx);
-        if let Some(id) = existing {
-            self.tabs.select(id);
-            self.focus_active_tab(window, cx);
-            return;
-        }
         self.tabs.add(window, cx);
         self.tabs.active.mode = mode;
         let observed = self.observed_document(cx);
@@ -246,7 +232,7 @@ impl Notes {
         for effect in effects {
             match effect {
                 Effect::ArmAutosave(ticket) => self.arm_tab_autosave(id, ticket, window, cx),
-                Effect::CancelAutosave => self.tabs.get_mut(id).unwrap().saves.timer = None,
+                Effect::CancelAutosave => self.save_state_mut(id).timer = None,
                 Effect::Write(ticket) => self.write_tab_snapshot(id, ticket, window, cx),
                 Effect::BaselineAccepted(_) => {
                     self.check_tab_dirty(id, window, cx);
@@ -284,7 +270,9 @@ impl Notes {
         if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
+        self.tabs.active.editor.break_undo_group(cx);
         self.tabs.select(id);
+        self.tabs.active.editor.break_undo_group(cx);
         self.focus_active_tab(window, cx);
     }
     fn focus_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -316,6 +304,7 @@ impl Notes {
         if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
         }
+        self.tabs.active.editor.break_undo_group(cx);
         self.tabs.add(window, cx);
         if let Some(book) = &self.notebooks.active {
             self.tabs.active.mode = book.settings.view_mode;
@@ -414,7 +403,17 @@ impl Notes {
         }
         self.workspace = Some(WorkspaceOperation {
             kind,
-            queue: ids.into(),
+            queue: {
+                let mut documents = std::collections::HashSet::new();
+                ids.into_iter()
+                    .filter(|id| {
+                        self.tabs
+                            .get(*id)
+                            .and_then(Tab::document)
+                            .is_none_or(|doc| documents.insert(doc.id))
+                    })
+                    .collect()
+            },
             current: None,
         });
         for id in self.tabs.ids() {
@@ -507,10 +506,20 @@ impl Notes {
         }
         if let Some(id) = workspace.queue.pop_front() {
             workspace.current = Some(id);
+            let retained = self
+                .tabs
+                .iter()
+                .filter_map(|tab| tab.document())
+                .filter(|doc| self.document_tabs(doc.id).len() > 1)
+                .map(|doc| doc.id)
+                .collect::<std::collections::HashSet<_>>();
             let tab = self.tabs.get_mut(id).unwrap();
             let observed = tab.observed(cx);
             let retaining = match &self.workspace.as_ref().unwrap().kind {
                 WorkspaceKind::Move { .. } => true,
+                WorkspaceKind::CloseTab(_) => {
+                    tab.document().is_some_and(|doc| retained.contains(&doc.id))
+                }
                 WorkspaceKind::Trash { target } => tab
                     .path()
                     .is_none_or(|p| !p.starts_with(target.root.join(&target.path))),
@@ -541,6 +550,7 @@ impl Notes {
                 }
                 self.tabs.inactive.retain(|tab| tab.id != id);
                 self.tabs.order.retain(|t| *t != id);
+                self.reconcile_documents();
                 self.cancel_workspace(window, cx);
                 self.search_document_installed(previous.as_deref(), window, cx);
                 self.focus_active_tab(window, cx);

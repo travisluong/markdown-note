@@ -35,15 +35,15 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.update_autosave(settings, window, cx);
                     }
                     1 => {
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "start\n");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "start\n");
                         this.editor.diagnostic_input().update(cx, |e, cx| e.set_value("snapshot A\n", window, cx));
                         this.start_write(None, window, cx);
                         assert!(!this.is_busy());
                         this.editor.diagnostic_input().update(cx, |e, cx| e.set_value("newer B\n", window, cx));
                     }
                     2 => {
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "snapshot A\n");
-                        assert_eq!(this.document().unwrap().saved, "snapshot A\n");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "snapshot A\n");
+                        assert_eq!(this.document().unwrap().saved(), "snapshot A\n");
                         assert!(this.dirty(cx));
                         this.update_autosave(notebook::Autosave { enabled: true, delay_ms: 1000 }, window, cx);
                         this.update_autosave(notebook::Autosave { enabled: true, delay_ms: 100 }, window, cx);
@@ -58,7 +58,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         assert!(matches!(this.session.foreground(), Some((_, app::session::PhaseKind::WaitingForWrite))));
                     }
                     4 => {
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "manual newest\n");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "manual newest\n");
                         assert!(!this.dirty(cx));
                         this.editor.diagnostic_input().update(cx, |e, cx| e.set_value("before navigation\n", window, cx));
                         this.start_write(None, window, cx);
@@ -75,7 +75,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.schedule_autosave(window, cx);
                     }
                     6 => {
-                        assert!(this.saves.error.is_some());
+                        assert!(this.active_saves().error.is_some());
                         assert!(this.dirty(cx));
                         assert!(!this.is_busy());
                         fs::remove_dir(&path).unwrap();
@@ -88,7 +88,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                                 let dirty = this.dirty(cx);
                                 let effects = this.session.moved(operation, |content| {
                                     if let app::session::MovingContent::Document(document) = content {
-                                        document.version = document::version_after_move(&path, &document.version).unwrap();
+                                        document.set_version(document::version_after_move(&path, &document.version()).unwrap());
                                     }
                                     app::session::MoveOutcome { dirty, conflict: false }
                                 });
@@ -100,9 +100,9 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.save(Next::Nothing, window, cx);
                     }
                     7 => {
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "recover me\n");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "recover me\n");
                         assert!(!this.dirty(cx));
-                        assert!(this.saves.error.is_none());
+                        assert!(this.active_saves().error.is_none());
                         this.open_settings(window, cx);
                         this.diagnostic_set_settings_delay("99", window, cx);
                     }
@@ -115,7 +115,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                         this.diagnostic_answer_request(Some(1), Next::File(path.clone()), window, cx);
                     }
                     9 => {
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "recover me\n");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "recover me\n");
                         assert_eq!(this.editor.text(cx).as_str(), "recover me\n");
                         this.editor.diagnostic_input().update(cx, |e, cx| e.set_value("- [X] task\n", window, cx));
                         this.set_mode(ViewMode::Reading, window, cx);
@@ -123,22 +123,22 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     }
                     10 => {
                         assert_eq!(this.reading_text.as_str(), "- [ ] task\n");
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "- [ ] task\n");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "- [ ] task\n");
                         this.editor.diagnostic_input().update(cx, |e, cx| e.set_value("debounce one", window, cx));
                         this.update_autosave(notebook::Autosave { enabled: true, delay_ms: 1000 }, window, cx);
                     }
                     11 => {
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "- [ ] task\n");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "- [ ] task\n");
                         this.editor.diagnostic_input().update(cx, |e, cx| e.set_value("debounce two", window, cx));
                         this.update_autosave(notebook::Autosave { enabled: true, delay_ms: 100 }, window, cx);
                     }
                     12 => {
-                        assert_eq!(Document::open(path.clone()).unwrap().saved, "debounce two");
+                        assert_eq!(Document::open(path.clone()).unwrap().saved(), "debounce two");
                         this.set_mode(ViewMode::LivePreview,window,cx);
                         this.editor.diagnostic_input().update(cx,|e,cx| e.diagnostic_table_autosave(window,cx));
                     }
                     13 => {
-                        let saved = Document::open(path.clone()).unwrap().saved;
+                        let saved = Document::open(path.clone()).unwrap().saved();
                         assert_eq!(saved,this.editor.text(cx).as_str());
                         assert!(saved.contains("edited x"));
                         assert!(!this.dirty(cx));

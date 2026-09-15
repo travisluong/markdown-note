@@ -115,7 +115,7 @@ fn cancelling_preferences_failure_after_discard_retains_and_autosaves_the_note(
         let notes = notes.read(cx);
         assert!(!notes.is_busy());
         assert!(notes.dirty(cx));
-        assert!(notes.saves.timer.is_some());
+        assert!(notes.active_saves().timer.is_some());
         assert_eq!(notes.editor.text(cx).as_ref(), "retained A");
     });
     cx.executor().advance_clock(Duration::from_millis(150));

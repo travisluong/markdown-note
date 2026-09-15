@@ -8,9 +8,8 @@ records verification and platform limits. Update this map when a contract moves.
 ## System shape
 
 Mithril is a single-window Markdown application with retained document tabs.
-Each tab owns a document, image, or empty view. Ordinary files hold notes, a per-user index lists notebooks,
-and each notebook has JSON preferences. Source and Live preview share each tab's editor
-and undo history. Reading is derived from that editor's source.
+Each tab owns a document view, image, or empty view; canonical notes share a document runtime. Ordinary files hold notes, a per-user index lists notebooks,
+and each notebook has JSON preferences. Source and Live preview share document text and undo history across views. Reading is derived from that editor's source.
 
 ```mermaid
 flowchart TD
@@ -39,10 +38,11 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Responsibility | Start here | Contract |
 | --- | --- | --- |
 | Startup, root rendering and action bindings | [main.rs](src/main.rs): `Notes`, `Next`, `NotesWindow` | Wire owners and dispatch actions. `NotesWindow` renders modal layers outside `Notes::render` to avoid a recursive entity borrow. |
+| Shared documents | [shared_documents.rs](src/shared_documents.rs): `DocumentRuntime` | Canonical registry owns stable document identity, buffer subscription, shared baseline, save policy/timer/error and dirty comparison. Tabs retain independent views. |
 | Retained tabs and workspace close/move/delete coordination | [tabs.rs](src/tabs.rs): `TabSet`, `Tab`, `WorkspaceOperation` | Stable TabId qualifies session-local identities. Tab selection retains all document runtime state; preparation retains buffers until every required decision and I/O succeeds. |
 | Content, foreground phase, writes, autosave and continuations | [app/session.rs](src/app/session.rs): `Session`; [session contract](docs/document-session.md) | Pure private state; transitions return ordered effects. No mutable content accessor or generic begin/finish bypass. |
 | Session effects and captured I/O | [app/session_ui.rs](src/app/session_ui.rs), [autosave.rs](src/autosave.rs), [notebook_ui.rs](src/notebook_ui.rs) | Own prompts, task handles, captured data and operation-tagged barriers. They apply policy returned by Session. |
-| Current source, selection, history and source edits | [editor.rs](src/editor.rs): `Editor` | One wrapped `InputState`, no second buffer. Features use semantic snapshot/edit/task/link/find methods. |
+| Current source, selection, history and source edits | [editor.rs](src/editor.rs): `Editor` | One `InputState` view over shared `InputBuffer`; view-local layout and selection are projections of its rope. Features use semantic snapshot/edit/task/link/find methods. |
 | Encoding and file replacement | [document/mod.rs](src/document/mod.rs), [document/storage.rs](src/document/storage.rs); [storage contract](docs/document-storage.md) | Explicit paths, captured text and opaque disk versions; receipts describe committed writes. No UI mutation. |
 | Notebook schema, paths, tree values and filesystem operations | [notebook.rs](src/notebook.rs) facade; [notebook/](src/notebook) | Storage depends on schema/path/tree policies. Preserve migration and relative-path checks. |
 | Preference write ordering and flush outcomes | [notebook/writer.rs](src/notebook/writer.rs): `SettingsWriter`; notebook UI driver | One running write and latest pending snapshot per destination. Index revisions depend on their book revision. |
@@ -79,27 +79,36 @@ Known image visits remain available after switching notebooks, with path/link
 validation on traversal. Failed, cancelled and stale loads leave history intact.
 
 Document tabs have a horizontally scrollable strip above content, with New tab and
-close controls. New tab creates an empty session without a disk file. Existing
-paths focus their retained tab before replacement approval; history traversal to
-another open tab leaves both histories intact. Notebook activation preserves
-occupied tabs and reuses an existing path or empty active tab before appending.
-Source/Live editor state and Reading TextView state remain owned while inactive.
-Tabs are session-only; selection does not change the active notebook sidebar.
+close controls. New tab creates an empty session without a disk file. Explorer,
+links, search, Go to File, picker and history navigation install in the current
+tab, attaching to retained in-memory text when the canonical note is already open.
+Notebook activation preserves occupied tabs and uses an empty active tab or appends
+a view. Tabs are session-only; selection does not change the notebook sidebar.
 
-Every editor subscription, dirty task and save timer/write captures TabId before
-checking its document, write, source or path evidence. Background callbacks address
-the retained tab directly and never swap active tabs or steal focus. Foreground
-callbacks additionally reject a changed active TabId. Any tab foreground phase or
-workspace operation blocks user tab changes; background writes permit switching.
+`shared_documents.rs` owns one runtime per canonical note. A stable document ID
+qualifies dirty work, timers and write callbacks independently of any view's TabId.
+Document baseline metadata is shared, and Session's private SavePolicy holds one
+write/debounce/retry authority. Each tab keeps its own foreground continuation;
+one accepted write receipt updates the baseline and releases only matching waiting
+views. Background results never select tabs or steal focus. Any foreground phase
+or workspace operation blocks tab changes; background writes permit switching.
 
-Workspace close, tab close, moves and Trash pause autosave and drain writes, then
-prepare sessions in strip order through their existing transitions. Save/Discard
-approval retains buffers until the complete operation succeeds. Failed writes or
-cancellation release the current preparation owner and resume eligible timers.
-Window close prepares every tab before the existing preference-flush barrier.
-Move results remap all retained sessions and histories and revalidate disk versions;
-Trash clears affected tabs only after filesystem success. Duplicate captures the
-source buffer even when its tab is inactive. Failure preserves every buffer.
+The vendored InputBuffer owns shared text/history and weak view registrations.
+InputState retains selection, scrolling, find and layout; source edits synchronously
+update peer snapshots and remap selections and viewport anchors. Its buffer event
+subscription lives in DocumentRuntime, surviving the departure of the editing view.
+Source/Live/Reading modes and navigation history remain per tab. Switching views
+breaks typing groups; Undo/Redo from either view uses the common document history.
+
+Leaving or closing one view retains the document without prompting while another
+view remains. Last-view exits use the usual Save/Discard/Cancel transitions.
+Workspace close, moves and Trash pause autosave and prepare distinct documents in
+first-tab order, retaining every view until the operation succeeds. Window close
+then uses the preference-flush barrier. Moves remap all views/histories and reindex
+the registry, revalidating each document baseline once; Trash clears every affected
+view only after filesystem success. Failed writes, moves, deletion or cancelled
+preparation preserve all buffers and resume eligible timers. Search captures one
+shared source overlay per document, retaining it until the last view leaves.
 
 Canonical loaded notebooks are cached at application level. Each tab retains its
 owning notebook's autosave scope (the longest containing loaded root); preference
@@ -128,9 +137,9 @@ These are the invariants most likely to matter when changing a feature:
    cannot release newer ownership. Retained-content exits rearm eligible autosave;
    error presentation must not recursively schedule another timer over the model's
    returned ArmAutosave effect. The runtime also rejects stale timer tickets.
-4. **Install:** accepted installation replaces the editor and its subscription,
-   advances content identity, resets dirty-display work and Reading find, and
-   notifies search. Switching view modes preserves the editor and undo history.
+4. **Install:** accepted installation replaces the editor view and link subscription,
+   binds its content identity to the retained or newly loaded document runtime,
+   resets view-local Reading find and notifies search. Switching view modes preserves the editor and undo history.
    Exactly one of Empty, Document or Image is active.
 5. **Move:** keep the content identity and current buffer/history; remap the
    actual moved path and current settings after completion. Revalidate saved

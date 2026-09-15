@@ -124,7 +124,7 @@ fn tab_buttons_route_files_retain_editor_selection_mode_and_history(cx: &mut Tes
                 .active
                 .editor
                 .replace_selection(" unsaved", window, cx);
-            this.request(Next::File(fixture.note.clone()), window, cx);
+            this.select_tab(first, window, cx);
             assert_eq!(this.tabs.active.id, first);
             assert_eq!(this.tabs.active.editor.id(), editor);
             assert_eq!(this.tabs.active.editor.selection(cx), selection);
@@ -276,8 +276,12 @@ fn notebook_switch_retains_drafts_and_owning_notebook_autosave_preferences(
     cx.run_until_parked();
     cx.update(|_, cx| {
         let n = notes.read(cx);
-        assert_eq!(n.tabs.active.id, first);
-        assert_eq!(n.tabs.ids().len(), 2);
+        assert_ne!(n.tabs.active.id, first);
+        assert_eq!(n.tabs.ids().len(), 3);
+        assert_eq!(
+            n.tabs.active.document().unwrap().id,
+            n.tabs.get(first).unwrap().document().unwrap().id
+        );
         assert!(n.autosave_settings().enabled);
     });
     cx.executor().advance_clock(Duration::from_millis(150));
@@ -429,7 +433,7 @@ fn workspace_preference_failure_after_multiple_discards_preserves_every_tab(
 }
 
 #[gpui::test]
-fn history_focuses_existing_tab_without_changing_either_history(cx: &mut TestAppContext) {
+fn history_opens_existing_document_in_current_tab(cx: &mut TestAppContext) {
     let (fixture, notes, cx) = fixture(cx);
     let second = fixture.root.join("second.md");
     fs::write(&second, "second").unwrap();
@@ -439,42 +443,50 @@ fn history_focuses_existing_tab_without_changing_either_history(cx: &mut TestApp
         })
     });
     cx.run_until_parked();
-    let first = cx.update(|window, cx| {
+    cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            let id = this.tabs.active.id;
+            let first = this.tabs.active.id;
             this.new_tab(window, cx);
             this.request(Next::File(fixture.note.clone()), window, cx);
-            id
+            first
+        })
+    });
+    cx.run_until_parked();
+    let first = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let first = this.tabs.ids()[0];
+            this.select_tab(first, window, cx);
+            this.navigate_history(Direction::Back, window, cx);
+            first
         })
     });
     cx.run_until_parked();
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            let other = this.tabs.active.id;
-            this.select_tab(first, window, cx);
-            let back = this.tabs.active.navigation.target(Direction::Back).unwrap();
-            this.navigate_history(Direction::Back, window, cx);
-            assert_eq!(this.tabs.active.id, other);
-            assert!(
+            assert_eq!(this.tabs.active.id, first);
+            assert_eq!(this.tabs.active.path(), Some(fixture.note.as_path()));
+            assert_eq!(
                 this.tabs
                     .active
+                    .navigation
+                    .target(Direction::Forward)
+                    .unwrap()
+                    .path,
+                second
+            );
+            assert!(
+                this.tabs
+                    .get(this.tabs.ids()[1])
+                    .unwrap()
                     .navigation
                     .target(Direction::Back)
                     .is_none()
             );
-            assert_eq!(
-                this.tabs
-                    .get(first)
-                    .unwrap()
-                    .navigation
-                    .target(Direction::Back)
-                    .unwrap()
-                    .path,
-                back.path
-            );
-            assert_eq!(this.tabs.get(first).unwrap().path(), Some(second.as_path()));
+            this.navigate_history(Direction::Forward, window, cx);
         })
     });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).tabs.active.path(), Some(second.as_path())));
     assert!(!cx.has_pending_prompt());
 }
 
@@ -562,6 +574,7 @@ fn reading_state_survives_switching_tabs(cx: &mut TestAppContext) {
     fs::write(&fixture.note, &text).unwrap();
     let first = cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
+            this.install_document(None, window, cx);
             this.install_document(
                 Some(Document::open(fixture.note.clone()).unwrap()),
                 window,
@@ -626,7 +639,7 @@ fn failed_inactive_save_cancels_workspace_without_losing_buffers(cx: &mut TestAp
         let tab = n.tabs.get(first).unwrap();
         assert!(tab.observed(cx).dirty);
         assert!(tab.session.save_conflicted());
-        assert!(tab.saves.error.is_some());
+        assert!(n.save_state(first).error.is_some());
         assert!(tab.session.foreground().is_none());
     });
 }
@@ -856,4 +869,433 @@ fn duplicate_uses_unsaved_source_from_an_inactive_tab(cx: &mut TestAppContext) {
         .unwrap();
     assert_eq!(fs::read_to_string(copied).unwrap(), "retained source");
     assert_eq!(fs::read_to_string(&fixture.note).unwrap(), "original A");
+}
+#[gpui::test]
+fn shared_notes_keep_live_text_history_modes_and_independent_selection(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let (first, second) = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let first = this.tabs.active.id;
+            this.tabs.active.editor.select(0..8, window, cx);
+            this.tabs
+                .active
+                .editor
+                .replace_selection("draft", window, cx);
+            this.tabs.active.editor.select(6..7, window, cx);
+            this.set_mode(ViewMode::LivePreview, window, cx);
+            this.new_tab(window, cx);
+            let second = this.tabs.active.id;
+            this.request(Next::TreeFile(fixture.note.clone()), window, cx);
+            assert_eq!(this.tabs.active.id, second);
+            assert_eq!(this.tabs.active.editor.text(cx).as_ref(), "draft A");
+            assert_ne!(
+                this.tabs.active.editor.id(),
+                this.tabs.get(first).unwrap().editor.id()
+            );
+            assert_eq!(this.tabs.active.editor.selection(cx), 0..0);
+            assert_eq!(this.tabs.get(first).unwrap().editor.selection(cx), 6..7);
+            assert_eq!(this.documents.len(), 1);
+            this.tabs
+                .active
+                .editor
+                .replace_selection("你好 ", window, cx);
+            assert_eq!(
+                this.tabs.get(first).unwrap().editor.text(cx).as_ref(),
+                "你好 draft A"
+            );
+            assert_eq!(this.tabs.get(first).unwrap().editor.selection(cx), 13..14);
+            this.set_mode(ViewMode::Source, window, cx);
+            this.select_tab(first, window, cx);
+            assert_eq!(this.tabs.active.mode, ViewMode::LivePreview);
+            (first, second)
+        })
+    });
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.dispatch_action(Undo);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.tabs.active.editor.text(cx).as_ref(), "draft A");
+            assert_eq!(
+                this.tabs.get(second).unwrap().editor.text(cx).as_ref(),
+                "draft A"
+            );
+            this.select_tab(second, window, cx);
+        })
+    });
+    cx.dispatch_action(Redo);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(
+                this.tabs.get(first).unwrap().editor.text(cx).as_ref(),
+                "你好 draft A"
+            );
+            this.set_mode(ViewMode::Reading, window, cx);
+            this.select_tab(first, window, cx);
+            this.tabs.active.editor.select(0..0, window, cx);
+            this.tabs.active.editor.replace_selection("# ", window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let n = notes.read(cx);
+        assert_eq!(
+            n.tabs.get(second).unwrap().reading_text.as_ref(),
+            "# 你好 draft A"
+        );
+        assert!(n.tabs.iter().all(|tab| tab.dirty_cached));
+    });
+}
+
+#[gpui::test]
+fn shared_note_save_and_closing_one_view_retain_the_document(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let first = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let first = this.tabs.active.id;
+            this.new_tab(window, cx);
+            this.request(Next::File(fixture.root.join("./note.md")), window, cx);
+            this.tabs.active.editor.select(0..10, window, cx);
+            this.tabs
+                .active
+                .editor
+                .replace_selection("shared draft", window, cx);
+            this.close_tab(first, window, cx);
+            assert_eq!(this.tabs.ids().len(), 1);
+            first
+        })
+    });
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.tabs.get(first).is_none());
+            assert!(this.dirty(cx));
+            this.save(Next::Nothing, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert_eq!(fs::read_to_string(&fixture.note).unwrap(), "shared draft");
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(!this.dirty(cx));
+            this.tabs.active.editor.replace_selection("!", window, cx);
+            this.close_tab(this.tabs.active.id, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(notes.read(cx).dirty(cx)));
+}
+
+#[gpui::test]
+fn shared_note_navigation_retains_draft_without_prompt_and_picker_stays_in_tab(
+    cx: &mut TestAppContext,
+) {
+    let (fixture, notes, cx) = fixture(cx);
+    let other = fixture.root.join("other.md");
+    fs::write(&other, "other").unwrap();
+    let second = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.tabs
+                .active
+                .editor
+                .replace_selection("draft ", window, cx);
+            this.new_tab(window, cx);
+            let second = this.tabs.active.id;
+            this.request(Next::File(fixture.note.clone()), window, cx);
+            this.request(Next::File(other.clone()), window, cx);
+            second
+        })
+    });
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.tabs.active.id, second);
+            assert_eq!(this.tabs.active.path(), Some(other.as_path()));
+            let _ = this.tabs.active.session.pick();
+            let operation = this.tabs.active.session.foreground().unwrap().0;
+            this.finish_file_picker(operation, Ok(Some(fixture.note.clone())), window, cx);
+            assert_eq!(this.tabs.active.id, second);
+            assert_eq!(
+                this.tabs.active.editor.text(cx).as_ref(),
+                "draft original A"
+            );
+            this.save(Next::Nothing, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(
+            notes
+                .read(cx)
+                .tabs
+                .iter()
+                .all(|tab| !tab.observed(cx).dirty && !tab.dirty_cached)
+        )
+    });
+    assert_eq!(
+        fs::read_to_string(&fixture.note).unwrap(),
+        "draft original A"
+    );
+}
+#[gpui::test]
+fn shared_pending_save_accepts_captured_text_and_closing_origin_preserves_late_edits(
+    cx: &mut TestAppContext,
+) {
+    let (fixture, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let first = this.tabs.active.id;
+            this.new_tab(window, cx);
+            this.request(Next::File(fixture.note.clone()), window, cx);
+            this.select_tab(first, window, cx);
+            this.tabs
+                .active
+                .editor
+                .replace_selection("saved ", window, cx);
+            this.start_write(None, window, cx);
+            let ticket = this.tabs.active.session.write().unwrap();
+            let second = this.tabs.ids()[1];
+            this.select_tab(second, window, cx);
+            assert_eq!(this.tabs.active.session.write(), Some(ticket));
+            this.tabs.active.editor.select(0..0, window, cx);
+            this.tabs
+                .active
+                .editor
+                .replace_selection("late ", window, cx);
+            this.close_tab(first, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(
+        fs::read_to_string(&fixture.note).unwrap(),
+        "saved original A"
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.tabs.ids().len(), 1);
+            assert_eq!(
+                this.tabs.active.editor.text(cx).as_ref(),
+                "late saved original A"
+            );
+            assert!(this.dirty(cx));
+            assert!(this.tabs.active.session.write().is_none());
+            this.save(Next::Nothing, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        fs::read_to_string(&fixture.note).unwrap(),
+        "late saved original A"
+    );
+}
+
+#[gpui::test]
+fn shared_move_and_trash_prepare_once_and_preserve_views_on_failure(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.tabs
+                .active
+                .editor
+                .replace_selection("draft ", window, cx);
+            this.new_tab(window, cx);
+            this.request(Next::File(fixture.note.clone()), window, cx);
+            this.begin_workspace(
+                WorkspaceKind::Move {
+                    from: "note.md".into(),
+                    parent: "".into(),
+                    name: Some("renamed.md".into()),
+                },
+                this.tabs.ids(),
+                window,
+                cx,
+            );
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(
+                this.tabs
+                    .iter()
+                    .all(|tab| tab.path() == Some(fixture.root.join("renamed.md").as_path()))
+            );
+            assert_eq!(this.documents.len(), 1);
+            assert!(
+                this.documents
+                    .contains_key(&fixture.root.join("renamed.md"))
+            );
+            let target = super::EntryTarget {
+                root: fixture.root.clone(),
+                path: "renamed.md".into(),
+                generation: this.notebooks.explorer.generation(),
+                directory: false,
+            };
+            this.begin_workspace(WorkspaceKind::Trash { target }, this.tabs.ids(), window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.notebooks.notice.is_some());
+            assert!(this.tabs.iter().all(|tab| tab.observed(cx).dirty));
+            // In-memory fixture deletion backend, never OS Trash.
+            this.notebooks.trash_backend = |root, path| fs::remove_file(root.join(path));
+            let target = super::EntryTarget {
+                root: fixture.root.clone(),
+                path: "renamed.md".into(),
+                generation: this.notebooks.explorer.generation(),
+                directory: false,
+            };
+            this.begin_workspace(WorkspaceKind::Trash { target }, this.tabs.ids(), window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| {
+        let n = notes.read(cx);
+        assert!(n.tabs.iter().all(|tab| tab.path().is_none()));
+        assert!(n.documents.is_empty());
+    });
+}
+
+#[gpui::test]
+fn shared_close_prompts_once_per_document_and_cancel_keeps_every_view(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let other = fixture.root.join("other.md");
+    fs::write(&other, "other").unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.tabs
+                .active
+                .editor
+                .replace_selection("draft ", window, cx);
+            this.new_tab(window, cx);
+            this.request(Next::File(fixture.note.clone()), window, cx);
+            this.new_tab(window, cx);
+            this.install_document(Some(Document::open(other).unwrap()), window, cx);
+            this.tabs
+                .active
+                .editor
+                .replace_selection("other draft ", window, cx);
+            this.request(Next::Close, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save");
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let n = notes.read(cx);
+        assert!(!n.is_busy());
+        assert_eq!(n.tabs.ids().len(), 3);
+        assert!(!n.tabs.get(n.tabs.ids()[0]).unwrap().observed(cx).dirty);
+        assert!(!n.tabs.get(n.tabs.ids()[1]).unwrap().observed(cx).dirty);
+        assert!(n.tabs.active.observed(cx).dirty);
+    });
+}
+#[gpui::test]
+fn shared_edit_notification_survives_origin_navigation_and_conflict_is_shared(
+    cx: &mut TestAppContext,
+) {
+    let (fixture, notes, cx) = fixture(cx);
+    let other = fixture.root.join("other.md");
+    fs::write(&other, "other").unwrap();
+    let first = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let first = this.tabs.active.id;
+            this.set_mode(ViewMode::Reading, window, cx);
+            this.new_tab(window, cx);
+            this.request(Next::File(fixture.note.clone()), window, cx);
+            this.tabs
+                .active
+                .editor
+                .replace_selection("queued ", window, cx);
+            this.request(Next::File(other), window, cx);
+            first
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.tabs.get(first).unwrap().dirty_cached);
+            assert_eq!(
+                this.tabs.get(first).unwrap().reading_text.as_ref(),
+                "queued original A"
+            );
+            let current = this.tabs.active.id;
+            this.open_link("note.md", window, cx);
+            assert_eq!(this.tabs.active.id, current);
+            assert_eq!(
+                this.tabs.active.editor.text(cx).as_ref(),
+                "queued original A"
+            );
+        })
+    });
+    fs::write(&fixture.note, "external change").unwrap();
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.save(Next::Nothing, window, cx)));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let n = notes.read(cx);
+        assert!(
+            n.tabs
+                .iter()
+                .all(|tab| tab.session.save_conflicted() && tab.observed(cx).dirty)
+        );
+        assert!(n.save_state(first).error.is_some());
+        assert!(std::ptr::eq(
+            n.save_state(first),
+            n.save_state(n.tabs.active.id)
+        ));
+    });
+    assert_eq!(
+        fs::read_to_string(&fixture.note).unwrap(),
+        "external change"
+    );
+}
+
+#[gpui::test]
+fn shared_explorer_keyboard_navigation_keeps_current_tab_and_tree_focus(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    fs::write(fixture.root.join("other.md"), "other").unwrap();
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.refresh_tree(window, cx)));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            let current = this.tabs.active.id;
+            let row = this
+                .notebooks
+                .explorer
+                .rows()
+                .iter()
+                .position(|row| row.path == std::path::Path::new("note.md"))
+                .unwrap();
+            let down = row > 0;
+            this.notebooks
+                .explorer
+                .select(Some(if down { row - 1 } else { row + 1 }));
+            this.notebooks.tree_focus.focus(window);
+            this.tree_move(down, window, cx);
+            assert_eq!(this.tabs.active.id, current);
+            assert_eq!(this.tabs.active.path(), Some(fixture.note.as_path()));
+            assert_eq!(this.tabs.ids().len(), 2);
+            assert!(this.notebooks.tree_focus.is_focused(window));
+        })
+    });
 }

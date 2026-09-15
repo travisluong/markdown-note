@@ -131,8 +131,9 @@ pub enum SaveFailure {
     Conflict,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum RetryPause {
+    #[default]
     None,
     UntilEdit,
     Conflict,
@@ -272,17 +273,24 @@ impl<A> Phase<A> {
     }
 }
 
-pub struct Session<D, I, A> {
-    content: Content<D, I>,
-    phase: Phase<A>,
+#[derive(Default)]
+pub struct SavePolicy {
     write: Option<WriteTicket>,
     autosave: Option<AutosaveTicket>,
     autosave_enabled: bool,
     retry_pause: RetryPause,
-    last_document: u64,
-    last_operation: u64,
     last_write: u64,
     last_autosave: u64,
+}
+
+pub type SharedSavePolicy = std::rc::Rc<std::cell::RefCell<SavePolicy>>;
+
+pub struct Session<D, I, A> {
+    content: Content<D, I>,
+    phase: Phase<A>,
+    saving: SharedSavePolicy,
+    last_document: u64,
+    last_operation: u64,
 }
 
 impl<D, I, A> Default for Session<D, I, A> {
@@ -290,19 +298,47 @@ impl<D, I, A> Default for Session<D, I, A> {
         Self {
             content: Content::Empty,
             phase: Phase::Idle,
-            write: None,
-            autosave: None,
-            autosave_enabled: false,
-            retry_pause: RetryPause::None,
+            saving: Default::default(),
             last_document: 0,
             last_operation: 0,
-            last_write: 0,
-            last_autosave: 0,
         }
     }
 }
 
 impl<D, I, A> Session<D, I, A> {
+    pub fn saving_policy(&self) -> SharedSavePolicy {
+        self.saving.clone()
+    }
+
+    /// Bind an accepted document view to its existing document write owner.
+    pub fn attach_saving(&mut self, policy: SharedSavePolicy, identity: DocumentId) {
+        assert!(!self.is_busy() && self.write().is_none());
+        if let Content::Document { id, .. } = &mut self.content {
+            *id = identity;
+            self.last_document = self.last_document.max(identity.0);
+            self.saving = policy;
+        }
+    }
+
+    /// A sibling view accepted the one shared write result. Only this view's
+    /// matching navigation continuation may be released by that completion.
+    pub fn shared_write_finished(
+        &mut self,
+        ticket: WriteTicket,
+        success: bool,
+        observed: Observed,
+    ) -> Vec<Effect<A>> {
+        if !self.matches(observed)
+            || !matches!(&self.phase,
+            Phase::Waiting { write, .. } | Phase::Writing { write, .. } if *write == ticket)
+        {
+            return vec![];
+        }
+        let mut effects = vec![];
+        self.after_write(ticket, success, observed, &mut effects);
+        Self::changed(effects)
+    }
+
     pub fn content(&self) -> &Content<D, I> {
         &self.content
     }
@@ -312,11 +348,11 @@ impl<D, I, A> Session<D, I, A> {
     }
 
     pub fn write(&self) -> Option<WriteTicket> {
-        self.write
+        self.saving.borrow().write
     }
 
     pub fn autosave(&self) -> Option<AutosaveTicket> {
-        self.autosave
+        self.saving.borrow().autosave
     }
 
     pub fn is_busy(&self) -> bool {
@@ -324,7 +360,7 @@ impl<D, I, A> Session<D, I, A> {
     }
 
     pub fn save_conflicted(&self) -> bool {
-        self.retry_pause == RetryPause::Conflict
+        self.saving.borrow().retry_pause == RetryPause::Conflict
     }
 
     fn matches(&self, observed: Observed) -> bool {
@@ -349,7 +385,7 @@ impl<D, I, A> Session<D, I, A> {
     }
 
     fn cancel_timer(&mut self, effects: &mut Vec<Effect<A>>) {
-        if self.autosave.take().is_some() {
+        if self.saving.borrow_mut().autosave.take().is_some() {
             effects.push(Effect::CancelAutosave);
         }
     }
@@ -363,21 +399,21 @@ impl<D, I, A> Session<D, I, A> {
 
     fn arm_autosave(&mut self, document: DocumentId, effects: &mut Vec<Effect<A>>) {
         if self.content.document_id() != Some(document)
-            || !self.autosave_enabled
-            || self.retry_pause != RetryPause::None
+            || !self.saving.borrow().autosave_enabled
+            || self.saving.borrow().retry_pause != RetryPause::None
             || self.is_busy()
-            || self.write.is_some()
+            || self.saving.borrow().write.is_some()
         {
             return;
         }
-        let Some(serial) = self.last_autosave.checked_add(1) else {
+        let Some(serial) = self.saving.borrow().last_autosave.checked_add(1) else {
             effects.push(Effect::Rejected(Rejection::IdentityExhausted));
             return;
         };
         self.cancel_timer(effects);
-        self.last_autosave = serial;
+        self.saving.borrow_mut().last_autosave = serial;
         let ticket = AutosaveTicket { serial, document };
-        self.autosave = Some(ticket);
+        self.saving.borrow_mut().autosave = Some(ticket);
         effects.push(Effect::ArmAutosave(ticket));
     }
 
@@ -385,7 +421,7 @@ impl<D, I, A> Session<D, I, A> {
         if !self.matches(observed) {
             return vec![];
         }
-        self.autosave_enabled = enabled;
+        self.saving.borrow_mut().autosave_enabled = enabled;
         let mut effects = vec![];
         self.cancel_timer(&mut effects);
         self.resume(observed, &mut effects);
@@ -400,8 +436,8 @@ impl<D, I, A> Session<D, I, A> {
         if self.content.document_id() != Some(document) {
             return vec![];
         }
-        if self.retry_pause == RetryPause::UntilEdit {
-            self.retry_pause = RetryPause::None;
+        if self.saving.borrow().retry_pause == RetryPause::UntilEdit {
+            self.saving.borrow_mut().retry_pause = RetryPause::None;
         }
         let mut effects = vec![];
         self.cancel_timer(&mut effects);
@@ -433,7 +469,7 @@ impl<D, I, A> Session<D, I, A> {
         };
         let mut effects = vec![];
         self.cancel_timer(&mut effects);
-        if let Some(write) = self.write {
+        if let Some(write) = self.write() {
             self.phase = Phase::Waiting {
                 id: operation,
                 write,
@@ -466,7 +502,7 @@ impl<D, I, A> Session<D, I, A> {
         };
         let mut effects = vec![];
         self.cancel_timer(&mut effects);
-        if let Some(write) = self.write {
+        if let Some(write) = self.write() {
             self.phase = Phase::Waiting {
                 id: operation,
                 write,
@@ -486,17 +522,17 @@ impl<D, I, A> Session<D, I, A> {
         let Some(document) = self.content.document_id() else {
             return;
         };
-        let Some(serial) = self.last_write.checked_add(1) else {
+        let Some(serial) = self.saving.borrow().last_write.checked_add(1) else {
             effects.push(Effect::Rejected(Rejection::IdentityExhausted));
             return;
         };
-        debug_assert!(self.write.is_none());
-        self.last_write = serial;
+        debug_assert!(self.saving.borrow().write.is_none());
+        self.saving.borrow_mut().last_write = serial;
         let write = WriteTicket {
             id: WriteId(serial),
             document,
         };
-        self.write = Some(write);
+        self.saving.borrow_mut().write = Some(write);
         if let Some((id, next)) = foreground {
             self.phase = Phase::Writing { id, write, next };
         }
@@ -504,16 +540,16 @@ impl<D, I, A> Session<D, I, A> {
     }
 
     pub fn autosave_due(&mut self, ticket: AutosaveTicket, observed: Observed) -> Vec<Effect<A>> {
-        if self.autosave != Some(ticket) || !self.matches(observed) {
+        if self.saving.borrow().autosave != Some(ticket) || !self.matches(observed) {
             return vec![];
         }
-        self.autosave = None;
+        self.saving.borrow_mut().autosave = None;
         let mut effects = vec![];
         if observed.dirty
-            && self.autosave_enabled
-            && self.retry_pause == RetryPause::None
+            && self.saving.borrow().autosave_enabled
+            && self.saving.borrow().retry_pause == RetryPause::None
             && !self.is_busy()
-            && self.write.is_none()
+            && self.saving.borrow().write.is_none()
         {
             self.start_write(None, &mut effects);
         }
@@ -560,10 +596,10 @@ impl<D, I, A> Session<D, I, A> {
         ticket: WriteTicket,
         accept_baseline: impl FnOnce(&mut D) -> bool,
     ) -> Vec<Effect<A>> {
-        if self.write != Some(ticket) {
+        if self.saving.borrow().write != Some(ticket) {
             return vec![];
         }
-        self.write = None;
+        self.saving.borrow_mut().write = None;
         let mut effects = vec![];
         let dirty = match &mut self.content {
             Content::Document { id, value } if *id == ticket.document => {
@@ -573,7 +609,7 @@ impl<D, I, A> Session<D, I, A> {
             }
             _ => return Self::changed(effects),
         };
-        self.retry_pause = RetryPause::None;
+        self.saving.borrow_mut().retry_pause = RetryPause::None;
         self.after_write(
             ticket,
             true,
@@ -594,14 +630,16 @@ impl<D, I, A> Session<D, I, A> {
         failure: SaveFailure,
         observed: Observed,
     ) -> Vec<Effect<A>> {
-        if self.write != Some(ticket) || !self.matches(observed) {
+        if self.saving.borrow().write != Some(ticket) || !self.matches(observed) {
             return vec![];
         }
-        self.write = None;
-        if failure == SaveFailure::Conflict || self.retry_pause == RetryPause::Conflict {
-            self.retry_pause = RetryPause::Conflict;
+        self.saving.borrow_mut().write = None;
+        if failure == SaveFailure::Conflict
+            || self.saving.borrow().retry_pause == RetryPause::Conflict
+        {
+            self.saving.borrow_mut().retry_pause = RetryPause::Conflict;
         } else {
-            self.retry_pause = RetryPause::UntilEdit;
+            self.saving.borrow_mut().retry_pause = RetryPause::UntilEdit;
         }
         let mut effects = vec![Effect::WriteFailed(ticket)];
         self.after_write(ticket, false, observed, &mut effects);
@@ -669,7 +707,10 @@ impl<D, I, A> Session<D, I, A> {
     /// Startup index restoration requires an empty session.
     /// It owns the same foreground slot as navigation, without a fake load.
     pub fn restore(&mut self) -> Vec<Effect<A>> {
-        if self.is_busy() || self.write.is_some() || !matches!(self.content, Content::Empty) {
+        if self.is_busy()
+            || self.saving.borrow().write.is_some()
+            || !matches!(self.content, Content::Empty)
+        {
             return vec![Effect::Rejected(Rejection::Busy)];
         }
         let Some(operation) = self.operation() else {
@@ -769,6 +810,25 @@ impl<D, I, A> Session<D, I, A> {
         action: Option<A>,
         observed: Observed,
     ) -> Vec<Effect<A>> {
+        self.picked_policy(operation, action, observed, false)
+    }
+
+    pub fn picked_retaining(
+        &mut self,
+        operation: OperationId,
+        action: Option<A>,
+        observed: Observed,
+    ) -> Vec<Effect<A>> {
+        self.picked_policy(operation, action, observed, true)
+    }
+
+    fn picked_policy(
+        &mut self,
+        operation: OperationId,
+        action: Option<A>,
+        observed: Observed,
+        retaining: bool,
+    ) -> Vec<Effect<A>> {
         if !self.owns(operation, PhaseKind::Picking) || !self.matches(observed) {
             return vec![];
         }
@@ -782,7 +842,7 @@ impl<D, I, A> Session<D, I, A> {
         let effects = if approved {
             self.continue_action(action)
         } else {
-            self.request(action, observed)
+            self.request_policy(action, observed, !retaining)
         };
         Self::changed(effects)
     }
@@ -922,7 +982,7 @@ impl<D, I, A> Session<D, I, A> {
         };
         // Navigation waits for existing writes before dispatch; moves and
         // installations therefore cannot invalidate an in-flight write path.
-        debug_assert!(self.write.is_none());
+        debug_assert!(self.saving.borrow().write.is_none());
         let id = if matches!(loaded, Loaded::Empty) {
             None
         } else {
@@ -935,6 +995,9 @@ impl<D, I, A> Session<D, I, A> {
             Some(DocumentId(serial))
         };
         let previous = self.content.identity();
+        let enabled = self.saving.borrow().autosave_enabled;
+        self.saving = Default::default();
+        self.saving.borrow_mut().autosave_enabled = enabled;
         self.content = match loaded {
             Loaded::Empty => Content::Empty,
             Loaded::Document(value) => Content::Document {
@@ -946,7 +1009,7 @@ impl<D, I, A> Session<D, I, A> {
                 value,
             },
         };
-        self.retry_pause = RetryPause::None;
+        self.saving.borrow_mut().retry_pause = RetryPause::None;
         let mut effects = vec![];
         self.cancel_timer(&mut effects);
         effects.push(Effect::Installed {
@@ -959,7 +1022,7 @@ impl<D, I, A> Session<D, I, A> {
 
     /// An approved entry operation owns the foreground until its filesystem result.
     pub fn begin_entry_operation(&mut self, operation: OperationId) -> Vec<Effect<A>> {
-        if !self.owns(operation, PhaseKind::Dispatching) || self.write.is_some() {
+        if !self.owns(operation, PhaseKind::Dispatching) || self.saving.borrow().write.is_some() {
             return vec![];
         }
         self.phase = Phase::EntryOperation(operation);
@@ -1002,7 +1065,7 @@ impl<D, I, A> Session<D, I, A> {
         )
     }
     pub fn move_content(&mut self) -> Vec<Effect<A>> {
-        if self.is_busy() || self.write.is_some() {
+        if self.is_busy() || self.saving.borrow().write.is_some() {
             return vec![Effect::Rejected(Rejection::Busy)];
         }
         let Some(operation) = self.operation() else {
@@ -1035,7 +1098,7 @@ impl<D, I, A> Session<D, I, A> {
         if outcome.conflict
             && let Some(document) = self.content.document_id()
         {
-            self.retry_pause = RetryPause::Conflict;
+            self.saving.borrow_mut().retry_pause = RetryPause::Conflict;
             effects.push(Effect::MoveBaselineConflict(document));
         }
         self.resume(

@@ -571,6 +571,12 @@ fn retained_unsaved_tabs_feed_real_search_and_open_existing_result(cx: &mut Test
         })
     });
     edit(&notes, "outside hit", cx);
+    let destination_tab = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            this.tabs.active.id
+        })
+    });
     search(&notes, cx);
     finish_search(cx);
     let panel = cx.update(|_, cx| notes.read(cx).search.as_ref().unwrap().clone());
@@ -595,8 +601,12 @@ fn retained_unsaved_tabs_feed_real_search_and_open_existing_result(cx: &mut Test
     assert!(!cx.has_pending_prompt());
     cx.update(|window, cx| {
         let n = notes.read(cx);
-        assert_eq!(n.tabs.active.id, first);
-        assert_eq!(n.tabs.ids().len(), 3);
+        assert_eq!(n.tabs.active.id, destination_tab);
+        assert_eq!(
+            n.tabs.active.document().unwrap().id,
+            n.tabs.get(first).unwrap().document().unwrap().id
+        );
+        assert_eq!(n.tabs.ids().len(), 4);
         assert_eq!(n.tabs.active.editor.selection(cx), 6..9);
         assert!(
             panel

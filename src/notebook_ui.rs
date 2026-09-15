@@ -815,6 +815,11 @@ impl Notes {
     ) {
         #[cfg(test)]
         let install_delay = std::mem::take(&mut self.notebooks.activation_install_delay);
+        let retained = self
+            .documents
+            .iter()
+            .map(|(path, runtime)| (path.clone(), runtime.document.clone()))
+            .collect::<std::collections::HashMap<_, _>>();
         let tab_id = self.tabs.active.id;
         cx.spawn_in(window, async move |this, cx| {
             let result = cx
@@ -823,7 +828,13 @@ impl Notes {
                     let book = notebook::Notebook::open(&path, create)?;
                     let document = match &book.settings.last_file {
                         Some(relative) => {
-                            match notebook::resolve(&book.root, relative).and_then(Document::open) {
+                            match notebook::resolve(&book.root, relative).and_then(|path| {
+                                let canonical = fs::canonicalize(&path)?;
+                                retained
+                                    .get(&canonical)
+                                    .cloned()
+                                    .map_or_else(|| Document::open(path), Ok)
+                            }) {
                                 Ok(document) => Some(document),
                                 Err(error) if error.kind() == io::ErrorKind::NotFound => None,
                                 Err(error) => return Err(error),
@@ -1036,14 +1047,13 @@ impl Notes {
                 })
                 .map(|book| (book.root.clone(), book.settings.autosave))
         });
+        let editor = self.document_editor(id, window, cx);
         let tab = self.tabs.get_mut(id).unwrap();
         tab.reading_search = None;
         tab.reading_view = None;
         tab.saves.timer = None;
         tab.saves.error = None;
         tab.notebook = owning;
-        let text = tab.document().map(|d| d.saved.clone()).unwrap_or_default();
-        let editor = Editor::new(text, window, cx);
         tab.editor_subscription = Self::subscribe_tab_editor(id, &editor, window, cx);
         tab.editor = editor;
         tab.reading_text = if tab.mode == ViewMode::Reading {
@@ -1053,7 +1063,7 @@ impl Notes {
         };
         tab.dirty_task = None;
         tab.dirty_revision += 1;
-        tab.dirty_cached = false;
+        tab.dirty_cached = tab.observed(cx).dirty;
         if tab.path().is_none() {
             tab.navigation = Default::default();
             tab.navigation_pending = None;
@@ -1067,7 +1077,10 @@ impl Notes {
                 self.focus.focus(window);
             }
         }
-        self.schedule_tab_autosave(id, window, cx);
+        self.reconcile_documents();
+        for tab_id in self.tabs.ids() {
+            self.schedule_tab_autosave(tab_id, window, cx);
+        }
     }
 
     #[cfg(test)]
@@ -1120,6 +1133,38 @@ impl Notes {
         for effect in effects {
             if let app::session::Effect::Load(operation) = effect {
                 self.notebooks.tree_operation = keep_tree_focus.then_some(operation);
+                let notebook_path_valid = self
+                    .notebooks
+                    .active
+                    .as_ref()
+                    .and_then(|book| {
+                        path.strip_prefix(&book.root)
+                            .ok()
+                            .map(|relative| notebook::resolve(&book.root, relative).is_ok())
+                    })
+                    .unwrap_or(true);
+                if let Some(document) = self
+                    .retained_document(&path)
+                    .filter(|_| notebook_path_valid && notebook::markdown(&path))
+                {
+                    self.notebooks.tree_operation = None;
+                    if self.complete_content_load(
+                        operation,
+                        Ok(app::session::Loaded::Document(document)),
+                        window,
+                        cx,
+                    ) {
+                        self.remember_file(cx);
+                        if keep_tree_focus {
+                            self.notebooks.tree_focus.focus(window);
+                        }
+                        if let Some(destination) = self.search_destination.take() {
+                            self.reveal_search_result(destination, window, cx);
+                            self.finish_search_navigation(true, window, cx);
+                        }
+                    }
+                    continue;
+                }
                 let root = self.notebooks.active.as_ref().map(|book| book.root.clone());
                 let path = path.clone();
                 let tab_id = self.tabs.active.id;
@@ -2016,11 +2061,11 @@ impl Notes {
         let root = book.root.clone();
         let mut operations = Vec::new();
         let versions = self
-            .tabs
-            .iter()
-            .filter_map(|tab| {
-                tab.document()
-                    .map(|doc| (tab.id, doc.path.clone(), doc.version.clone()))
+            .documents
+            .values()
+            .map(|runtime| {
+                let doc = &runtime.document;
+                (doc.id, doc.path.clone(), doc.version())
             })
             .collect::<Vec<_>>();
         for id in self.tabs.ids() {
@@ -2053,7 +2098,7 @@ impl Notes {
                                 match content {
                                     app::session::MovingContent::Document(doc) => {
                                         doc.path = notebook::remap_path(&doc.path, &root.join(&from), &root.join(&to));
-                                        if let Some(result) = versions.remove(&id) { match result { Ok(version) => doc.version = version, Err(e) => error = Some(e) } }
+                                        if let Some(result) = versions.remove(&doc.id) { match result { Ok(version) => doc.set_version(version), Err(e) => error = Some(e) } }
                                     }
                                     app::session::MovingContent::Image(path) => *path = notebook::remap_path(path, &root.join(&from), &root.join(&to)),
                                     app::session::MovingContent::Empty => {}
@@ -2063,7 +2108,7 @@ impl Notes {
                             if effects.is_empty() { continue; }
                             tab.navigation.remap(&root.join(&from), &root.join(&to));
                             let path = tab.document().map(|d| d.path.clone()); tab.editor.set_document_path(path, cx);
-                            if let Some(error) = error { tab.saves.error = Some(format!("Could not validate moved file: {error}. Your changes remain in this tab.")); }
+                            if let Some(error) = error { this.save_state_mut(id).error = Some(format!("Could not validate moved file: {error}. Your changes remain in this document.")); }
                             let effects = effects.into_iter().filter(|e| !matches!(e, app::session::Effect::Moved(_) | app::session::Effect::MoveBaselineConflict(_))).collect();
                             this.apply_tab_effects(id, effects, window, cx);
                         }
@@ -2080,6 +2125,7 @@ impl Notes {
                         this.notebooks.notice = Some(format!("Could not move entry: {error}"));
                     }
                 }
+                this.reconcile_documents();
                 this.cancel_workspace(window, cx);
             });
         }).detach();

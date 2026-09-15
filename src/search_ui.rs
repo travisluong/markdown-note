@@ -29,8 +29,10 @@ impl Notes {
     }
 
     fn search_overlay(&self, cx: &App) -> Vec<Overlay> {
+        let mut seen = std::collections::HashSet::new();
         self.tabs
             .iter()
+            .filter(|tab| tab.document().is_some_and(|doc| seen.insert(doc.id)))
             .filter_map(|tab| {
                 tab.document().map(|document| Overlay {
                     path: document.path.clone(),
@@ -119,6 +121,7 @@ impl Notes {
         cx: &mut Context<Self>,
     ) {
         let overlay = self.search_overlay(cx);
+        let discarded = discarded.filter(|path| !overlay.iter().any(|entry| &entry.path == path));
         if let Some(panel) = &self.search {
             panel.update(cx, |panel, cx| {
                 panel.document_installed(overlay, discarded, cx)

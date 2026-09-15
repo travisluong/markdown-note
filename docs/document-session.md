@@ -1,19 +1,25 @@
 # Document session contract
 
-[`Session<D, I, A>`](../src/app/session.rs) is the sole owner of its tab's content,
-document identity, foreground phase, active document write, queued continuation,
-autosave ticket and automatic retry policy. Its fields are private. The model
-imports no GPUI, editor or application-root types and copies no source buffers.
-The application supplies `Document`, image paths and `Next` as its generic values.
+[`Session<D, I, A>`](../src/app/session.rs) owns its tab's content and foreground
+phase/continuation. Its private SavePolicy is shared by all views of one document
+and owns the write, debounce ticket and retry pause. The pure model imports no
+GPUI, editor or application-root types and copies no source buffers.
 
-Each retained Tab owns one Session, Editor/subscription, dirty comparison runtime,
-save timer/error, mode, Reading view/find state, and navigation history. The live
-source remains in `InputState`. `Document` retains file metadata and the
-saved text/rope baseline. Feature adapters read `Notes::document()`,
-`image_path()` and `document_id()`; they cannot replace content through those
-accessors. `Content` is exactly one of Empty, Document or Image.
+The application registry in `shared_documents.rs` owns the canonical document's
+stable ID, shared baseline metadata, InputBuffer, buffer subscription, timer/error
+and dirty comparison task. Tabs retain independent InputState views, modes,
+Reading/find state and navigation histories. InputBuffer owns source/history;
+view-local ropes are synchronized projections. Content remains exactly one of
+Empty, Document or Image. Empty/image views have no shared document runtime.
 
 ## Owners and effects
+
+A shared write result is accepted once by `write_succeeded`/`write_failed`.
+`shared_write_finished` releases other matching tab continuations without accepting
+the receipt again. Autosave cannot start while any view of that document owns
+foreground work. Closing the originating view never invalidates retained-document
+callbacks. Buffer events drive dirty/search/Reading updates so queued edits survive
+immediate navigation away from their origin.
 
 | Responsibility | Owner / boundary |
 | --- | --- |
@@ -41,15 +47,20 @@ eventually disappear. Refresh notifications do not change session policy.
 
 ## Identity and foreground ownership
 
-TabId is a stable application-level identity. DocumentId, OperationId and WriteId
-are separate monotonic, non-wrapping **session-local** types; their values may
-collide across tabs. Every async task or subscription captures TabId before
-checking the existing document/operation/write/source/path evidence.
-Installation creates a new content identity; moving preserves it. A WriteTicket
-contains both its write identity and document identity. Every asynchronous
-completion supplies its captured token to the matching model event.
+TabId identifies a view. Registry document IDs are stable, monotonic and independent
+of tabs. Background callbacks capture the registry ID plus the document/write/path
+or revision evidence, resolving surviving views at completion. Foreground callbacks
+also capture TabId and OperationId. Session-local content/write identities may
+collide across unrelated documents, so they never substitute for the registry ID.
+Attaching a view binds it to the retained document's content identity and SavePolicy;
+leaving it creates a fresh policy for its new content. Moves preserve identities.
 
-There is one foreground phase. Background autosave may coexist with an auxiliary
+Navigation opens in the current tab even when another tab shows its destination.
+Attachments use current in-memory source, including unsaved edits. Last-view exits
+use ordinary replacement approval; other exits retain the shared document without
+prompting. Workspace preparation deduplicates documents in first-tab order.
+
+There is one foreground phase per tab; application guards prevent conflicting foreground work. Background autosave may coexist with an auxiliary
 picker, but its completion cannot release that picker. Navigation or manual Save
 during a background write enters WaitingForWrite with one owned continuation.
 After write completion, navigation checks actual dirtiness again; manual Save
@@ -86,7 +97,7 @@ revision. A revision number is never evidence that a write is necessary.
 
 `Write` captures path, format, DiskVersion and one immutable rope snapshot.
 Background work converts and saves that snapshot. `write_succeeded` accepts a
-matching baseline exactly once; its callback updates saved text, saved rope and
+matching baseline exactly once; its callback updates the shared saved rope and
 receipt version and reports whether current text differs from the just-written
 snapshot. Newer edits remain dirty. Baseline acceptance remains valid when the
 original foreground continuation was cancelled, without releasing a newer owner.
@@ -109,10 +120,11 @@ failure and stale-arm regressions cover actual eventual disk writes.
 ## Installation and dependent state
 
 Only an accepted `loaded` event replaces content. The Installed effect creates a
-fresh InputState and subscription, clears Reading find, resets dirty-display
-work, configures image paths and view mode, and applies the installed document's
-autosave settings. Switching Source/Live/Reading keeps the existing editor and
-history; installation creates new history.
+fresh InputState view and link subscription, clears view-local Reading find,
+configures image paths and mode, and attaches the document runtime. Opening an
+already-retained document preserves its buffer, baseline and history. Only the
+first load creates a new buffer/history. Switching Source/Live/Reading preserves
+the current view's editor and shared history.
 
 Every installation notifies `search_document_installed`, including clean document
 navigation, image installation and empty content. The effect identifies the old
@@ -183,15 +195,15 @@ without creating a visit. History does not persist to notebook settings.
 
 TabSet owns one active tab and retained inactive tabs in strip order. User selection
 moves ownership without recreating the Editor or Reading TextView. Background
-completions directly address their captured TabId; the active slot is never
-temporarily swapped for an inactive callback. Foreground completions reject a
+completions resolve their captured registry document ID to surviving views; the
+active slot is never temporarily swapped for an inactive callback. Foreground completions reject a
 different active TabId. Any foreground phase or workspace coordinator prevents
 user tab changes, while background autosaves continue during ordinary switches.
 
 Workspace preparation uses Session::request or request_retaining with a dedicated
 Prepared continuation. continued releases each approved session without replacing
 its content. Autosave is disabled for the barrier, so neither discarded buffers nor
-late write results restart timers. Close prepares every tab in strip order before
+late write results restart timers. Close prepares each distinct document in first-tab order before
 request_retaining(Close) enters the existing preference barrier. Cancellation or
 failure keeps all tabs and unapplied discard decisions, while completed saves
 retain their real disk baselines; eligible timers resume afterward.
@@ -199,11 +211,11 @@ retain their real disk baselines; eligible timers resume afterward.
 Moves and Trash drain writes before filesystem work. Every retained session gets
 its own operation token. Successful moves update every affected path and saved
 disk version while preserving editor history. Failed revalidation pauses that
-tab's autosave. Trash installs Empty in affected sessions only after backend
+document's autosave. Trash installs Empty in affected sessions only after backend
 success; failure/cancellation preserves buffers and histories.
 
 Notebook activation uses activation_retained only for a matching LoadingNotebook
-operation when it will focus an already-open file or preserve an occupied tab.
-A new or reused empty tab uses the normal accepted installation hook. Selecting
-an existing path (including a history destination) focuses its tab before dirty
-replacement approval and leaves both histories unchanged.
+operation when it preserves an occupied tab. A new or reused empty tab uses the
+normal accepted installation hook, attaching to shared in-memory content when
+available. All ordinary note navigation stays in the current tab and commits only
+that tab's history. Other views keep their histories, selections and modes.

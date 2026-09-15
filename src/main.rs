@@ -16,6 +16,7 @@ mod lifecycle_tests;
 mod links;
 mod notebook_ui;
 mod reading_search;
+mod shared_documents;
 
 mod search_ui;
 mod settings_ui;
@@ -109,33 +110,69 @@ enum MenuKind {
     Help,
 }
 
+#[derive(Clone)]
 struct Document {
+    id: u64,
     path: PathBuf,
-    saved: String,
+    baseline: std::sync::Arc<std::sync::Mutex<DocumentBaseline>>,
+    #[cfg(feature = "editor-diagnostics")]
+    _diagnostic_fixture: Option<std::sync::Arc<tempfile::TempDir>>,
+}
+
+struct DocumentBaseline {
     saved_rope: Rope,
     format: document::TextFormat,
     version: document::DiskVersion,
-    #[cfg(feature = "editor-diagnostics")]
-    _diagnostic_fixture: Option<tempfile::TempDir>,
 }
 
 impl Document {
     fn open(path: PathBuf) -> io::Result<Self> {
+        static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let loaded = document::open(&path)?;
+        let id = SERIAL
+            .fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |id| id.checked_add(1),
+            )
+            .map_err(|_| io::Error::other("Document identity exhausted"))?;
         Ok(Self {
+            id,
             path: loaded.path,
-            saved_rope: Rope::from(loaded.text.as_str()),
-            saved: loaded.text,
-            format: loaded.format,
-            version: loaded.version,
+            baseline: std::sync::Arc::new(std::sync::Mutex::new(DocumentBaseline {
+                saved_rope: Rope::from(loaded.text.as_str()),
+                format: loaded.format,
+                version: loaded.version,
+            })),
             #[cfg(feature = "editor-diagnostics")]
             _diagnostic_fixture: None,
         })
+    }
+    fn saved_rope(&self) -> Rope {
+        self.baseline.lock().unwrap().saved_rope.clone()
+    }
+    fn saved(&self) -> String {
+        self.saved_rope().to_string()
+    }
+    fn format(&self) -> document::TextFormat {
+        self.baseline.lock().unwrap().format
+    }
+    fn version(&self) -> document::DiskVersion {
+        self.baseline.lock().unwrap().version.clone()
+    }
+    fn set_version(&self, version: document::DiskVersion) {
+        self.baseline.lock().unwrap().version = version;
+    }
+    fn accept_save(&self, snapshot: Rope, version: document::DiskVersion) {
+        let mut baseline = self.baseline.lock().unwrap();
+        baseline.saved_rope = snapshot;
+        baseline.version = version;
     }
 }
 
 struct Notes {
     tabs: tabs::TabSet,
+    documents: std::collections::HashMap<PathBuf, shared_documents::DocumentRuntime>,
     workspace: Option<tabs::WorkspaceOperation>,
     session_autosave: notebook::Autosave,
     notebook_cache: std::collections::HashMap<PathBuf, notebook::Notebook>,
@@ -185,6 +222,7 @@ impl Notes {
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
             tabs,
+            documents: Default::default(),
             workspace: None,
             session_autosave: Default::default(),
             notebook_cache: Default::default(),
@@ -235,18 +273,16 @@ impl Notes {
                     }
                 }
                 EditorEvent::Changed => {
-                    this.check_tab_dirty(id, window, cx);
-                    let tab = this.tabs.get_mut(id).unwrap();
-                    if tab.mode == ViewMode::Reading {
-                        tab.reading_text = tab.editor.text(cx);
-                    }
-                    if let Some(document) = tab.session.content().document_id() {
-                        let effects = tab.session.edit_notice(document);
-                        this.apply_tab_effects(id, effects, window, cx);
-                    }
-                    this.schedule_search(window, cx);
-                    if this.tabs.active.id == id && this.tabs.active.mode == ViewMode::Reading {
-                        this.update_reading_search(cx);
+                    // Standalone diagnostic inputs can bypass document installation.
+                    // Production documents notify through the runtime's buffer subscription.
+                    if !this.tabs.get(id).unwrap().editor.has_shared_buffer(cx)
+                        && let Some(document) = this
+                            .tabs
+                            .get(id)
+                            .and_then(|tab| tab.document())
+                            .map(|doc| doc.id)
+                    {
+                        this.document_edited(document, window, cx);
                     }
                 }
             }
@@ -259,32 +295,38 @@ impl Notes {
         self.check_tab_dirty(self.tabs.active.id, window, cx);
     }
     fn check_tab_dirty(&mut self, id: tabs::TabId, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(tab) = self.tabs.get_mut(id) else {
+        let Some(tab) = self.tabs.get(id) else {
             return;
         };
-        let Some(document) = tab.document() else {
+        let Some(document) = tab.document().cloned() else {
             return;
         };
-        let saved = document.saved_rope.clone();
+        let saved = document.saved_rope();
         let current = tab.editor.snapshot(cx);
-        let identity = tab.session.content().document_id();
-        tab.dirty_revision += 1;
-        let revision = tab.dirty_revision;
-        tab.dirty_cached = true;
-        tab.dirty_task = Some(cx.spawn_in(window, async move |this, cx| {
+        for id in self.document_tabs(document.id) {
+            let tab = self.tabs.get_mut(id).unwrap();
+            tab.dirty_revision += 1;
+            tab.dirty_cached = true;
+        }
+        let Some(runtime) = self.documents.get_mut(&document.path) else {
+            return;
+        };
+        runtime.dirty_revision += 1;
+        let revision = runtime.dirty_revision;
+        runtime.dirty_task = Some(cx.spawn_in(window, async move |this, cx| {
             let dirty = cx
                 .background_executor()
                 .spawn(async move { saved != current })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                let Some(tab) = this.tabs.get_mut(id) else {
-                    return;
-                };
-                if tab.dirty_revision != revision || tab.session.content().document_id() != identity
-                {
+                if !this.documents.values().any(|runtime| {
+                    runtime.document.id == document.id && runtime.dirty_revision == revision
+                }) {
                     return;
                 }
-                tab.dirty_cached = dirty;
+                for id in this.document_tabs(document.id) {
+                    this.tabs.get_mut(id).unwrap().dirty_cached = dirty;
+                }
                 this.refresh(window, cx);
             });
         }));
@@ -779,9 +821,10 @@ impl Render for Notes {
             .when(self.toolbar_settings().any_enabled(), |view| {
                 view.child(self.render_toolbar(window, cx))
             })
-            .when_some(self.tabs.active.saves.error.clone(), |view, error| {
-                view.child(div().p_2().text_sm().child(error))
-            })
+            .when_some(
+                self.save_state(self.tabs.active.id).error.clone(),
+                |view, error| view.child(div().p_2().text_sm().child(error)),
+            )
             .when_some(self.notebooks.notice.clone(), |view, notice| {
                 view.child(div().p_2().text_sm().child(notice))
             })

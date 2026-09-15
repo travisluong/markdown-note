@@ -1298,3 +1298,28 @@ Windows headless verification:
   Transient Windows LNK1104 test-executable failures cleared on retry. No native
   application or desktop interaction was used; native visual validation remains
   user-run. The generic vendored dialog implementation was not changed.
+
+
+## Shared notes in current tabs — 2026-09-15
+
+- All note navigation now installs in the current tab. Canonical-path document
+  runtimes retain unsaved text, shared history/baseline, one write/debounce owner,
+  and one buffer subscription independently of any view's lifetime.
+- InputBuffer broadcasts source edits to independent Source/Live views; selections,
+  scroll anchors, find and modes stay local. Reading views receive shared changes.
+  Closing one view retains the draft; workspace decisions deduplicate documents.
+  Move revalidation, search overlays, save errors and accepted baselines are shared.
+- Full `cargo test --locked --offline --features editor-diagnostics -j 1` passed:
+  **476 tests** (81 library, 208 application, 187 integration), zero failures or
+  ignored tests. Coverage includes shared edits/undo/IME, typing boundaries,
+  Source/Live scroll anchoring, Reading updates, Explorer keyboard focus, links,
+  picker/history/search routing, pending saves, late edits, external conflicts,
+  closing the origin, deduplicated close/Trash decisions and move reindexing.
+- `cargo check --locked --offline`, `cargo fmt --check`, and strict
+  `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+  passed. Transient Windows LNK1104 executable locks cleared on retry; the existing
+  proc-macro-error2 future-compatibility notice remains.
+- Logs are in `target/shared-notes-full-tests.log`, `target/shared-notes-check.log`,
+  and `target/shared-notes-clippy.log`. Tests used TestPlatform only; no native
+  application, desktop input or OS Trash was used. Native visual validation remains
+  user-run. Existing unrelated working-tree changes were preserved.

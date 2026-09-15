@@ -70,7 +70,7 @@ fn retained_document_autosaves_after_discarded_navigation(
     let identity = cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             assert!(this.dirty(cx));
-            assert!(this.saves.timer.is_some());
+            assert!(this.active_saves().timer.is_some());
             let book_root = this.notebooks.active.as_ref().unwrap().root.clone();
             let selection = this
                 .notebooks
@@ -81,7 +81,7 @@ fn retained_document_autosaves_after_discarded_navigation(
             this.notebooks.explorer.select(selection);
             this.request(Next::TreeFile(book_root.join("b.md")), window, cx);
             assert!(
-                this.saves.timer.is_none(),
+                this.active_saves().timer.is_none(),
                 "navigation cancels the old debounce"
             );
             this.document_id()
