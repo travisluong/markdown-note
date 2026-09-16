@@ -1566,3 +1566,23 @@ The full toolbar module (12), palette module (4), and Help shortcut module (3)
 also pass, including stale-heading rejection and platform key documentation.
 `cargo fmt --check` and `git diff --check` pass. A transient Windows linker lock
 on the just-run test executable cleared on retry.
+
+## Command surface port 2: New notes and tabs (2026-09-15)
+
+File now includes New note, New tab and Close tab. Mod+N creates a disk note in
+the active notebook root through the shared guarded new_note adapter and
+Next::NewNote; Mod+T creates an empty tab and Mod+W closes the active tab through
+existing retained-document lifecycle owners. The palette adds New tab and Close
+current tab, including availability without a notebook. Shortcut Help uses the
+same registrations, with Command on macOS and Control elsewhere. All new routes
+retain busy/modal guards, save/discard/cancel and shared-document semantics.
+
+Headless TestPlatform checks passed: retained tab suite (24), palette suite (5),
+title-bar suite (10), Help shortcuts (3), and library commands filter (12).
+New regressions exercise actual shortcut dispatch, root note creation versus
+empty tabs, cancellation before disk creation, dirty-tab close cancellation,
+File menu tab actions, standalone palette actions and modal rejection.
+Existing retained-tab tests cover shared views, save failures and last-view
+closure. cargo fmt --check and git diff --check pass. Tests used --offline
+--locked --target-dir target/titlebar-validation; transient Windows linker locks
+cleared on retry. No desktop interaction or native application was used.

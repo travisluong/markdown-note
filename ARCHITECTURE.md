@@ -82,7 +82,10 @@ Known image visits remain available after switching notebooks, with path/link
 validation on traversal. Failed, cancelled and stale loads leave history intact.
 
 Document tabs have a horizontally scrollable strip above content, with New tab and
-close controls. New tab creates an empty session without a disk file. Explorer,
+close controls. File menu, palette and Mod+T/Mod+W share the existing tab owners.
+New note uses the guarded notebook adapter and Next::NewNote for the active root,
+available from File, palette and Mod+N. New tab creates an empty session without
+a disk file. Explorer,
 links, search, Go to File, picker and history navigation install in the current
 tab, attaching to retained in-memory text when the canonical note is already open.
 Notebook activation preserves occupied tabs and uses an empty active tab or appends

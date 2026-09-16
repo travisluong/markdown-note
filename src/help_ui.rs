@@ -59,6 +59,21 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
             "Command palette"
         ),
         shortcut!("ctrl-s", Save, "Notes", "Application", "Save"),
+        shortcut!(
+            "ctrl-n",
+            NewNote,
+            "Notes",
+            "Application",
+            "New note in notebook root"
+        ),
+        shortcut!("ctrl-t", NewTab, "Notes", "Application", "New empty tab"),
+        shortcut!(
+            "ctrl-w",
+            CloseTab,
+            "Notes",
+            "Application",
+            "Close current tab"
+        ),
         shortcut!("alt-f", FileMenu, "Notes", "Application", "File menu"),
         shortcut!("alt-v", ViewMenu, "Notes", "Application", "View menu"),
         shortcut!("alt-s", SearchMenu, "Notes", "Application", "Search menu"),

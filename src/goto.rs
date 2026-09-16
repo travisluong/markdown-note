@@ -241,11 +241,9 @@ impl Notes {
             Command::SearchFile => self.search_current_file(window, cx),
             Command::SearchAllFiles => self.open_search_all(window, cx),
             Command::ReplaceFile => self.tabs.active.editor.find_and_replace(window, cx),
-            Command::NewNote => {
-                if let Some(book) = &self.notebooks.active {
-                    self.request(Next::NewNote(book.root.clone()), window, cx);
-                }
-            }
+            Command::NewNote => self.new_note(window, cx),
+            Command::NewTab => self.new_tab(window, cx),
+            Command::CloseTab => self.close_tab(self.tabs.active.id, window, cx),
             Command::ChangeNotebook => {
                 let entries = self
                     .notebooks

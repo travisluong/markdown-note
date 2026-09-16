@@ -323,3 +323,28 @@ fn fullscreen_keeps_menus_and_restores_windowed_layout(cx: &mut TestAppContext) 
     cx.refresh().unwrap();
     cx.update(|_, cx| assert_eq!(notes.read(cx).title_bar.layout.as_ref().unwrap(), &windowed));
 }
+
+#[gpui::test]
+fn file_menu_tab_commands_preserve_standalone_document(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    let first = cx.update(|_, cx| notes.read(cx).tabs.active.id);
+    click(MenuKind::File, cx);
+    // Disabled entries are skipped: Open, Save, then New tab.
+    cx.simulate_keystrokes("down down down enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.tabs.ids().len(), 2);
+        assert!(this.document().is_none());
+        assert!(this.menu.is_none());
+    });
+    cx.refresh().unwrap();
+    click(MenuKind::File, cx);
+    cx.simulate_keystrokes("down down down enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.tabs.ids(), vec![first]);
+        assert_eq!(this.editor.text(cx).as_ref(), "title bar test");
+    });
+}

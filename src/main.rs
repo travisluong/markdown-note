@@ -46,6 +46,9 @@ actions!(
     notes,
     [
         Open,
+        NewNote,
+        NewTab,
+        CloseTab,
         GoTo,
         CommandPalette,
         SearchAllFiles,
@@ -608,6 +611,11 @@ impl Render for Notes {
                 }
             }))
             .on_action(cx.listener(|this, _: &GoTo, window, cx| this.go_to(window, cx)))
+            .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note(window, cx)))
+            .on_action(cx.listener(|this, _: &NewTab, window, cx| this.new_tab(window, cx)))
+            .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
+                this.close_tab(this.tabs.active.id, window, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &SearchAllFiles, window, cx| {
                     this.open_search_all(window, cx)

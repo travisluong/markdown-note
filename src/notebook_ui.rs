@@ -4,6 +4,17 @@ use mithril::explorer::Explorer;
 #[cfg(test)]
 use std::time::Duration;
 
+impl Notes {
+    pub(crate) fn new_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.capabilities().can_create_note() || window.has_active_dialog(cx) {
+            return;
+        }
+        if let Some(book) = &self.notebooks.active {
+            self.request(Next::NewNote(book.root.clone()), window, cx);
+        }
+    }
+}
+
 mod activation_preferences;
 mod entry_menu;
 #[cfg(windows)]

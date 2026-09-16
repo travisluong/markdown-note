@@ -1,7 +1,7 @@
 //! Application-owned menus and platform title-bar regions.
 use crate::{
-    About, KeyboardShortcuts, LivePreview, MenuKind, Next, Notes, Open, OpenSettings, ReadingView,
-    ReplaceFile, Save, SearchAllFiles, SourceMode, ViewMode,
+    About, CloseTab, KeyboardShortcuts, LivePreview, MenuKind, NewNote, NewTab, Next, Notes, Open,
+    OpenSettings, ReadingView, ReplaceFile, Save, SearchAllFiles, SourceMode, ViewMode,
 };
 use gpui::{
     AnyElement, App, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement,
@@ -35,6 +35,14 @@ impl Notes {
         if kind == MenuKind::File {
             menu.menu_with_disabled("Open…", Box::new(Open), busy)
                 .menu_with_disabled("Save", Box::new(Save), !can_save)
+                .separator()
+                .menu_with_disabled(
+                    "New note",
+                    Box::new(NewNote),
+                    !capabilities.can_create_note(),
+                )
+                .menu_with_disabled("New tab", Box::new(NewTab), busy)
+                .menu_with_disabled("Close tab", Box::new(CloseTab), busy)
                 .separator()
                 .menu_with_disabled("Settings", Box::new(OpenSettings), self.is_busy())
         } else if kind == MenuKind::View {

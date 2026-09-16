@@ -217,3 +217,62 @@ fn go_to_file_uses_current_notebook_exclusions(cx: &mut TestAppContext) {
         )
     });
 }
+
+#[gpui::test]
+fn palette_tab_commands_work_without_notebook_and_respect_modal_guards(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    let first = cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks.active = None;
+            this.tabs.active.id
+        })
+    });
+    for (command, count) in [(Command::NewTab, 2), (Command::CloseTab, 1)] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.command_palette(window, cx);
+                this.palette
+                    .as_ref()
+                    .unwrap()
+                    .query
+                    .update(cx, |query, cx| {
+                        query.set_value(command.label(), window, cx);
+                    });
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                assert!(
+                    matches!(this.palette.as_ref().unwrap().model.selected_entry(),
+                Some(PaletteEntry::Command(selected)) if *selected == command)
+                );
+                let ids = this.tabs.ids();
+                this.new_note(window, cx);
+                this.new_tab(window, cx);
+                this.close_tab(this.tabs.active.id, window, cx);
+                assert_eq!(this.tabs.ids(), ids, "modal blocks direct dispatch");
+                this.activate_palette(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert!(this.palette.is_none());
+
+            assert_eq!(this.tabs.ids().len(), count);
+            assert!(!window.has_active_dialog(cx));
+        });
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.tabs.active.id, first);
+            assert_eq!(this.editor.text(cx).as_ref(), "original");
+            this.new_note(window, cx);
+            assert_eq!(this.tabs.active.id, first);
+            assert!(!this.is_busy());
+        })
+    });
+}

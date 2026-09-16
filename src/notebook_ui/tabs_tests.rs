@@ -1299,3 +1299,76 @@ fn shared_explorer_keyboard_navigation_keeps_current_tab_and_tree_focus(cx: &mut
         })
     });
 }
+
+#[gpui::test]
+fn note_and_tab_shortcuts_keep_creation_and_close_lifecycles_distinct(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let (fixture, notes, cx) = fixture(cx);
+    let modifier = if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    };
+    let first = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.editor.replace_selection(" draft", window, cx);
+            this.editor.focus(window, cx);
+            this.tabs.active.id
+        })
+    });
+    cx.refresh().unwrap();
+    let files = fs::read_dir(&fixture.root).unwrap().count();
+    cx.simulate_keystrokes(&format!("{modifier}-t"));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.tabs.ids().len(), 2);
+        assert!(this.document().is_none());
+    });
+    assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), files);
+    assert!(!cx.has_pending_prompt());
+    cx.simulate_keystrokes(&format!("{modifier}-w"));
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).tabs.active.id, first));
+    cx.simulate_keystrokes(&format!("{modifier}-w"));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(notes.read(cx).dirty(cx)));
+    cx.simulate_keystrokes(&format!("{modifier}-n"));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_note(window, cx);
+            this.new_tab(window, cx);
+            this.close_tab(first, window, cx);
+            assert_eq!(this.tabs.ids(), vec![first]);
+        })
+    });
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), files);
+    cx.simulate_keystrokes(&format!("{modifier}-n"));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        let path = &this.document().unwrap().path;
+        assert_eq!(path.parent(), Some(fixture.root.as_path()));
+        assert_ne!(path, &fixture.note);
+        assert!(path.is_file());
+        assert_eq!(this.tabs.ids(), vec![first]);
+        assert!(!this.dirty(cx));
+    });
+    assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), files + 1);
+    assert_eq!(fs::read_to_string(&fixture.note).unwrap(), "original A");
+}
