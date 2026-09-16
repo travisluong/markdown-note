@@ -124,7 +124,7 @@ impl Notes {
         let range = existing.map_or(selection.clone(), |link| link.source.clone());
         let label_value =
             existing.map_or(&snapshot[selection], |link| &snapshot[link.label.clone()]);
-        let target_value = existing.map_or("https://", |link| link.destination.as_str());
+        let target_value = existing.map_or("", |link| link.destination.as_str());
         let title = existing.and_then(|link| link.title.clone());
         let label = cx.new(|cx| InputState::new(window, cx).default_value(label_value.to_owned()));
         let target =
