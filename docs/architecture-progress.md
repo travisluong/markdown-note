@@ -1323,3 +1323,16 @@ Windows headless verification:
   and `target/shared-notes-clippy.log`. Tests used TestPlatform only; no native
   application, desktop input or OS Trash was used. Native visual validation remains
   user-run. Existing unrelated working-tree changes were preserved.
+
+## Settings modal restoration
+
+- Restored the settings modal over retained editor/image/empty content. The dialog
+  builder owns the form and lifetime; weak application handles reject events after
+  Root dismissal, including stale Close events targeting a later dialog.
+- Kept current form controls, preference scopes, interaction guards and compact
+  section navigation. Escape dismisses nested pickers before the settings modal;
+  closing restores prior focus and retains document selection, undo and scrolling.
+- Verification: all 37 settings tests passed with `cargo test --locked --features
+  editor-diagnostics --bin mithril settings_ui::panel::tests -- --test-threads=1`;
+  `cargo fmt --check` passed. TestPlatform only, no native desktop interaction.
+  Log: `target/settings-modal-restore-tests.log`.

@@ -182,7 +182,7 @@ struct Notes {
     session_show_file_extensions: bool,
     session_toolbar: notebook::ToolbarSettings,
     session_always_hide_extensions: Vec<String>,
-    settings_panel: Option<settings_ui::SettingsScreen>,
+    settings_panel: Option<settings_ui::SettingsDialog>,
     installed_fonts: Vec<String>,
     palette: Option<goto::Palette>,
     search: Option<Entity<search_ui::SearchPanel>>,
@@ -199,11 +199,6 @@ struct Notes {
 
 impl Notes {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        cx.bind_keys([KeyBinding::new(
-            "escape",
-            crate::CloseSettings,
-            Some("SettingsScreen"),
-        )]);
         let tabs = tabs::TabSet::new(window, cx);
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
@@ -514,9 +509,7 @@ impl Render for Notes {
                 panel.set_interaction_enabled(self.settings_panel.is_none(), cx);
             });
         }
-        let content = if let Some(settings) = &self.settings_panel {
-            settings.panel.clone().into_any_element()
-        } else if let Some(path) = self.image_path() {
+        let content = if let Some(path) = self.image_path() {
             images::viewer(path).into_any_element()
         } else if let Some(document_path) = self.document().map(|document| document.path.clone()) {
             if self.tabs.active.mode != ViewMode::Reading {
@@ -667,18 +660,7 @@ impl Render for Notes {
         };
         div()
             .id("notes")
-            .key_context(if self.settings_panel.is_some() {
-                "Notes SettingsScreen"
-            } else {
-                "Notes"
-            })
-            .on_action(cx.listener(|this, _: &CloseSettings, window, cx| {
-                if let Some(open) = &this.settings_panel {
-                    this.close_settings_panel(open.panel.entity_id(), window, cx);
-                } else {
-                    cx.propagate();
-                }
-            }))
+            .key_context("Notes")
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &EditLink, window, cx| this.edit_link(window, cx)))
             .on_action(cx.listener(|this, _: &Search, window, cx| {

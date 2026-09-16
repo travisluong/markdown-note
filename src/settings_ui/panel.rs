@@ -3,6 +3,7 @@ use gpui::{AppContext, Context, Entity, EventEmitter, Hsla, Subscription, Window
 use gpui_component::{
     IndexPath,
     color_picker::{ColorPickerEvent, ColorPickerState},
+    dialog::DialogPlacement,
     input::{InputEvent, InputState},
     select::{SearchableVec, SelectEvent, SelectState},
 };
@@ -94,7 +95,7 @@ pub(crate) struct SettingsPanel {
     values: SettingsValues,
     section: Section,
     pub(super) focus: gpui::FocusHandle,
-    narrow: bool,
+    placement: DialogPlacement,
     content_scroll: gpui::ScrollHandle,
     hidden_extensions: Entity<InputState>,
     excluded_patterns: Entity<InputState>,
@@ -117,6 +118,11 @@ impl SettingsPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        cx.bind_keys([gpui::KeyBinding::new(
+            "escape",
+            crate::CloseSettings,
+            Some("SettingsPanel"),
+        )]);
         let hidden_extensions = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("md, txt")
@@ -227,7 +233,7 @@ impl SettingsPanel {
             values,
             section: Section::General,
             focus: cx.focus_handle(),
-            narrow: false,
+            placement: DialogPlacement::new(gpui::size(gpui::px(620.), gpui::px(600.))),
             content_scroll: gpui::ScrollHandle::new(),
             hidden_extensions,
             excluded_patterns,

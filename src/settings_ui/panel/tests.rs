@@ -1,4 +1,4 @@
-//! Form and application event boundaries on TestPlatform, including inline screen rendering.
+//! Form and application event boundaries on TestPlatform, including modal rendering.
 use super::{ColorRole, FontSizeRole, SettingsIntent, SettingsPanel};
 use crate::{Notes, NotesWindow, notebook};
 use gpui::{AppContext, Entity, Subscription, TestAppContext, VisualTestContext};
@@ -83,7 +83,8 @@ fn panel(notes: &Entity<Notes>, cx: &mut VisualTestContext) -> Entity<SettingsPa
             .as_ref()
             .unwrap()
             .panel
-            .clone()
+            .upgrade()
+            .unwrap()
     })
 }
 
@@ -412,9 +413,7 @@ fn programmatic_close_expires_form_authority_before_a_later_dialog(cx: &mut Test
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let old = panel(&notes, cx);
     cx.update(|window, cx| {
-        notes.update(cx, |this, cx| {
-            this.close_settings_panel(old.entity_id(), window, cx)
-        })
+        window.close_dialog(cx);
     });
     input(&old, Field::Delay, "555", cx);
     cx.update(|window, cx| {
@@ -424,10 +423,7 @@ fn programmatic_close_expires_form_authority_before_a_later_dialog(cx: &mut Test
     });
     let old = panel(&notes, cx);
     cx.update(|window, cx| {
-        notes.update(cx, |this, cx| {
-            let id = this.settings_panel.as_ref().unwrap().panel.entity_id();
-            this.close_settings_panel(id, window, cx);
-        });
+        window.close_dialog(cx);
         window.open_dialog(cx, |dialog, _, _| dialog.title("Unrelated dialog"));
     });
     intent(&old, SettingsIntent::Close, cx);
@@ -1346,10 +1342,7 @@ fn toolbar_size_buttons_apply_immediately_and_preserve_session_scope(cx: &mut Te
         assert_eq!(toolbar.size.height, px(size.button_pixels() + 9.));
     }
     cx.update(|window, cx| {
-        notes.update(cx, |this, cx| {
-            let id = this.settings_panel.as_ref().unwrap().panel.entity_id();
-            this.close_settings_panel(id, window, cx);
-        });
+        window.close_dialog(cx);
         notes.update(cx, |this, cx| {
             this.notebooks.active = Some(fixture.first.clone());
             assert_eq!(
@@ -1672,23 +1665,19 @@ fn toolbar_reset_persists_atomically_skips_defaults_and_rejects_scope_and_busy(
 }
 
 #[gpui::test]
-fn inline_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
-    use gpui::{Modifiers, MouseButton, point, px, size};
+fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
+    use gpui::{point, px, size};
     let (_fixture, notes, cx) = fixture(cx, true, false);
     let form = panel(&notes, cx);
     cx.simulate_resize(size(px(1000.), px(800.)));
     toolbar_section(&form, cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-    let surface = cx.debug_bounds("settings-screen").unwrap();
-    let tabs = cx.debug_bounds("document-tabs").unwrap();
-    assert_eq!(surface.top(), tabs.bottom());
-    assert_eq!(surface.left(), tabs.left());
-    assert_eq!(surface.right(), px(1000.));
-    assert_eq!(surface.bottom(), px(800.));
-    cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
-    assert!(cx.debug_bounds("dialog-surface").is_none());
-    let header = cx.debug_bounds("settings-header").unwrap();
+    let surface = cx.debug_bounds("dialog-surface").unwrap();
+    assert_eq!(surface.size, size(px(620.), px(600.)));
+    assert!(surface.left() > px(0.) && surface.top() > px(0.));
+    cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+    let header = cx.debug_bounds("dialog-title").unwrap();
     let navigation = cx.debug_bounds("settings-navigation").unwrap();
     let content = cx.debug_bounds("settings-content").unwrap();
     cx.update(|_, cx| {
@@ -1703,7 +1692,7 @@ fn inline_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
         .debug_bounds(format!("toolbar-row-{}", last as usize).leak())
         .unwrap();
     assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
-    assert_eq!(cx.debug_bounds("settings-header").unwrap(), header);
+    assert_eq!(cx.debug_bounds("dialog-title").unwrap(), header);
     assert_eq!(cx.debug_bounds("settings-navigation").unwrap(), navigation);
     cx.update(|_, cx| {
         form.update(cx, |form, cx| {
@@ -1711,32 +1700,28 @@ fn inline_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
         })
     });
     cx.refresh().unwrap();
-    assert_eq!(cx.debug_bounds("settings-screen").unwrap(), surface);
+    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), surface);
     cx.update(|_, cx| assert_eq!(form.read(cx).content_scroll.offset(), point(px(0.), px(0.))));
-    // Sidebar changes alter the actual content allocation, without moving a window.
+    // The modal is independent of the sidebar allocation.
     cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_sidebar(window, cx)));
     cx.refresh().unwrap();
-    assert_eq!(cx.debug_bounds("settings-screen").unwrap().left(), px(0.));
+    assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), surface);
     for viewport in [size(px(480.), px(360.)), size(px(320.), px(300.))] {
         cx.simulate_resize(viewport);
         cx.refresh().unwrap();
         cx.run_until_parked();
         cx.refresh().unwrap();
-        let surface = cx.debug_bounds("settings-screen").unwrap();
+        let surface = cx.debug_bounds("dialog-surface").unwrap();
         let content = cx.debug_bounds("settings-content").unwrap();
         let navigation = cx.debug_bounds("settings-navigation").unwrap();
-        let close = cx.debug_bounds("close-settings").unwrap();
         assert!(content.top() >= navigation.bottom());
         assert!(
             content.bottom() <= surface.bottom(),
             "surface={surface:?} content={content:?} navigation={navigation:?}"
         );
         assert!(content.size.height > px(0.));
-        assert!(close.top() >= surface.top() && close.bottom() <= surface.bottom());
     }
-    let close = cx.debug_bounds("close-settings").unwrap();
-    cx.simulate_mouse_down(close.center(), MouseButton::Left, Modifiers::default());
-    cx.simulate_mouse_up(close.center(), MouseButton::Left, Modifiers::default());
+    cx.simulate_keystrokes("escape");
     cx.run_until_parked();
     cx.update(|window, cx| {
         assert!(notes.read(cx).settings_panel.is_none());
@@ -1745,7 +1730,7 @@ fn inline_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn inline_settings_reopen_preserves_drafts_and_escape_closes(cx: &mut TestAppContext) {
+fn modal_settings_reopen_preserves_drafts_and_escape_closes(cx: &mut TestAppContext) {
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
     cx.update(|_, cx| {
@@ -1777,7 +1762,7 @@ fn inline_settings_reopen_preserves_drafts_and_escape_closes(cx: &mut TestAppCon
 }
 
 #[gpui::test]
-fn inline_settings_preserves_document_modes_selection_and_undo(cx: &mut TestAppContext) {
+fn modal_settings_preserves_document_modes_selection_and_undo(cx: &mut TestAppContext) {
     use crate::ViewMode;
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
@@ -1804,7 +1789,7 @@ fn inline_settings_preserves_document_modes_selection_and_undo(cx: &mut TestAppC
         cx.run_until_parked();
         cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
         cx.refresh().unwrap();
-        assert!(cx.debug_bounds("settings-screen").is_some());
+        assert!(cx.debug_bounds("dialog-surface").is_some());
         cx.simulate_input("must not edit document");
         let form = panel(&notes, cx);
         intent(&form, SettingsIntent::Close, cx);
@@ -1838,7 +1823,7 @@ fn inline_settings_preserves_document_modes_selection_and_undo(cx: &mut TestAppC
 }
 
 #[gpui::test]
-fn inline_settings_blocks_document_navigation_and_drops(cx: &mut TestAppContext) {
+fn modal_settings_blocks_document_navigation_and_drops(cx: &mut TestAppContext) {
     let (fixture, notes, cx) = fixture(cx, true, false);
     let form = panel(&notes, cx);
     let (tab, editor) = cx.update(|window, cx| {
@@ -1896,7 +1881,7 @@ fn inline_settings_blocks_document_navigation_and_drops(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
-fn inline_settings_window_close_cancel_retains_screen_and_draft(cx: &mut TestAppContext) {
+fn modal_settings_window_close_cancel_retains_modal_and_draft(cx: &mut TestAppContext) {
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
     intent(&form, SettingsIntent::Close, cx);
@@ -1924,7 +1909,7 @@ fn inline_settings_window_close_cancel_retains_screen_and_draft(cx: &mut TestApp
 }
 
 #[gpui::test]
-fn inline_settings_escape_dismisses_font_picker_before_screen(cx: &mut TestAppContext) {
+fn modal_settings_escape_dismisses_font_picker_before_modal(cx: &mut TestAppContext) {
     use gpui::{Modifiers, MouseButton};
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
@@ -1950,7 +1935,7 @@ fn inline_settings_escape_dismisses_font_picker_before_screen(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn inline_settings_restores_empty_and_image_content(cx: &mut TestAppContext) {
+fn modal_settings_restores_empty_and_image_content(cx: &mut TestAppContext) {
     let (fixture, notes, cx) = fixture(cx, true, false);
     let form = panel(&notes, cx);
     intent(&form, SettingsIntent::Close, cx);
@@ -2000,7 +1985,7 @@ fn inline_settings_restores_empty_and_image_content(cx: &mut TestAppContext) {
 
 #[cfg(feature = "editor-diagnostics")]
 #[gpui::test]
-fn inline_settings_retains_editor_and_reading_scroll(cx: &mut TestAppContext) {
+fn modal_settings_retains_editor_and_reading_scroll(cx: &mut TestAppContext) {
     let (_fixture, notes, cx) = fixture(cx, false, true);
     intent(&panel(&notes, cx), SettingsIntent::Close, cx);
     let editor = cx.update(|window, cx| {

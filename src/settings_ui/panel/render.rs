@@ -1,9 +1,10 @@
 use super::{FontSizeRole, Section, SettingsIntent, SettingsPanel};
-use gpui::{Context, IntoElement, Render, Window, canvas, div, prelude::*, px};
+use gpui::{App, Context, Entity, IntoElement, Render, Window, div, prelude::*, px};
 use gpui_component::{
     ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
     color_picker::ColorPicker,
+    dialog::Dialog,
     input::Input,
     scroll::ScrollableElement,
     select::Select,
@@ -14,7 +15,7 @@ use mithril::notebook;
 impl Render for SettingsPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let appearance = &self.values.appearance;
-        let narrow = self.narrow;
+        let narrow = self.placement.size().width - px(48.) < px(512.);
         let mut body = div().w_full().min_w_0().flex().flex_col().gap_3().child(
             div()
                 .text_sm()
@@ -274,58 +275,27 @@ impl Render for SettingsPanel {
                     .child(content)
                     .vertical_scrollbar(&self.content_scroll),
             );
-        let owner = cx.weak_entity();
         div()
-            .id("settings-screen")
-            .debug_selector(|| "settings-screen".into())
-            .key_context("SettingsScreen")
+            .id("settings-panel")
+            .key_context("SettingsPanel")
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &crate::CloseSettings, _, cx| {
                 this.emit_intent(SettingsIntent::Close, cx);
             }))
-            .relative()
             .size_full()
-            .flex_1()
             .min_h_0()
             .min_w_0()
             .flex()
             .flex_col()
-            .overflow_hidden()
-            .p_3()
-            .gap_2()
-            .child(
-                canvas(
-                    |_, _, _| (),
-                    move |bounds, _, _, cx| {
-                        let narrow = bounds.size.width - px(24.) < px(512.);
-                        let _ = owner.update(cx, |this, cx| {
-                            if this.narrow != narrow {
-                                this.narrow = narrow;
-                                cx.notify();
-                            }
-                        });
-                    },
-                )
-                .absolute()
-                .size_full(),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "settings-header".into())
-                    .flex()
-                    .items_center()
-                    .flex_shrink_0()
-                    .gap_2()
-                    .child(div().flex_1().text_lg().child("Settings"))
-                    .child(
-                        Button::new("close-settings")
-                            .debug_selector(|| "close-settings".into())
-                            .label("Close")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.emit_intent(SettingsIntent::Close, cx);
-                            })),
-                    ),
-            )
             .child(sections)
+    }
+}
+
+impl SettingsPanel {
+    pub(in crate::settings_ui) fn dialog(panel: Entity<Self>, dialog: Dialog, cx: &App) -> Dialog {
+        dialog
+            .title("Settings")
+            .movable(panel.read(cx).placement.clone())
+            .child(panel)
     }
 }

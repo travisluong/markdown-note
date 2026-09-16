@@ -48,7 +48,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Preference write ordering and flush outcomes | [notebook/writer.rs](src/notebook/writer.rs): `SettingsWriter`; notebook UI driver | One running write and latest pending snapshot per destination. Index revisions depend on their book revision. |
 | Active notebook, index, activation and preference scope | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`; [activation_preferences.rs](src/notebook_ui/activation_preferences.rs) | Retain canonical targets and explicit preference intents under the operation token. Never restore a stale settings clone after I/O. |
 | Explorer cache, row projection and selection | [explorer.rs](src/explorer.rs): `Explorer` | Pure owner accepts settings and captured directory results. UI owns scroll/focus/workers, settings own persisted expansion and sort. |
-| Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; the retained screen identity and preference scope reject stale events. |
+| Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; dialog lifetime, form identity and preference scope reject stale events. |
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
@@ -56,18 +56,15 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
-Notes owns a SettingsScreen with a strong SettingsPanel entity, subscription and
-captured preference scope. It replaces only the content slot below the retained
-tabs; Close or Escape restores the existing view and focus. The header and section
-navigation remain fixed while the body scrolls. Actual pane width selects vertical
-navigation or a horizontally scrolling section row; changing sections resets body
-scrolling. Reopening an active screen preserves its section and input drafts.
-Document interaction guards include settings visibility independently of session
-busy state. Tabs, notebook navigation, document commands, search and file drops
-pause while settings is open; sidebar geometry, preference persistence, autosave
-and application close retain their owners. Search keeps its query/results but
-suspends interaction and focus restoration. Settings uses no modal layer or dialog
-placement; other dialogs keep their existing behavior.
+The Settings dialog builder owns its SettingsPanel and a lifetime token. Notes
+retains weak handles, a subscription and captured preference scope. Settings is
+rendered in the modal layer by NotesWindow, over the retained document content;
+dismissal restores the prior focus. Closing through Root also expires authority
+before a stale form can affect another dialog. The title and section navigation
+remain fixed while the body scrolls; narrow dialogs use a horizontal section row.
+Reopening an active modal preserves its section and input drafts. Document guards
+and the modal overlay pause tabs, navigation, commands, search and file drops.
+Search retains its query/results; autosave and preference persistence continue.
 
 Navigation history is a pure, session-only owner in `app/navigation.rs`, held by
 each Tab. The session adapter proposes a revision-tagged history visit through Next;
