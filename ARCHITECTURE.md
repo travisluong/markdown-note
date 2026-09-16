@@ -430,8 +430,10 @@ border RGB colors. Missing/invalid border values normalize using the containing
 palette's mode default. SettingsPanel owns the four picker subscriptions and
 emits typed color intents; the settings adapter applies the active palette to
 shared theme colors. The top navigation, sidebar resize divider, other shared
-border consumers, and current sidebar entry outline use theme.border. Primary
-checkbox colors and distinct interaction colors keep their existing roles.
+border consumers, and current sidebar entry outline use theme.border. Shared
+input borders (theme.input), including sidebar and Settings controls, inherit
+theme.border. Focused inputs retain theme.ring; primary checkbox colors and
+distinct interaction colors keep their existing roles.
 
 List drops replace the smallest changed UTF-8 span and retain a source-mapped viewport anchor through deferred preview layout. Intentional pointer, keyboard, scroll and text changes release the anchor; selection remapping after a drop does not reveal an offscreen caret.
 

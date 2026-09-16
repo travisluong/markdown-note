@@ -1491,3 +1491,19 @@ Logs are in `target/settings-close-{regression,focused,tests,check,format,clippy
 The full suite includes concurrent unrelated workspace work. No native app,
 desktop input or visible test harness was launched; native UI validation remains
 user-run.
+
+## Input borders inherit the palette border (2026-09-15)
+
+Appearance application now maps theme.input to theme.border, covering sidebar,
+Settings and other shared input-border consumers. Focused inputs retain theme.ring.
+The existing palette regression covers default and custom Light/Dark borders
+and verifies that applying the palette preserves the focus color.
+
+All 490 headless tests pass with `cargo test --offline --locked --features
+editor-diagnostics --target-dir target/titlebar-validation`. `cargo check
+--offline --locked`, `cargo fmt --check`, strict all-target Clippy with editor
+diagnostics, and `git diff --check` also pass. Logs are in
+`target/input-border-{tests,check,clippy}.log`. The initial default-target test
+build encountered a locked `target/debug/mithril.exe`; the alternate target
+completed without interacting with the running application. Full-suite results
+include existing unrelated workspace changes, excluded from this commit.

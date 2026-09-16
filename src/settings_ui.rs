@@ -533,6 +533,7 @@ fn apply_theme_colors(theme: &mut Theme, appearance: notebook::Appearance, start
     theme.foreground = rgb(palette.font).into();
     theme.primary = rgb(palette.primary).into();
     theme.border = rgb(palette.border).into();
+    theme.input = theme.border;
     theme.primary_hover = theme.primary;
     theme.primary_active = theme.primary;
     theme.link = theme.primary;
@@ -742,8 +743,9 @@ mod palette_tests {
     }
 
     #[test]
-    fn colors_reach_editor_checkboxes_and_links() {
+    fn colors_reach_editor_inputs_checkboxes_and_links() {
         let mut theme = Theme::default();
+        let focus_color = theme.ring;
         for (choice, palette, checkmark) in [
             (ThemeChoice::Light, ThemePalette::LIGHT, 0xffffff),
             (ThemeChoice::Dark, ThemePalette::DARK, 0x000000),
@@ -757,6 +759,14 @@ mod palette_tests {
                 },
                 0x000000,
             ),
+            (
+                ThemeChoice::Dark,
+                ThemePalette {
+                    border: 0xabcdef,
+                    ..ThemePalette::DARK
+                },
+                0x000000,
+            ),
         ] {
             let mut appearance = Appearance {
                 theme: Some(choice),
@@ -767,6 +777,8 @@ mod palette_tests {
             assert_eq!(theme.background, rgb(palette.background).into());
             assert_eq!(theme.foreground, rgb(palette.font).into());
             assert_eq!(theme.border, rgb(palette.border).into());
+            assert_eq!(theme.input, theme.border);
+            assert_eq!(theme.ring, focus_color);
             for color in [
                 theme.primary,
                 theme.primary_hover,
