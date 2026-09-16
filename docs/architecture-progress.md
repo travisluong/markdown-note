@@ -1605,3 +1605,23 @@ and image views as in View menu. Tests used --offline --locked --target-dir
 target/titlebar-validation; a transient linker lock cleared on retry.
 cargo fmt --all --check and git diff --check pass. No desktop interaction or
 native application harness was used.
+
+## Command surface port 4: Settings and Replace shortcuts (2026-09-15)
+
+The palette now includes Application: Settings, sharing open_settings with the
+File menu and new Mod+, shortcut. Existing busy/modal guards preserve the active
+Settings form and its drafts. Palette activation dismisses the palette before
+opening Settings. Replace uses the existing guarded ReplaceFile action via
+Ctrl+H on Windows/Linux and Cmd+Option+F on macOS, preserving system Cmd+H Hide.
+The shared shortcut generator supplies Help and platform-specific bindings.
+
+Headless checks passed: Settings palette/shortcut modal regression (1), palette
+adapter suite (8), Help/platform shortcut suite (4), and library commands filter
+(14). Coverage includes actual palette selection and shortcut dispatch, repeated
+Settings shortcuts preserving section/invalid drafts, another modal blocking
+Settings/Replace, Source/Live Replace and Reading/empty rejection, catalogue
+availability across busy/document/notebook states, and exact binding/action
+metadata for both platforms. Tests used --offline --locked --target-dir
+target/titlebar-validation --features editor-diagnostics. cargo fmt --all --check
+and git diff --check pass. Native macOS behavior remains manual validation;
+no desktop interaction or native application harness was used.

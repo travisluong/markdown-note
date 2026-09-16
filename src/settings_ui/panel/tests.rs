@@ -2261,3 +2261,65 @@ fn modal_settings_drag_resize_and_reopen_keep_clearance(cx: &mut TestAppContext)
         point(px(32.), px(30.))
     );
 }
+
+#[gpui::test]
+fn settings_palette_and_shortcut_share_modal_owner(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let initial = panel(&notes, cx);
+    intent(&initial, SettingsIntent::Close, cx);
+    cx.refresh().unwrap();
+    let (palette_key, settings_key) = if cfg!(target_os = "macos") {
+        ("cmd-p", "cmd-,")
+    } else {
+        ("ctrl-p", "ctrl-,")
+    };
+    cx.simulate_keystrokes(palette_key);
+    cx.run_until_parked();
+    cx.simulate_input("Settings");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.update(|window, cx| {
+        assert!(notes.read(cx).palette.is_none());
+        assert!(window.has_active_dialog(cx));
+    });
+    let form = panel(&notes, cx);
+    assert_ne!(initial, form);
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Templates, cx)
+        })
+    });
+    input(&form, Field::Date, "YYYY[", cx);
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(settings_key);
+    cx.run_until_parked();
+    assert_eq!(panel(&notes, cx), form);
+    cx.update(|_, cx| {
+        assert!(form.read(cx).section == super::Section::Templates);
+        assert_eq!(form.read(cx).date.read(cx).value().as_ref(), "YYYY[");
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(settings_key);
+    cx.run_until_parked();
+    let reopened = panel(&notes, cx);
+    assert_ne!(reopened, form);
+    intent(&reopened, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_help(false, window, cx)));
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(settings_key);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(window.has_active_dialog(cx));
+        assert!(notes.read(cx).settings_panel.is_none());
+    });
+}

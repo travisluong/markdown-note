@@ -8,9 +8,13 @@ pub(super) struct Shortcut {
 }
 
 pub(super) fn app_shortcuts() -> Vec<Shortcut> {
+    app_shortcuts_for_platform(cfg!(target_os = "macos"))
+}
+
+fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
     macro_rules! shortcut {
         ($key:literal, $action:expr, $context:literal, $group:literal, $description:literal) => {{
-            let key = platform_shortcut($key, cfg!(target_os = "macos"));
+            let key = platform_shortcut($key, macos);
             let binding = KeyBinding::new(&key, $action, Some($context));
             Shortcut {
                 key,
@@ -59,6 +63,7 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
             "Command palette"
         ),
         shortcut!("ctrl-s", Save, "Notes", "Application", "Save"),
+        shortcut!("ctrl-,", OpenSettings, "Notes", "Application", "Settings"),
         shortcut!(
             "ctrl-shift-m",
             CycleViewMode,
@@ -121,6 +126,13 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
             "Search all notebook files"
         ),
         shortcut!(
+            "ctrl-h",
+            ReplaceFile,
+            "Notes",
+            "Search",
+            "Find and replace in the current file"
+        ),
+        shortcut!(
             "escape",
             CloseReadingFind,
             "ReadingContent",
@@ -167,6 +179,10 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
 
 fn platform_shortcut(key: &str, macos: bool) -> String {
     if macos {
+        // Command-H belongs to the system Hide action.
+        if key == "ctrl-h" {
+            return "cmd-alt-f".into();
+        }
         if let Some(rest) = key.strip_prefix("ctrl-") {
             return format!("cmd-{rest}");
         }
@@ -346,6 +362,44 @@ fn shortcut_row(key: &str, description: &str) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::app_shortcuts;
+
+    #[test]
+    fn settings_and_replace_bindings_preserve_mac_hide_and_document_both_platforms() {
+        for (macos, settings, replace) in
+            [(false, "ctrl-,", "ctrl-h"), (true, "cmd-,", "cmd-alt-f")]
+        {
+            let shortcuts = super::app_shortcuts_for_platform(macos);
+            let mut keys = std::collections::BTreeSet::new();
+            for shortcut in &shortcuts {
+                gpui::Keystroke::parse(&shortcut.key).unwrap();
+                assert!(keys.insert(shortcut.key.as_str()));
+            }
+            let settings_binding = shortcuts.iter().find(|s| s.key == settings).unwrap();
+            assert!(
+                settings_binding
+                    .binding
+                    .action()
+                    .as_any()
+                    .is::<crate::OpenSettings>()
+            );
+            assert_eq!(settings_binding.description, "Settings");
+            let replace_binding = shortcuts.iter().find(|s| s.key == replace).unwrap();
+            assert!(
+                replace_binding
+                    .binding
+                    .action()
+                    .as_any()
+                    .is::<crate::ReplaceFile>()
+            );
+            assert_eq!(
+                replace_binding.description,
+                "Find and replace in the current file"
+            );
+            if macos {
+                assert!(!keys.contains("cmd-h"));
+            }
+        }
+    }
 
     #[gpui::test]
     fn shortcuts_keep_close_button_inside_window_when_resized(cx: &mut gpui::TestAppContext) {

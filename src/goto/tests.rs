@@ -411,3 +411,104 @@ fn palette_tab_commands_work_without_notebook_and_respect_modal_guards(cx: &mut 
         })
     });
 }
+
+#[cfg(feature = "editor-diagnostics")]
+#[gpui::test]
+fn replace_shortcut_only_opens_for_editable_documents(cx: &mut TestAppContext) {
+    use gpui::Focusable;
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    let key = if cfg!(target_os = "macos") {
+        "cmd-alt-f"
+    } else {
+        "ctrl-h"
+    };
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.set_mode(mode, window, cx);
+                this.editor.select(0..8, window, cx);
+                this.editor.focus(window, cx);
+            })
+        });
+        cx.refresh().unwrap();
+        cx.simulate_keystrokes(key);
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            let (query, _, _, _) = this
+                .editor
+                .diagnostic_input()
+                .read(cx)
+                .diagnostic_find(cx)
+                .unwrap();
+            assert!(query.read(cx).focus_handle(cx).is_focused(window));
+            assert_eq!(query.read(cx).value().as_ref(), "original");
+            assert_eq!(this.editor.text(cx).as_ref(), "original");
+        });
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| this.set_mode(ViewMode::Reading, window, cx))
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(
+            notes
+                .read(cx)
+                .editor
+                .diagnostic_input()
+                .read(cx)
+                .diagnostic_find(cx)
+                .is_none()
+        );
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.set_mode(ViewMode::Source, window, cx);
+            this.open_help(false, window, cx);
+        })
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(window.has_active_dialog(cx));
+        assert!(
+            notes
+                .read(cx)
+                .editor
+                .diagnostic_input()
+                .read(cx)
+                .diagnostic_find(cx)
+                .is_none()
+        );
+        window.close_dialog(cx);
+        notes.update(cx, |this, cx| this.install_document(None, window, cx));
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(
+            notes
+                .read(cx)
+                .editor
+                .diagnostic_input()
+                .read(cx)
+                .diagnostic_find(cx)
+                .is_none()
+        )
+    });
+}

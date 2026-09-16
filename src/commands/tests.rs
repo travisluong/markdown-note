@@ -416,3 +416,35 @@ fn selection_and_replacement_follow_the_current_filtered_results() {
         Some(PaletteEntry::Command(Command::SearchFile))
     ));
 }
+
+#[test]
+fn settings_is_discoverable_without_a_notebook_or_document_and_rechecks_busy() {
+    let entries: Vec<_> = Command::ALL
+        .iter()
+        .copied()
+        .map(PaletteEntry::Command)
+        .collect();
+    assert_eq!(
+        ranked_entries(&entries, "settings")[0].label(),
+        Command::Settings.label()
+    );
+    for has_document in [false, true] {
+        for has_notebook in [false, true] {
+            for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+                for busy in [false, true] {
+                    assert_eq!(
+                        Command::Settings
+                            .unavailable(Capabilities {
+                                has_document,
+                                has_notebook,
+                                mode,
+                                busy
+                            })
+                            .is_none(),
+                        !busy
+                    );
+                }
+            }
+        }
+    }
+}

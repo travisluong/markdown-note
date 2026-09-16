@@ -237,6 +237,7 @@ impl Notes {
                 }
             }
             Command::EditLink => self.edit_link(window, cx),
+            Command::Settings => self.open_settings(window, cx),
             Command::SourceMode => self.change_view_mode(ViewMode::Source, window, cx),
             Command::LivePreview => self.change_view_mode(ViewMode::LivePreview, window, cx),
             Command::ReadingView => self.change_view_mode(ViewMode::Reading, window, cx),
