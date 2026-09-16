@@ -64,6 +64,8 @@ actions!(
         LivePreview,
         ReadingView,
         CycleViewMode,
+        NavigateBack,
+        NavigateForward,
         CloseReadingFind,
         FileMenu,
         ViewMenu,
@@ -381,6 +383,18 @@ impl Notes {
             mode: self.tabs.active.mode,
             busy: self.document_interaction_blocked(),
             has_notebook: self.notebooks.active.is_some(),
+            has_back_history: self
+                .tabs
+                .active
+                .navigation
+                .target(app::navigation::Direction::Back)
+                .is_some(),
+            has_forward_history: self
+                .tabs
+                .active
+                .navigation
+                .target(app::navigation::Direction::Forward)
+                .is_some(),
         }
     }
 
@@ -661,6 +675,12 @@ impl Render for Notes {
             .on_action(
                 cx.listener(|this, _: &CycleViewMode, window, cx| this.cycle_view_mode(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &NavigateBack, window, cx| {
+                this.navigate_history(app::navigation::Direction::Back, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NavigateForward, window, cx| {
+                this.navigate_history(app::navigation::Direction::Forward, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &HelpMenu, window, cx| {
                 this.show_menu(MenuKind::Help, window, cx)
             }))

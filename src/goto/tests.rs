@@ -512,3 +512,67 @@ fn replace_shortcut_only_opens_for_editable_documents(cx: &mut TestAppContext) {
         )
     });
 }
+
+#[gpui::test]
+fn history_palette_navigates_and_rechecks_active_tab_targets(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "first").unwrap();
+    fs::write(directory.path().join("second.md"), "second").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = None;
+            this.open_path(directory.path().join("second.md"), false, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    for (command, expected) in [(Command::Back, "first"), (Command::Forward, "second")] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.command_palette(window, cx);
+                this.palette
+                    .as_ref()
+                    .unwrap()
+                    .query
+                    .update(cx, |query, cx| query.set_value(command.label(), window, cx));
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| notes.update(cx, |this, cx| {
+            assert!(matches!(this.palette.as_ref().unwrap().model.selected_entry(), Some(PaletteEntry::Command(selected)) if *selected == command));
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_none());
+        }));
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), expected));
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.command_palette(window, cx);
+            this.palette
+                .as_ref()
+                .unwrap()
+                .query
+                .update(cx, |query, cx| {
+                    query.set_value(Command::Back.label(), window, cx)
+                });
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.command_unavailable(Command::Back).is_none());
+            this.tabs.active.navigation = Default::default();
+            this.activate_palette(window, cx);
+            assert!(
+                this.palette.is_some(),
+                "fresh target guard retains disabled palette"
+            );
+            assert_eq!(this.editor.text(cx).as_ref(), "second");
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+            this.run_command(Command::Back, window, cx);
+            assert_eq!(this.editor.text(cx).as_ref(), "second");
+        })
+    });
+}

@@ -29,6 +29,8 @@ pub enum Command {
     SourceMode,
     LivePreview,
     ReadingView,
+    Back,
+    Forward,
     ChangeNotebook,
     NewNote,
     NewTab,
@@ -65,6 +67,8 @@ impl Command {
         Self::SourceMode,
         Self::LivePreview,
         Self::ReadingView,
+        Self::Back,
+        Self::Forward,
         Self::ChangeNotebook,
         Self::NewNote,
         Self::NewTab,
@@ -101,6 +105,8 @@ impl Command {
             Self::SourceMode => "View: Source mode",
             Self::LivePreview => "View: Live preview",
             Self::ReadingView => "View: Reading view",
+            Self::Back => "Navigation: Back",
+            Self::Forward => "Navigation: Forward",
             Self::ChangeNotebook => "Notebook: Change notebook",
             Self::NewNote => "Notebook: Create new note",
             Self::NewTab => "Tabs: New tab",
@@ -138,6 +144,8 @@ impl Command {
             Self::SourceMode => "Show editable Markdown source",
             Self::LivePreview => "Edit Markdown with inline previews",
             Self::ReadingView => "Read the rendered document",
+            Self::Back => "Return to the previous file in this tab",
+            Self::Forward => "Revisit the next file in this tab",
             Self::ChangeNotebook => "Choose a registered notebook",
             Self::NewNote => "Create an Untitled note in the notebook root",
             Self::NewTab => "Open an empty tab without creating a file",
@@ -179,6 +187,8 @@ impl Command {
             return Some("Open an editable document in Source or Live preview");
         }
         match self {
+            Self::Back if !context.has_back_history => Some("No previous file in this tab"),
+            Self::Forward if !context.has_forward_history => Some("No next file in this tab"),
             Self::SearchFile if !context.can_search_document() => Some("Open a document to search"),
             Self::SearchAllFiles if !context.can_search_notebook() => {
                 Some("Open a notebook to search all Markdown files")

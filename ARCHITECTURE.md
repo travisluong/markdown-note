@@ -77,7 +77,10 @@ each Tab. The session adapter proposes a revision-tagged history visit through N
 only accepted document/image installation commits its cursor. Ordinary installs
 record canonical paths, and accepted Empty installation clears the history.
 Sidebar-created notes use the same hook; successful moves remap visited paths.
-Back/Forward work without an active notebook and recheck busy/dialog state.
+Back/Forward share `navigate_history` from the toolbar, palette, View menu and
+Alt+Left/Right (Windows/Linux) or Cmd+Option+Left/Right (macOS). The capability
+snapshot derives both targets from the active tab without requiring a notebook
+or document. Execution recomputes the target and rechecks busy/dialog state.
 Known image visits remain available after switching notebooks, with path/link
 validation on traversal. Failed, cancelled and stale loads leave history intact.
 

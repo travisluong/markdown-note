@@ -28,6 +28,8 @@ fn view_mode_commands_match_menu_availability() {
                         assert_eq!(
                             command
                                 .unavailable(Capabilities {
+                                    has_back_history: false,
+                                    has_forward_history: false,
                                     has_document,
                                     has_notebook,
                                     mode,
@@ -77,6 +79,8 @@ fn formatting_catalogue_covers_every_toolbar_operation_with_edit_guards() {
                         assert_eq!(
                             command
                                 .unavailable(Capabilities {
+                                    has_back_history: false,
+                                    has_forward_history: false,
                                     mode,
                                     has_document,
                                     busy,
@@ -122,6 +126,8 @@ fn commands_filter_by_full_label_and_check_editability() {
         assert!(
             command
                 .unavailable(Capabilities {
+                    has_back_history: false,
+                    has_forward_history: false,
                     has_document: true,
                     mode: ViewMode::Source,
                     busy: false,
@@ -132,6 +138,8 @@ fn commands_filter_by_full_label_and_check_editability() {
         assert!(
             command
                 .unavailable(Capabilities {
+                    has_back_history: false,
+                    has_forward_history: false,
                     has_document: false,
                     mode: ViewMode::Source,
                     busy: false,
@@ -142,6 +150,8 @@ fn commands_filter_by_full_label_and_check_editability() {
         assert!(
             command
                 .unavailable(Capabilities {
+                    has_back_history: false,
+                    has_forward_history: false,
                     has_document: true,
                     mode: ViewMode::Reading,
                     busy: false,
@@ -152,6 +162,8 @@ fn commands_filter_by_full_label_and_check_editability() {
         assert!(
             command
                 .unavailable(Capabilities {
+                    has_back_history: false,
+                    has_forward_history: false,
                     has_document: true,
                     mode: ViewMode::Source,
                     busy: true,
@@ -167,6 +179,8 @@ fn theme_command_works_without_an_editable_document() {
     assert!(
         Command::ToggleTheme
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: false,
                 mode: ViewMode::Reading,
                 busy: false,
@@ -177,6 +191,8 @@ fn theme_command_works_without_an_editable_document() {
     assert!(
         Command::ToggleTheme
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Source,
                 busy: true,
@@ -211,6 +227,8 @@ fn notebook_results_distinguish_duplicate_names_and_search_paths() {
     assert!(
         Command::ChangeNotebook
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: false,
                 mode: ViewMode::Reading,
                 busy: false,
@@ -225,6 +243,8 @@ fn new_note_requires_a_notebook_but_not_an_editable_document() {
     assert!(
         Command::NewNote
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: false,
                 mode: ViewMode::Reading,
                 busy: false,
@@ -235,6 +255,8 @@ fn new_note_requires_a_notebook_but_not_an_editable_document() {
     assert!(
         Command::NewNote
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Source,
                 busy: false,
@@ -245,6 +267,8 @@ fn new_note_requires_a_notebook_but_not_an_editable_document() {
     assert!(
         Command::NewNote
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Source,
                 busy: true,
@@ -259,6 +283,8 @@ fn current_file_search_supports_reading_and_standalone_documents() {
     assert!(
         Command::SearchFile
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Reading,
                 busy: false,
@@ -269,6 +295,8 @@ fn current_file_search_supports_reading_and_standalone_documents() {
     assert!(
         Command::SearchFile
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: false,
                 mode: ViewMode::Source,
                 busy: false,
@@ -283,6 +311,8 @@ fn all_files_search_requires_only_an_active_notebook() {
     assert!(
         Command::SearchAllFiles
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: false,
                 mode: ViewMode::Reading,
                 busy: false,
@@ -293,6 +323,8 @@ fn all_files_search_requires_only_an_active_notebook() {
     assert!(
         Command::SearchAllFiles
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Source,
                 busy: false,
@@ -307,6 +339,8 @@ fn replacement_requires_an_editable_document() {
     assert!(
         Command::ReplaceFile
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Source,
                 busy: false,
@@ -317,6 +351,8 @@ fn replacement_requires_an_editable_document() {
     assert!(
         Command::ReplaceFile
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Reading,
                 busy: false,
@@ -327,6 +363,8 @@ fn replacement_requires_an_editable_document() {
     assert!(
         Command::ReplaceFile
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: false,
                 mode: ViewMode::Source,
                 busy: false,
@@ -337,6 +375,8 @@ fn replacement_requires_an_editable_document() {
     assert!(
         Command::ReplaceFile
             .unavailable(Capabilities {
+                has_back_history: false,
+                has_forward_history: false,
                 has_document: true,
                 mode: ViewMode::Source,
                 busy: true,
@@ -435,6 +475,8 @@ fn settings_is_discoverable_without_a_notebook_or_document_and_rechecks_busy() {
                     assert_eq!(
                         Command::Settings
                             .unavailable(Capabilities {
+                                has_back_history: false,
+                                has_forward_history: false,
                                 has_document,
                                 has_notebook,
                                 mode,
@@ -443,6 +485,36 @@ fn settings_is_discoverable_without_a_notebook_or_document_and_rechecks_busy() {
                             .is_none(),
                         !busy
                     );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn history_commands_use_tab_targets_independently_of_content_and_notebook() {
+    for has_document in [false, true] {
+        for has_notebook in [false, true] {
+            for busy in [false, true] {
+                for has_back_history in [false, true] {
+                    for has_forward_history in [false, true] {
+                        let context = Capabilities {
+                            has_document,
+                            has_notebook,
+                            mode: ViewMode::Reading,
+                            busy,
+                            has_back_history,
+                            has_forward_history,
+                        };
+                        assert_eq!(
+                            Command::Back.unavailable(context).is_none(),
+                            has_back_history && !busy
+                        );
+                        assert_eq!(
+                            Command::Forward.unavailable(context).is_none(),
+                            has_forward_history && !busy
+                        );
+                    }
                 }
             }
         }

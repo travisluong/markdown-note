@@ -1625,3 +1625,23 @@ metadata for both platforms. Tests used --offline --locked --target-dir
 target/titlebar-validation --features editor-diagnostics. cargo fmt --all --check
 and git diff --check pass. Native macOS behavior remains manual validation;
 no desktop interaction or native application harness was used.
+
+## Command surface port 5: Back/Forward navigation (2026-09-15)
+
+Back and Forward now appear in the palette and View menu, and bind Alt+Left/Right
+on Windows/Linux or Cmd+Option+Left/Right on macOS. Help uses those same bindings.
+All surfaces share navigate_history, retaining session Save/Discard/Cancel,
+revision-guarded cursor installation and failed-load behavior. Capability snapshots
+read active-tab history independently of notebook/document presence; palette
+activation and the navigation owner both recheck current targets. The first three
+View menu entries retain their order.
+
+Headless checks passed: binary history filter (11), library commands filter (15),
+View/title-bar suite (10), Help/platform shortcuts suite (5). Coverage includes
+actual shortcut, View menu and palette activation; standalone history; empty-tab
+isolation; stale palette availability; busy/dialog rejection; cancelled and failed
+loads; and image revisits after notebook changes. Exact macOS/Windows binding
+actions and Help labels are checked. Commands used --offline --locked --target-dir
+target/titlebar-validation --features editor-diagnostics. cargo fmt --all --check
+and git diff --check pass. No desktop interaction or native harness was used;
+native macOS input behavior remains manual validation.

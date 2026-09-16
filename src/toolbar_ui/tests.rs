@@ -507,3 +507,54 @@ fn history_revisits_images_after_notebook_switch(cx: &mut TestAppContext) {
     click("toolbar-forward", cx);
     cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
 }
+
+#[gpui::test]
+fn history_shortcuts_and_view_menu_navigate_standalone_files(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let (dir, notes, cx) = fixture(cx);
+    let second = dir.path().join("second.md");
+    std::fs::write(&second, "second").unwrap();
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_path(second, false, window, cx)));
+    cx.run_until_parked();
+    let (back, forward) = if cfg!(target_os = "macos") {
+        ("cmd-alt-left", "cmd-alt-right")
+    } else {
+        ("alt-left", "alt-right")
+    };
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(back);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶"));
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(forward);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
+    // Mode entries stay first; Back follows them and Forward is disabled at the end.
+    cx.refresh().unwrap();
+    click("view-menu", cx);
+    cx.simulate_keystrokes("down down down down enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶"));
+    cx.refresh().unwrap();
+    click("view-menu", cx);
+    // Back is now disabled, so the fourth enabled item is Forward.
+    cx.simulate_keystrokes("down down down down enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.new_tab(window, cx)));
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(back);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(this.document().is_none());
+        assert!(!this.capabilities().has_back_history);
+    });
+}

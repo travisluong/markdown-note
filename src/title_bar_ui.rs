@@ -1,7 +1,8 @@
 //! Application-owned menus and platform title-bar regions.
 use crate::{
-    About, CloseTab, KeyboardShortcuts, LivePreview, MenuKind, NewNote, NewTab, Next, Notes, Open,
-    OpenSettings, ReadingView, ReplaceFile, Save, SearchAllFiles, SourceMode, ViewMode,
+    About, CloseTab, KeyboardShortcuts, LivePreview, MenuKind, NavigateBack, NavigateForward,
+    NewNote, NewTab, Next, Notes, Open, OpenSettings, ReadingView, ReplaceFile, Save,
+    SearchAllFiles, SourceMode, ViewMode,
 };
 use gpui::{
     AnyElement, App, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement,
@@ -63,6 +64,21 @@ impl Notes {
                 mode == ViewMode::Reading,
                 Box::new(ReadingView),
                 busy,
+            )
+            .separator()
+            .menu_with_disabled(
+                "Back",
+                Box::new(NavigateBack),
+                mithril::commands::Command::Back
+                    .unavailable(capabilities)
+                    .is_some(),
+            )
+            .menu_with_disabled(
+                "Forward",
+                Box::new(NavigateForward),
+                mithril::commands::Command::Forward
+                    .unavailable(capabilities)
+                    .is_some(),
             )
             .separator()
             .item(

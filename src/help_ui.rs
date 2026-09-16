@@ -63,6 +63,20 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
             "Command palette"
         ),
         shortcut!("ctrl-s", Save, "Notes", "Application", "Save"),
+        shortcut!(
+            "alt-left",
+            NavigateBack,
+            "Notes",
+            "Application",
+            "Back in tab history"
+        ),
+        shortcut!(
+            "alt-right",
+            NavigateForward,
+            "Notes",
+            "Application",
+            "Forward in tab history"
+        ),
         shortcut!("ctrl-,", OpenSettings, "Notes", "Application", "Settings"),
         shortcut!(
             "ctrl-shift-m",
@@ -179,6 +193,10 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
 
 fn platform_shortcut(key: &str, macos: bool) -> String {
     if macos {
+        // Preserve Option-arrow word movement and Command-bracket indentation.
+        if matches!(key, "alt-left" | "alt-right") {
+            return format!("cmd-{key}");
+        }
         // Command-H belongs to the system Hide action.
         if key == "ctrl-h" {
             return "cmd-alt-f".into();
@@ -363,6 +381,39 @@ fn shortcut_row(key: &str, description: &str) -> impl IntoElement {
 mod tests {
     use super::app_shortcuts;
 
+    #[test]
+    fn history_bindings_document_exact_platform_keys_and_actions() {
+        for (macos, back, forward) in [
+            (false, "alt-left", "alt-right"),
+            (true, "cmd-alt-left", "cmd-alt-right"),
+        ] {
+            let shortcuts = super::app_shortcuts_for_platform(macos);
+            let back_binding = shortcuts.iter().find(|s| s.key == back).unwrap();
+            let forward_binding = shortcuts.iter().find(|s| s.key == forward).unwrap();
+            assert!(
+                back_binding
+                    .binding
+                    .action()
+                    .as_any()
+                    .is::<crate::NavigateBack>()
+            );
+            assert!(
+                forward_binding
+                    .binding
+                    .action()
+                    .as_any()
+                    .is::<crate::NavigateForward>()
+            );
+            assert_eq!(back_binding.description, "Back in tab history");
+            assert_eq!(forward_binding.description, "Forward in tab history");
+            if macos {
+                assert!(!shortcuts.iter().any(|s| matches!(
+                    s.key.as_str(),
+                    "alt-left" | "alt-right" | "cmd-[" | "cmd-]"
+                )));
+            }
+        }
+    }
     #[test]
     fn settings_and_replace_bindings_preserve_mac_hide_and_document_both_platforms() {
         for (macos, settings, replace) in

@@ -8,6 +8,8 @@ pub struct Capabilities {
     pub mode: ViewMode,
     pub busy: bool,
     pub has_notebook: bool,
+    pub has_back_history: bool,
+    pub has_forward_history: bool,
 }
 
 impl Capabilities {

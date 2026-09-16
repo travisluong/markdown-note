@@ -241,6 +241,12 @@ impl Notes {
             Command::SourceMode => self.change_view_mode(ViewMode::Source, window, cx),
             Command::LivePreview => self.change_view_mode(ViewMode::LivePreview, window, cx),
             Command::ReadingView => self.change_view_mode(ViewMode::Reading, window, cx),
+            Command::Back => {
+                self.navigate_history(crate::app::navigation::Direction::Back, window, cx)
+            }
+            Command::Forward => {
+                self.navigate_history(crate::app::navigation::Direction::Forward, window, cx)
+            }
             Command::SearchFile => self.search_current_file(window, cx),
             Command::SearchAllFiles => self.open_search_all(window, cx),
             Command::ReplaceFile => self.tabs.active.editor.find_and_replace(window, cx),
