@@ -457,3 +457,15 @@ Reconcile `input/shared_buffer.rs`, `input/state.rs`, `input/mod.rs`,
 The viewport anchor restore also supports Source views. Validate with
 `tests/editor_shared.rs`, existing editor/history/transaction tests and
 `notebook_ui::tabs_tests` on TestPlatform. No native UI testing is required.
+
+## Live-preview strikethrough
+
+`input/strikethrough.rs` derives GFM Delete ranges on the existing preview worker.
+`preview_syntax.rs` includes tilde-only documents in analysis; `text_wrapper.rs`
+accepts only current ranges and clears them after edits or resets.
+`live_preview.rs` hides delimiters using existing source mapping and active-row
+reveal; `element.rs` applies theme-colored strikes to content runs, composing
+with links, emphasis and inline code. Literal and escaped tildes stay unchanged.
+Reconcile these paths and run tests/editor.rs and tests/strikethrough.rs when
+upgrading. The latter inspects actual headless shaped runs across themes,
+wrapping, reveal, edits, undo/redo and Source mode.

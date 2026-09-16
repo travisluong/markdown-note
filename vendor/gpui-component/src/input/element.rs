@@ -954,6 +954,12 @@ impl TextElement {
                             if p.inline_code.iter().any(|range| range.contains(&source)) {
                                 run.font = gpui::font(cx.theme().mono_font_family.clone());
                             }
+                            if p.strikethrough.iter().any(|range| range.contains(&source)) {
+                                run.strikethrough = Some(gpui::StrikethroughStyle {
+                                    thickness: px(1.),
+                                    color: Some(run.color),
+                                });
+                            }
                             if state.ime_marked_range.is_some_and(|r| {
                                 (r.start..r.end)
                                     .contains(&(visible_range_offset.start + offset + source))
@@ -2295,5 +2301,32 @@ mod tests {
         assert_eq!(result[3].color, gpui::black());
         assert_eq!(result[4].color, gpui::black());
         assert_eq!(result[5].color, gpui::blue());
+    }
+}
+
+#[cfg(feature = "editor-diagnostics")]
+impl super::InputState {
+    /// Inspect actual shaped strikethrough runs in line-local source bytes.
+    #[doc(hidden)]
+    pub fn diagnostic_strikethrough_runs(&self, row: usize) -> Vec<std::ops::Range<usize>> {
+        let Some(line) = self.text_wrapper.lines.get(row) else {
+            return Vec::new();
+        };
+        let Some(mapped) = &line.mapped else {
+            return Vec::new();
+        };
+        let mut result = Vec::new();
+        for (segment, (runs, _)) in line.cache.borrow().iter() {
+            let mut at = line.wrapped_lines[*segment].start;
+            for run in runs {
+                let end = at + run.len;
+                if run.strikethrough.is_some() {
+                    result.push(mapped.display_to_source[at]..mapped.display_to_source[end]);
+                }
+                at = end;
+            }
+        }
+        result.sort_by_key(|range| range.start);
+        result
     }
 }

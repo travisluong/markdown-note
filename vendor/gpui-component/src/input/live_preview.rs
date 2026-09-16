@@ -11,6 +11,7 @@ pub(super) struct Divider {
 pub(super) struct Presentation {
     pub divider: Option<Divider>,
     pub inline_code: Vec<Range<usize>>,
+    pub strikethrough: Vec<Range<usize>>,
     pub code: Option<crate::highlighter::code::CodeTokens>,
     pub links: Vec<super::markdown_links::MarkdownLink>,
     pub heading: usize,
@@ -285,6 +286,30 @@ impl Presentation {
         result.hidden.sort_by_key(|r| r.start);
         result.spans.sort_by_key(|(r, _)| r.start);
         result
+    }
+
+    pub fn with_strikethrough(
+        mut self,
+        spans: &[super::strikethrough::StrikeSpan],
+        start: usize,
+        len: usize,
+    ) -> Self {
+        for span in spans
+            .iter()
+            .take_while(|span| span.source.start < start + len)
+            .filter(|span| span.source.end > start)
+        {
+            let local = |range: &Range<usize>| {
+                range.start.saturating_sub(start).min(len)..range.end.saturating_sub(start).min(len)
+            };
+            self.strikethrough.push(local(&span.content));
+            self.hidden
+                .push(local(&(span.source.start..span.content.start)));
+            self.hidden
+                .push(local(&(span.content.end..span.source.end)));
+        }
+        self.hidden.sort_by_key(|range| range.start);
+        self
     }
 
     pub fn with_inline_code(

@@ -23,6 +23,7 @@ mod search;
 mod selection;
 mod shared_buffer;
 mod state;
+mod strikethrough;
 pub use shared_buffer::{InputBuffer, InputBufferEvent};
 #[doc(hidden)]
 pub mod table;

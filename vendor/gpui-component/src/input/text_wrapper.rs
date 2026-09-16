@@ -101,6 +101,7 @@ pub(super) struct TextWrapper {
     pub(super) dividers: std::sync::Arc<Vec<Range<usize>>>,
     pub(super) list_items: std::sync::Arc<Vec<super::list_reorder::Item>>,
     pub(super) inline_code: std::sync::Arc<Vec<super::inline_code::CodeSpan>>,
+    pub(super) strikethrough: std::sync::Arc<Vec<super::strikethrough::StrikeSpan>>,
     pub(super) code: super::fenced_code::Index,
     retired_code: Vec<super::fenced_code::Index>,
     pub(super) image_document: Option<std::path::PathBuf>,
@@ -148,6 +149,7 @@ impl TextWrapper {
             dividers: Default::default(),
             list_items: Default::default(),
             inline_code: Default::default(),
+            strikethrough: Default::default(),
             retired_code: Vec::new(),
             image_document: None,
             images: Default::default(),
@@ -184,6 +186,7 @@ impl TextWrapper {
 
     pub(super) fn set_live_preview(&mut self, enabled: bool, cx: &mut App) {
         self.dividers = Default::default();
+        self.strikethrough = Default::default();
         self.inline_code = Default::default();
         self.list_items = Default::default();
         self.images.clear();
@@ -312,6 +315,7 @@ impl TextWrapper {
     #[inline]
     pub(super) fn set_default_text(&mut self, text: &Rope) {
         self.dividers = Default::default();
+        self.strikethrough = Default::default();
         self.retired_code.push(std::mem::take(&mut self.code));
         self.analysis.reset();
         self.links = Default::default();
@@ -466,6 +470,10 @@ impl TextWrapper {
             });
             self.syntax_revision += 1;
         }
+        if !self.strikethrough.is_empty() {
+            self.strikethrough = Default::default();
+            self.syntax_revision += 1;
+        }
         if !self.inline_code.is_empty() {
             self.inline_code = Default::default();
             self.syntax_revision += 1;
@@ -531,6 +539,7 @@ impl TextWrapper {
             self.dividers = parsed.dividers;
             self.list_items = parsed.list_items;
             self.inline_code = parsed.inline_code;
+            self.strikethrough = parsed.strikethrough;
             self.analysis.code_cache = code.snapshot.cache.clone();
             self.retired_code
                 .push(std::mem::replace(&mut self.code, code));
@@ -750,6 +759,7 @@ impl TextWrapper {
                 } else {
                     super::live_preview::Presentation::parse(&source)
                         .with_inline_code(&self.inline_code, start, source.len())
+                        .with_strikethrough(&self.strikethrough, start, source.len())
                         .with_links(
                             &self.links.in_range(start..start + source.len()),
                             start,
@@ -2785,6 +2795,25 @@ mod sustained_edit_tests {
         }
     }
     #[test]
+    fn strikethrough_analysis_rejects_stale_results() {
+        let source = "intro\n~~café~~\n";
+        let mut wrapper = make(source);
+        assert_eq!(wrapper.strikethrough.len(), 1);
+        measure(&mut wrapper, 0..3);
+        assert_eq!(wrapper.lines[1].mapped.as_ref().unwrap().text, "café");
+        wrapper.analysis.request(&wrapper.text.clone());
+        let stale = wrapper.analysis.start().unwrap();
+        edit(&mut wrapper, 6..8, "");
+        assert!(wrapper.strikethrough.is_empty());
+        wrapper.apply_analysis(stale.parse());
+        assert!(wrapper.strikethrough.is_empty());
+        let current = wrapper.analysis.start().unwrap();
+        assert!(wrapper.apply_analysis(current.parse()));
+        assert!(wrapper.strikethrough.is_empty());
+        measure(&mut wrapper, 0..3);
+        assert_eq!(wrapper.lines[1].mapped.as_ref().unwrap().text, "café~~");
+    }
+    #[test]
     fn inline_code_analysis_rejects_stale_results() {
         let source = "intro\n`*café*`\n";
         let mut wrapper = make(source);
@@ -3297,6 +3326,7 @@ impl TextWrapper {
         self.analysis.code_cache = parsed.code.cache.clone();
         self.list_items = parsed.list_items;
         self.inline_code = parsed.inline_code;
+        self.strikethrough = parsed.strikethrough;
         self.code = super::fenced_code::Index::new(parsed.code);
         self.links = super::preview_syntax::Links::with_edits(parsed.links, Vec::new());
         let revision = self.tables.revision + 1;

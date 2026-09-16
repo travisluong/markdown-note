@@ -54,3 +54,5 @@ mod inline_code;
 mod list_edit;
 #[path = "../vendor/gpui-component/src/input/list_reorder.rs"]
 mod list_reorder;
+#[path = "../vendor/gpui-component/src/input/strikethrough.rs"]
+mod strikethrough;

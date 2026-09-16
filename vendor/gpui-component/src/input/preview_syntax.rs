@@ -26,6 +26,7 @@ pub(super) struct Parsed {
     pub dividers: Arc<Vec<Range<usize>>>,
     pub list_items: Arc<Vec<super::list_reorder::Item>>,
     pub inline_code: Arc<Vec<super::inline_code::CodeSpan>>,
+    pub strikethrough: Arc<Vec<super::strikethrough::StrikeSpan>>,
     pub code: Arc<super::fenced_code::Snapshot>,
     pub images: std::collections::BTreeMap<usize, String>,
     pub revision: u64,
@@ -56,6 +57,7 @@ impl Request {
             || code_needed
             || images_needed
             || source.contains('`')
+            || source.contains('~')
             || source
                 .lines()
                 .any(|line| line.contains(['-', '*', '+', '_']))
@@ -87,6 +89,11 @@ impl Request {
         // The tree stays on this worker and is dropped before returning derived indexes.
         (
             Parsed {
+                strikethrough: Arc::new(
+                    root.as_ref()
+                        .map(|root| super::strikethrough::from_ast(&source, root))
+                        .unwrap_or_default(),
+                ),
                 dividers: Arc::new(
                     root.as_ref()
                         .map(|root| thematic_breaks(&source, root))

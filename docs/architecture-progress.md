@@ -1507,3 +1507,22 @@ diagnostics, and `git diff --check` also pass. Logs are in
 build encountered a locked `target/debug/mithril.exe`; the alternate target
 completed without interacting with the running application. Full-suite results
 include existing unrelated workspace changes, excluded from this commit.
+
+## Live-preview strikethrough (2026-09-15)
+
+Ordinary Live-preview text now renders GFM strikethrough through worker-derived
+Delete ranges, mapped delimiter hiding and actual shaped-run decorations.
+Code/escaped markers remain literal; nested emphasis, links and inline code
+compose with the strike. Exact-revision acceptance and edit/reset invalidation
+prevent stale ranges. Source and Reading behavior remain unchanged.
+
+The full headless suite passes with `cargo test --offline --locked --features
+editor-diagnostics --target-dir target/titlebar-validation`. Focused regressions
+cover Unicode, multiline parsing, code/escape exclusions, mapped presentation,
+stale analysis and rendered runs through Light/Dark themes, wrapping, marker
+reveal, edits, Undo/Redo and Source mode. `cargo check --offline --locked`,
+`cargo fmt --check`, strict all-target Clippy with editor diagnostics and
+`git diff --check` pass. Logs: `target/strikethrough-{tests,check,format,clippy}.log`.
+The alternate test target avoids a locked default-target mithril.exe. No native
+app or desktop input was used. The suite includes unrelated existing workspace
+changes, excluded from the strikethrough commit.

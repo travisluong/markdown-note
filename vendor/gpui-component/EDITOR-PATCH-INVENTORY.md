@@ -295,3 +295,12 @@ Reconcile `input/shared_buffer.rs`, `input/state.rs`, `input/mod.rs`,
 The viewport anchor restore also supports Source views. Validate with
 `tests/editor_shared.rs`, existing editor/history/transaction tests and
 `notebook_ui::tabs_tests` on TestPlatform. No native UI testing is required.
+
+## Live-preview strikethrough
+
+Added `src/input/strikethrough.rs` and registered it in `src/input/mod.rs`.
+Reconcile its GFM Delete ranges with `preview_syntax.rs` shared parsing,
+`text_wrapper.rs` revision invalidation, `live_preview.rs` source mapping and
+`element.rs` shaped-run decorations. Preserve code/escape exclusions and
+composable inline formatting. `tests/editor.rs` covers parser/projection and
+stale results; `tests/strikethrough.rs` covers the headless render/edit lifecycle.

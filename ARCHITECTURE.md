@@ -459,3 +459,11 @@ using the available content width and measured marker indentation. Revealing
 syntax changes painting only, keeping wrapped height and downstream positions
 stable. Source mode and the Reading divider renderer retain their behavior.
 Headless coverage lives in tests/horizontal_rules.rs and tests/editor.rs.
+
+Live-preview strikethrough ranges come from the shared worker GFM tree via
+input/strikethrough.rs. TextWrapper accepts exact revisions and clears ranges
+on edits and mode/document resets. Presentation hides tilde delimiters outside
+the active row while shaped runs retain the strike, including nested formatting
+and inline code. Escaped markers and code literals remain literal. Source bytes
+and source/display mappings remain authoritative. Regression coverage lives in
+tests/strikethrough.rs and tests/editor.rs.
