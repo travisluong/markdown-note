@@ -49,8 +49,15 @@ const TOOLBAR: &[(&str, &[u8])] = &[
         include_bytes!("../assets/toolbar/tasklist.svg"),
     ),
 ];
+const BRAND: (&str, &[u8]) = (
+    "brand/mithril.png",
+    include_bytes!("../assets/brand/mithril.png"),
+);
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+        if path == BRAND.0 {
+            return Ok(Some(Cow::Borrowed(BRAND.1)));
+        }
         if let Some((_, bytes)) = TOOLBAR.iter().find(|(name, _)| *name == path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }
@@ -58,6 +65,9 @@ impl AssetSource for Assets {
     }
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
         let mut assets = gpui_component_assets::Assets.list(path)?;
+        if BRAND.0.starts_with(path) {
+            assets.push(BRAND.0.into());
+        }
         assets.extend(
             TOOLBAR
                 .iter()

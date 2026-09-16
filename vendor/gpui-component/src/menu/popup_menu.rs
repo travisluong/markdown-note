@@ -606,7 +606,7 @@ impl PopupMenu {
         label: impl Into<SharedString>,
         window: &mut Window,
         cx: &mut Context<Self>,
-        f: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+        f: impl FnOnce(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu,
     ) -> Self {
         self.submenu_with_icon(None, label, window, cx, f)
     }
@@ -618,7 +618,7 @@ impl PopupMenu {
         label: impl Into<SharedString>,
         window: &mut Window,
         cx: &mut Context<Self>,
-        f: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+        f: impl FnOnce(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu,
     ) -> Self {
         let submenu = PopupMenu::build(window, cx, f);
         let parent_menu = cx.entity().downgrade();

@@ -22,6 +22,7 @@ mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
 mod tabs;
+mod title_bar_ui;
 mod toolbar_ui;
 
 use std::{
@@ -35,7 +36,7 @@ use gpui_component::{
     ActiveTheme, Root, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState, Rope, Search},
-    menu::{PopupMenu, PopupMenuItem},
+    menu::PopupMenu,
     text::TextView,
 };
 use mithril::editor::{Editor, Event as EditorEvent};
@@ -100,7 +101,7 @@ enum Next {
     },
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MenuKind {
     File,
     View,
@@ -108,6 +109,7 @@ enum MenuKind {
     Sort,
     Notebooks,
     Help,
+    More,
 }
 
 #[derive(Clone)]
@@ -192,6 +194,7 @@ struct Notes {
     menu: Option<(MenuKind, Entity<PopupMenu>)>,
     menu_previous_focus: Option<FocusHandle>,
     menu_subscription: Option<Subscription>,
+    title_bar: title_bar_ui::TitleBarState,
     notebooks: notebook_ui::NotebookState,
     session_appearance: notebook::Appearance,
     startup_dark: bool,
@@ -203,10 +206,7 @@ impl Notes {
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| {
-                if this.is_busy() {
-                    return false;
-                }
-                this.request(Next::Close, window, cx);
+                this.request_window_close(window, cx);
                 false
             })
             .unwrap_or(true)
@@ -237,6 +237,7 @@ impl Notes {
             menu: None,
             menu_previous_focus: None,
             menu_subscription: None,
+            title_bar: Default::default(),
             notebooks,
             session_appearance: notebook::Appearance {
                 dark_mode: Some(startup_dark),
@@ -407,95 +408,6 @@ impl Notes {
         } else {
             self.focus.focus(window);
         }
-        cx.notify();
-    }
-
-    fn show_menu(&mut self, kind: MenuKind, window: &mut Window, cx: &mut Context<Self>) {
-        if window.has_active_dialog(cx) {
-            return;
-        }
-        self.menu_previous_focus = window.focused(cx);
-        let busy = self.document_interaction_blocked();
-        let can_save = self.document().is_some() && !busy;
-        let mode = self.tabs.active.mode;
-        let capabilities = self.capabilities();
-        let focus = self.focus.clone();
-        let owner = cx.weak_entity();
-        let menu = PopupMenu::build(window, cx, |menu, _, cx| {
-            let menu = menu.action_context(focus);
-            if kind == MenuKind::File {
-                menu.menu_with_disabled("Open…", Box::new(Open), busy)
-                    .menu_with_disabled("Save", Box::new(Save), !can_save)
-                    .separator()
-                    .menu_with_disabled("Settings", Box::new(OpenSettings), self.is_busy())
-            } else if kind == MenuKind::View {
-                menu.menu_with_check_and_disabled(
-                    "Source mode",
-                    mode == ViewMode::Source,
-                    Box::new(SourceMode),
-                    busy,
-                )
-                .menu_with_check_and_disabled(
-                    "Live preview",
-                    mode == ViewMode::LivePreview,
-                    Box::new(LivePreview),
-                    busy,
-                )
-                .menu_with_check_and_disabled(
-                    "Reading view",
-                    mode == ViewMode::Reading,
-                    Box::new(ReadingView),
-                    busy,
-                )
-                .separator()
-                .item(
-                    PopupMenuItem::new("Collapse sidebar")
-                        .checked(self.sidebar_collapsed)
-                        .disabled(self.is_busy() || self.notebooks.active.is_none())
-                        .on_click(move |_, window, cx| {
-                            let _ = owner.update(cx, |_, cx| {
-                                // Restore sidebar focus after the menu finishes dismissing.
-                                cx.defer_in(window, |this, window, cx| {
-                                    this.toggle_sidebar(window, cx);
-                                });
-                            });
-                        }),
-                )
-            } else if kind == MenuKind::Search {
-                use mithril::commands::Command;
-                menu.menu_with_disabled(
-                    "Search in file",
-                    Box::new(Search),
-                    Command::SearchFile.unavailable(capabilities).is_some(),
-                )
-                .menu_with_disabled(
-                    "Search in all files",
-                    Box::new(SearchAllFiles),
-                    Command::SearchAllFiles.unavailable(capabilities).is_some(),
-                )
-                .menu_with_disabled(
-                    "Search and replace in file",
-                    Box::new(ReplaceFile),
-                    Command::ReplaceFile.unavailable(capabilities).is_some(),
-                )
-            } else if kind == MenuKind::Sort {
-                self.file_sort_menu(menu, owner)
-            } else if kind == MenuKind::Help {
-                menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts))
-                    .menu("About", Box::new(About))
-            } else {
-                self.notebook_menu(menu, cx)
-            }
-        });
-        self.menu_subscription =
-            Some(
-                cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, _, cx| {
-                    this.menu = None;
-                    cx.notify();
-                }),
-            );
-        menu.focus_handle(cx).focus(window);
-        self.menu = Some((kind, menu));
         cx.notify();
     }
 }
@@ -732,74 +644,7 @@ impl Render for Notes {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .p_1()
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(
-                        Button::new("file-menu")
-                            .cursor_default()
-                            .ghost()
-                            .small()
-                            .label("File")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.show_menu(MenuKind::File, window, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("view-menu")
-                            .cursor_default()
-                            .ghost()
-                            .small()
-                            .label("View")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.show_menu(MenuKind::View, window, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("search-menu")
-                            .cursor_default()
-                            .ghost()
-                            .small()
-                            .label("Search")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.show_menu(MenuKind::Search, window, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("sort-menu")
-                            .cursor_default()
-                            .ghost()
-                            .small()
-                            .label("Sort")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.show_menu(MenuKind::Sort, window, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("notebooks-menu")
-                            .cursor_default()
-                            .ghost()
-                            .small()
-                            .label("Notebooks")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.show_menu(MenuKind::Notebooks, window, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("help-menu")
-                            .cursor_default()
-                            .ghost()
-                            .small()
-                            .label("Help")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.show_menu(MenuKind::Help, window, cx)
-                            })),
-                    ),
-            )
+            .child(self.render_title_bar(window, cx))
             .when(self.toolbar_settings().any_enabled(), |view| {
                 view.child(self.render_toolbar(window, cx))
             })
@@ -855,28 +700,7 @@ impl Render for Notes {
                     ))
                 },
             )
-            .when_some(self.menu.clone(), |this, (kind, menu)| {
-                this.child(deferred(
-                    div()
-                        .absolute()
-                        .top(rems(2.25))
-                        .left(rems(
-                            match kind {
-                                MenuKind::File => 0.25,
-                                MenuKind::View => 3.375,
-                                MenuKind::Search => 6.75,
-                                MenuKind::Sort => 11.,
-                                MenuKind::Notebooks => 14.125,
-                                MenuKind::Help => 19.875,
-                            } + if self.notebooks.active.is_some() {
-                                2.
-                            } else {
-                                0.
-                            },
-                        ))
-                        .child(menu),
-                ))
-            })
+            .children(self.render_title_menu())
     }
 }
 
@@ -933,12 +757,12 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_min_size: Some(size(px(400.), px(300.))),
                     app_id: Some("org.mithril.Mithril".into()),
+                    window_decorations: cfg!(target_os = "linux")
+                        .then_some(WindowDecorations::Client),
                     titlebar: Some(TitlebarOptions {
                         title: Some("Mithril".into()),
-                        // Keep native controls after reported close failures and
-                        // hangs with the custom title bar; TestPlatform cannot verify it.
-                        appears_transparent: false,
-                        ..Default::default()
+                        appears_transparent: cfg!(any(target_os = "windows", target_os = "macos")),
+                        traffic_light_position: Some(point(px(9.), px(9.))),
                     }),
                     ..Default::default()
                 },

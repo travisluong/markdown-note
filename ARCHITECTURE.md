@@ -52,6 +52,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
+| Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs) | Platform frame presentation, measured menu overflow and popup anchors. Menus reuse existing command owners; custom close shares the native close lifecycle. Root owns the Linux resize border. |
 | Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners and Markdown controls through the semantic Editor boundary; heading menus retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
@@ -214,12 +215,24 @@ binary tests can compile without requiring a diagnostics feature. Do not use it
 for production feature edits. Form/search-query inputs are separate controls and
 are not document editors.
 
-All platforms retain their native title bars and window controls.
-`Notes::window_title` supplies the native title, including the unsaved marker.
-On Windows, keep `TitlebarOptions::appears_transparent` false: the custom title
-bar introduced in `c2ab535` was rolled back after reported close failures and
-hangs. TestPlatform covers the close barrier, but cannot validate Windows
-non-client hit testing, control clicks or native dragging.
+`title_bar_ui.rs` owns the combined title/menu bar: logo, the existing six menus,
+measured trailing-menu overflow, popup anchors, and platform control/drag regions.
+Windows/macOS request transparent title bars; macOS retains native traffic lights.
+Linux requests client decorations, using Root's existing WindowBorder, and falls
+back to menus below a native title bar if the compositor keeps server decorations.
+Fullscreen retains menus without logo, controls or drag space. Toolbar and tabs
+remain below the bar. `Notes::window_title` still updates the OS title and unsaved
+marker; filenames and dirty indicators remain visible in tabs.
+
+Only empty title-bar space can initiate dragging. Windows caption controls have
+individual non-client hit-test regions and leave press/release events unhandled
+for GPUI. Linux close and the native should-close callback share
+`Notes::request_window_close`, preserving workspace save/discard/cancel and
+preference-flush barriers. No custom control directly removes the window.
+The earlier component TitleBar was rolled back after reported close failures and
+hangs; this application-owned bar does not reuse its ancestor drag handlers.
+Headless tests verify menus, geometry and close barriers, but cannot prove native
+control clicks, snapping or dragging, or resolution of the previously reported hang.
 
 The Cargo patch selects checked-in `vendor/gpui-component`, based on upstream
 0.5.1 at `0f0ab35233212f8f3277028995caf0c41e13ee6c`. Preserve its license,
@@ -284,7 +297,8 @@ and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
 marketing site's exact SVG mark. `build.rs` embeds Windows icon resource 1;
 release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
 launcher identity matches `WindowOptions::app_id` (`org.mithril.Mithril`).
-Windows also uses the embedded icon in its native title bar.
+The combined title bar loads the existing brand PNG through the application asset
+source; native shell icons continue to use the packaged resources.
 
 Windows distribution is owned by
 [`packaging/windows/mithril.iss`](packaging/windows/mithril.iss) and the

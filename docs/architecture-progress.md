@@ -1363,3 +1363,49 @@ Windows headless verification:
 - Evidence: `target/settings-modal-application-tests.log`,
   `target/settings-modal-harness-tests.log`, `target/settings-modal-test-artifacts.jsonl`,
   `target/settings-modal-check.log`, and `target/settings-modal-clippy.log`.
+
+## Combined title/menu bar (2026-09-15)
+
+The application-owned `src/title_bar_ui.rs` replaces the visible window title
+with File, View, Search, Sort, Notebooks and Help. It embeds the existing brand
+PNG, reserves native macOS traffic-light space, and uses separate Windows
+non-client caption/drag regions or Linux client controls. Root already owns the
+Linux WindowBorder; no second border is installed. Linux compositor refusal
+retains server decorations with the menu row below. Fullscreen retains menus
+without logo, drag region or caption controls. OS titles and tab dirty markers
+continue to identify the active file.
+
+Small-button label widths are shaped with the current UI font. Menus that do not
+fit move into trailing More submenus; File remains visible. Popup positions come
+from painted trigger bounds and snap within the viewport. Keyboard shortcuts use
+the visible button or More anchor; geometry changes dismiss open menus and
+restore focus. Ordinary and overflow menus share the existing command builder.
+The vendor submenu builder signatures now accept borrowed FnOnce callbacks,
+matching their immediate construction, without changing parent dismissal wiring.
+
+Custom Linux close and native should-close callbacks share the guarded workspace
+close request, including unsaved documents and preference-flush failures. The
+previous component TitleBar's ancestor mouse-drag callbacks are not reused.
+
+Windows/MSVC verification:
+
+- Seven new title-bar tests passed on TestPlatform, covering menu anchors, Escape
+  focus restoration, overflow submenu commands, hidden-menu keyboard access,
+  resize dismissal, modal guards, 400/700/1000 px widths with 10/16/24 px UI fonts,
+  fullscreen transitions, platform layout reservations, and close Cancel/Discard.
+- `cargo check --offline --locked`, `cargo fmt --check`, strict all-target
+  diagnostics Clippy and `git diff --check` passed.
+- The default executable build passed with `cargo build --offline --locked
+  --bin mithril --target-dir target/titlebar-validation`.
+- The complete `cargo test --offline --locked --features editor-diagnostics
+  --target-dir target/titlebar-validation` suite passed, including existing
+  save/close/preference-flush regressions and the pre-existing link-menu work.
+  The normal target directory could not replace the running/locked mithril.exe;
+  validation used a separate output directory seeded from build caches instead.
+
+Only the Windows Rust target is installed locally. Linux/macOS compilation remains
+for the existing validation CI; no push or remote workflow was triggered.
+Native close/minimize/maximize/restore, dragging/resizing/snapping, macOS traffic
+lights, Linux decorations and high-DPI behavior remain manual platform validation.
+No native app, desktop input or visible test harness was launched. These headless
+results do not establish resolution of the previously reported native hang.

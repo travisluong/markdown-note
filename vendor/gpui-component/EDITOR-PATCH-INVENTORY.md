@@ -1,5 +1,16 @@
 # Local patch inventory
 
+## Title-bar overflow submenu builders
+
+`src/menu/popup_menu.rs` accepts borrowed `FnOnce` builders in `submenu` and
+`submenu_with_icon`, matching their immediate, single call through `PopupMenu::build`.
+No builder is retained. This lets the application populate both ordinary menus
+and title-bar overflow submenus from the same current Notes snapshot without
+recursively borrowing its entity or copying command definitions. Parent-menu
+focus and dismissal wiring remains owned by PopupMenu. Coverage:
+`src/title_bar_ui/tests.rs`, including a keyboard-invoked overflow submenu command.
+Reconcile this signature relaxation on upstream upgrades.
+
 ## Responsive settings modal placement
 
 `src/dialog.rs` adds `DialogPlacement::with_margin` (default remains 16 logical
