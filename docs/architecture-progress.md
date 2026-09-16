@@ -1409,3 +1409,30 @@ Native close/minimize/maximize/restore, dragging/resizing/snapping, macOS traffi
 lights, Linux decorations and high-DPI behavior remain manual platform validation.
 No native app, desktop input or visible test harness was launched. These headless
 results do not establish resolution of the previously reported native hang.
+
+## Windows title-bar input regression (2026-09-15)
+
+The combined bar's Windows branch previously supplied only native hit-test
+regions, with no handlers for client mouse input. It now handles caption presses
+and button clicks explicitly while retaining those hit regions. Dragging and
+double-click maximize/restore stay confined to the blank caption region; menus
+remain ordinary controls. Caption button presses suppress GPUI's native default
+handling to avoid executing the same operation twice. Close invokes the shared
+workspace close request, preserving unsaved-document and preference barriers.
+
+`title_bar_ui/windows.rs` posts move/minimize/maximize/restore system commands to
+the current window. This keeps native modal loops outside the GPUI input callback
+and its borrows. GPUI 0.2.2's Windows move method is a no-op and its zoom method
+only maximizes, so this adapter also supplies the missing move/restore behavior.
+Tests record native-command intents without touching an OS window. Two added
+TestPlatform regressions cover actual caption/menu pointer dispatch, double-click,
+release outside a button, and dirty Close/Cancel; all nine title-bar tests pass.
+
+`cargo check --offline --locked`, `cargo fmt --check`, strict all-target Clippy
+with editor diagnostics, and `git diff --check` pass. The complete suite passes
+with 488 tests using `cargo test --offline --locked --features editor-diagnostics
+--target-dir target/titlebar-validation`. Full-suite evidence is in
+`target/titlebar-controls-tests.log`; compiler/lint logs are
+`target/titlebar-controls-check.log` and `target/titlebar-controls-clippy.log`.
+Native Windows dragging, snapping, minimize/maximize/restore and close remain
+user-run validation. No native window or desktop input was used during testing.

@@ -45,6 +45,75 @@ fn click(kind: MenuKind, cx: &mut VisualTestContext) {
     cx.refresh().unwrap();
 }
 
+#[cfg(target_os = "windows")]
+#[gpui::test]
+fn windows_caption_regions_dispatch_client_input(cx: &mut TestAppContext) {
+    use windows::CaptionCommand;
+    let (_dir, notes, cx) = fixture(cx);
+    for (selector, expected) in [
+        ("title-bar-drag", CaptionCommand::Move),
+        ("window-minimize", CaptionCommand::Minimize),
+        ("window-maximize", CaptionCommand::Maximize),
+    ] {
+        let bounds = cx.debug_bounds(selector).unwrap();
+        let bar = cx.debug_bounds("window-title-bar").unwrap();
+        assert!(bounds.size.width > px(0.) && bounds.size.height > px(0.));
+        assert!(bounds.top() >= bar.top() && bounds.bottom() <= bar.bottom());
+        cx.simulate_click(bounds.center(), Modifiers::default());
+        cx.update(|_, cx| {
+            notes.update(cx, |this, _| {
+                assert_eq!(std::mem::take(&mut this.title_bar.commands), vec![expected]);
+            })
+        });
+    }
+    let drag = cx.debug_bounds("title-bar-drag").unwrap();
+    cx.simulate_event(gpui::MouseDownEvent {
+        position: drag.center(),
+        button: MouseButton::Left,
+        click_count: 2,
+        ..Default::default()
+    });
+    cx.simulate_mouse_up(drag.center(), MouseButton::Left, Modifiers::default());
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            assert_eq!(
+                std::mem::take(&mut this.title_bar.commands),
+                vec![CaptionCommand::Maximize]
+            );
+        })
+    });
+    assert_eq!(CaptionCommand::zoom(true), CaptionCommand::Restore);
+
+    // A press released outside the button must not execute a window command.
+    let minimize = cx.debug_bounds("window-minimize").unwrap();
+    cx.simulate_mouse_down(minimize.center(), MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_up(drag.center(), MouseButton::Left, Modifiers::default());
+    click(MenuKind::File, cx);
+    cx.simulate_keystrokes("escape");
+    cx.update(|_, cx| assert!(notes.read(cx).title_bar.commands.is_empty()));
+}
+
+#[cfg(target_os = "windows")]
+#[gpui::test]
+fn windows_close_button_prompts_and_cancel_preserves_document(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.editor.replace_selection("changed", window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let close = cx.debug_bounds("window-close").unwrap();
+    cx.simulate_click(close.center(), Modifiers::default());
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(cx.windows().len(), 1);
+    cx.update(|_, cx| assert!(notes.read(cx).dirty(cx)));
+}
+
 #[gpui::test]
 fn all_menus_anchor_to_buttons_and_escape_restores_editor_focus(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);

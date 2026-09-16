@@ -17,6 +17,9 @@ use gpui_component::{
 use gpui_component::{Icon, IconName};
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(target_os = "windows")]
+mod windows;
+
 impl Notes {
     fn populate_menu(
         &self,
@@ -232,10 +235,22 @@ impl HeaderLayout {
 pub(super) struct TitleBarState {
     layout: Option<HeaderLayout>,
     bounds: Rc<RefCell<[Bounds<Pixels>; 7]>>,
+    #[cfg(all(test, target_os = "windows"))]
+    commands: Vec<windows::CaptionCommand>,
 }
 
 impl Notes {
-    // Both native close and client-decorated Linux close use the same lifecycle owner.
+    #[cfg(target_os = "windows")]
+    fn windows_caption_command(&mut self, command: windows::CaptionCommand, _window: &Window) {
+        #[cfg(test)]
+        self.title_bar.commands.push(command);
+        #[cfg(not(test))]
+        if let Err(error) = windows::post_command(command, _window) {
+            eprintln!("Could not perform window command: {error}");
+        }
+    }
+
+    // Native and custom caption close use the same lifecycle owner.
     pub(super) fn request_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.is_busy() {
             self.request(Next::Close, window, cx);
@@ -457,6 +472,23 @@ impl Notes {
                 .h_full();
             if mode == HeaderMode::Windows {
                 drag = drag.window_control_area(WindowControlArea::Drag);
+                #[cfg(target_os = "windows")]
+                {
+                    drag = drag.on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
+                            // Handle both client and non-client input. Stop the native
+                            // default handler from starting a second move/zoom operation.
+                            cx.stop_propagation();
+                            let command = if event.click_count == 2 {
+                                windows::CaptionCommand::zoom(window.is_maximized())
+                            } else {
+                                windows::CaptionCommand::Move
+                            };
+                            this.windows_caption_command(command, window);
+                        }),
+                    );
+                }
             } else {
                 drag = drag.on_mouse_down(MouseButton::Left, move |event, window, cx| {
                     cx.stop_propagation();
@@ -527,18 +559,34 @@ impl Notes {
                     })
                     .child(Icon::new(icon).small());
                 if enabled && mode == HeaderMode::Windows {
-                    // Leave events unhandled so GPUI can finish its non-client press/release pair.
+                    // Keep native hit regions (including maximize's Snap hover), but
+                    // execute clicks ourselves even when Windows sends client input.
                     control = control.window_control_area(area);
-                } else if enabled {
-                    control = control.on_click(cx.listener(move |this, _, window, cx| {
-                        cx.stop_propagation();
-                        match area {
-                            WindowControlArea::Min => window.minimize_window(),
-                            WindowControlArea::Max => window.zoom_window(),
-                            WindowControlArea::Close => this.request_window_close(window, cx),
-                            WindowControlArea::Drag => unreachable!(),
-                        }
-                    }));
+                }
+                if enabled {
+                    control = control
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            #[cfg(target_os = "windows")]
+                            if mode == HeaderMode::Windows && area != WindowControlArea::Close {
+                                let command = match area {
+                                    WindowControlArea::Min => windows::CaptionCommand::Minimize,
+                                    WindowControlArea::Max => {
+                                        windows::CaptionCommand::zoom(window.is_maximized())
+                                    }
+                                    _ => unreachable!(),
+                                };
+                                this.windows_caption_command(command, window);
+                                return;
+                            }
+                            match area {
+                                WindowControlArea::Min => window.minimize_window(),
+                                WindowControlArea::Max => window.zoom_window(),
+                                WindowControlArea::Close => this.request_window_close(window, cx),
+                                WindowControlArea::Drag => unreachable!(),
+                            }
+                        }));
                 }
                 bar = bar.child(control);
             }
