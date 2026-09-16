@@ -1,8 +1,8 @@
 //! Application-owned menus and platform title-bar regions.
 use crate::{
-    About, CloseTab, KeyboardShortcuts, LivePreview, MenuKind, NavigateBack, NavigateForward,
-    NewNote, NewTab, Next, Notes, Open, OpenSettings, ReadingView, ReplaceFile, Save,
-    SearchAllFiles, ShowExplorer, SourceMode, ToggleSidebar, ViewMode,
+    About, CloseTab, CommandPalette, GoTo, KeyboardShortcuts, LivePreview, MenuKind, NavigateBack,
+    NavigateForward, NewNote, NewTab, Next, Notes, Open, OpenSettings, ReadingView, ReplaceFile,
+    Save, SearchAllFiles, ShowExplorer, SourceMode, ToggleSidebar, ViewMode,
 };
 use gpui::{
     AnyElement, App, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement,
@@ -44,6 +44,7 @@ impl Notes {
                 )
                 .menu_with_disabled("New tab", Box::new(NewTab), busy)
                 .menu_with_disabled("Close tab", Box::new(CloseTab), busy)
+                .menu_with_disabled("Go to a note…", Box::new(GoTo), busy)
                 .separator()
                 .menu_with_disabled("Settings", Box::new(OpenSettings), self.is_busy())
         } else if kind == MenuKind::View {
@@ -92,6 +93,7 @@ impl Notes {
                 Box::new(ShowExplorer),
                 busy || self.notebooks.active.is_none(),
             )
+            .menu_with_disabled("Command palette…", Box::new(CommandPalette), busy)
         } else if kind == MenuKind::Search {
             use mithril::commands::Command;
             menu.menu_with_disabled(

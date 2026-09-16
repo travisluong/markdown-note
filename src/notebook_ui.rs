@@ -101,6 +101,10 @@ pub(super) struct NotebookState {
 }
 
 impl NotebookState {
+    pub(super) fn index_writable(&self) -> bool {
+        self.index_writable
+    }
+
     #[cfg(test)]
     pub(crate) fn set_test_persistence_target(&mut self, path: PathBuf) {
         self.index_path = Some(path);

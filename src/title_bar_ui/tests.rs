@@ -382,3 +382,54 @@ fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestA
         assert!(this.notebooks.tree_focus.is_focused(window));
     });
 }
+
+#[gpui::test]
+fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active =
+                Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.editor.focus(window, cx);
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    click(MenuKind::File, cx);
+    // Open, Save, New note, New tab, Close tab, Go to a note.
+    cx.simulate_keystrokes("down down down down down down enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.menu.is_none());
+        assert!(this.palette.is_some());
+        assert!(!this.editor.is_focused(window, cx));
+        assert!(this.file_picker_operation.is_none());
+    });
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    click(MenuKind::View, cx);
+    // Three modes, sidebar, Explorer, then Command palette (history disabled).
+    cx.simulate_keystrokes("down down down down down down enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.menu.is_none());
+        assert!(this.palette.is_some());
+        assert!(!this.editor.is_focused(window, cx));
+    });
+    // Actual typing/activation establishes palette query focus after menu dismissal.
+    cx.simulate_input("File: Open file");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.palette.is_none());
+            let operation = this.file_picker_operation.take().unwrap();
+            this.finish_file_picker(operation, Ok(None), window, cx);
+            assert!(this.editor.is_focused(window, cx));
+        })
+    });
+}

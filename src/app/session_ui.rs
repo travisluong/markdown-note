@@ -6,7 +6,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use gpui::{App, Context, PathPromptOptions, PromptButton, PromptLevel, Window};
+#[cfg(not(test))]
+use gpui::PathPromptOptions;
+use gpui::{App, Context, PromptButton, PromptLevel, Window};
 
 use crate::{Document, Next, Notes, search};
 use gpui_component::WindowExt;
@@ -325,6 +327,19 @@ impl Notes {
             }
         }
     }
+    // TestPlatform has no path dialog; tests capture the operation and supply
+    // outcomes through the production finish_file_picker adapter.
+    #[cfg(test)]
+    fn show_file_picker(
+        &mut self,
+        operation: OperationId,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        self.file_picker_operation = Some(operation);
+    }
+
+    #[cfg(not(test))]
     fn show_file_picker(
         &mut self,
         operation: OperationId,

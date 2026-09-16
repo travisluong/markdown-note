@@ -1667,3 +1667,24 @@ not collide with the new Cmd+Shift+E shortcut. Commands used --offline --locked
 --target-dir target/titlebar-validation --features editor-diagnostics.
 cargo fmt --all --check and git diff --check pass. No desktop interaction or
 native application harness was used; native macOS input remains manual validation.
+
+## Command surface port 7: Discovery menus and core palette commands (2026-09-15)
+
+File gains Go to a note after Close tab; View gains Command palette after Explorer.
+The palette gains Open file, Save, Manage notebooks and Keyboard shortcuts. Open
+file explicitly enters the system-picker owner even with an active notebook;
+Go to a note and Mod+O retain notebook discovery and standalone picker fallback.
+Save uses the existing save capability, including Reading, and Manage notebooks
+rechecks index writability before activation. Palette execution rejects any
+active dialog in addition to fresh command/busy checks.
+
+Headless checks passed: palette adapter suite (12), title-bar suite (12), and
+command catalogue suite (16). Four new TestPlatform tests exercise actual menu
+keyboard routing, query focus after dismissal, palette Open/Save/Manage/Help,
+Ctrl/Cmd+O routing, Reading save, fresh empty-document/index availability, and
+modal/busy rejection. Test-only file-picker capture avoids unsupported native
+path dialogs while retaining production session entry/completion. Commands used
+--offline --locked --target-dir target/titlebar-validation; cargo fmt --all
+--check and git diff --check pass. A transient Windows test-executable linker
+lock cleared on retry. No desktop interaction or native harness was used;
+native picker presentation remains manual validation.

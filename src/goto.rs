@@ -203,11 +203,14 @@ impl Notes {
     }
 
     fn command_unavailable(&self, command: Command) -> Option<&'static str> {
-        command.unavailable(self.capabilities())
+        command.unavailable(self.capabilities()).or_else(|| {
+            (command == Command::ManageNotebooks && !self.notebooks.index_writable())
+                .then_some("Wait until the notebook index is writable")
+        })
     }
 
     fn run_command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
-        if self.command_unavailable(command).is_some() {
+        if self.command_unavailable(command).is_some() || window.has_active_dialog(cx) {
             return;
         }
         match command {
@@ -238,6 +241,10 @@ impl Notes {
             }
             Command::EditLink => self.edit_link(window, cx),
             Command::Settings => self.open_settings(window, cx),
+            Command::OpenFile => self.request(Next::Open, window, cx),
+            Command::Save => self.save(Next::Nothing, window, cx),
+            Command::ManageNotebooks => self.manage_notebooks(window, cx),
+            Command::KeyboardShortcuts => self.open_help(true, window, cx),
             Command::SourceMode => self.change_view_mode(ViewMode::Source, window, cx),
             Command::LivePreview => self.change_view_mode(ViewMode::LivePreview, window, cx),
             Command::ReadingView => self.change_view_mode(ViewMode::Reading, window, cx),

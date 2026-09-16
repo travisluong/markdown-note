@@ -197,6 +197,8 @@ struct Notes {
     settings_panel: Option<settings_ui::SettingsDialog>,
     installed_fonts: Vec<String>,
     palette: Option<goto::Palette>,
+    #[cfg(test)]
+    file_picker_operation: Option<OperationId>,
     search: Option<Entity<search_ui::SearchPanel>>,
     search_subscription: Option<Subscription>,
     search_destination: Option<search::Destination>,
@@ -240,6 +242,8 @@ impl Notes {
             settings_panel: None,
             installed_fonts: cx.text_system().all_font_names(),
             palette: None,
+            #[cfg(test)]
+            file_picker_operation: None,
             search: None,
             search_subscription: None,
             search_destination: None,

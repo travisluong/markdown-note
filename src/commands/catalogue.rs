@@ -33,6 +33,10 @@ pub enum Command {
     Forward,
     ToggleSidebar,
     ShowExplorer,
+    OpenFile,
+    Save,
+    ManageNotebooks,
+    KeyboardShortcuts,
     ChangeNotebook,
     NewNote,
     NewTab,
@@ -73,6 +77,10 @@ impl Command {
         Self::Forward,
         Self::ToggleSidebar,
         Self::ShowExplorer,
+        Self::OpenFile,
+        Self::Save,
+        Self::ManageNotebooks,
+        Self::KeyboardShortcuts,
         Self::ChangeNotebook,
         Self::NewNote,
         Self::NewTab,
@@ -113,6 +121,10 @@ impl Command {
             Self::Forward => "Navigation: Forward",
             Self::ToggleSidebar => "View: Toggle sidebar",
             Self::ShowExplorer => "View: Show Explorer",
+            Self::OpenFile => "File: Open file…",
+            Self::Save => "File: Save",
+            Self::ManageNotebooks => "Notebook: Manage notebooks",
+            Self::KeyboardShortcuts => "Help: Keyboard shortcuts",
             Self::ChangeNotebook => "Notebook: Change notebook",
             Self::NewNote => "Notebook: Create new note",
             Self::NewTab => "Tabs: New tab",
@@ -154,6 +166,10 @@ impl Command {
             Self::Forward => "Revisit the next file in this tab",
             Self::ToggleSidebar => "Show or hide the current sidebar panel",
             Self::ShowExplorer => "Show the notebook file tree and focus it",
+            Self::OpenFile => "Choose a file using the system file picker",
+            Self::Save => "Save the current document",
+            Self::ManageNotebooks => "Add, create or remove registered notebooks",
+            Self::KeyboardShortcuts => "Show application and editor keyboard shortcuts",
             Self::ChangeNotebook => "Choose a registered notebook",
             Self::NewNote => "Create an Untitled note in the notebook root",
             Self::NewTab => "Open an empty tab without creating a file",
@@ -195,6 +211,7 @@ impl Command {
             return Some("Open an editable document in Source or Live preview");
         }
         match self {
+            Self::Save if !context.can_save() => Some("Open a document to save"),
             Self::ToggleSidebar | Self::ShowExplorer if !context.has_notebook => {
                 Some("Open a notebook to use the sidebar")
             }

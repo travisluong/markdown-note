@@ -546,3 +546,41 @@ fn sidebar_commands_require_a_notebook_and_idle_state() {
         }
     }
 }
+
+#[test]
+fn discovery_commands_are_searchable_and_save_requires_a_document_in_any_mode() {
+    let entries: Vec<_> = Command::ALL
+        .iter()
+        .copied()
+        .map(PaletteEntry::Command)
+        .collect();
+    for command in [
+        Command::OpenFile,
+        Command::Save,
+        Command::ManageNotebooks,
+        Command::KeyboardShortcuts,
+    ] {
+        assert_eq!(
+            ranked_entries(&entries, command.label())[0].label(),
+            command.label()
+        );
+        for has_document in [false, true] {
+            for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+                for busy in [false, true] {
+                    let context = Capabilities {
+                        has_document,
+                        mode,
+                        busy,
+                        has_notebook: false,
+                        has_back_history: false,
+                        has_forward_history: false,
+                    };
+                    assert_eq!(
+                        command.unavailable(context).is_none(),
+                        !busy && (command != Command::Save || has_document)
+                    );
+                }
+            }
+        }
+    }
+}

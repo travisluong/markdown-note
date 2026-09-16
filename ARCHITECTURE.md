@@ -493,3 +493,12 @@ sidebar retains the active Search panel; reopening restores its query focus.
 Show Explorer reveals the tree without discarding Search query/results. View
 menu actions dispatch after dismissal so popup focus restoration cannot replace
 the destination focus. Help derives both shortcuts from the binding catalogue.
+
+Palette discovery and core file commands retain their existing feature owners.
+File > Go to a note and Mod+O use notebook discovery, falling back to the system
+file picker without a notebook; palette Open file always uses the system picker.
+View > Command palette opens the command search. Palette Save uses the document
+save capability (including Reading); Manage notebooks rechecks the notebook
+index's writability. All palette execution rejects active dialogs and busy state.
+TestPlatform captures file-picker operations at the presentation boundary and
+supplies outcomes to the production session completion adapter.

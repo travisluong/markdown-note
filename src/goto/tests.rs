@@ -1,7 +1,7 @@
 //! Palette adapter contracts using TestPlatform, without native UI/input.
 use super::{Command, PaletteEntry};
 use crate::{Document, Notes, ViewMode, notebook};
-use gpui::{Entity, TestAppContext, VisualTestContext, prelude::*};
+use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, prelude::*};
 use gpui_component::{
     Root, WindowExt,
     input::{Redo, Undo},
@@ -650,6 +650,169 @@ fn sidebar_palette_commands_switch_panels_and_recheck_notebook_and_busy_guards(
                 this.sidebar_collapsed,
                 "busy session blocks direct invocation"
             );
+        })
+    });
+}
+
+fn select_discovery_command(notes: &Entity<Notes>, command: Command, cx: &mut VisualTestContext) {
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.command_palette(window, cx);
+            this.palette
+                .as_ref()
+                .unwrap()
+                .query
+                .update(cx, |query, cx| {
+                    query.set_value(command.label(), window, cx);
+                });
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(matches!(notes.read(cx).palette.as_ref().unwrap().model.selected_entry(), Some(PaletteEntry::Command(selected)) if *selected == command)));
+}
+
+#[gpui::test]
+fn discovery_palette_open_uses_system_picker_and_save_persists_reading_document(
+    cx: &mut TestAppContext,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("note.md");
+    fs::write(&path, "original").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    select_discovery_command(&notes, Command::OpenFile, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_none());
+            assert!(this.notebooks.active.is_some());
+            let operation = this
+                .file_picker_operation
+                .take()
+                .expect("Open goes to OS picker even in notebook");
+            assert!(this.document_interaction_blocked());
+            assert!(this.editor.is_focused(window, cx));
+            this.finish_file_picker(operation, Ok(None), window, cx);
+            assert!(!this.document_interaction_blocked());
+            this.editor.select(0..8, window, cx);
+            this.editor.replace_selection("saved draft", window, cx);
+            this.set_mode(ViewMode::Reading, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    select_discovery_command(&notes, Command::Save, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.activate_palette(window, cx)));
+    cx.run_until_parked();
+    assert_eq!(fs::read_to_string(path).unwrap(), "saved draft");
+    cx.update(|_, cx| assert!(!notes.read(cx).dirty(cx)));
+}
+
+#[gpui::test]
+fn discovery_palette_manage_help_and_fresh_availability_guards(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    select_discovery_command(&notes, Command::ManageNotebooks, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.command_unavailable(Command::ManageNotebooks).is_some());
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_some());
+            this.notebooks
+                .set_test_persistence_target(directory.path().join("index.json"));
+            assert!(this.command_unavailable(Command::ManageNotebooks).is_none());
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_none());
+            assert!(window.has_active_dialog(cx));
+            this.run_command(Command::OpenFile, window, cx);
+            assert!(this.file_picker_operation.is_none());
+            this.go_to(window, cx);
+            this.command_palette(window, cx);
+            assert!(this.palette.is_none());
+            window.close_dialog(cx);
+        })
+    });
+    cx.run_until_parked();
+    select_discovery_command(&notes, Command::KeyboardShortcuts, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_none());
+            assert!(window.has_active_dialog(cx));
+            window.close_dialog(cx);
+        })
+    });
+    cx.run_until_parked();
+    select_discovery_command(&notes, Command::Save, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.install_document(None, window, cx);
+            assert!(this.command_unavailable(Command::Save).is_some());
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_some(), "Save rechecks the current document");
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+            this.request(crate::Next::Open, window, cx);
+            let operation = this.file_picker_operation.take().unwrap();
+            for command in [
+                Command::OpenFile,
+                Command::Save,
+                Command::ManageNotebooks,
+                Command::KeyboardShortcuts,
+            ] {
+                assert!(this.command_unavailable(command).is_some());
+                this.run_command(command, window, cx);
+            }
+            this.go_to(window, cx);
+            this.command_palette(window, cx);
+            assert!(this.palette.is_none());
+            assert!(!window.has_active_dialog(cx));
+            assert!(this.file_picker_operation.is_none());
+            this.finish_file_picker(operation, Ok(None), window, cx);
+        })
+    });
+}
+
+#[gpui::test]
+fn discovery_go_to_shortcut_keeps_notebook_search_and_standalone_picker_fallback(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    let key = if cfg!(target_os = "macos") {
+        "cmd-o"
+    } else {
+        "ctrl-o"
+    };
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let palette = this.palette.as_ref().unwrap();
+            assert_eq!(palette.mode, super::PaletteMode::Files);
+            assert!(palette.query.read(cx).focus_handle(cx).is_focused(window));
+            assert!(this.file_picker_operation.is_none());
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+            this.notebooks.active = None;
+        })
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.palette.is_none());
+            let operation = this.file_picker_operation.take().unwrap();
+            this.finish_file_picker(operation, Ok(None), window, cx);
+            assert!(this.editor.is_focused(window, cx));
         })
     });
 }
