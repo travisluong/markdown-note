@@ -65,6 +65,11 @@ remain fixed while the body scrolls; narrow dialogs use a horizontal section row
 Reopening an active modal preserves its section and input drafts. Document guards
 and the modal overlay pause tabs, navigation, commands, search and file drops.
 Search retains its query/results; autosave and preference persistence continue.
+Settings uses 80% of the window content width and height, clamped to 24-pixel
+margins. Its size stays fixed across sections and follows window resizing;
+unmoved dialogs recenter, while dragged positions are retained where possible.
+DialogPlacement exposes opt-in margins and preferred-size updates; other dialogs
+retain the default 16-pixel margin and existing fixed-size behavior.
 
 Navigation history is a pure, session-only owner in `app/navigation.rs`, held by
 each Tab. The session adapter proposes a revision-tagged history visit through Next;

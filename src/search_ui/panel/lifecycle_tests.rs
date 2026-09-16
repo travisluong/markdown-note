@@ -28,7 +28,11 @@ fn fixture<'a>(
             this.install_document(Some(Document::open(root.join("a.md")).unwrap()), window, cx);
         });
         notes = Some(entity.clone());
-        Root::new(entity, window, cx)
+        let view = cx.new(|cx| crate::NotesWindow {
+            _subscription: cx.observe(&entity, |_, _, cx| cx.notify()),
+            notes: entity,
+        });
+        Root::new(view, window, cx)
     });
     (notes.unwrap(), cx)
 }

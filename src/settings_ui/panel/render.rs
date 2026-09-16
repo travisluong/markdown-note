@@ -292,7 +292,23 @@ impl Render for SettingsPanel {
 }
 
 impl SettingsPanel {
-    pub(in crate::settings_ui) fn dialog(panel: Entity<Self>, dialog: Dialog, cx: &App) -> Dialog {
+    pub(super) fn preferred_size(window: &Window) -> gpui::Size<gpui::Pixels> {
+        let padding = gpui_component::window_paddings(window);
+        let content = window.viewport_size()
+            - gpui::size(padding.left + padding.right, padding.top + padding.bottom);
+        gpui::size(content.width * 0.8, content.height * 0.8)
+    }
+
+    pub(in crate::settings_ui) fn dialog(
+        panel: Entity<Self>,
+        dialog: Dialog,
+        window: &Window,
+        cx: &App,
+    ) -> Dialog {
+        panel
+            .read(cx)
+            .placement
+            .set_preferred_size(Self::preferred_size(window));
         dialog
             .title("Settings")
             .movable(panel.read(cx).placement.clone())

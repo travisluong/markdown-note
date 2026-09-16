@@ -37,6 +37,8 @@ pub struct DialogPlacement(Rc<RefCell<Placement>>);
 
 struct Placement {
     preferred: Size<Pixels>,
+    margin: Pixels,
+    moved: bool,
     origin: Option<Point<Pixels>>,
     resolved_size: Size<Pixels>,
     drag: Option<(Point<Pixels>, Point<Pixels>)>,
@@ -46,6 +48,8 @@ impl DialogPlacement {
     pub fn new(preferred: Size<Pixels>) -> Self {
         Self(Rc::new(RefCell::new(Placement {
             preferred,
+            margin: px(16.),
+            moved: false,
             origin: None,
             resolved_size: preferred,
             drag: None,
@@ -57,18 +61,38 @@ impl DialogPlacement {
         self.0.borrow().resolved_size
     }
 
+    /// Set the minimum clearance from the window content edges (defaults to 16px).
+    pub fn with_margin(self, margin: Pixels) -> Self {
+        self.0.borrow_mut().margin = margin.max(px(0.));
+        self
+    }
+
+    /// Resize responsive content, keeping a dragged position or centering an unmoved dialog.
+    /// The next layout clamps the position and size to the available viewport.
+    pub fn set_preferred_size(&self, preferred: Size<Pixels>) {
+        let mut state = self.0.borrow_mut();
+        if state.preferred != preferred {
+            state.preferred = preferred;
+            state.drag = None;
+            if !state.moved {
+                state.origin = None;
+            }
+        }
+    }
+
     /// Center the dialog again, using the given preferred dimensions.
     pub fn reset(&self, preferred: Size<Pixels>) {
         let mut state = self.0.borrow_mut();
         state.preferred = preferred;
+        state.moved = false;
         state.origin = None;
         state.drag = None;
     }
 
-    /// Resolve and retain placement inside a viewport, with 16 logical-pixel margins.
+    /// Resolve and retain placement inside a viewport, respecting the configured margin.
     pub fn bounds(&self, viewport: Size<Pixels>) -> Bounds<Pixels> {
         let mut state = self.0.borrow_mut();
-        let margin = px(16.);
+        let margin = state.margin;
         let size = gpui::size(
             state
                 .preferred
@@ -492,6 +516,7 @@ impl RenderOnce for Dialog {
                                             let mut state = move_state.0.borrow_mut();
                                             if let Some((pointer, origin)) = state.drag {
                                                 if event.pressed_button == Some(MouseButton::Left) {
+                                                    state.moved = true;
                                                     state.origin =
                                                         Some(origin + event.position - pointer);
                                                     window.refresh();

@@ -284,7 +284,7 @@ impl Notes {
             });
         });
         panel.update(cx, |panel, cx| panel.sync_effective(values, window, cx));
-        SettingsPanel::dialog(panel, dialog, cx)
+        SettingsPanel::dialog(panel, dialog, window, cx)
     }
 
     fn close_settings_panel(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {

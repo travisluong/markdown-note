@@ -233,7 +233,8 @@ impl SettingsPanel {
             values,
             section: Section::General,
             focus: cx.focus_handle(),
-            placement: DialogPlacement::new(gpui::size(gpui::px(620.), gpui::px(600.))),
+            placement: DialogPlacement::new(Self::preferred_size(window))
+                .with_margin(gpui::px(24.)),
             content_scroll: gpui::ScrollHandle::new(),
             hidden_extensions,
             excluded_patterns,

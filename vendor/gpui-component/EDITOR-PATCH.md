@@ -1,5 +1,16 @@
 # Local editor patch
 
+## Responsive settings modal placement
+
+`src/dialog.rs` adds `DialogPlacement::with_margin` (default remains 16 logical
+pixels) and `set_preferred_size`. Responsive size updates recenter an unmoved
+dialog, preserve a dragged origin where possible, and cancel an in-progress drag
+when dimensions change. Layout clamps size and position within the configured
+margin. Settings opts into 24 pixels and 80% of the content viewport; other
+dialogs retain their existing defaults. Reconcile these APIs and drag state on
+upgrades. Coverage: `tests/dialog_placement.rs` and headless
+`settings_ui::panel::tests::modal_settings_*` tests in the application.
+
 ## Movable dialogs
 
 `Dialog::movable(DialogPlacement)` opts into caller-owned per-open placement,

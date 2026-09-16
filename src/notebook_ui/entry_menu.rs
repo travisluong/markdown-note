@@ -763,6 +763,7 @@ mod tests {
     #[gpui::test]
     fn settings_blocks_sidebar_clicks_and_late_menu_focus(cx: &mut TestAppContext) {
         let (fixture, notes, cx) = fixture(cx);
+        cx.simulate_resize(gpui::size(gpui::px(1600.), gpui::px(1000.)));
         fs::write(fixture.root.join("other.md"), "other").unwrap();
         cx.update(|window, cx| notes.update(cx, |this, cx| this.refresh_tree(window, cx)));
         cx.run_until_parked();
@@ -781,12 +782,18 @@ mod tests {
         });
         cx.refresh().unwrap();
         let row = cx.debug_bounds("notebook-row-other.md").unwrap();
+        // Outside left-click dismisses the modal without reaching the control below.
+        // Reopen before each press so every background interaction is protected.
         for button in [gpui::MouseButton::Left, gpui::MouseButton::Right] {
+            cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+            cx.refresh().unwrap();
             cx.simulate_mouse_down(row.center(), button, gpui::Modifiers::default());
             cx.simulate_mouse_up(row.center(), button, gpui::Modifiers::default());
             cx.run_until_parked();
         }
         for selector in ["tab-add", "sidebar-search", "toolbar-bold"] {
+            cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+            cx.refresh().unwrap();
             let button = cx.debug_bounds(selector).unwrap();
             cx.simulate_mouse_down(
                 button.center(),
@@ -800,6 +807,8 @@ mod tests {
             );
             cx.run_until_parked();
         }
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+        cx.refresh().unwrap();
         let focus = cx.update(|window, cx| window.focused(cx));
         cx.update(|_, cx| menu.update(cx, |_, cx| cx.emit(gpui::DismissEvent)));
         cx.run_until_parked();

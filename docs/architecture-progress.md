@@ -1336,3 +1336,30 @@ Windows headless verification:
   editor-diagnostics --bin mithril settings_ui::panel::tests -- --test-threads=1`;
   `cargo fmt --check` passed. TestPlatform only, no native desktop interaction.
   Log: `target/settings-modal-restore-tests.log`.
+
+## Responsive settings modal sizing
+
+- Settings now uses 80% of the window content width/height with a minimum
+  24-logical-pixel margin. All sections share the same dimensions; title and
+  navigation remain fixed while content scrolls, including at 320 x 300.
+- DialogPlacement adds opt-in margins and responsive preferred-size updates.
+  Unmoved dialogs recenter on resize; dragged positions remain where possible
+  and clamp at every edge. Reopening recenters. Other dialogs keep their defaults.
+- Added geometry and headless drag/resize/section/scroll tests. Updated the search
+  fixture to render NotesWindow's modal layer, and background click tests to
+  verify that outside-click dismissal does not activate the covered control.
+- All **479 tests passed**: 209 application tests through `cargo test --locked
+  --features editor-diagnostics --bin mithril -- --test-threads=1`, plus 81 library
+  and 189 integration tests through the current Cargo-built test harnesses.
+  The unrestricted cargo test command compiled all 21 harnesses but could not
+  replace the running `target/debug/mithril.exe`; Cargo JSON artifacts verified
+  all harnesses were current before direct execution. The application harness
+  was verified through Cargo separately to capture its Windows-subsystem output.
+  Doc tests also passed (zero cases). No application or desktop input was used.
+- `cargo check --locked`, `cargo fmt --check`, and strict `cargo clippy --locked
+  --all-targets --features editor-diagnostics -- -D warnings` passed. Transient
+  test-executable linker locks cleared on retry; the existing proc-macro-error2
+  future-compatibility notice remains. Native visual validation stays user-run.
+- Evidence: `target/settings-modal-application-tests.log`,
+  `target/settings-modal-harness-tests.log`, `target/settings-modal-test-artifacts.jsonl`,
+  `target/settings-modal-check.log`, and `target/settings-modal-clippy.log`.

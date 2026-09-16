@@ -1674,8 +1674,8 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
     cx.refresh().unwrap();
     cx.run_until_parked();
     let surface = cx.debug_bounds("dialog-surface").unwrap();
-    assert_eq!(surface.size, size(px(620.), px(600.)));
-    assert!(surface.left() > px(0.) && surface.top() > px(0.));
+    assert_eq!(surface.size, size(px(800.), px(640.)));
+    assert_eq!(surface.origin, point(px(100.), px(80.)));
     cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
     let header = cx.debug_bounds("dialog-title").unwrap();
     let navigation = cx.debug_bounds("settings-navigation").unwrap();
@@ -1720,6 +1720,26 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
             "surface={surface:?} content={content:?} navigation={navigation:?}"
         );
         assert!(content.size.height > px(0.));
+        assert_eq!(
+            surface.size,
+            size(viewport.width * 0.8, viewport.height * 0.8)
+        );
+        assert!(surface.left() >= px(24.) && surface.top() >= px(24.));
+        assert!(surface.right() <= viewport.width - px(24.));
+        assert!(surface.bottom() <= viewport.height - px(24.));
+        toolbar_section(&form, cx);
+        cx.update(|_, cx| {
+            form.update(cx, |form, cx| {
+                form.content_scroll.set_offset(point(px(0.), px(-10000.)));
+                cx.notify();
+            })
+        });
+        cx.refresh().unwrap();
+        let content = cx.debug_bounds("settings-content").unwrap();
+        let last_bounds = cx
+            .debug_bounds(format!("toolbar-row-{}", last as usize).leak())
+            .unwrap();
+        assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
     }
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
@@ -2036,4 +2056,67 @@ fn modal_settings_retains_editor_and_reading_scroll(cx: &mut TestAppContext) {
     intent(&panel(&notes, cx), SettingsIntent::Close, cx);
     cx.refresh().unwrap();
     cx.update(|_, cx| assert_eq!(probe.snapshot(cx).unwrap().scroll_item, before));
+}
+
+#[gpui::test]
+fn modal_settings_drag_resize_and_reopen_keep_clearance(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton, point, px, size};
+    let (_fixture, notes, cx) = fixture(cx, true, false);
+    cx.simulate_resize(size(px(1200.), px(900.)));
+    cx.refresh().unwrap();
+    let centered = cx.debug_bounds("dialog-surface").unwrap();
+    assert_eq!(centered.origin, point(px(120.), px(90.)));
+    assert_eq!(centered.size, size(px(960.), px(720.)));
+    for (destination, expected) in [
+        (point(px(-1000.), px(-1000.)), point(px(24.), px(24.))),
+        (point(px(3000.), px(3000.)), point(px(216.), px(156.))),
+    ] {
+        let title = cx.debug_bounds("dialog-title").unwrap().center();
+        cx.simulate_mouse_down(title, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(destination, MouseButton::Left, Modifiers::default());
+        cx.refresh().unwrap();
+        cx.simulate_mouse_up(destination, MouseButton::Left, Modifiers::default());
+        cx.refresh().unwrap();
+        let bounds = cx.debug_bounds("dialog-surface").unwrap();
+        assert_eq!(bounds.origin, expected);
+        assert_eq!(bounds.size, centered.size);
+    }
+    let form = panel(&notes, cx);
+    for section in [
+        super::Section::General,
+        super::Section::Toolbar,
+        super::Section::Font,
+        super::Section::Templates,
+        super::Section::Theme,
+    ] {
+        cx.update(|_, cx| form.update(cx, |form, cx| form.select_section(section, cx)));
+        cx.refresh().unwrap();
+        let bounds = cx.debug_bounds("dialog-surface").unwrap();
+        assert_eq!(bounds.origin, point(px(216.), px(156.)));
+        assert_eq!(bounds.size, centered.size);
+    }
+    // Increasing the window retains the dragged origin; shrinking clamps it.
+    for (viewport, origin) in [
+        (size(px(1600.), px(1200.)), point(px(216.), px(156.))),
+        (size(px(320.), px(300.)), point(px(40.), px(36.))),
+    ] {
+        cx.simulate_resize(viewport);
+        cx.refresh().unwrap();
+        let bounds = cx.debug_bounds("dialog-surface").unwrap();
+        assert_eq!(bounds.origin, origin);
+        assert_eq!(
+            bounds.size,
+            size(viewport.width * 0.8, viewport.height * 0.8)
+        );
+        assert!(bounds.left() >= px(24.) && bounds.top() >= px(24.));
+        assert!(bounds.right() <= viewport.width - px(24.));
+        assert!(bounds.bottom() <= viewport.height - px(24.));
+    }
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    cx.refresh().unwrap();
+    assert_eq!(
+        cx.debug_bounds("dialog-surface").unwrap().origin,
+        point(px(32.), px(30.))
+    );
 }
