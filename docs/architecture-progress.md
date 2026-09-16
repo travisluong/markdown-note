@@ -1787,3 +1787,23 @@ target/titlebar-validation, cargo fmt --check, and cargo clippy --offline --lock
 --all-targets --features editor-diagnostics --target-dir target/titlebar-validation
 -- -D warnings. No desktop interaction was used. Native platform presentation
 remains manual validation; the pre-existing Cargo.lock edit is excluded.
+
+## Consistent Lucide toolbar icons (2026-09-16)
+
+Replaced all eleven custom formatting SVGs with unmodified official Lucide
+assets. Sort now uses Lucide arrow-up-narrow-wide instead of the component's
+modified chevrons icon. Navigation, sidebar, folder and search retain their
+existing Lucide assets. assets/toolbar/README.md records the upstream revision,
+icon mapping and Lucide-only policy for additions; the upstream license is
+included. Toolbar sizing, theme colors and command behavior are unchanged.
+
+Validation: all twelve downloaded SVGs parse as XML and preserve the common
+24-by-24 viewBox, 2-unit stroke, currentColor and rounded caps/joins. Windows
+cargo check --offline --locked, cargo fmt --check and strict all-target Clippy
+with editor-diagnostics pass using target/titlebar-validation. The full headless
+suite passes with cargo test --offline --locked --features editor-diagnostics
+--target-dir target/titlebar-validation --config
+'profile.test.package.mithril.codegen-units=16'. This package-only build override
+avoids a locked pre-existing test executable (LNK1104) without touching its
+running process. No desktop interaction was used; visual UI validation remains
+manual. The pre-existing Cargo.lock edit is excluded.

@@ -120,7 +120,7 @@ impl Notes {
                         }
                         ToolbarItem::Sort => toolbar_button(
                             "sidebar-sort",
-                            IconName::SortAscending,
+                            Icon::default().path("toolbar/sort.svg"),
                             settings.icon_size,
                         )
                         .tooltip("Sort files")

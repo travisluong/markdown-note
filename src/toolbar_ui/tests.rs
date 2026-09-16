@@ -280,7 +280,7 @@ fn application_assets_load_all_formatting_icons_and_component_fallback() {
         let bytes = assets.load(path).unwrap().unwrap();
         let svg = std::str::from_utf8(&bytes).unwrap();
         assert!(
-            svg.contains("<svg ")
+            svg.contains("<svg")
                 && svg.contains("viewBox=\"0 0 24 24\"")
                 && svg.trim_end().ends_with("</svg>")
         );
@@ -293,7 +293,8 @@ fn application_assets_load_all_formatting_icons_and_component_fallback() {
         );
     }
     assert!(assets.load("icons/search.svg").unwrap().is_some());
-    assert_eq!(assets.list("toolbar/").unwrap().len(), 11);
+    assert!(assets.load("toolbar/sort.svg").unwrap().is_some());
+    assert_eq!(assets.list("toolbar/").unwrap().len(), 12);
 }
 
 #[gpui::test]

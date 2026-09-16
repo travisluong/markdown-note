@@ -1,9 +1,13 @@
-//! Application-owned assets layered over the component icon bundle.
+//! Official Lucide toolbar assets layered over the component's Lucide icon bundle.
 use gpui::{AssetSource, SharedString};
 use std::borrow::Cow;
 
 pub struct Assets;
 const TOOLBAR: &[(&str, &[u8])] = &[
+    (
+        "toolbar/sort.svg",
+        include_bytes!("../assets/toolbar/sort.svg"),
+    ),
     (
         "toolbar/bold.svg",
         include_bytes!("../assets/toolbar/bold.svg"),

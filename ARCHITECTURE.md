@@ -438,8 +438,10 @@ editing is enabled for documents (including standalone files) in Source and Live
 and rechecks current capability/dialog state on invocation. Reading, empty/image
 views and busy sessions reject edits. The heading menu captures editor/document
 identity, source and selection; Link reuses the existing guarded link dialog.
-Application assets in `assets/toolbar` are embedded by `src/assets.rs`, which
-falls back to the existing component bundle for navigation and other icons.
+Toolbar icons use Lucide exclusively. Official SVGs for formatting and sort in
+`assets/toolbar` are embedded by `src/assets.rs`, which falls back to the existing
+component's Lucide bundle for navigation and other icons. Source revision, icon
+mapping, license and the rule for future additions live in `assets/toolbar/README.md`.
 
 Theme palettes persist independent Light and Dark background, font, primary, and
 border RGB colors. Missing/invalid border values normalize using the containing
