@@ -85,6 +85,7 @@ actions!(
         TreeLeft,
         TreeRight,
         TreeContextMenu,
+        RenameEntry,
         TreeOpen
     ]
 );

@@ -61,6 +61,54 @@ fn actions(directory: bool, background: bool) -> Vec<(&'static str, EntryAction)
     items
 }
 impl Notes {
+    pub(crate) fn selected_entry_target(&self) -> Option<EntryTarget> {
+        let book = self.notebooks.active.as_ref()?;
+        let row = self
+            .notebooks
+            .explorer
+            .selected()
+            .filter(|row| row.draggable && !row.disabled)?;
+        Some(EntryTarget {
+            root: book.root.clone(),
+            path: row.path.clone(),
+            generation: self.notebooks.explorer.generation(),
+            directory: row.directory,
+        })
+    }
+
+    pub(crate) fn selected_entry_target_current(&self, target: &EntryTarget) -> bool {
+        self.entry_target_current(target)
+            && self.notebooks.explorer.rows().iter().any(|row| {
+                row.path == target.path
+                    && row.directory == target.directory
+                    && row.draggable
+                    && !row.disabled
+            })
+    }
+
+    pub(crate) fn run_selected_entry_action(
+        &mut self,
+        target: EntryTarget,
+        action: EntryAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if window.has_active_dialog(cx)
+            || self.document_interaction_blocked()
+            || !self.selected_entry_target_current(&target)
+            || (matches!(action, EntryAction::Rename) && self.tabs.active.session.write().is_some())
+        {
+            return;
+        }
+        self.entry_action(target, action, window, cx);
+    }
+
+    pub(crate) fn rename_selected_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(target) = self.selected_entry_target() {
+            self.run_selected_entry_action(target, EntryAction::Rename, window, cx);
+        }
+    }
+
     fn entry_target_current(&self, target: &EntryTarget) -> bool {
         self.notebooks
             .active

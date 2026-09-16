@@ -26,6 +26,13 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
     }
     vec![
         shortcut!(
+            "f2",
+            RenameEntry,
+            "NotebookTree",
+            "Notebook tree",
+            "Rename selected item"
+        ),
+        shortcut!(
             "shift-f10",
             TreeContextMenu,
             "NotebookTree",

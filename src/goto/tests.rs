@@ -30,7 +30,11 @@ fn fixture<'a>(
             )
         });
         notes = Some(entity.clone());
-        Root::new(entity, window, cx)
+        let view = cx.new(|cx| crate::NotesWindow {
+            _subscription: cx.observe(&entity, |_, _, cx| cx.notify()),
+            notes: entity,
+        });
+        Root::new(view, window, cx)
     });
     cx.refresh().unwrap();
     cx.run_until_parked();
@@ -1024,4 +1028,302 @@ fn date_shortcut_ignores_search_and_modal_inputs(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(key);
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café 茶"));
+}
+
+#[gpui::test]
+fn explorer_palette_captures_selected_file_or_folder_across_dismissal(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "active document").unwrap();
+    fs::write(directory.path().join("other.md"), "selected file").unwrap();
+    fs::create_dir(directory.path().join("folder")).unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let recorded = calls.clone();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .test_set_reveal_backend(Box::new(move |path| {
+                    recorded.borrow_mut().push(path.to_path_buf());
+                    Ok(())
+                }));
+            this.test_refresh_tree(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    for path in ["other.md", "folder"] {
+        for command in [Command::CopySelectedPath, Command::RevealSelectedEntry] {
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    this.notebooks
+                        .test_explorer()
+                        .select_path(Path::new(path), path == "folder");
+                    this.command_palette(window, cx);
+                    let palette = this.palette.as_mut().unwrap();
+                    palette
+                        .model
+                        .replace_entries(vec![PaletteEntry::Command(command)], "");
+                    assert!(
+                        this.palette_entry_detail(&PaletteEntry::Command(command))
+                            .contains(path)
+                    );
+                    // A changed tree selection must not replace the captured target.
+                    this.notebooks
+                        .test_explorer()
+                        .select_path(Path::new("note.md"), false);
+                    assert!(this.command_unavailable(command).is_none());
+                    this.activate_palette(window, cx);
+                    assert!(this.palette.is_none());
+                    assert!(!window.has_active_dialog(cx));
+                    assert_eq!(
+                        this.document().unwrap().path,
+                        directory.path().join("note.md").canonicalize().unwrap()
+                    );
+                    if command == Command::CopySelectedPath {
+                        assert_eq!(
+                            cx.read_from_clipboard().unwrap().text().as_deref(),
+                            Some(path)
+                        );
+                    }
+                })
+            });
+            cx.run_until_parked();
+        }
+    }
+    assert_eq!(
+        *calls.borrow(),
+        [
+            directory.path().join("other.md").canonicalize().unwrap(),
+            directory.path().join("folder").canonicalize().unwrap()
+        ]
+    );
+    // Selection commands also work in an empty tab.
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            assert!(this.document().is_none());
+            this.notebooks
+                .test_explorer()
+                .select_path(Path::new("other.md"), false);
+            this.command_palette(window, cx);
+            this.palette
+                .as_mut()
+                .unwrap()
+                .model
+                .replace_entries(vec![PaletteEntry::Command(Command::CopySelectedPath)], "");
+            this.activate_palette(window, cx);
+            assert_eq!(
+                cx.read_from_clipboard().unwrap().text().as_deref(),
+                Some("other.md")
+            );
+        })
+    });
+}
+
+#[gpui::test]
+fn explorer_palette_rejects_stale_missing_and_invalid_targets(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "active").unwrap();
+    fs::write(directory.path().join("other.md"), "selected").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    for stale_kind in 0..3 {
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.test_refresh_tree(window, cx)));
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.notebooks
+                    .test_explorer()
+                    .select_path(Path::new("other.md"), false);
+                this.command_palette(window, cx);
+                this.palette
+                    .as_mut()
+                    .unwrap()
+                    .model
+                    .replace_entries(vec![PaletteEntry::Command(Command::CopySelectedPath)], "");
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string("unchanged".into()));
+                let root = this.notebooks.active.as_ref().unwrap().root.clone();
+                match stale_kind {
+                    0 => {
+                        this.notebooks.test_explorer().begin_refresh();
+                    }
+                    1 => {
+                        this.notebooks.active.as_mut().unwrap().root =
+                            directory.path().join("different-notebook");
+                    }
+                    _ => {
+                        fs::remove_file(directory.path().join("other.md")).unwrap();
+                    }
+                }
+                this.activate_palette(window, cx);
+                assert_eq!(
+                    cx.read_from_clipboard().unwrap().text().as_deref(),
+                    Some("unchanged")
+                );
+                if stale_kind < 2 {
+                    assert!(
+                        this.command_unavailable(Command::CopySelectedPath)
+                            .is_some()
+                    );
+                } else {
+                    assert!(this.notebooks.notice.is_some());
+                    this.notebooks.test_set_reveal_backend(Box::new(|_| {
+                        panic!("Missing target reached Reveal backend")
+                    }));
+                    this.command_palette(window, cx);
+                    this.palette.as_mut().unwrap().model.replace_entries(
+                        vec![PaletteEntry::Command(Command::RevealSelectedEntry)],
+                        "",
+                    );
+                    this.activate_palette(window, cx);
+                    assert!(this.palette.is_none());
+                }
+                this.notebooks.active.as_mut().unwrap().root = root;
+                window.close_dialog(cx);
+                this.close_palette(window, cx);
+            })
+        });
+        cx.run_until_parked();
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.test_explorer().select(None);
+            this.command_palette(window, cx);
+            assert!(
+                this.command_unavailable(Command::RevealSelectedEntry)
+                    .is_some()
+            );
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+            let settings = this.notebooks.active.as_ref().unwrap().settings.clone();
+            for (path, link) in [("link.md", true), ("unsupported.bin", false)] {
+                let generation = this
+                    .notebooks
+                    .test_explorer()
+                    .begin_directory(Default::default(), &settings);
+                this.notebooks.test_explorer().complete_directory(
+                    generation,
+                    Default::default(),
+                    Ok(vec![notebook::Entry {
+                        relative: path.into(),
+                        directory: false,
+                        link,
+                        modified: None,
+                        created: None,
+                    }]),
+                    &settings,
+                );
+                this.notebooks.test_explorer().select(Some(0));
+                assert!(this.selected_entry_target().is_none());
+            }
+            this.notebooks
+                .test_explorer()
+                .begin_directory(Default::default(), &settings);
+            this.notebooks.test_explorer().select(Some(0));
+            assert!(this.selected_entry_target().is_none());
+            this.rename_selected_entry(window, cx);
+            assert!(!window.has_active_dialog(cx));
+        })
+    });
+}
+
+#[gpui::test]
+fn explorer_f2_renames_selection_and_is_scoped_away_from_editor_and_forms(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "active").unwrap();
+    fs::write(directory.path().join("other.md"), "selected").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.test_refresh_tree(window, cx)));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .test_explorer()
+                .select_path(Path::new("other.md"), false);
+            this.editor.focus(window, cx);
+        })
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes("f2");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(!window.has_active_dialog(cx));
+        notes.read(cx).notebooks.tree_focus.focus(window);
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes("f2");
+    cx.run_until_parked();
+    cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+    // The rename input is focused: F2 cannot create another dialog.
+    cx.simulate_keystrokes("f2");
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-a"
+    } else {
+        "ctrl-a"
+    });
+    cx.simulate_input("renamed.md");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(directory.path().join("renamed.md").exists());
+    assert!(!directory.path().join("other.md").exists());
+    assert_eq!(
+        fs::read_to_string(directory.path().join("note.md")).unwrap(),
+        "active"
+    );
+    cx.update(|window, cx| {
+        assert!(!window.has_active_dialog(cx));
+        assert_eq!(
+            notes.read(cx).document().unwrap().path.file_name().unwrap(),
+            "note.md"
+        );
+    });
+}
+
+#[gpui::test]
+fn explorer_actions_recheck_modal_and_write_guards(cx: &mut TestAppContext) {
+    use crate::notebook_ui::EntryAction;
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "active").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.test_refresh_tree(window, cx)));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .test_explorer()
+                .select_path(Path::new("note.md"), false);
+            let target = this.selected_entry_target().unwrap();
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string("unchanged".into()));
+            this.notebooks.test_set_reveal_backend(Box::new(|_| {
+                panic!("Blocked action reached Reveal backend")
+            }));
+            this.open_help(false, window, cx);
+            this.run_selected_entry_action(target.clone(), EntryAction::CopyPath, window, cx);
+            this.run_selected_entry_action(target.clone(), EntryAction::Reveal, window, cx);
+            this.rename_selected_entry(window, cx);
+            assert_eq!(
+                cx.read_from_clipboard().unwrap().text().as_deref(),
+                Some("unchanged")
+            );
+            window.close_dialog(cx);
+            // Hold a real session write before applying its I/O effects.
+            let effects = this.tabs.active.session.save(None);
+            assert!(this.tabs.active.session.write().is_some());
+            this.run_selected_entry_action(target.clone(), EntryAction::CopyPath, window, cx);
+            this.run_selected_entry_action(target, EntryAction::Reveal, window, cx);
+            this.rename_selected_entry(window, cx);
+            assert!(!window.has_active_dialog(cx));
+            assert_eq!(
+                cx.read_from_clipboard().unwrap().text().as_deref(),
+                Some("unchanged")
+            );
+            this.apply_session_effects(effects, window, cx);
+        })
+    });
+    cx.run_until_parked();
 }

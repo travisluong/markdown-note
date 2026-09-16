@@ -510,3 +510,12 @@ Editor transactions, rejecting Reading, non-document content, busy state and
 active dialogs. Date insertion retains notebook/session format scope. Toggle
 selected tasks creates tasks or toggles completion; Format: Task list separately
 applies or removes task-list syntax. Help derives the date shortcut from bindings.
+
+Explorer selection actions share captured EntryTarget guards in
+notebook_ui/entry_menu.rs. F2 is scoped to NotebookTree and opens the existing
+Rename dialog, rejecting writes and modal/busy interaction. The command palette
+captures the selected file or folder at opening, displays its relative path and
+retains root, generation, path and directory kind across dismissal for Copy
+relative path and Reveal. Selection changes never retarget these commands;
+stale notebooks/generations/rows and removed or linked paths reject execution.
+The active document is never an implicit Explorer target.

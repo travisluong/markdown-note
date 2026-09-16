@@ -1709,3 +1709,22 @@ flakiness; existing templates coverage owns token rendering. Commands used
 --offline --locked --target-dir target/titlebar-validation. cargo fmt --all
 --check and git diff --check pass. No desktop interaction or native harness was
 used; physical macOS shortcut behavior remains manual validation.
+
+## Command surface port 9: selected Explorer actions (2026-09-16)
+
+Added NotebookTree-only F2 Rename and palette Copy selected relative path / Reveal
+selected entry. Palette captures the selected row before focus moves, displays
+its path, and passes that exact target through dismissal. Shared entry guards
+reject stale notebook/generation/row identities, missing/link paths, busy/modal
+interaction and Rename during writes. Existing Rename/move and Reveal owners
+retain save, history and filesystem behavior; no active-document fallback.
+
+Headless verification: all 19 goto adapter tests passed after switching their
+fixture to the real NotesWindow modal host; the final 8 explorer-filter tests
+include four new selection-action tests and all pass. Existing entry-menu suite
+passes all 9 tests, including ancestor rename history, stale targets and Reveal
+backend failures. New tests exercise actual F2/form input and palette activation,
+selected versus active document, files/folders and empty tabs, selection changes,
+stale notebook/generation, removed paths, invalid/link/loading rows, and modal/write
+guards. Reveal is injected in tests; no desktop app or OS file manager launched.
+Native keyboard/file-manager presentation remains manual validation.

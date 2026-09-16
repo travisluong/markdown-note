@@ -37,6 +37,8 @@ pub enum Command {
     OpenFile,
     Save,
     ManageNotebooks,
+    CopySelectedPath,
+    RevealSelectedEntry,
     KeyboardShortcuts,
     ChangeNotebook,
     NewNote,
@@ -82,6 +84,8 @@ impl Command {
         Self::OpenFile,
         Self::Save,
         Self::ManageNotebooks,
+        Self::CopySelectedPath,
+        Self::RevealSelectedEntry,
         Self::KeyboardShortcuts,
         Self::ChangeNotebook,
         Self::NewNote,
@@ -126,6 +130,8 @@ impl Command {
             Self::ShowExplorer => "View: Show Explorer",
             Self::OpenFile => "File: Open file…",
             Self::Save => "File: Save",
+            Self::CopySelectedPath => "Explorer: Copy selected relative path",
+            Self::RevealSelectedEntry => "Explorer: Reveal selected entry",
             Self::ManageNotebooks => "Notebook: Manage notebooks",
             Self::KeyboardShortcuts => "Help: Keyboard shortcuts",
             Self::ChangeNotebook => "Notebook: Change notebook",
@@ -172,6 +178,10 @@ impl Command {
             Self::ShowExplorer => "Show the notebook file tree and focus it",
             Self::OpenFile => "Choose a file using the system file picker",
             Self::Save => "Save the current document",
+            Self::CopySelectedPath => "Copy the selected Explorer file or folder path",
+            Self::RevealSelectedEntry => {
+                "Show the selected Explorer file or folder in the system file manager"
+            }
             Self::ManageNotebooks => "Add, create or remove registered notebooks",
             Self::KeyboardShortcuts => "Show application and editor keyboard shortcuts",
             Self::ChangeNotebook => "Choose a registered notebook",

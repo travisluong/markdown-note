@@ -1,5 +1,8 @@
 //! Palette UI adapter. Command policy, ranking and selection belong to `commands`.
-use crate::{Next, Notes};
+use crate::{
+    Next, Notes,
+    notebook_ui::{EntryAction, EntryTarget},
+};
 use gpui::{
     App, Context, Entity, FocusHandle, ScrollStrategy, Subscription, UniformListScrollHandle,
     Window, div, prelude::*, px, uniform_list,
@@ -34,6 +37,15 @@ pub(super) struct Palette {
     scroll: UniformListScrollHandle,
     status: Option<String>,
     focus: Option<FocusHandle>,
+    entry_target: Option<EntryTarget>,
+}
+
+fn selected_entry_command(command: Command) -> Option<EntryAction> {
+    match command {
+        Command::CopySelectedPath => Some(EntryAction::CopyPath),
+        Command::RevealSelectedEntry => Some(EntryAction::Reveal),
+        _ => None,
+    }
 }
 
 impl Palette {
@@ -107,6 +119,7 @@ impl Notes {
             scroll: UniformListScrollHandle::new(),
             status,
             focus: window.focused(cx),
+            entry_target: self.selected_entry_target(),
         });
         let owner = cx.weak_entity();
         window.open_dialog(cx, move |dialog, window, cx| {
@@ -191,9 +204,20 @@ impl Notes {
         {
             return;
         }
+        let entry_target = self.palette.as_ref().and_then(|p| p.entry_target.clone());
         window.close_dialog(cx);
         self.close_palette(window, cx);
         match entry {
+            PaletteEntry::Command(command) if selected_entry_command(command).is_some() => {
+                if let Some(target) = entry_target {
+                    self.run_selected_entry_action(
+                        target,
+                        selected_entry_command(command).unwrap(),
+                        window,
+                        cx,
+                    );
+                }
+            }
             PaletteEntry::Command(command) => self.run_command(command, window, cx),
             PaletteEntry::Notebook { path, active } => {
                 if !active {
@@ -220,6 +244,13 @@ impl Notes {
 
     fn command_unavailable(&self, command: Command) -> Option<&'static str> {
         command.unavailable(self.capabilities()).or_else(|| {
+            if selected_entry_command(command).is_some() {
+                return match self.palette.as_ref().and_then(|p| p.entry_target.as_ref()) {
+                    Some(target) if self.selected_entry_target_current(target) => None,
+                    Some(_) => Some("Explorer target changed; reopen the command palette"),
+                    None => Some("Select a file or folder in Explorer"),
+                };
+            }
             (command == Command::ManageNotebooks && !self.notebooks.index_writable())
                 .then_some("Wait until the notebook index is writable")
         })
@@ -256,6 +287,16 @@ impl Notes {
             Command::Settings => self.open_settings(window, cx),
             Command::OpenFile => self.request(Next::Open, window, cx),
             Command::Save => self.save(Next::Nothing, window, cx),
+            Command::CopySelectedPath | Command::RevealSelectedEntry => {
+                if let Some(target) = self.palette.as_ref().and_then(|p| p.entry_target.clone()) {
+                    self.run_selected_entry_action(
+                        target,
+                        selected_entry_command(command).unwrap(),
+                        window,
+                        cx,
+                    );
+                }
+            }
             Command::ManageNotebooks => self.manage_notebooks(window, cx),
             Command::KeyboardShortcuts => self.open_help(true, window, cx),
             Command::SourceMode => self.change_view_mode(ViewMode::Source, window, cx),
@@ -303,6 +344,20 @@ impl Notes {
                 self.update_appearance(appearance, window, cx);
             }
         }
+    }
+
+    fn palette_entry_detail(&self, entry: &PaletteEntry) -> String {
+        if let PaletteEntry::Command(command) = entry
+            && selected_entry_command(*command).is_some()
+            && let Some(target) = self.palette.as_ref().and_then(|p| p.entry_target.as_ref())
+        {
+            return format!(
+                "Selected Explorer {}: {}",
+                if target.directory { "folder" } else { "file" },
+                target.path.to_string_lossy().replace('\\', "/")
+            );
+        }
+        entry.detail()
     }
 
     fn move_palette(&mut self, down: bool, cx: &mut Context<Self>) {
@@ -409,11 +464,9 @@ impl Notes {
                                             .truncate()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(
-                                                unavailable
-                                                    .map(str::to_owned)
-                                                    .unwrap_or_else(|| entry.detail()),
-                                            ),
+                                            .child(unavailable.map(str::to_owned).unwrap_or_else(
+                                                || this.palette_entry_detail(entry),
+                                            )),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         if let Some(p) = &mut this.palette

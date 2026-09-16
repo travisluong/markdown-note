@@ -1809,6 +1809,9 @@ impl Notes {
                 cx.stop_propagation();
                 this.drop_entry(drag, PathBuf::new(), window, cx);
             }))
+            .on_action(cx.listener(|this, _: &RenameEntry, window, cx| {
+                this.rename_selected_entry(window, cx);
+            }))
             .key_context("NotebookTree")
             .track_focus(&self.notebooks.tree_focus)
             .on_action(
@@ -2227,5 +2230,22 @@ impl Notes {
             });
         })
         .detach();
+    }
+}
+
+#[cfg(test)]
+impl NotebookState {
+    pub(crate) fn test_explorer(&mut self) -> &mut Explorer {
+        &mut self.explorer
+    }
+    pub(crate) fn test_set_reveal_backend(&mut self, backend: Box<RevealBackend>) {
+        self.reveal_backend = backend;
+    }
+}
+
+#[cfg(test)]
+impl Notes {
+    pub(crate) fn test_refresh_tree(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.refresh_tree(window, cx);
     }
 }
