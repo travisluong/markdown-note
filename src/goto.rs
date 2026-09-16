@@ -11,7 +11,6 @@ use gpui_component::{
     dialog::Dialog,
     input::{Input, InputEvent, InputState},
 };
-#[cfg(feature = "editor-diagnostics")]
 use mithril::ViewMode;
 use mithril::{
     commands::{Command, PaletteEntry, PaletteModel, discover},
@@ -238,6 +237,9 @@ impl Notes {
                 }
             }
             Command::EditLink => self.edit_link(window, cx),
+            Command::SourceMode => self.change_view_mode(ViewMode::Source, window, cx),
+            Command::LivePreview => self.change_view_mode(ViewMode::LivePreview, window, cx),
+            Command::ReadingView => self.change_view_mode(ViewMode::Reading, window, cx),
             Command::SearchFile => self.search_current_file(window, cx),
             Command::SearchAllFiles => self.open_search_all(window, cx),
             Command::ReplaceFile => self.tabs.active.editor.find_and_replace(window, cx),

@@ -63,6 +63,7 @@ actions!(
         SourceMode,
         LivePreview,
         ReadingView,
+        CycleViewMode,
         CloseReadingFind,
         FileMenu,
         ViewMenu,
@@ -387,6 +388,22 @@ impl Notes {
         self.capabilities().can_edit_document()
     }
 
+    fn change_view_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
+            return;
+        }
+        self.set_mode(mode, window, cx);
+    }
+
+    fn cycle_view_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let next = match self.tabs.active.mode {
+            ViewMode::Source => ViewMode::LivePreview,
+            ViewMode::LivePreview => ViewMode::Reading,
+            ViewMode::Reading => ViewMode::Source,
+        };
+        self.change_view_mode(next, window, cx);
+    }
+
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings_panel.is_some() {
             return;
@@ -633,14 +650,17 @@ impl Render for Notes {
                 cx.listener(|this, _: &Save, window, cx| this.save(Next::Nothing, window, cx)),
             )
             .on_action(cx.listener(|this, _: &SourceMode, window, cx| {
-                this.set_mode(ViewMode::Source, window, cx)
+                this.change_view_mode(ViewMode::Source, window, cx)
             }))
             .on_action(cx.listener(|this, _: &LivePreview, window, cx| {
-                this.set_mode(ViewMode::LivePreview, window, cx)
+                this.change_view_mode(ViewMode::LivePreview, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ReadingView, window, cx| {
-                this.set_mode(ViewMode::Reading, window, cx)
+                this.change_view_mode(ViewMode::Reading, window, cx)
             }))
+            .on_action(
+                cx.listener(|this, _: &CycleViewMode, window, cx| this.cycle_view_mode(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &HelpMenu, window, cx| {
                 this.show_menu(MenuKind::Help, window, cx)
             }))

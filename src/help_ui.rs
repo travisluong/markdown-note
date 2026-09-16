@@ -60,6 +60,13 @@ pub(super) fn app_shortcuts() -> Vec<Shortcut> {
         ),
         shortcut!("ctrl-s", Save, "Notes", "Application", "Save"),
         shortcut!(
+            "ctrl-shift-m",
+            CycleViewMode,
+            "Notes",
+            "Application",
+            "Cycle Source → Live preview → Reading"
+        ),
+        shortcut!(
             "ctrl-n",
             NewNote,
             "Notes",

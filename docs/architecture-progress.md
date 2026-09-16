@@ -1586,3 +1586,22 @@ Existing retained-tab tests cover shared views, save failures and last-view
 closure. cargo fmt --check and git diff --check pass. Tests used --offline
 --locked --target-dir target/titlebar-validation; transient Windows linker locks
 cleared on retry. No desktop interaction or native application was used.
+
+## Command surface port 3: View modes (2026-09-15)
+
+The palette now offers Source mode, Live preview and Reading view. Mod+Shift+M
+cycles Source -> Live preview -> Reading -> Source, documented by the same Help
+registration that binds the shortcut. Menu actions, palette dispatch and cycling
+share change_view_mode, which checks busy/modal state before calling set_mode.
+The underlying mode owner retains per-tab editor/selection/history, active
+notebook preference scope and explicit activation preference replay semantics.
+
+Headless checks passed: palette adapter suite (7), activation preference suite
+(4), Help suite (3), and mode capability/discovery matrix (1). New tests cover
+actual palette activation and standalone cycle keystrokes, Unicode selection,
+editor identity, one-step Undo/Redo, notebook mode persistence, and rejection
+during dialogs and dirty-navigation prompts. Commands remain available for empty
+and image views as in View menu. Tests used --offline --locked --target-dir
+target/titlebar-validation; a transient linker lock cleared on retry.
+cargo fmt --all --check and git diff --check pass. No desktop interaction or
+native application harness was used.

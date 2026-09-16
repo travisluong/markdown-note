@@ -105,6 +105,10 @@ update peer snapshots and remap selections and viewport anchors. Its buffer even
 subscription lives in DocumentRuntime, surviving the departure of the editing view.
 Source/Live/Reading modes and navigation history remain per tab. Switching views
 breaks typing groups; Undo/Redo from either view uses the common document history.
+View menu actions, direct palette entries and Mod+Shift+M mode cycling share the
+guarded `change_view_mode` adapter. It rejects busy/modal interaction before
+`set_mode`, which retains notebook preference scope and activation replay rules.
+The cycle follows Source, Live preview, Reading, then Source.
 
 Leaving or closing one view retains the document without prompting while another
 view remains. Last-view exits use the usual Save/Discard/Cancel transitions.

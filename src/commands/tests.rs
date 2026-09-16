@@ -6,6 +6,44 @@ use crate::{ViewMode, capabilities::Capabilities};
 use std::{fs, path::Path};
 
 #[test]
+fn view_mode_commands_match_menu_availability() {
+    let entries: Vec<_> = Command::ALL
+        .iter()
+        .copied()
+        .map(PaletteEntry::Command)
+        .collect();
+    for command in [
+        Command::SourceMode,
+        Command::LivePreview,
+        Command::ReadingView,
+    ] {
+        assert_eq!(
+            ranked_entries(&entries, command.label())[0].label(),
+            command.label()
+        );
+        for has_document in [false, true] {
+            for has_notebook in [false, true] {
+                for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+                    for busy in [false, true] {
+                        assert_eq!(
+                            command
+                                .unavailable(Capabilities {
+                                    has_document,
+                                    has_notebook,
+                                    mode,
+                                    busy,
+                                })
+                                .is_none(),
+                            !busy
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn formatting_catalogue_covers_every_toolbar_operation_with_edit_guards() {
     use crate::markdown_edit::Format;
     let formats: Vec<_> = Command::ALL
