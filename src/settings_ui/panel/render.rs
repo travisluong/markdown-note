@@ -261,18 +261,26 @@ impl Render for SettingsPanel {
             .child(sidebar)
             .child(
                 div()
-                    .id("settings-scroll")
-                    .debug_selector(|| "settings-content".into())
-                    .flex()
-                    .flex_col()
+                    .relative()
                     .w_full()
                     .min_w_0()
                     .min_h_0()
                     .flex_1()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.content_scroll)
                     .when(!narrow, |view| view.flex_1().min_w(px(240.)))
-                    .child(content)
+                    .child(
+                        div()
+                            .id("settings-scroll")
+                            .debug_selector(|| "settings-content".into())
+                            .flex()
+                            .flex_col()
+                            .size_full()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.content_scroll)
+                            .child(content),
+                    )
+                    // Keep the track and its hit area fixed to the viewport.
                     .vertical_scrollbar(&self.content_scroll),
             );
         div()

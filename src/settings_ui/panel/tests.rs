@@ -1750,6 +1750,99 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn modal_settings_scrollbar_pointer_and_wheel_follow_viewport(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, point, px, size};
+    let (_fixture, notes, cx) = fixture(cx, true, false);
+    let form = panel(&notes, cx);
+    cx.update(|_, cx| {
+        gpui_component::Theme::global_mut(cx).scrollbar_show =
+            gpui_component::scroll::ScrollbarShow::Always;
+    });
+    let last = *notebook::ToolbarItem::DEFAULT_ORDER.last().unwrap();
+    let last_selector: &str = format!("toolbar-row-{}", last as usize).leak();
+    for viewport in [
+        size(px(1000.), px(800.)),
+        size(px(480.), px(360.)),
+        size(px(320.), px(300.)),
+        size(px(1000.), px(800.)),
+    ] {
+        cx.simulate_resize(viewport);
+        toolbar_section(&form, cx);
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        let surface = cx.debug_bounds("dialog-surface").unwrap();
+        let header = cx.debug_bounds("dialog-title").unwrap();
+        let navigation = cx.debug_bounds("settings-navigation").unwrap();
+        let content = cx.debug_bounds("settings-content").unwrap();
+        let scroll = cx.update(|_, cx| form.read(cx).content_scroll.clone());
+        assert!(scroll.max_offset().height > px(0.));
+        assert_eq!(scroll.offset().y, px(0.));
+
+        cx.simulate_event(ScrollWheelEvent {
+            position: content.center(),
+            delta: ScrollDelta::Pixels(point(px(0.), px(-80.))),
+            ..Default::default()
+        });
+        cx.refresh().unwrap();
+        assert!(
+            scroll.offset().y < px(0.),
+            "wheel did not scroll at {viewport:?}"
+        );
+
+        // Hit the track at the viewport edge after wheel scrolling. A scrollbar
+        // inside the scrolled element moves away from these fixed coordinates.
+        let bottom = point(content.right() - px(8.), content.bottom() - px(8.));
+        cx.simulate_click(bottom, Modifiers::default());
+        cx.refresh().unwrap();
+        assert_eq!(
+            scroll.offset().y,
+            -scroll.max_offset().height,
+            "track click at {viewport:?}"
+        );
+        let last_bounds = cx.debug_bounds(last_selector).unwrap();
+        assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
+
+        let top = point(content.right() - px(8.), content.top() + px(12.));
+        cx.simulate_click(top, Modifiers::default());
+        cx.refresh().unwrap();
+        assert_eq!(scroll.offset().y, px(0.), "track return at {viewport:?}");
+
+        cx.simulate_mouse_move(top, None, Modifiers::default());
+        cx.simulate_mouse_down(top, MouseButton::Left, Modifiers::default());
+        // The component throttles thumb updates with a wall-clock Instant.
+        std::thread::sleep(Duration::from_millis(20));
+        cx.simulate_mouse_move(bottom, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(bottom, MouseButton::Left, Modifiers::default());
+        cx.refresh().unwrap();
+        assert_eq!(
+            scroll.offset().y,
+            -scroll.max_offset().height,
+            "thumb drag at {viewport:?}"
+        );
+        let last_bounds = cx.debug_bounds(last_selector).unwrap();
+        assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
+        assert_eq!(cx.debug_bounds("settings-content").unwrap(), content);
+        assert_eq!(cx.debug_bounds("dialog-title").unwrap(), header);
+        assert_eq!(cx.debug_bounds("settings-navigation").unwrap(), navigation);
+
+        cx.update(|_, cx| {
+            form.update(cx, |form, cx| {
+                form.select_section(super::Section::Theme, cx)
+            })
+        });
+        cx.refresh().unwrap();
+        assert_eq!(scroll.offset().y, px(0.));
+        assert_eq!(cx.debug_bounds("dialog-surface").unwrap(), surface);
+        if viewport.width == px(1000.) {
+            assert_eq!(scroll.max_offset().height, px(0.));
+            cx.simulate_click(bottom, Modifiers::default());
+            cx.refresh().unwrap();
+            assert_eq!(scroll.offset().y, px(0.));
+        }
+    }
+}
+
+#[gpui::test]
 fn modal_settings_close_icon_restores_focus_after_drag_resize_and_reopen(cx: &mut TestAppContext) {
     use gpui::{Modifiers, MouseButton, point, px, size};
     let (_fixture, notes, cx) = fixture(cx, false, true);

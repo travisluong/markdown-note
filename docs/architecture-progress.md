@@ -1437,6 +1437,37 @@ with 488 tests using `cargo test --offline --locked --features editor-diagnostic
 Native Windows dragging, snapping, minimize/maximize/restore and close remain
 user-run validation. No native window or desktop input was used during testing.
 
+## Settings scrollbar viewport anchoring (2026-09-15)
+
+SettingsPanel now places its vertical scrollbar on a relatively positioned
+wrapper beside the tracked scrolling viewport. The track and pointer hit area
+stay fixed while section contents move. The existing scroll handle, section
+reset behavior, modal dimensions, title and navigation remain unchanged. This
+is local to Settings; the shared scrollbar component and preference APIs do not
+change.
+
+The added TestPlatform regression reproduced the original failure: after an
+80-pixel wheel scroll, clicking the track at the viewport's bottom left the
+offset at -80 pixels instead of reaching the -497.5-pixel limit. With the fix,
+wheel scrolling, track clicks in both directions and thumb dragging reach the
+expected positions at 1000x800, 480x360 and 320x300 window sizes and after growing
+the window again. The last toolbar row remains reachable, title/navigation
+bounds remain fixed, and switching to Theme resets the offset and leaves no
+scroll range when that shorter section fits.
+
+`cargo check --offline --locked`, `cargo fmt --check`, strict all-target Clippy
+with editor diagnostics and `git diff --check` pass. The complete
+`cargo test --offline --locked --features editor-diagnostics --target-dir
+target/titlebar-validation` run passes all 490 tests, including concurrent
+close-button and link-menu work that is excluded from this change. Logs are
+`target/settings-scrollbar-full-tests.log`, `target/settings-scrollbar-check.log`
+and `target/settings-scrollbar-clippy.log`. The initial focused settings run
+passed the scrollbar regression but caught the then-in-progress close-button
+test; the full run includes its passing fix.
+
+All testing uses TestPlatform without native desktop interaction; visual
+confirmation of the native scrollbar remains user-run validation.
+
 ## Settings close-button pointer regression (2026-09-15)
 
 The movable dialog title overlapped the close control. A press on the close icon
