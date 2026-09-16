@@ -1,4 +1,62 @@
 use super::*;
+use gpui_component::kbd::Kbd;
+use mithril::commands::Command;
+
+/// Match command semantics, independently of the palette input's focus context.
+fn command_action(command: Command) -> Option<(Box<dyn Action>, &'static str)> {
+    let (action, context): (Box<dyn Action>, _) = match command {
+        Command::Bold => (Box::new(Bold), "DocumentEditor"),
+        Command::Italic => (Box::new(Italic), "DocumentEditor"),
+        Command::MoveLineUp => (Box::new(MoveLineUp), "DocumentEditor"),
+        Command::MoveLineDown => (Box::new(MoveLineDown), "DocumentEditor"),
+        Command::InsertDate => (Box::new(InsertDate), "DocumentEditor"),
+        Command::ToggleTasks => (Box::new(ToggleTasks), "DocumentEditor"),
+        Command::EditLink => (Box::new(EditLink), "DocumentEditor"),
+        Command::Settings => (Box::new(OpenSettings), "Notes"),
+        Command::OpenFile => (Box::new(Open), "Notes"),
+        Command::Save => (Box::new(Save), "Notes"),
+        Command::ManageNotebooks => (Box::new(ManageNotebooks), "Notes"),
+        Command::KeyboardShortcuts => (Box::new(KeyboardShortcuts), "Notes"),
+        Command::SourceMode => (Box::new(SourceMode), "Notes"),
+        Command::LivePreview => (Box::new(LivePreview), "Notes"),
+        Command::ReadingView => (Box::new(ReadingView), "Notes"),
+        Command::Back => (Box::new(NavigateBack), "Notes"),
+        Command::Forward => (Box::new(NavigateForward), "Notes"),
+        Command::SearchFile => (Box::new(Search), "Notes"),
+        Command::ToggleSidebar => (Box::new(ToggleSidebar), "Notes"),
+        Command::ShowExplorer => (Box::new(ShowExplorer), "Notes"),
+        Command::SearchAllFiles => (Box::new(SearchAllFiles), "Notes"),
+        Command::ReplaceFile => (Box::new(ReplaceFile), "Notes"),
+        Command::NewNote => (Box::new(NewNote), "Notes"),
+        Command::NewTab => (Box::new(NewTab), "Notes"),
+        Command::CloseTab => (Box::new(CloseTab), "Notes"),
+        Command::Strikethrough
+        | Command::InlineCode
+        | Command::CodeBlock
+        | Command::Blockquote
+        | Command::OrderedList
+        | Command::UnorderedList
+        | Command::TaskList
+        | Command::Heading1
+        | Command::Heading2
+        | Command::Heading3
+        | Command::Heading4
+        | Command::Heading5
+        | Command::Heading6
+        | Command::Paragraph
+        | Command::ToggleTheme
+        | Command::SortFiles
+        | Command::CopySelectedPath
+        | Command::RevealSelectedEntry
+        | Command::ChangeNotebook => return None,
+    };
+    Some((action, context))
+}
+
+pub(super) fn command_kbd(command: Command, window: &Window) -> Option<Kbd> {
+    let (action, context) = command_action(command)?;
+    Kbd::binding_for_action(action.as_ref(), Some(context), window)
+}
 
 pub(super) struct Shortcut {
     key: String,
@@ -408,6 +466,54 @@ fn shortcut_row(key: &str, description: &str) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::app_shortcuts;
+
+    #[test]
+    fn palette_shortcuts_match_catalogue_on_both_platforms() {
+        use mithril::commands::Command;
+
+        let expected = [
+            (Command::Bold, "ctrl-b", "DocumentEditor"),
+            (Command::Italic, "ctrl-i", "DocumentEditor"),
+            (Command::MoveLineUp, "ctrl-up", "DocumentEditor"),
+            (Command::MoveLineDown, "ctrl-down", "DocumentEditor"),
+            (Command::InsertDate, "ctrl-shift-d", "DocumentEditor"),
+            (Command::ToggleTasks, "ctrl-l", "DocumentEditor"),
+            (Command::EditLink, "ctrl-k", "DocumentEditor"),
+            (Command::Settings, "ctrl-,", "Notes"),
+            (Command::Save, "ctrl-s", "Notes"),
+            (Command::Back, "alt-left", "Notes"),
+            (Command::Forward, "alt-right", "Notes"),
+            (Command::SearchFile, "ctrl-f", "Notes"),
+            (Command::ToggleSidebar, "ctrl-shift-b", "Notes"),
+            (Command::ShowExplorer, "ctrl-shift-e", "Notes"),
+            (Command::SearchAllFiles, "ctrl-shift-f", "Notes"),
+            (Command::ReplaceFile, "ctrl-h", "Notes"),
+            (Command::NewNote, "ctrl-n", "Notes"),
+            (Command::NewTab, "ctrl-t", "Notes"),
+            (Command::CloseTab, "ctrl-w", "Notes"),
+        ];
+        for macos in [false, true] {
+            let shortcuts = super::app_shortcuts_for_platform(macos);
+            for &command in Command::ALL {
+                let mapped = super::command_action(command);
+                let binding = mapped.as_ref().and_then(|(action, _)| {
+                    shortcuts
+                        .iter()
+                        .find(|s| s.binding.action().partial_eq(action.as_ref()))
+                });
+                if let Some((_, key, context)) = expected.iter().find(|(c, _, _)| *c == command) {
+                    assert_eq!(mapped.unwrap().1, *context, "{command:?}");
+                    assert_eq!(
+                        binding.unwrap().key,
+                        super::platform_shortcut(key, macos),
+                        "{command:?}"
+                    );
+                } else {
+                    assert!(binding.is_none(), "Unexpected shortcut for {command:?}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn sidebar_bindings_document_both_platforms_without_app_conflicts() {

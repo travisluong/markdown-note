@@ -42,6 +42,112 @@ fn fixture<'a>(
 }
 
 #[gpui::test]
+fn palette_shortcut_badges_preserve_focus_and_fit_narrow_rows(cx: &mut TestAppContext) {
+    use gpui::{px, size};
+
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "text").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.command_palette(window, cx)));
+    for width in [1000., 360.] {
+        cx.simulate_resize(size(px(width), px(700.)));
+        for command in [Command::Bold, Command::SearchAllFiles, Command::InsertDate] {
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    let palette = this.palette.as_ref().unwrap();
+                    palette
+                        .query
+                        .update(cx, |query, cx| query.set_value(command.label(), window, cx));
+                });
+            });
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(300));
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                let palette = notes.read(cx).palette.as_ref().unwrap();
+                assert!(palette.query.focus_handle(cx).is_focused(window));
+                assert!(crate::help_ui::command_kbd(command, window).is_some());
+            });
+            let row = cx.debug_bounds("palette-row-0").unwrap();
+            let text = cx.debug_bounds("palette-text-0").unwrap();
+            let badge = cx.debug_bounds("palette-shortcut-0").unwrap();
+            assert_eq!(row.size.height, px(48.));
+            assert!(text.size.width > px(0.));
+            assert!(badge.size.width > px(0.));
+            assert!(text.right() < badge.left(), "{text:?} {badge:?}");
+            assert!(badge.right() <= row.right() && row.right() <= px(width));
+            assert!(badge.top() >= row.top() && badge.bottom() <= row.bottom());
+            assert!((badge.center().y - row.center().y).abs() <= px(1.));
+        }
+    }
+    // Reading disables editing but keeps the shortcut discoverable.
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.set_mode(ViewMode::Reading, window, cx);
+            this.palette
+                .as_ref()
+                .unwrap()
+                .query
+                .update(cx, |query, cx| {
+                    query.set_value(Command::Bold.label(), window, cx);
+                });
+        });
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    assert!(cx.debug_bounds("palette-shortcut-0").is_some());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.command_unavailable(Command::Bold).is_some());
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_some());
+            assert_eq!(this.editor.text(cx).as_ref(), "text");
+        });
+    });
+    for command in [
+        Command::OpenFile,
+        Command::SourceMode,
+        Command::LivePreview,
+        Command::ReadingView,
+        Command::TaskList,
+    ] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.palette
+                    .as_ref()
+                    .unwrap()
+                    .query
+                    .update(cx, |query, cx| {
+                        query.set_value(command.label(), window, cx);
+                    });
+                assert!(crate::help_ui::command_kbd(command, window).is_none());
+            });
+        });
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        // GPUI retains old debug selectors, so verify that the text now occupies
+        // the entire padded row rather than checking a stale badge selector.
+        let row = cx.debug_bounds("palette-row-0").unwrap();
+        let text = cx.debug_bounds("palette-text-0").unwrap();
+        assert_eq!(
+            row.right() - text.right(),
+            text.left() - row.left(),
+            "{command:?}"
+        );
+    }
+}
+
+#[gpui::test]
 fn view_mode_palette_and_cycle_preserve_document_selection_and_history(cx: &mut TestAppContext) {
     cx.update(|cx| {
         cx.bind_keys(

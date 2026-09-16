@@ -1764,3 +1764,26 @@ both exit successfully. cargo fmt --check and git diff --check also pass. These
 runs include the pre-existing working-tree changes; unrelated files and the
 existing link-context architecture paragraph are excluded from this port's commit.
 No native Windows, macOS or Linux application validation is claimed.
+
+## Command palette shortcut badges (2026-09-16)
+
+Command rows now show right-aligned bordered Kbd badges from registered bindings,
+using the help adapter's semantic command/action/context mapping. Lookup uses
+Notes or DocumentEditor rather than the focused palette input. Disabled commands
+retain their shortcuts; unbound commands retain the full text width. Open file
+does not inherit Go to a note's binding, and direct view modes do not inherit the
+cycle binding. Rows retain their height, text truncation and execution guards.
+
+New coverage checks all command mappings against both platform catalogues and
+uses TestPlatform to verify search focus, editor/application badges, narrow-row
+spacing, vertical alignment, disabled execution and unbound-row text width.
+GPUI retains removed debug selectors, so absence is checked through current text
+bounds and binding lookup rather than stale selector entries.
+
+Windows verification passes: cargo test --offline --locked --features
+editor-diagnostics --target-dir target/titlebar-validation (537 passed, 0 failed,
+0 ignored across 24 result groups), cargo check --offline --locked --target-dir
+target/titlebar-validation, cargo fmt --check, and cargo clippy --offline --locked
+--all-targets --features editor-diagnostics --target-dir target/titlebar-validation
+-- -D warnings. No desktop interaction was used. Native platform presentation
+remains manual validation; the pre-existing Cargo.lock edit is excluded.

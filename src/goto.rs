@@ -462,7 +462,7 @@ impl Notes {
                 uniform_list(
                     "goto-results",
                     palette.model.results().len(),
-                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                    cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
                         let p = this.palette.as_ref().unwrap();
                         range
                             .map(|i| {
@@ -473,21 +473,18 @@ impl Notes {
                                     }
                                     _ => None,
                                 };
-                                div()
-                                    .id(i)
-                                    .w_full()
+                                let shortcut = match entry {
+                                    PaletteEntry::Command(command) => {
+                                        crate::help_ui::command_kbd(*command, window)
+                                    }
+                                    _ => None,
+                                };
+                                let text = div()
+                                    .flex_1()
                                     .min_w_0()
-                                    .overflow_hidden()
-                                    .h(px(48.))
-                                    .px_2()
                                     .flex()
                                     .flex_col()
-                                    .when(i == p.model.selected_index(), |v| {
-                                        v.bg(cx.theme().accent)
-                                    })
-                                    .when(unavailable.is_some(), |v| {
-                                        v.text_color(cx.theme().muted_foreground)
-                                    })
+                                    .debug_selector(move || format!("palette-text-{i}"))
                                     .child(div().w_full().truncate().child(entry.label()))
                                     .child(
                                         div()
@@ -498,7 +495,36 @@ impl Notes {
                                             .child(unavailable.map(str::to_owned).unwrap_or_else(
                                                 || this.palette_entry_detail(entry),
                                             )),
-                                    )
+                                    );
+                                div()
+                                    .id(i)
+                                    .debug_selector(move || format!("palette-row-{i}"))
+                                    .w_full()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .h(px(48.))
+                                    .px_2()
+                                    .flex()
+                                    .gap_2()
+                                    .when(i == p.model.selected_index(), |v| {
+                                        v.bg(cx.theme().accent)
+                                    })
+                                    .when(unavailable.is_some(), |v| {
+                                        v.text_color(cx.theme().muted_foreground)
+                                    })
+                                    .child(text)
+                                    .when_some(shortcut, |row, shortcut| {
+                                        row.child(
+                                            div().flex().items_center().flex_shrink_0().child(
+                                                div()
+                                                    .flex()
+                                                    .debug_selector(move || {
+                                                        format!("palette-shortcut-{i}")
+                                                    })
+                                                    .child(shortcut),
+                                            ),
+                                        )
+                                    })
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         if let Some(p) = &mut this.palette
                                             && p.model.select(i)
