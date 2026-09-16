@@ -1,5 +1,14 @@
 # Local editor patch
 
+## Dialog close-button pointer isolation
+
+`src/dialog.rs` stops left-button presses on the close control from reaching the
+overlapping draggable title. Otherwise the title starts a drag and captures the
+release before the close click runs. Existing cancellation, close callbacks and
+focus restoration are unchanged. The `dialog-close` debug selector supports the
+headless `modal_settings_close_icon_restores_focus_after_drag_resize_and_reopen`
+regression. Preserve this event isolation when reconciling upstream dialogs.
+
 ## Title-bar overflow submenu builders
 
 `src/menu/popup_menu.rs` accepts borrowed `FnOnce` builders in `submenu` and

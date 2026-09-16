@@ -1750,6 +1750,54 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn modal_settings_close_icon_restores_focus_after_drag_resize_and_reopen(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton, point, px, size};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    for moved in [false, true] {
+        let form = panel(&notes, cx);
+        cx.simulate_resize(size(px(1000.), px(800.)));
+        cx.refresh().unwrap();
+        if moved {
+            let before = cx.debug_bounds("dialog-surface").unwrap();
+            let title = cx.debug_bounds("dialog-title").unwrap().center();
+            let destination = title + point(px(40.), px(30.));
+            cx.simulate_mouse_down(title, MouseButton::Left, Modifiers::default());
+            cx.simulate_mouse_move(destination, MouseButton::Left, Modifiers::default());
+            cx.refresh().unwrap();
+            cx.simulate_mouse_up(destination, MouseButton::Left, Modifiers::default());
+            cx.refresh().unwrap();
+            assert_ne!(
+                cx.debug_bounds("dialog-surface").unwrap().origin,
+                before.origin
+            );
+            cx.simulate_resize(size(px(480.), px(360.)));
+            cx.refresh().unwrap();
+        }
+        let close = cx.debug_bounds("dialog-close").unwrap().center();
+        cx.simulate_click(close, Modifiers::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert!(
+                !window.has_active_dialog(cx),
+                "close icon did not dismiss Settings"
+            );
+            assert!(notes.read(cx).settings_panel.is_none());
+            assert!(notes.read(cx).tabs.active.editor.is_focused(window, cx));
+            notes.update(cx, |this, cx| this.open_settings(window, cx));
+        });
+        cx.refresh().unwrap();
+        assert_ne!(panel(&notes, cx), form);
+    }
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(!window.has_active_dialog(cx));
+        assert!(notes.read(cx).settings_panel.is_none());
+        assert!(notes.read(cx).tabs.active.editor.is_focused(window, cx));
+    });
+}
+
+#[gpui::test]
 fn modal_settings_reopen_preserves_drafts_and_escape_closes(cx: &mut TestAppContext) {
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);

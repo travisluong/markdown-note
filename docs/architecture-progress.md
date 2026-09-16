@@ -1436,3 +1436,27 @@ with 488 tests using `cargo test --offline --locked --features editor-diagnostic
 `target/titlebar-controls-check.log` and `target/titlebar-controls-clippy.log`.
 Native Windows dragging, snapping, minimize/maximize/restore and close remain
 user-run validation. No native window or desktop input was used during testing.
+
+## Settings close-button pointer regression (2026-09-15)
+
+The movable dialog title overlapped the close control. A press on the close icon
+started a title drag, whose capture handler consumed the mouse release before
+the close click could execute. The close control now stops left-button press
+propagation while retaining its existing callbacks, cleanup and focus behavior.
+
+The new TestPlatform pointer regression failed before the fix with "close icon
+did not dismiss Settings" and passes afterward. It covers initial dismissal,
+closing after dragging and resizing, fresh form identity on reopen, focus
+restoration and Escape. All 40 Settings tests and the complete 490-test suite
+(including dialog placement) pass. Commands used:
+
+- `cargo test --offline --locked --features editor-diagnostics --bin mithril settings_ui::panel::tests --target-dir target/titlebar-validation`
+- `cargo test --offline --locked --features editor-diagnostics --target-dir target/titlebar-validation`
+- `cargo check --offline --locked`
+- `cargo fmt --check`
+- `cargo clippy --offline --locked --all-targets --features editor-diagnostics -- -D warnings`
+
+Logs are in `target/settings-close-{regression,focused,tests,check,format,clippy}.log`.
+The full suite includes concurrent unrelated workspace work. No native app,
+desktop input or visible test harness was launched; native UI validation remains
+user-run.

@@ -1,5 +1,13 @@
 # Local patch inventory
 
+## Dialog close-button pointer isolation
+
+`src/dialog.rs` isolates close-control left-button presses from title dragging
+and exposes the `dialog-close` debug selector. The headless Settings regression
+`modal_settings_close_icon_restores_focus_after_drag_resize_and_reopen` covers
+pointer dismissal, focus restoration, dragging/resizing, reopening and Escape.
+Reconcile this event isolation on upstream upgrades.
+
 ## Title-bar overflow submenu builders
 
 `src/menu/popup_menu.rs` accepts borrowed `FnOnce` builders in `submenu` and

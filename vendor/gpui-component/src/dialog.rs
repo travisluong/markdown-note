@@ -663,12 +663,18 @@ impl RenderOnce for Dialog {
                                 let right = (paddings.right - px(10.)).max(px(8.));
 
                                 Button::new("close")
+                                    .debug_selector(|| "dialog-close".into())
                                     .absolute()
                                     .top(top)
                                     .right(right)
                                     .small()
                                     .ghost()
                                     .icon(IconName::Close)
+                                    // The title overlaps this control; do not start a drag
+                                    // that would capture the release before our click.
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation();
+                                    })
                                     .on_click({
                                         let on_cancel = self.on_cancel.clone();
                                         let on_close = self.on_close.clone();
