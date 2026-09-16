@@ -467,3 +467,11 @@ the active row while shaped runs retain the strike, including nested formatting
 and inline code. Escaped markers and code literals remain literal. Source bytes
 and source/display mappings remain authoritative. Regression coverage lives in
 tests/strikethrough.rs and tests/editor.rs.
+
+Code blocks expose a top-right Copy code icon in Live preview and Reading. The
+vendored code_copy control isolates pointer presses from editor/Reading selection.
+Live places controls from visible opening-row geometry and copies the worker's
+parsed code value only while its source revision is current; Source has no control.
+Reading uses the same control by default, preserving custom code_block_actions.
+Copy excludes fences and container prefixes and does not edit text or selection.
+Headless pointer/clipboard coverage lives in tests/code_copy.rs.

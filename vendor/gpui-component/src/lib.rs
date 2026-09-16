@@ -1,6 +1,7 @@
 use gpui::{App, SharedString};
 use std::ops::Deref;
 
+mod code_copy;
 mod event;
 mod geometry;
 mod global_state;

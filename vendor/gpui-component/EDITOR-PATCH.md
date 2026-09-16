@@ -469,3 +469,13 @@ with links, emphasis and inline code. Literal and escaped tildes stay unchanged.
 Reconcile these paths and run tests/editor.rs and tests/strikethrough.rs when
 upgrading. The latter inspects actual headless shaped runs across themes,
 wrapping, reveal, edits, undo/redo and Source mode.
+
+## Code-block copy buttons
+
+`src/code_copy.rs` provides the shared Copy code icon and isolates its mouse press
+from selection handlers. `src/text/node.rs` supplies it as the default code action
+and reserves trailing space; callers can still provide custom actions.
+`src/input/fenced_code.rs` retains the parsed code value, `input/text_wrapper.rs`
+reserves opening-row width, and `input/element.rs` lays out visible Live controls
+with revision-guarded clipboard callbacks. Preserve these contracts on upgrades.
+Coverage: `tests/code_copy.rs` and `tests/code_highlighting.rs` in the application.

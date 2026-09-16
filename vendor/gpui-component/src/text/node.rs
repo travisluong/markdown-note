@@ -383,6 +383,7 @@ impl CodeBlock {
                     .text_size(cx.theme().mono_font_size)
                     .relative()
                     .refine_style(&style.code_block)
+                    .pr(px(44.))
                     .child(
                         Inline::new(
                             "code",
@@ -393,7 +394,14 @@ impl CodeBlock {
                         )
                         .source_highlights(&self.source_runs, node_cx),
                     )
-                    .when_some(node_cx.code_block_actions.clone(), |this, actions| {
+                    .map(|this| {
+                        let actions = if let Some(actions) = &node_cx.code_block_actions {
+                            actions(self, window, cx)
+                        } else {
+                            let code = self.code();
+                            crate::code_copy::button("code-copy", move |_| Some(code.clone()), cx)
+                                .into_any_element()
+                        };
                         this.child(
                             div()
                                 .absolute()
@@ -401,7 +409,7 @@ impl CodeBlock {
                                 .right_2()
                                 .bg(cx.theme().muted)
                                 .rounded(cx.theme().radius)
-                                .child(actions(&self, window, cx)),
+                                .child(actions),
                         )
                     }),
             )

@@ -1,10 +1,10 @@
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    App, Bounds, Corners, Element, ElementId, ElementInputHandler, Entity, GlobalElementId, Half,
-    HighlightStyle, Hitbox, Hsla, IntoElement, LayoutId, MouseButton, MouseMoveEvent, Path, Pixels,
-    Point, ShapedLine, SharedString, Size, Style, TextRun, TextStyle, UnderlineStyle, Window, fill,
-    point, px, relative, size,
+    AnyElement, App, AvailableSpace, Bounds, Corners, Element, ElementId, ElementInputHandler,
+    Entity, GlobalElementId, Half, HighlightStyle, Hitbox, Hsla, IntoElement, LayoutId,
+    MouseButton, MouseMoveEvent, Path, Pixels, Point, ShapedLine, SharedString, Size, Style,
+    TextRun, TextStyle, UnderlineStyle, Window, fill, point, px, relative, size,
 };
 use ropey::Rope;
 use smallvec::SmallVec;
@@ -1113,6 +1113,7 @@ pub(super) struct PrepaintState {
     document_color_paths: Vec<(Path<Pixels>, Hsla)>,
     hover_definition_hitbox: Option<Hitbox>,
     task_hitboxes: Vec<Hitbox>,
+    code_copy_buttons: Vec<AnyElement>,
     indent_guides_path: Option<Path<Pixels>>,
     bounds: Bounds<Pixels>,
     // Inline completion rendering data
@@ -1731,11 +1732,51 @@ impl Element for TextElement {
         let indent_guides_path =
             self.layout_indent_guides(state, &bounds, &last_layout, &text_style, window);
 
+        let revision = state.text_wrapper.analysis.revision;
+        #[cfg(feature = "editor-diagnostics")]
+        let syntax_revision = state.text_wrapper.syntax_revision;
+        let copies: Vec<_> = last_layout
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, line)| {
+                if !state.live_preview || !line.code_block.as_ref().is_some_and(|code| code.first) {
+                    return None;
+                }
+                let row = last_layout.visible_range.start + ix;
+                let offset = state.text.line_start_offset(row);
+                let block = state.text_wrapper.code.block(offset)?;
+                let origin = bounds.origin
+                    + point(
+                        last_layout.line_number_width + line.code_width - px(32.),
+                        state.text_wrapper.lines.prefix(row) * last_layout.line_height + px(4.),
+                    );
+                Some((offset, block.code, origin))
+            })
+            .collect();
+        let mut code_copy_buttons = Vec::new();
+        for (offset, code, origin) in copies {
+            let editor = self.state.clone();
+            let mut button = crate::code_copy::button(
+                ("code-copy", offset),
+                move |cx| {
+                    let state = editor.read(cx);
+                    (state.live_preview && state.text_wrapper.analysis.revision == revision)
+                        .then(|| code.clone())
+                },
+                cx,
+            )
+            .into_any_element();
+            button.layout_as_root(AvailableSpace::min_size(), window, cx);
+            window.with_absolute_element_offset(origin, |window| button.prepaint(window, cx));
+            code_copy_buttons.push(button);
+        }
+
         PrepaintState {
             #[cfg(feature = "editor-diagnostics")]
-            revision: state.text_wrapper.analysis.revision,
+            revision,
             #[cfg(feature = "editor-diagnostics")]
-            syntax_revision: state.text_wrapper.syntax_revision,
+            syntax_revision,
             bounds,
             last_layout,
             scroll_size,
@@ -1748,6 +1789,7 @@ impl Element for TextElement {
             hover_highlight_path,
             hover_definition_hitbox,
             task_hitboxes,
+            code_copy_buttons,
             document_color_paths,
             indent_guides_path,
             ghost_first_line,
@@ -2097,6 +2139,9 @@ impl Element for TextElement {
         }
 
         self.paint_mouse_listeners(window, cx);
+        for button in &mut prepaint.code_copy_buttons {
+            button.paint(window, cx);
+        }
     }
 }
 

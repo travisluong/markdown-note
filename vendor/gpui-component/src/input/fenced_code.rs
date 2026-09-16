@@ -17,6 +17,7 @@ pub(super) struct CodeLine {
 
 #[derive(Clone, Debug)]
 pub(super) struct Block {
+    pub code: gpui::SharedString,
     pub source: Range<usize>,
     pub opening: Range<usize>,
     pub content: Range<usize>,
@@ -145,6 +146,7 @@ impl Snapshot {
                         .max(first)
                 };
                 result.details.push(Block {
+                    code: code.value.clone().into(),
                     source: start..range.end,
                     opening: start..opening_end,
                     content: opening_end..content_end,

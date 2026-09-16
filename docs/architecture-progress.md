@@ -1526,3 +1526,20 @@ reveal, edits, Undo/Redo and Source mode. `cargo check --offline --locked`,
 The alternate test target avoids a locked default-target mithril.exe. No native
 app or desktop input was used. The suite includes unrelated existing workspace
 changes, excluded from the strikethrough commit.
+
+## Code-block copy buttons (2026-09-15)
+
+Live preview and Reading now offer a top-right Copy code icon with a tooltip.
+The shared control stops pointer presses from changing editor selections. Live
+uses parsed block values with source-revision guards, and reserves opening-row
+width; Reading reserves trailing space and retains custom action support.
+
+`cargo test --locked --features editor-diagnostics --test code_copy --test
+code_highlighting` passes all five headless tests. Coverage includes Unicode,
+CRLF, quotes/lists, empty and unfinished fences, unchanged source/selection,
+Source-mode clicks, and existing theme/wrapping/history geometry regressions.
+`cargo check --locked`, `cargo fmt --check`, and strict all-target Clippy with
+editor diagnostics pass. GPUI retains debug bounds across frames, so Source-mode
+validation checks clipboard behavior instead of stale selector absence.
+No native app or desktop input was used. Existing unrelated changes remain
+outside this commit.

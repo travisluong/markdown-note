@@ -304,3 +304,15 @@ Reconcile its GFM Delete ranges with `preview_syntax.rs` shared parsing,
 `element.rs` shaped-run decorations. Preserve code/escape exclusions and
 composable inline formatting. `tests/editor.rs` covers parser/projection and
 stale results; `tests/strikethrough.rs` covers the headless render/edit lifecycle.
+
+## Code-block copy controls
+
+- Added `src/code_copy.rs`, registered by `src/lib.rs`: shared icon button,
+  tooltip, plain-text clipboard callback and pointer isolation.
+- `src/text/node.rs`: default Reading copy action and trailing content inset.
+- `src/input/fenced_code.rs`: retain parser-normalized code on each block.
+- `src/input/text_wrapper.rs`: reserve width on the opening fence row.
+- `src/input/element.rs`: visible Live controls positioned from measured rows;
+  reject callbacks after source revision or mode changes.
+- Regression entry points: application `tests/code_copy.rs`,
+  `tests/code_highlighting.rs`. Reconcile all pieces together on upgrades.

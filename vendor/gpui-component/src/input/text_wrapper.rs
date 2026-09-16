@@ -798,6 +798,11 @@ impl TextWrapper {
                 for boundary in wrap_line(
                     line_str,
                     (wrap_width
+                        - if code_block.as_ref().is_some_and(|code| code.first) {
+                            px(32.)
+                        } else {
+                            px(0.)
+                        }
                         - if code_block.is_some() {
                             self.code_inset * 2.
                         } else {
