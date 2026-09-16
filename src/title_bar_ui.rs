@@ -2,7 +2,7 @@
 use crate::{
     About, CloseTab, KeyboardShortcuts, LivePreview, MenuKind, NavigateBack, NavigateForward,
     NewNote, NewTab, Next, Notes, Open, OpenSettings, ReadingView, ReplaceFile, Save,
-    SearchAllFiles, SourceMode, ViewMode,
+    SearchAllFiles, ShowExplorer, SourceMode, ToggleSidebar, ViewMode,
 };
 use gpui::{
     AnyElement, App, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement,
@@ -13,7 +13,7 @@ use gpui_component::{
     ActiveTheme, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::Search,
-    menu::{PopupMenu, PopupMenuItem},
+    menu::PopupMenu,
 };
 use gpui_component::{Icon, IconName};
 use std::{cell::RefCell, rc::Rc};
@@ -81,18 +81,16 @@ impl Notes {
                     .is_some(),
             )
             .separator()
-            .item(
-                PopupMenuItem::new("Collapse sidebar")
-                    .checked(self.sidebar_collapsed)
-                    .disabled(self.is_busy() || self.notebooks.active.is_none())
-                    .on_click(move |_, window, cx| {
-                        let _ = owner.update(cx, |_, cx| {
-                            // Restore sidebar focus after the menu finishes dismissing.
-                            cx.defer_in(window, |this, window, cx| {
-                                this.toggle_sidebar(window, cx);
-                            });
-                        });
-                    }),
+            .menu_with_check_and_disabled(
+                "Collapse sidebar",
+                self.sidebar_collapsed,
+                Box::new(ToggleSidebar),
+                busy || self.notebooks.active.is_none(),
+            )
+            .menu_with_disabled(
+                "Show Explorer",
+                Box::new(ShowExplorer),
+                busy || self.notebooks.active.is_none(),
             )
         } else if kind == MenuKind::Search {
             use mithril::commands::Command;

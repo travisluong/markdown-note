@@ -66,6 +66,8 @@ actions!(
         CycleViewMode,
         NavigateBack,
         NavigateForward,
+        ToggleSidebar,
+        ShowExplorer,
         CloseReadingFind,
         FileMenu,
         ViewMenu,
@@ -681,6 +683,12 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &NavigateForward, window, cx| {
                 this.navigate_history(app::navigation::Direction::Forward, window, cx)
             }))
+            .on_action(
+                cx.listener(|this, _: &ToggleSidebar, window, cx| this.toggle_sidebar(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ShowExplorer, window, cx| this.show_explorer(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &HelpMenu, window, cx| {
                 this.show_menu(MenuKind::Help, window, cx)
             }))

@@ -520,3 +520,29 @@ fn history_commands_use_tab_targets_independently_of_content_and_notebook() {
         }
     }
 }
+
+#[test]
+fn sidebar_commands_require_a_notebook_and_idle_state() {
+    for command in [Command::ToggleSidebar, Command::ShowExplorer] {
+        assert!(Command::ALL.contains(&command));
+        for has_notebook in [false, true] {
+            for busy in [false, true] {
+                for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+                    assert_eq!(
+                        command
+                            .unavailable(Capabilities {
+                                has_document: false,
+                                has_notebook,
+                                mode,
+                                busy,
+                                has_back_history: false,
+                                has_forward_history: false,
+                            })
+                            .is_none(),
+                        has_notebook && !busy
+                    );
+                }
+            }
+        }
+    }
+}

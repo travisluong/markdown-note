@@ -1645,3 +1645,25 @@ actions and Help labels are checked. Commands used --offline --locked --target-d
 target/titlebar-validation --features editor-diagnostics. cargo fmt --all --check
 and git diff --check pass. No desktop interaction or native harness was used;
 native macOS input behavior remains manual validation.
+
+## Command surface port 6: Sidebar and Explorer (2026-09-15)
+
+Toggle sidebar and Show Explorer now appear in the palette and bind
+Ctrl+Shift+B/E on Windows/Linux or Cmd+Shift+B/E on macOS. View gains Show
+Explorer; its existing Collapse sidebar entry now uses the shared action, with
+both actions dispatched after popup dismissal to preserve destination focus.
+Existing sidebar adapters retain notebook, busy and modal checks, Search panel
+state and editor/tree/query focus behavior. Help uses the binding catalogue;
+Explorer and Search toolbar tooltips show the appropriate platform modifier.
+The first three View entries remain Source, Live preview and Reading.
+
+Headless checks passed: sidebar-filter binary tests (5) and library tests (3),
+View/title-bar suite (11), command catalogue suite (15), and Help suite (6).
+Coverage exercises palette activation and fresh notebook availability, actual
+menu dismissal/focus, shortcuts from Search and document/Reading focus,
+Search query/results retention without rescanning, and Settings/dialog/busy/
+notebookless rejection. The macOS Ctrl+Shift+E editor selection binding does
+not collide with the new Cmd+Shift+E shortcut. Commands used --offline --locked
+--target-dir target/titlebar-validation --features editor-diagnostics.
+cargo fmt --all --check and git diff --check pass. No desktop interaction or
+native application harness was used; native macOS input remains manual validation.

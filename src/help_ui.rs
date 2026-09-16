@@ -79,6 +79,20 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
         ),
         shortcut!("ctrl-,", OpenSettings, "Notes", "Application", "Settings"),
         shortcut!(
+            "ctrl-shift-b",
+            ToggleSidebar,
+            "Notes",
+            "Application",
+            "Toggle sidebar"
+        ),
+        shortcut!(
+            "ctrl-shift-e",
+            ShowExplorer,
+            "Notes",
+            "Application",
+            "Show Explorer"
+        ),
+        shortcut!(
             "ctrl-shift-m",
             CycleViewMode,
             "Notes",
@@ -380,6 +394,35 @@ fn shortcut_row(key: &str, description: &str) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::app_shortcuts;
+
+    #[test]
+    fn sidebar_bindings_document_both_platforms_without_app_conflicts() {
+        for (macos, modifier) in [(false, "ctrl"), (true, "cmd")] {
+            let shortcuts = super::app_shortcuts_for_platform(macos);
+            let toggle = format!("{modifier}-shift-b");
+            let explorer = format!("{modifier}-shift-e");
+            let toggles: Vec<_> = shortcuts.iter().filter(|s| s.key == toggle).collect();
+            let explorers: Vec<_> = shortcuts.iter().filter(|s| s.key == explorer).collect();
+            assert_eq!(toggles.len(), 1);
+            assert_eq!(explorers.len(), 1);
+            assert!(
+                toggles[0]
+                    .binding
+                    .action()
+                    .as_any()
+                    .is::<crate::ToggleSidebar>()
+            );
+            assert!(
+                explorers[0]
+                    .binding
+                    .action()
+                    .as_any()
+                    .is::<crate::ShowExplorer>()
+            );
+            assert_eq!(toggles[0].description, "Toggle sidebar");
+            assert_eq!(explorers[0].description, "Show Explorer");
+        }
+    }
 
     #[test]
     fn history_bindings_document_exact_platform_keys_and_actions() {

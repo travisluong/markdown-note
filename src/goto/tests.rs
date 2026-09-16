@@ -576,3 +576,80 @@ fn history_palette_navigates_and_rechecks_active_tab_targets(cx: &mut TestAppCon
         })
     });
 }
+
+#[gpui::test]
+fn sidebar_palette_commands_switch_panels_and_recheck_notebook_and_busy_guards(
+    cx: &mut TestAppContext,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    for (command, collapsed) in [
+        (Command::ToggleSidebar, true),
+        (Command::ShowExplorer, false),
+    ] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.command_palette(window, cx);
+                this.palette
+                    .as_ref()
+                    .unwrap()
+                    .query
+                    .update(cx, |query, cx| query.set_value(command.label(), window, cx));
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| notes.update(cx, |this, cx| {
+            assert!(matches!(this.palette.as_ref().unwrap().model.selected_entry(), Some(PaletteEntry::Command(selected)) if *selected == command));
+            this.activate_palette(window, cx);
+            assert_eq!(this.sidebar_collapsed, collapsed);
+            assert!(this.palette.is_none());
+            if collapsed {
+                assert!(this.editor.is_focused(window, cx));
+            } else {
+                assert!(this.notebooks.tree_focus.is_focused(window));
+            }
+        }));
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.command_palette(window, cx);
+            this.palette
+                .as_ref()
+                .unwrap()
+                .query
+                .update(cx, |query, cx| {
+                    query.set_value(Command::ToggleSidebar.label(), window, cx)
+                });
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = None;
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_some());
+            assert!(!this.sidebar_collapsed);
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+            this.run_command(Command::ToggleSidebar, window, cx);
+            this.run_command(Command::ShowExplorer, window, cx);
+            assert!(!this.sidebar_collapsed);
+            this.notebooks.active =
+                Some(notebook::Notebook::open(directory.path(), false).unwrap());
+            this.open_help(false, window, cx);
+            this.run_command(Command::ToggleSidebar, window, cx);
+            this.sidebar_collapsed = true;
+            this.run_command(Command::ShowExplorer, window, cx);
+            assert!(this.sidebar_collapsed, "dialog blocks direct invocation");
+            window.close_dialog(cx);
+            let _ = this.session.pick();
+            this.run_command(Command::ToggleSidebar, window, cx);
+            this.run_command(Command::ShowExplorer, window, cx);
+            assert!(
+                this.sidebar_collapsed,
+                "busy session blocks direct invocation"
+            );
+        })
+    });
+}

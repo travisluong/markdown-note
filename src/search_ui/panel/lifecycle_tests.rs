@@ -674,3 +674,132 @@ fn settings_pause_preserves_search_and_blocks_result_navigation(cx: &mut TestApp
         )
     });
 }
+
+#[gpui::test]
+fn sidebar_shortcuts_retain_search_query_results_and_restore_panel_focus(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "hit hit").unwrap();
+    let (notes, cx) = fixture(cx, dir.path());
+    search(&notes, cx);
+    finish_search(cx);
+    let (query, cancelled, hit_ranges) = cx.update(|_, cx| {
+        let panel = notes.read(cx).search.as_ref().unwrap().read(cx);
+        assert_eq!(panel.hits.len(), 2);
+        (
+            panel.query.clone(),
+            panel.cancelled.clone(),
+            panel
+                .hits
+                .iter()
+                .map(|h| h.range.clone())
+                .collect::<Vec<_>>(),
+        )
+    });
+    let modifier = if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    };
+    let toggle = format!("{modifier}-shift-b");
+    let explorer = format!("{modifier}-shift-e");
+    for mode in [crate::ViewMode::Source, crate::ViewMode::Reading] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.set_mode(mode, window, cx);
+                this.open_search_all(window, cx);
+            })
+        });
+        cx.refresh().unwrap();
+        cx.simulate_keystrokes(&toggle);
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert!(this.sidebar_collapsed);
+            if mode == crate::ViewMode::Reading {
+                assert!(this.focus.is_focused(window));
+            } else {
+                assert!(this.editor.is_focused(window, cx));
+            }
+        });
+        cx.refresh().unwrap();
+        cx.simulate_keystrokes(&toggle);
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert!(!notes.read(cx).sidebar_collapsed);
+            assert!(query.focus_handle(cx).is_focused(window));
+        });
+        cx.refresh().unwrap();
+        cx.simulate_keystrokes(&explorer);
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                assert!(!this.search_visible(cx));
+                assert!(this.notebooks.tree_focus.is_focused(window));
+                this.open_search_all(window, cx);
+                let panel = this.search.as_ref().unwrap().read(cx);
+                assert!(panel.visible);
+                assert_eq!(panel.query, query);
+                assert_eq!(query.read(cx).value().as_ref(), "hit");
+                assert_eq!(
+                    panel
+                        .hits
+                        .iter()
+                        .map(|h| h.range.clone())
+                        .collect::<Vec<_>>(),
+                    hit_ranges
+                );
+                assert!(
+                    Arc::ptr_eq(&panel.cancelled, &cancelled),
+                    "panel switch does not schedule a scan"
+                );
+                assert!(query.focus_handle(cx).is_focused(window));
+            })
+        });
+    }
+    // Settings, other dialogs, a missing notebook and a busy session all keep
+    // the same collapsed panel even when actions are dispatched directly.
+    for guard in 0..4 {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.sidebar_collapsed = true;
+                this.focus.focus(window);
+                match guard {
+                    0 => this.open_settings(window, cx),
+                    1 => this.open_help(false, window, cx),
+                    2 => this.notebooks.active = None,
+                    _ => {
+                        this.notebooks.active =
+                            Some(notebook::Notebook::open(dir.path(), false).unwrap());
+                        let _ = this.session.pick();
+                    }
+                }
+                cx.notify();
+            })
+        });
+        cx.refresh().unwrap();
+        cx.simulate_keystrokes(&toggle);
+        cx.simulate_keystrokes(&explorer);
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.toggle_sidebar(window, cx);
+                this.show_explorer(window, cx);
+                assert!(
+                    this.sidebar_collapsed,
+                    "guard {guard} must block sidebar actions"
+                );
+                if guard < 2 {
+                    gpui_component::WindowExt::close_dialog(window, cx);
+                }
+            })
+        });
+        cx.run_until_parked();
+    }
+}

@@ -248,6 +248,8 @@ impl Notes {
                 self.navigate_history(crate::app::navigation::Direction::Forward, window, cx)
             }
             Command::SearchFile => self.search_current_file(window, cx),
+            Command::ToggleSidebar => self.toggle_sidebar(window, cx),
+            Command::ShowExplorer => self.show_explorer(window, cx),
             Command::SearchAllFiles => self.open_search_all(window, cx),
             Command::ReplaceFile => self.tabs.active.editor.find_and_replace(window, cx),
             Command::NewNote => self.new_note(window, cx),

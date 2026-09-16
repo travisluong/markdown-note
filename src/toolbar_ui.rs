@@ -90,7 +90,11 @@ impl Notes {
                         .into_any_element(),
                         ToolbarItem::Explorer => {
                             toolbar_button("sidebar-explorer", IconName::Folder, settings.icon_size)
-                                .tooltip("Explorer")
+                                .tooltip(if cfg!(target_os = "macos") {
+                                    "Explorer (Cmd+Shift+E)"
+                                } else {
+                                    "Explorer (Ctrl+Shift+E)"
+                                })
                                 .selected(sidebar_visible && !searching)
                                 .disabled(disabled)
                                 .on_click(
@@ -102,7 +106,11 @@ impl Notes {
                         }
                         ToolbarItem::Search => {
                             toolbar_button("sidebar-search", IconName::Search, settings.icon_size)
-                                .tooltip("Search all files (Ctrl+Shift+F)")
+                                .tooltip(if cfg!(target_os = "macos") {
+                                    "Search all files (Cmd+Shift+F)"
+                                } else {
+                                    "Search all files (Ctrl+Shift+F)"
+                                })
                                 .selected(sidebar_visible && searching)
                                 .disabled(disabled)
                                 .on_click(cx.listener(|this, _, window, cx| {

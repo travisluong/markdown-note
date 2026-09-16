@@ -348,3 +348,37 @@ fn file_menu_tab_commands_preserve_standalone_document(cx: &mut TestAppContext) 
         assert_eq!(this.editor.text(cx).as_ref(), "title bar test");
     });
 }
+
+#[gpui::test]
+fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active =
+                Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.editor.focus(window, cx);
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    // No history: View entries are the three modes, Collapse sidebar and Explorer.
+    click(MenuKind::View, cx);
+    cx.simulate_keystrokes("down down down down enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.menu.is_none());
+        assert!(this.sidebar_collapsed);
+        assert!(this.editor.is_focused(window, cx));
+    });
+    cx.refresh().unwrap();
+    click(MenuKind::View, cx);
+    cx.simulate_keystrokes("down down down down down enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.menu.is_none());
+        assert!(!this.sidebar_collapsed);
+        assert!(this.notebooks.tree_focus.is_focused(window));
+    });
+}

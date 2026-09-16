@@ -31,6 +31,8 @@ pub enum Command {
     ReadingView,
     Back,
     Forward,
+    ToggleSidebar,
+    ShowExplorer,
     ChangeNotebook,
     NewNote,
     NewTab,
@@ -69,6 +71,8 @@ impl Command {
         Self::ReadingView,
         Self::Back,
         Self::Forward,
+        Self::ToggleSidebar,
+        Self::ShowExplorer,
         Self::ChangeNotebook,
         Self::NewNote,
         Self::NewTab,
@@ -107,6 +111,8 @@ impl Command {
             Self::ReadingView => "View: Reading view",
             Self::Back => "Navigation: Back",
             Self::Forward => "Navigation: Forward",
+            Self::ToggleSidebar => "View: Toggle sidebar",
+            Self::ShowExplorer => "View: Show Explorer",
             Self::ChangeNotebook => "Notebook: Change notebook",
             Self::NewNote => "Notebook: Create new note",
             Self::NewTab => "Tabs: New tab",
@@ -146,6 +152,8 @@ impl Command {
             Self::ReadingView => "Read the rendered document",
             Self::Back => "Return to the previous file in this tab",
             Self::Forward => "Revisit the next file in this tab",
+            Self::ToggleSidebar => "Show or hide the current sidebar panel",
+            Self::ShowExplorer => "Show the notebook file tree and focus it",
             Self::ChangeNotebook => "Choose a registered notebook",
             Self::NewNote => "Create an Untitled note in the notebook root",
             Self::NewTab => "Open an empty tab without creating a file",
@@ -187,6 +195,9 @@ impl Command {
             return Some("Open an editable document in Source or Live preview");
         }
         match self {
+            Self::ToggleSidebar | Self::ShowExplorer if !context.has_notebook => {
+                Some("Open a notebook to use the sidebar")
+            }
             Self::Back if !context.has_back_history => Some("No previous file in this tab"),
             Self::Forward if !context.has_forward_history => Some("No next file in this tab"),
             Self::SearchFile if !context.can_search_document() => Some("Open a document to search"),

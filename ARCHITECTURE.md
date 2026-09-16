@@ -485,3 +485,11 @@ parsed code value only while its source revision is current; Source has no contr
 Reading uses the same control by default, preserving custom code_block_actions.
 Copy excludes fences and container prefixes and does not edit text or selection.
 Headless pointer/clipboard coverage lives in tests/code_copy.rs.
+
+Sidebar visibility and Explorer selection remain owned by `sidebar_ui.rs`.
+Toolbar, View menu, palette and Mod+Shift+B/Mod+Shift+E share those adapters,
+requiring an active notebook and rejecting busy/modal interaction. Hiding the
+sidebar retains the active Search panel; reopening restores its query focus.
+Show Explorer reveals the tree without discarding Search query/results. View
+menu actions dispatch after dismissal so popup focus restoration cannot replace
+the destination focus. Help derives both shortcuts from the binding catalogue.
