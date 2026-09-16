@@ -51,6 +51,8 @@ actions!(
         SearchAllFiles,
         ReplaceFile,
         ToggleTasks,
+        Bold,
+        Italic,
         MoveLineUp,
         MoveLineDown,
         EditLink,
@@ -439,6 +441,24 @@ impl Render for Notes {
                             && this.tabs.active.editor.is_focused(window, cx)
                         {
                             this.tabs.active.editor.move_lines(true, window, cx);
+                        }
+                    }))
+                    .on_action(cx.listener(|this, _: &Bold, window, cx| {
+                        if this.tabs.active.editor.is_focused(window, cx) {
+                            this.apply_markdown_format(
+                                mithril::markdown_edit::Format::Bold,
+                                window,
+                                cx,
+                            );
+                        }
+                    }))
+                    .on_action(cx.listener(|this, _: &Italic, window, cx| {
+                        if this.tabs.active.editor.is_focused(window, cx) {
+                            this.apply_markdown_format(
+                                mithril::markdown_edit::Format::Italic,
+                                window,
+                                cx,
+                            );
                         }
                     }))
                     .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {

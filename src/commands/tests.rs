@@ -4,6 +4,68 @@ use super::{
 };
 use crate::{ViewMode, capabilities::Capabilities};
 use std::{fs, path::Path};
+
+#[test]
+fn formatting_catalogue_covers_every_toolbar_operation_with_edit_guards() {
+    use crate::markdown_edit::Format;
+    let formats: Vec<_> = Command::ALL
+        .iter()
+        .filter_map(|c| c.markdown_format())
+        .collect();
+    let mut expected = vec![
+        Format::Bold,
+        Format::Italic,
+        Format::Strikethrough,
+        Format::InlineCode,
+        Format::CodeBlock,
+        Format::Blockquote,
+        Format::OrderedList,
+        Format::UnorderedList,
+        Format::TaskList,
+    ];
+    expected.extend((0..=6).map(Format::Heading));
+    assert_eq!(formats.len(), expected.len());
+    for format in expected {
+        assert!(formats.contains(&format));
+    }
+    for command in Command::ALL
+        .iter()
+        .filter(|c| c.markdown_format().is_some())
+    {
+        for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+            for has_document in [false, true] {
+                for busy in [false, true] {
+                    for has_notebook in [false, true] {
+                        assert_eq!(
+                            command
+                                .unavailable(Capabilities {
+                                    mode,
+                                    has_document,
+                                    busy,
+                                    has_notebook,
+                                })
+                                .is_none(),
+                            has_document && !busy && mode != ViewMode::Reading,
+                            "{command:?}"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            ranked_entries(
+                &Command::ALL
+                    .iter()
+                    .copied()
+                    .map(PaletteEntry::Command)
+                    .collect::<Vec<_>>(),
+                command.label()
+            )[0]
+            .label(),
+            command.label()
+        );
+    }
+}
 #[test]
 fn commands_filter_by_full_label_and_check_editability() {
     let entries: Vec<_> = Command::ALL

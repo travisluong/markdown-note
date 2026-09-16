@@ -212,6 +212,24 @@ impl Notes {
             return;
         }
         match command {
+            Command::Bold
+            | Command::Italic
+            | Command::Strikethrough
+            | Command::InlineCode
+            | Command::CodeBlock
+            | Command::Blockquote
+            | Command::OrderedList
+            | Command::UnorderedList
+            | Command::TaskList
+            | Command::Heading1
+            | Command::Heading2
+            | Command::Heading3
+            | Command::Heading4
+            | Command::Heading5
+            | Command::Heading6
+            | Command::Paragraph => {
+                self.apply_markdown_format(command.markdown_format().unwrap(), window, cx)
+            }
             Command::MoveLineUp => self.tabs.active.editor.move_lines(false, window, cx),
             Command::MoveLineDown => self.tabs.active.editor.move_lines(true, window, cx),
             Command::InsertDate => {

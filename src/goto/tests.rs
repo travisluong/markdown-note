@@ -93,6 +93,66 @@ fn filtered_command_rechecks_capability_and_keeps_one_undo_step(cx: &mut TestApp
 }
 
 #[gpui::test]
+fn formatting_palette_preserves_unicode_selection_and_one_step_history(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "café\n茶").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        for command in Command::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.markdown_format().is_some())
+        {
+            // Paragraph needs an existing heading so every command makes a real edit.
+            let original = if command == Command::Paragraph {
+                "# café\n茶"
+            } else {
+                "café\n茶"
+            };
+            let selected = if command == Command::Paragraph {
+                2..7
+            } else {
+                0..5
+            };
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    this.mode = mode;
+                    this.editor.set_mode(mode, cx);
+                    this.editor
+                        .select(0..this.editor.snapshot(cx).len(), window, cx);
+                    this.editor.replace_selection(original, window, cx);
+                    this.editor.select(selected.clone(), window, cx);
+                    this.command_palette(window, cx);
+                    this.palette
+                        .as_ref()
+                        .unwrap()
+                        .query
+                        .update(cx, |q, cx| q.set_value(command.label(), window, cx));
+                })
+            });
+            cx.run_until_parked();
+            cx.update(|window, cx| notes.update(cx, |this, cx| {
+                assert!(matches!(this.palette.as_ref().unwrap().model.selected_entry(), Some(PaletteEntry::Command(c)) if *c == command));
+                this.activate_palette(window, cx);
+                assert!(this.palette.is_none());
+                assert!(this.editor.is_focused(window, cx));
+                assert_ne!(this.editor.text(cx).as_ref(), original);
+                assert_eq!(&this.editor.text(cx)[this.editor.selection(cx)], "café");
+            }));
+            cx.dispatch_action(Undo);
+            cx.run_until_parked();
+            cx.update(|_, cx| {
+                assert_eq!(
+                    notes.read(cx).editor.text(cx).as_ref(),
+                    original,
+                    "{command:?}"
+                )
+            });
+        }
+    }
+}
+
+#[gpui::test]
 fn old_file_scan_cannot_replace_a_new_command_palette(cx: &mut TestAppContext) {
     let directory = tempfile::tempdir().unwrap();
     fs::write(directory.path().join("note.md"), "original").unwrap();

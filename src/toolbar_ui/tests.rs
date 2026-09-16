@@ -88,6 +88,66 @@ fn toolbar_clicks_preserve_selection_focus_dirty_tracking_and_history(cx: &mut T
 }
 
 #[gpui::test]
+fn formatting_shortcuts_only_edit_focused_documents(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let (_dir, notes, cx) = fixture(cx);
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        for (key, expected, selection) in [("b", "**café**\n茶", 2..7), ("i", "*café*\n茶", 1..6)]
+        {
+            let key = format!(
+                "{}-{key}",
+                if cfg!(target_os = "macos") {
+                    "cmd"
+                } else {
+                    "ctrl"
+                }
+            );
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    this.mode = mode;
+                    this.editor.set_mode(mode, cx);
+                    this.editor.select(0..5, window, cx);
+                    this.editor.focus(window, cx);
+                    cx.notify();
+                })
+            });
+            cx.refresh().unwrap();
+            cx.simulate_keystrokes(&key);
+            cx.run_until_parked();
+            cx.update(|_, cx| {
+                assert_eq!(notes.read(cx).editor.text(cx).as_ref(), expected);
+                assert_eq!(notes.read(cx).editor.selection(cx), selection);
+            });
+            cx.dispatch_action(Undo);
+            cx.run_until_parked();
+            cx.update(|window, cx| notes.update(cx, |this, cx| this.command_palette(window, cx)));
+            cx.refresh().unwrap();
+            cx.simulate_keystrokes(&key);
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    assert_eq!(this.editor.text(cx).as_ref(), "café\n茶");
+                    this.apply_markdown_format(Format::Bold, window, cx);
+                    assert_eq!(
+                        this.editor.text(cx).as_ref(),
+                        "café\n茶",
+                        "modal rejects direct dispatch too"
+                    );
+                    window.close_dialog(cx);
+                })
+            });
+            cx.run_until_parked();
+        }
+    }
+}
+
+#[gpui::test]
 fn heading_menu_sets_levels_paragraph_and_rejects_stale_source(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
     for level in 1..=6 {
@@ -171,7 +231,7 @@ fn formatting_buttons_and_handlers_reject_reading_and_busy_states(cx: &mut TestA
         }
         cx.update(|window, cx| {
             notes.update(cx, |this, cx| {
-                this.apply_toolbar_format(Format::Bold, window, cx);
+                this.apply_markdown_format(Format::Bold, window, cx);
                 this.edit_link(window, cx);
                 assert!(!window.has_active_dialog(cx));
                 assert_eq!(this.editor.text(cx).as_ref(), "café\n茶");
@@ -270,7 +330,7 @@ fn formatting_controls_reject_empty_and_image_views(cx: &mut TestAppContext) {
         }
         cx.update(|window, cx| {
             notes.update(cx, |this, cx| {
-                this.apply_toolbar_format(Format::Bold, window, cx);
+                this.apply_markdown_format(Format::Bold, window, cx);
                 assert_eq!(this.editor.text(cx), before);
                 assert!(!window.has_active_dialog(cx));
             })

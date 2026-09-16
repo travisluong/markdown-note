@@ -1543,3 +1543,26 @@ editor diagnostics pass. GPUI retains debug bounds across frames, so Source-mode
 validation checks clipboard behavior instead of stale selector absence.
 No native app or desktop input was used. Existing unrelated changes remain
 outside this commit.
+
+## Command surface port 1: Markdown formatting (2026-09-15)
+
+The command palette now exposes all sixteen previously toolbar-only formatting
+operations: Bold, Italic, Strikethrough, Inline code, Code block, Blockquote,
+Ordered list, Unordered list, Task list, Heading 1–6 and Paragraph. Link keeps
+its existing dialog command. Mod+B and Mod+I are documented via the shared
+shortcut definitions and bind only in DocumentEditor, with exact editor focus.
+Toolbar, palette and shortcuts share apply_markdown_format, which rechecks
+editable-document capability and active dialogs before Editor::format_markdown.
+Heading popups retain their editor/document/source/selection checks.
+
+Focused headless verification uses target/titlebar-validation to avoid the
+user’s running default-target executable. The library commands filter passed
+12 tests, and the binary formatting filter passed 7 tests. New coverage checks
+all sixteen palette operations in Source/Live with Unicode selection and one-step
+Undo, every capability combination, actual Bold/Italic keystrokes and palette
+input isolation, and modal rejection of direct formatting. No desktop interaction
+or native app harness was used.
+The full toolbar module (12), palette module (4), and Help shortcut module (3)
+also pass, including stale-heading rejection and platform key documentation.
+`cargo fmt --check` and `git diff --check` pass. A transient Windows linker lock
+on the just-run test executable cleared on retry.

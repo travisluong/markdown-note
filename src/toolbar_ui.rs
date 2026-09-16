@@ -157,7 +157,7 @@ impl Notes {
                                         if item == ToolbarItem::Link {
                                             this.edit_link(window, cx);
                                         } else if let Some(format) = format {
-                                            this.apply_toolbar_format(format, window, cx);
+                                            this.apply_markdown_format(format, window, cx);
                                         }
                                     }))
                                     .into_any_element()
@@ -185,7 +185,7 @@ fn toolbar_button(id: &'static str, icon: impl Into<Icon>, size: ToolbarIconSize
 }
 
 impl Notes {
-    fn apply_toolbar_format(
+    pub(super) fn apply_markdown_format(
         &mut self,
         format: Format,
         window: &mut Window,
@@ -229,7 +229,7 @@ impl Notes {
                                 && this.tabs.active.editor.snapshot(cx) == snapshot
                                 && this.tabs.active.editor.selection(cx) == selection
                             {
-                                this.apply_toolbar_format(Format::Heading(level), window, cx);
+                                this.apply_markdown_format(Format::Heading(level), window, cx);
                             }
                         });
                     }),
