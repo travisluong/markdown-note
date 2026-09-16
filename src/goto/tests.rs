@@ -816,3 +816,212 @@ fn discovery_go_to_shortcut_keeps_notebook_search_and_standalone_picker_fallback
         })
     });
 }
+
+#[gpui::test]
+fn tasks_palette_distinguishes_completion_from_formatting_with_one_step_undo(
+    cx: &mut TestAppContext,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let original = "- [ ] café\n- [ ] 茶";
+    fs::write(directory.path().join("note.md"), original).unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        for (command, expected) in [
+            (Command::ToggleTasks, "- [x] café\n- [x] 茶"),
+            (Command::TaskList, "café\n茶"),
+        ] {
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    this.set_mode(mode, window, cx);
+                    this.editor.select(0..original.len(), window, cx);
+                    this.command_palette(window, cx);
+                    this.palette
+                        .as_ref()
+                        .unwrap()
+                        .query
+                        .update(cx, |query, cx| {
+                            query.set_value(command.label(), window, cx);
+                        });
+                })
+            });
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    assert!(
+                        matches!(this.palette.as_ref().unwrap().model.selected_entry(),
+                    Some(PaletteEntry::Command(selected)) if *selected == command)
+                    );
+                    this.activate_palette(window, cx);
+                    assert_eq!(this.editor.text(cx).as_ref(), expected);
+                    assert!(this.editor.is_focused(window, cx));
+                })
+            });
+            cx.dispatch_action(Undo);
+            cx.run_until_parked();
+            cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), original));
+        }
+    }
+}
+
+#[gpui::test]
+fn date_shortcut_and_palette_reuse_scoped_format_unicode_selection_and_undo(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "café 茶 fin").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    let key = if cfg!(target_os = "macos") {
+        "cmd-shift-d"
+    } else {
+        "ctrl-shift-d"
+    };
+    for mode in [ViewMode::Source, ViewMode::LivePreview] {
+        for palette in [false, true] {
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    this.notebooks.active.as_mut().unwrap().settings.date_format = "[日期]".into();
+                    this.session_date_format = "[session]".into();
+                    this.set_mode(mode, window, cx);
+                    this.editor.select(6..9, window, cx);
+                    this.editor.focus(window, cx);
+                    if palette {
+                        this.command_palette(window, cx);
+                        this.palette
+                            .as_ref()
+                            .unwrap()
+                            .query
+                            .update(cx, |query, cx| {
+                                query.set_value("current date", window, cx);
+                            });
+                    }
+                })
+            });
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            if palette {
+                cx.update(|window, cx| {
+                    notes.update(cx, |this, cx| this.activate_palette(window, cx))
+                });
+            } else {
+                cx.simulate_keystrokes(key);
+            }
+            cx.run_until_parked();
+            cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café 日期 fin"));
+            cx.dispatch_action(Undo);
+            cx.run_until_parked();
+            cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café 茶 fin"));
+        }
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = None;
+            this.editor.select(6..9, window, cx);
+            this.editor.focus(window, cx);
+        })
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café session fin"));
+}
+
+#[gpui::test]
+fn task_and_date_adapters_reject_reading_dialogs_busy_and_empty(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "- [ ] café").unwrap();
+    for guard in ["reading", "dialog", "busy", "empty"] {
+        let (notes, cx) = fixture(cx, directory.path());
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.set_mode(ViewMode::Source, window, cx);
+                match guard {
+                    "reading" => this.set_mode(ViewMode::Reading, window, cx),
+                    "dialog" => this.open_help(false, window, cx),
+                    "busy" => {
+                        let _ = this.session.pick();
+                    }
+                    "empty" => this.install_document(None, window, cx),
+                    _ => unreachable!(),
+                }
+                let before = this.editor.text(cx);
+                this.insert_current_date(window, cx);
+                this.toggle_selected_tasks(window, cx);
+                this.run_command(Command::InsertDate, window, cx);
+                this.run_command(Command::ToggleTasks, window, cx);
+                assert_eq!(this.editor.text(cx), before, "{guard}");
+                if guard == "dialog" {
+                    window.close_dialog(cx);
+                }
+            })
+        });
+        cx.run_until_parked();
+    }
+}
+
+#[gpui::test]
+fn date_shortcut_ignores_search_and_modal_inputs(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "café 茶").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    let key = if cfg!(target_os = "macos") {
+        "cmd-shift-d"
+    } else {
+        "ctrl-shift-d"
+    };
+    // The editor's own find field is within DocumentEditor; the explicit focus
+    // guard must prevent the bubbling action from inserting into the document.
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.editor.find(window, cx)));
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café 茶"));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.command_palette(window, cx);
+            this.palette
+                .as_ref()
+                .unwrap()
+                .query
+                .update(cx, |query, cx| query.set_value("draft", window, cx));
+        })
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(
+                this.palette
+                    .as_ref()
+                    .unwrap()
+                    .query
+                    .read(cx)
+                    .value()
+                    .as_ref(),
+                "draft"
+            );
+            assert_eq!(this.editor.text(cx).as_ref(), "café 茶");
+            window.close_dialog(cx);
+            this.close_palette(window, cx);
+            this.open_settings(window, cx);
+        })
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes(key);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café 茶"));
+}

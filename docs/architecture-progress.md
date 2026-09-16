@@ -1688,3 +1688,24 @@ path dialogs while retaining production session entry/completion. Commands used
 --check and git diff --check pass. A transient Windows test-executable linker
 lock cleared on retry. No desktop interaction or native harness was used;
 native picker presentation remains manual validation.
+
+## Command surface port 8: Task completion palette and date shortcut (2026-09-15)
+
+The palette now exposes Text: Toggle selected tasks, sharing the existing
+Mod+L completion/create transaction. Format: Task list retains its separate
+apply/remove-syntax behavior. Mod+Shift+D inserts the configured current date
+only from focused DocumentEditor content, with the binding also supplying Help.
+Both date surfaces and both task surfaces use guarded Notes adapters before
+calling existing isolated Editor operations. Reading, non-document content,
+busy sessions and active dialogs reject edits; date format scope is unchanged.
+
+Headless checks passed: palette adapter suite (16), command catalogue suite (16),
+Help suite (6), and Editor adapter suite (8). Four new TestPlatform regressions
+exercise Source/Live task completion versus formatting, Unicode selections,
+one-step undo, palette/shortcut date parity and notebook/session format scope,
+Reading/dialog/busy/empty guards, and document-find/palette/Settings focus
+isolation. Deterministic bracketed Unicode date formats avoid clock-boundary
+flakiness; existing templates coverage owns token rendering. Commands used
+--offline --locked --target-dir target/titlebar-validation. cargo fmt --all
+--check and git diff --check pass. No desktop interaction or native harness was
+used; physical macOS shortcut behavior remains manual validation.

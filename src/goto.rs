@@ -44,6 +44,22 @@ impl Palette {
 }
 
 impl Notes {
+    pub(super) fn insert_current_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.can_edit_document() || window.has_active_dialog(cx) {
+            return;
+        }
+        if let Ok(date) = templates::current(self.date_format()) {
+            self.tabs.active.editor.replace_selection(&date, window, cx);
+        }
+    }
+
+    pub(super) fn toggle_selected_tasks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.can_edit_document() || window.has_active_dialog(cx) {
+            return;
+        }
+        self.tabs.active.editor.toggle_selected_tasks(window, cx);
+    }
+
     pub(super) fn command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
@@ -234,11 +250,8 @@ impl Notes {
             }
             Command::MoveLineUp => self.tabs.active.editor.move_lines(false, window, cx),
             Command::MoveLineDown => self.tabs.active.editor.move_lines(true, window, cx),
-            Command::InsertDate => {
-                if let Ok(date) = templates::current(self.date_format()) {
-                    self.tabs.active.editor.replace_selection(&date, window, cx);
-                }
-            }
+            Command::InsertDate => self.insert_current_date(window, cx),
+            Command::ToggleTasks => self.toggle_selected_tasks(window, cx),
             Command::EditLink => self.edit_link(window, cx),
             Command::Settings => self.open_settings(window, cx),
             Command::OpenFile => self.request(Next::Open, window, cx),

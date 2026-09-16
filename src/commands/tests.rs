@@ -122,7 +122,7 @@ fn commands_filter_by_full_label_and_check_editability() {
         PaletteEntry::Command(Command::InsertDate)
     ));
     assert!(ranked_entries(&entries, "no such command xyz").is_empty());
-    for command in [Command::InsertDate, Command::EditLink] {
+    for command in [Command::InsertDate, Command::ToggleTasks, Command::EditLink] {
         assert!(
             command
                 .unavailable(Capabilities {

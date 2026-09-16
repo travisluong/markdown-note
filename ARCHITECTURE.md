@@ -502,3 +502,11 @@ save capability (including Reading); Manage notebooks rechecks the notebook
 index's writability. All palette execution rejects active dialogs and busy state.
 TestPlatform captures file-picker operations at the presentation boundary and
 supplies outcomes to the production session completion adapter.
+
+Task completion and date insertion share guarded adapters in `goto.rs`:
+`Notes::toggle_selected_tasks` and `Notes::insert_current_date`. Palette commands
+and focused DocumentEditor shortcuts (Mod+L and Mod+Shift+D) reuse the semantic
+Editor transactions, rejecting Reading, non-document content, busy state and
+active dialogs. Date insertion retains notebook/session format scope. Toggle
+selected tasks creates tasks or toggles completion; Format: Task list separately
+applies or removes task-list syntax. Help derives the date shortcut from bindings.

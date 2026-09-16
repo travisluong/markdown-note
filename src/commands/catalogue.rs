@@ -21,6 +21,7 @@ pub enum Command {
     Paragraph,
 
     InsertDate,
+    ToggleTasks,
     MoveLineUp,
     MoveLineDown,
     EditLink,
@@ -65,6 +66,7 @@ impl Command {
         Self::Heading6,
         Self::Paragraph,
         Self::InsertDate,
+        Self::ToggleTasks,
         Self::MoveLineUp,
         Self::MoveLineDown,
         Self::EditLink,
@@ -109,6 +111,7 @@ impl Command {
             Self::Heading6 => "Format: Heading 6",
             Self::Paragraph => "Format: Paragraph",
             Self::InsertDate => "Templates: Insert current date",
+            Self::ToggleTasks => "Text: Toggle selected tasks",
             Self::MoveLineUp => "Text: Move line up",
             Self::MoveLineDown => "Text: Move line down",
             Self::EditLink => "Text: Insert or edit link",
@@ -154,6 +157,7 @@ impl Command {
             Self::Heading6 => "Set selected lines to heading level 6",
             Self::Paragraph => "Remove heading formatting from selected lines",
             Self::InsertDate => "Insert at the editor selection",
+            Self::ToggleTasks => "Create tasks or toggle their completion state",
             Self::MoveLineUp => "Move the current or selected lines up",
             Self::MoveLineDown => "Move the current or selected lines down",
             Self::EditLink => "Insert a link or edit the selected link",
@@ -223,6 +227,7 @@ impl Command {
             }
             Self::NewNote if !context.can_create_note() => Some("Open a notebook to create a note"),
             Self::InsertDate
+            | Self::ToggleTasks
             | Self::EditLink
             | Self::ReplaceFile
             | Self::MoveLineUp

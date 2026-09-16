@@ -133,6 +133,13 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
             "Create or toggle selected tasks"
         ),
         shortcut!(
+            "ctrl-shift-d",
+            InsertDate,
+            "DocumentEditor",
+            "Editor",
+            "Insert current date"
+        ),
+        shortcut!(
             "ctrl-k",
             EditLink,
             "DocumentEditor",
@@ -468,6 +475,16 @@ mod tests {
                 gpui::Keystroke::parse(&shortcut.key).unwrap();
                 assert!(keys.insert(shortcut.key.as_str()));
             }
+            let date_key = super::platform_shortcut("ctrl-shift-d", macos);
+            let date_binding = shortcuts.iter().find(|s| s.key == date_key).unwrap();
+            assert!(
+                date_binding
+                    .binding
+                    .action()
+                    .as_any()
+                    .is::<crate::InsertDate>()
+            );
+            assert_eq!(date_binding.description, "Insert current date");
             let settings_binding = shortcuts.iter().find(|s| s.key == settings).unwrap();
             assert!(
                 settings_binding

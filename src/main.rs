@@ -54,6 +54,7 @@ actions!(
         SearchAllFiles,
         ReplaceFile,
         ToggleTasks,
+        InsertDate,
         Bold,
         Italic,
         MoveLineUp,
@@ -502,10 +503,13 @@ impl Render for Notes {
                         }
                     }))
                     .on_action(cx.listener(|this, _: &ToggleTasks, window, cx| {
-                        if this.can_edit_document()
-                            && this.tabs.active.editor.focus_handle(cx).is_focused(window)
-                        {
-                            this.tabs.active.editor.toggle_selected_tasks(window, cx);
+                        if this.tabs.active.editor.is_focused(window, cx) {
+                            this.toggle_selected_tasks(window, cx);
+                        }
+                    }))
+                    .on_action(cx.listener(|this, _: &InsertDate, window, cx| {
+                        if this.tabs.active.editor.is_focused(window, cx) {
+                            this.insert_current_date(window, cx);
                         }
                     }))
                     .size_full()
