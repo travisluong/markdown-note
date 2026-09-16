@@ -584,3 +584,48 @@ fn discovery_commands_are_searchable_and_save_requires_a_document_in_any_mode() 
         }
     }
 }
+
+#[test]
+fn sort_picker_uses_all_options_and_notebook_capability() {
+    use crate::notebook::FileSort;
+    let entries: Vec<_> = FileSort::OPTIONS
+        .into_iter()
+        .map(|(sort, label)| PaletteEntry::FileSort {
+            sort,
+            label,
+            active: sort == FileSort::ModifiedNewest,
+        })
+        .collect();
+    assert_eq!(entries.len(), 6);
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| entry.label().ends_with("(current)"))
+            .count(),
+        1
+    );
+    for (sort, label) in FileSort::OPTIONS {
+        assert!(
+            matches!(ranked_entries(&entries, &label.to_uppercase())[0], PaletteEntry::FileSort { sort: actual, .. } if actual == sort)
+        );
+    }
+    for has_notebook in [false, true] {
+        for busy in [false, true] {
+            for has_document in [false, true] {
+                let caps = Capabilities {
+                    has_notebook,
+                    busy,
+                    has_document,
+                    mode: ViewMode::Reading,
+                    has_back_history: false,
+                    has_forward_history: false,
+                };
+                assert_eq!(
+                    Command::SortFiles.unavailable(caps).is_none(),
+                    has_notebook && !busy
+                );
+                assert_eq!(Command::ToggleTheme.unavailable(caps).is_none(), !busy);
+            }
+        }
+    }
+}

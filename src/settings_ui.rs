@@ -125,6 +125,18 @@ impl Notes {
         cx.notify();
     }
 
+    pub(super) fn toggle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
+            return;
+        }
+        let mut appearance = self.appearance();
+        appearance.theme = Some(match appearance.theme_choice(self.startup_dark) {
+            notebook::ThemeChoice::Light => notebook::ThemeChoice::Dark,
+            _ => notebook::ThemeChoice::Light,
+        });
+        self.update_appearance(appearance, window, cx);
+    }
+
     pub(super) fn update_appearance(
         &mut self,
         appearance: notebook::Appearance,

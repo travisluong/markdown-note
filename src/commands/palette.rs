@@ -7,13 +7,24 @@ use std::path::PathBuf;
 pub enum PaletteEntry {
     Command(Command),
     File(notebook::Entry),
-    Notebook { path: PathBuf, active: bool },
+    FileSort {
+        sort: notebook::FileSort,
+        label: &'static str,
+        active: bool,
+    },
+    Notebook {
+        path: PathBuf,
+        active: bool,
+    },
 }
 
 impl PaletteEntry {
     pub fn label(&self) -> String {
         match self {
             Self::Command(command) => command.label().into(),
+            Self::FileSort { label, active, .. } => {
+                format!("{label}{}", if *active { " (current)" } else { "" })
+            }
             Self::Notebook { path, active } => format!(
                 "{}{}",
                 notebook::name(path),
@@ -30,6 +41,7 @@ impl PaletteEntry {
     fn search_name(&self) -> String {
         match self {
             Self::Command(command) => command.label().into(),
+            Self::FileSort { label, .. } => (*label).into(),
             Self::Notebook { path, .. } => notebook::name(path),
             Self::File(entry) => notebook::name(&entry.relative),
         }
@@ -38,6 +50,7 @@ impl PaletteEntry {
     pub fn detail(&self) -> String {
         match self {
             Self::Command(command) => command.description().into(),
+            Self::FileSort { .. } => "Sort files in the active notebook".into(),
             Self::Notebook { path, .. } => path.display().to_string(),
             Self::File(entry) => entry.relative.display().to_string(),
         }

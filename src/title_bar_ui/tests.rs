@@ -433,3 +433,55 @@ fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut
         })
     });
 }
+
+#[gpui::test]
+fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    let first = cx.update(|_, cx| notes.read(cx).tabs.active.id);
+    let session_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
+    click(MenuKind::View, cx);
+    // No history or notebook: modes, Command palette, Toggle light/dark mode.
+    cx.simulate_keystrokes("down down down down down enter");
+    cx.run_until_parked();
+    let changed_session = cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.menu.is_none());
+        assert_ne!(this.appearance().theme_choice(false), session_theme);
+        assert_eq!(this.tabs.active.id, first);
+        assert!(this.editor.is_focused(window, cx));
+        this.session_appearance.clone()
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .set_test_persistence_target(dir.path().join("test-index.json"));
+            this.notebooks.active =
+                Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.install_document(None, window, cx);
+            this.toggle_theme(window, cx);
+            assert_eq!(this.session_appearance, changed_session);
+        })
+    });
+    cx.run_until_parked();
+    let book_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
+    cx.refresh().unwrap();
+    click(MenuKind::View, cx);
+    // Empty document: three modes, sidebar, Explorer, Command palette, theme.
+    cx.simulate_keystrokes("down down down down down down down enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(this.menu.is_none());
+        assert_ne!(this.appearance().theme_choice(false), book_theme);
+        assert_eq!(this.session_appearance, changed_session);
+        assert_eq!(this.tabs.active.id, first);
+        assert!(this.document().is_none());
+        assert_eq!(
+            crate::notebook::Notebook::open(dir.path(), false)
+                .unwrap()
+                .settings
+                .appearance,
+            this.appearance()
+        );
+    });
+}

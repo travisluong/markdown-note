@@ -389,8 +389,14 @@ only while the captured notebook/generation remains current. Tests inject an
 in-memory backend; other platforms keep GPUI's reveal integration.
 
 The top Sort menu and window toolbar sort button share `Notes::file_sort_menu` in
-`sidebar_ui.rs`. Both use `FileSort::OPTIONS` and the active notebook's selected
-order, dispatching through `set_file_sort` for explorer updates and persistence.
+`sidebar_ui.rs`. The command palette's Sort picker also uses `FileSort::OPTIONS`,
+marks/selects the active order, and dispatches through `set_file_sort` for Explorer
+updates and persistence. The picker captures the notebook root across dismissal;
+a different or removed active notebook rejects the preference change. Explorer
+refresh generations do not invalidate a same-notebook preference choice. Escape
+returns to commands. Palette and View theme toggles share the guarded
+`toggle_theme` adapter in `settings_ui.rs`, preserving notebook/session scope and
+working without a document. Neither port owns new preference state.
 
 The window toolbar uses `ToolbarSettings` in `notebook/settings.rs` for independent
 sidebar, Explorer, Search and Sort visibility plus eleven Markdown formatting

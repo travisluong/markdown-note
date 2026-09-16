@@ -1728,3 +1728,39 @@ selected versus active document, files/folders and empty tabs, selection changes
 stale notebook/generation, removed paths, invalid/link/loading rows, and modal/write
 guards. Reveal is injected in tests; no desktop app or OS file manager launched.
 Native keyboard/file-manager presentation remains manual validation.
+
+## Command surface port 10: Sort picker and View theme toggle (2026-09-16)
+
+Explorer: Sort files opens a searchable palette mode with the six FileSort::OPTIONS,
+marking and initially selecting the active order. Escape returns to commands.
+Activation captures the notebook root across dismissal, rejects a changed/missing
+notebook, and calls set_file_sort for Explorer resort and SettingsWriter persistence.
+Tree refresh alone does not invalidate a preference choice for the same notebook.
+View appends Toggle light/dark mode, sharing a guarded settings adapter with the
+existing palette command. Theme scope remains active notebook or session defaults;
+no document is required. The first three View entries remain the view modes.
+
+Focused Windows TestPlatform checks pass: goto adapter suite (23), title-bar suite
+(13), and command catalogue suite (17). Four new tests exercise all six choices,
+current-choice selection, query/Enter/Escape and focus, preserved document/tab/text/
+selection, persisted sort plus actual Explorer order, refresh and stale notebook
+scope, modal/busy rejection, and theme menu routing on standalone and empty views
+with notebook/session persistence. All writes target temporary fixtures. Commands
+used --offline --locked --target-dir target/titlebar-validation, with
+--features editor-diagnostics for the binary suites. No desktop interaction or
+native application harness was used; native platform presentation remains manual.
+
+The inventory now separates current implementation (44 palette commands, 35 app
+bindings, 17 toolbar tools, 7 File actions and 28 static top-menu actions) from the
+original historical matrices, documenting completion of all ten ranked ports.
+
+Final integrated gates after all ten ports pass on Windows: cargo test --offline
+--locked --features editor-diagnostics --target-dir target/titlebar-validation
+reports 535 passed, 0 failed, 0 ignored across 24 result groups (including the
+empty doc-test group). cargo check --offline --locked --target-dir
+target/titlebar-validation and cargo clippy --offline --locked --all-targets
+--features editor-diagnostics --target-dir target/titlebar-validation -- -D warnings
+both exit successfully. cargo fmt --check and git diff --check also pass. These
+runs include the pre-existing working-tree changes; unrelated files and the
+existing link-context architecture paragraph are excluded from this port's commit.
+No native Windows, macOS or Linux application validation is claimed.

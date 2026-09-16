@@ -1,12 +1,97 @@
 # Command surface inventory and port priorities
 
-Audit date: 2026-09-15. Baseline: `57704a2`, plus the working-tree changes present during this audit. This is a source audit, not a native UI test. The only change made for this audit is this document.
+Original audit date: 2026-09-15. Baseline: `57704a2`, plus the working-tree changes present during that source audit. The original audit was documentation-only. Implementation status is recorded separately below.
+
+## Current implementation after ports 1-10 (2026-09-16)
+
+All ten ranked ports below are implemented. This section supersedes the historical
+coverage matrices and proposals that follow it. Counts checked against the source:
+**44 palette commands, 17 configurable toolbar tools, 35 application bindings,
+7 File menu actions, and 28 static top-level menu actions** plus registered
+notebook entries. File, notebook and six-choice sort picker results are not
+additional commands. Inherited editor/component bindings and Settings Escape
+remain outside the application-binding count.
+
+| Completed rank | Current access |
+| --- | --- |
+| 1 | All 16 previously missing formatting operations are in the palette: Bold, Italic, Strikethrough, Inline code, Code block, Blockquote, Ordered list, Unordered list, Task list, Heading 1-6 and Paragraph. Bold/Italic bind Mod+B/I in DocumentEditor. Link keeps its existing command and Mod+K. |
+| 2 | File has New note, New tab and Close tab. New/Close tab are also palette commands. Mod+N/T/W invoke their existing lifecycle owners. |
+| 3 | Palette has Source mode, Live preview and Reading view. Mod+Shift+M cycles Source → Live preview → Reading. |
+| 4 | Settings is in the palette and binds Mod+comma. Replace binds Ctrl+H on Windows/Linux and Cmd+Option+F on macOS. |
+| 5 | Back/Forward are in palette and View, with Alt+Left/Right on Windows/Linux and Cmd+Option+Left/Right on macOS. |
+| 6 | Toggle sidebar and Show Explorer are in the palette, with Mod+Shift+B/E. View has Show Explorer alongside Collapse sidebar. |
+| 7 | File has Go to a note; View has Command palette. Palette adds Open file, Save, Manage notebooks and Keyboard shortcuts. Open file always uses the system picker; Go to retains notebook discovery and its standalone picker fallback. |
+| 8 | Palette has Text: Toggle selected tasks (distinct from Format: Task list); Mod+Shift+D inserts the configured current date. |
+| 9 | F2 in NotebookTree opens Rename. Palette has Explorer: Copy selected relative path and Explorer: Reveal selected entry, showing the captured Explorer target. No active-document fallback. |
+| 10 | Explorer: Sort files opens a searchable six-choice palette picker with the current order marked and initially selected. Escape returns to commands. View has Toggle light/dark mode, sharing the existing palette theme adapter. |
+
+Current top-level menu order (separators omitted):
+
+| Menu | Current actions |
+| --- | --- |
+| File (7) | Open; Save; New note; New tab; Close tab; Go to a note; Settings |
+| View (9) | Source mode; Live preview; Reading view; Back; Forward; Collapse sidebar; Show Explorer; Command palette; Toggle light/dark mode |
+| Search (3) | Search in file; Search in all files; Search and replace in file |
+| Sort (6) | File name A to Z / Z to A; Modified time new to old / old to new; Created time new to old / old to new |
+| Notebooks (1 static) | Manage notebooks; then one entry per registered notebook |
+| Help (2) | Keyboard shortcuts; About |
+
+Current application shortcuts (all 35 registrations): `Mod` is Ctrl on
+Windows/Linux and Cmd on macOS. Scope is the focused key context, with fresh
+capability and modal checks applied by the owning adapter.
+
+| Action | Windows/Linux | macOS | Scope |
+| --- | --- | --- | --- |
+| Rename selected item | F2 | F2 | NotebookTree |
+| Selected item context menu | Shift+F10 | Shift+F10 | NotebookTree |
+| Move lines up / down (2) | Ctrl+Up / Down | Cmd+Up / Down | DocumentEditor; original macOS collision remains below |
+| Bold / Italic (2) | Ctrl+B / I | Cmd+B / I | DocumentEditor |
+| Go to a note | Ctrl+O | Cmd+O | Notes |
+| Command palette | Ctrl+P | Cmd+P | Notes |
+| Save | Ctrl+S | Cmd+S | Notes |
+| Back / Forward (2) | Alt+Left / Right | Cmd+Option+Left / Right | Notes |
+| Settings | Ctrl+comma | Cmd+comma | Notes |
+| Toggle sidebar | Ctrl+Shift+B | Cmd+Shift+B | Notes |
+| Show Explorer | Ctrl+Shift+E | Cmd+Shift+E | Notes |
+| Cycle view mode | Ctrl+Shift+M | Cmd+Shift+M | Notes |
+| New note | Ctrl+N | Cmd+N | Notes |
+| New tab | Ctrl+T | Cmd+T | Notes |
+| Close tab | Ctrl+W | Cmd+W | Notes |
+| File / View / Search / Notebooks / Help menus (5) | Alt+F / V / S / N / H | Ctrl+Option+F / V / S / N / H | Notes |
+| Create or toggle selected tasks | Ctrl+L | Cmd+L | DocumentEditor |
+| Insert current date | Ctrl+Shift+D | Cmd+Shift+D | DocumentEditor |
+| Insert or edit link | Ctrl+K | Cmd+K | DocumentEditor |
+| Find in current file | Ctrl+F | Cmd+F | Notes |
+| Search notebook | Ctrl+Shift+F | Cmd+Shift+F | Notes |
+| Find and replace | Ctrl+H | Cmd+Option+F | Notes |
+| Close Reading find | Escape | Escape | ReadingContent |
+| Previous / next / collapse / expand / open tree item (5) | Up / Down / Left / Right / Enter | Same | NotebookTree |
+
+Toolbar composition and its preferences are unchanged. All 17 tools now have
+palette access (Heading through seven explicit commands and Sort through its
+picker); Sort retains its top-level and toolbar menus. This does not add a
+shortcut for every formatting operation or a new toolbar icon for every command.
+
+Verification uses Windows TestPlatform, pure unit tests and static checks; no
+native app was launched or desktop input injected. Native Windows/macOS/Linux
+presentation and physical keyboard behavior remain manual validation. Detailed
+results are recorded in [architecture progress](architecture-progress.md).
+The historical macOS line-move collision and Reading-find Help mismatch were
+not part of the ten ranked ports and remain follow-ups. Search/Explorer toolbar
+shortcut labels now use platform-aware modifiers, and F2 is implemented.
+
+## Historical audit baseline (2026-09-15)
+
+**Everything below describes the original baseline and original recommendations,
+not current coverage.** Old counts, missing-surface claims and proposed keys are
+retained to explain the audit and implementation choices; use the current
+implementation section above for present behavior.
 
 ## Scope and counting
 
 The inventory covers the command palette, the full-width window toolbar, application and editor keyboard bindings, and all six top-level menus. File/Explorer context menus and nearby controls are included separately because they contain valuable port candidates. Platform-owned window menus, native file-picker bindings, ordinary text entry, and every individual Settings form control are outside the command inventory.
 
-| Surface | Current inventory |
+| Surface | Historical baseline inventory |
 | --- | --- |
 | Command palette | **10 commands**; file and notebook picker results are separate palette modes, not additional commands |
 | Window toolbar | **17 configurable tools**, all enabled by default; Heading expands to seven choices, Sort to six |

@@ -26,6 +26,7 @@ pub enum Command {
     MoveLineDown,
     EditLink,
     ToggleTheme,
+    SortFiles,
     Settings,
     SourceMode,
     LivePreview,
@@ -73,6 +74,7 @@ impl Command {
         Self::MoveLineDown,
         Self::EditLink,
         Self::ToggleTheme,
+        Self::SortFiles,
         Self::Settings,
         Self::SourceMode,
         Self::LivePreview,
@@ -119,6 +121,7 @@ impl Command {
             Self::MoveLineUp => "Text: Move line up",
             Self::MoveLineDown => "Text: Move line down",
             Self::EditLink => "Text: Insert or edit link",
+            Self::SortFiles => "Explorer: Sort files",
             Self::ToggleTheme => "Appearance: Toggle light/dark mode",
             Self::Settings => "Application: Settings",
             Self::SourceMode => "View: Source mode",
@@ -167,6 +170,7 @@ impl Command {
             Self::MoveLineUp => "Move the current or selected lines up",
             Self::MoveLineDown => "Move the current or selected lines down",
             Self::EditLink => "Insert a link or edit the selected link",
+            Self::SortFiles => "Choose the active notebook file order",
             Self::ToggleTheme => "Switch between your Light and Dark themes",
             Self::Settings => "Open application and notebook preferences",
             Self::SourceMode => "Show editable Markdown source",
@@ -225,6 +229,7 @@ impl Command {
             return Some("Open an editable document in Source or Live preview");
         }
         match self {
+            Self::SortFiles if !context.has_notebook => Some("Open a notebook to sort files"),
             Self::Save if !context.can_save() => Some("Open a document to save"),
             Self::ToggleSidebar | Self::ShowExplorer if !context.has_notebook => {
                 Some("Open a notebook to use the sidebar")

@@ -1327,3 +1327,199 @@ fn explorer_actions_recheck_modal_and_write_guards(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
 }
+
+#[gpui::test]
+fn sort_palette_searches_applies_persists_and_preserves_document(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    let persistence = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    fs::write(directory.path().join("a.md"), "a").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .set_test_persistence_target(persistence.path().join("test-index.json"));
+            this.test_refresh_tree(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    let identity = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.editor.select(0..8, window, cx);
+            this.editor.replace_selection("draft text", window, cx);
+            this.editor.select(6..10, window, cx);
+            (
+                this.tabs.active.id,
+                this.editor.id(),
+                this.document().unwrap().path.clone(),
+            )
+        })
+    });
+    for (sort, label) in notebook::FileSort::OPTIONS {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.command_palette(window, cx);
+                let palette = this.palette.as_mut().unwrap();
+                palette.model.filter(Command::SortFiles.label());
+                this.activate_palette(window, cx);
+                let palette = this.palette.as_mut().unwrap();
+                assert_eq!(palette.mode, super::PaletteMode::Sort);
+                assert_eq!(palette.model.results().len(), 6);
+                assert_eq!(
+                    palette
+                        .model
+                        .results()
+                        .iter()
+                        .filter(|entry| matches!(
+                            entry,
+                            PaletteEntry::FileSort { active: true, .. }
+                        ))
+                        .count(),
+                    1
+                );
+                assert!(matches!(
+                    palette.model.selected_entry(),
+                    Some(PaletteEntry::FileSort { active: true, .. })
+                ));
+                palette
+                    .query
+                    .update(cx, |query, cx| query.set_value(label, window, cx));
+            })
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert!(this.palette.is_none());
+            assert_eq!(
+                this.notebooks.active.as_ref().unwrap().settings.file_sort,
+                sort
+            );
+            assert_eq!(this.tabs.active.id, identity.0);
+            assert_eq!(this.editor.id(), identity.1);
+            assert_eq!(this.document().unwrap().path, identity.2);
+            assert_eq!(this.editor.text(cx).as_ref(), "draft text");
+            assert_eq!(this.editor.selection(cx), 6..10);
+            assert!(this.editor.is_focused(window, cx));
+        });
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.run_command(Command::SortFiles, window, cx);
+            this.palette
+                .as_mut()
+                .unwrap()
+                .model
+                .filter("File name (Z to A)");
+            // Refresh does not invalidate a preference choice for the same notebook.
+            this.test_refresh_tree(window, cx);
+            this.activate_palette(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            let rows = this.notebooks.test_explorer().rows();
+            assert_eq!(rows.first().unwrap().path, Path::new("note.md"));
+            assert_eq!(rows.last().unwrap().path, Path::new("a.md"));
+        })
+    });
+    assert_eq!(
+        notebook::Notebook::open(directory.path(), false)
+            .unwrap()
+            .settings
+            .file_sort,
+        notebook::FileSort::NameDescending
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.run_command(Command::SortFiles, window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).palette.as_ref().unwrap().mode,
+            super::PaletteMode::Commands
+        )
+    });
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.palette.is_none());
+        assert!(this.editor.is_focused(window, cx));
+    });
+}
+
+#[gpui::test]
+fn sort_palette_rejects_stale_notebooks_and_modal_busy_state(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "original").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.run_command(Command::SortFiles, window, cx);
+            this.palette
+                .as_mut()
+                .unwrap()
+                .model
+                .filter("File name (Z to A)");
+            this.notebooks.active = Some(notebook::Notebook::open(other.path(), false).unwrap());
+            this.activate_palette(window, cx);
+            assert_eq!(
+                this.notebooks.active.as_ref().unwrap().settings.file_sort,
+                notebook::FileSort::NameAscending
+            );
+            this.run_command(Command::SortFiles, window, cx);
+            this.notebooks.active = None;
+            this.activate_palette(window, cx);
+            assert!(this.palette.is_none());
+            assert!(this.command_unavailable(Command::SortFiles).is_some());
+            this.run_command(Command::SortFiles, window, cx);
+            assert!(this.palette.is_none());
+            this.notebooks.active =
+                Some(notebook::Notebook::open(directory.path(), false).unwrap());
+            let appearance = this.appearance();
+            this.open_help(false, window, cx);
+            this.run_command(Command::SortFiles, window, cx);
+            this.toggle_theme(window, cx);
+            assert!(this.palette.is_none());
+            assert_eq!(this.appearance(), appearance);
+            window.close_dialog(cx);
+            this.editor.replace_selection("draft", window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.request(
+                crate::Next::File(directory.path().join("next.md")),
+                window,
+                cx,
+            );
+        })
+    });
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let appearance = this.appearance();
+            this.run_command(Command::SortFiles, window, cx);
+            this.set_file_sort(notebook::FileSort::NameDescending, window, cx);
+            this.toggle_theme(window, cx);
+            assert!(this.palette.is_none());
+            assert_eq!(
+                this.notebooks.active.as_ref().unwrap().settings.file_sort,
+                notebook::FileSort::NameAscending
+            );
+            assert_eq!(this.appearance(), appearance);
+        })
+    });
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+}

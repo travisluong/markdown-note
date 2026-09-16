@@ -13,7 +13,7 @@ use gpui_component::{
     ActiveTheme, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::Search,
-    menu::PopupMenu,
+    menu::{PopupMenu, PopupMenuItem},
 };
 use gpui_component::{Icon, IconName};
 use std::{cell::RefCell, rc::Rc};
@@ -94,6 +94,14 @@ impl Notes {
                 busy || self.notebooks.active.is_none(),
             )
             .menu_with_disabled("Command palette…", Box::new(CommandPalette), busy)
+            .separator()
+            .item(
+                PopupMenuItem::new("Toggle light/dark mode")
+                    .disabled(busy)
+                    .on_click(move |_, window, cx| {
+                        let _ = owner.update(cx, |this, cx| this.toggle_theme(window, cx));
+                    }),
+            )
         } else if kind == MenuKind::Search {
             use mithril::commands::Command;
             menu.menu_with_disabled(

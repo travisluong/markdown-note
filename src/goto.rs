@@ -27,6 +27,7 @@ enum PaletteMode {
     Commands,
     Files,
     Notebooks,
+    Sort,
 }
 
 pub(super) struct Palette {
@@ -38,6 +39,7 @@ pub(super) struct Palette {
     status: Option<String>,
     focus: Option<FocusHandle>,
     entry_target: Option<EntryTarget>,
+    sort_root: Option<std::path::PathBuf>,
 }
 
 fn selected_entry_command(command: Command) -> Option<EntryAction> {
@@ -101,6 +103,7 @@ impl Notes {
             PaletteMode::Commands => "Search commands",
             PaletteMode::Files => "Search files and folders",
             PaletteMode::Notebooks => "Search notebooks",
+            PaletteMode::Sort => "Search sort orders",
         };
         let query = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
         let subscription = cx.subscribe(&query, |this, _, event: &InputEvent, cx| {
@@ -111,15 +114,25 @@ impl Notes {
                 cx.notify();
             }
         });
+        let mut model = PaletteModel::new(entries);
+        if mode == PaletteMode::Sort
+            && let Some(index) = model
+                .results()
+                .iter()
+                .position(|entry| matches!(entry, PaletteEntry::FileSort { active: true, .. }))
+        {
+            model.select(index);
+        }
         self.palette = Some(Palette {
             mode,
             query: query.clone(),
             _subscription: subscription,
-            model: PaletteModel::new(entries),
+            model,
             scroll: UniformListScrollHandle::new(),
             status,
             focus: window.focused(cx),
             entry_target: self.selected_entry_target(),
+            sort_root: self.notebooks.active.as_ref().map(|book| book.root.clone()),
         });
         let owner = cx.weak_entity();
         window.open_dialog(cx, move |dialog, window, cx| {
@@ -205,9 +218,20 @@ impl Notes {
             return;
         }
         let entry_target = self.palette.as_ref().and_then(|p| p.entry_target.clone());
+        let sort_root = self.palette.as_ref().and_then(|p| p.sort_root.clone());
         window.close_dialog(cx);
         self.close_palette(window, cx);
         match entry {
+            PaletteEntry::FileSort { sort, .. } => {
+                if self
+                    .notebooks
+                    .active
+                    .as_ref()
+                    .is_some_and(|book| Some(&book.root) == sort_root.as_ref())
+                {
+                    self.set_file_sort(sort, window, cx);
+                }
+            }
             PaletteEntry::Command(command) if selected_entry_command(command).is_some() => {
                 if let Some(target) = entry_target {
                     self.run_selected_entry_action(
@@ -335,14 +359,21 @@ impl Notes {
                     .then(|| "No registered notebooks. Add one from Manage notebooks.".into());
                 self.open_palette(PaletteMode::Notebooks, entries, status, window, cx);
             }
-            Command::ToggleTheme => {
-                let mut appearance = self.appearance();
-                appearance.theme = Some(match appearance.theme_choice(self.startup_dark) {
-                    notebook::ThemeChoice::Light => notebook::ThemeChoice::Dark,
-                    _ => notebook::ThemeChoice::Light,
-                });
-                self.update_appearance(appearance, window, cx);
+            Command::SortFiles => {
+                let Some(book) = &self.notebooks.active else {
+                    return;
+                };
+                let entries = notebook::FileSort::OPTIONS
+                    .into_iter()
+                    .map(|(sort, label)| PaletteEntry::FileSort {
+                        sort,
+                        label,
+                        active: sort == book.settings.file_sort,
+                    })
+                    .collect();
+                self.open_palette(PaletteMode::Sort, entries, None, window, cx);
             }
+            Command::ToggleTheme => self.toggle_theme(window, cx),
         }
     }
 
@@ -404,10 +435,9 @@ impl Notes {
             )
             .capture_action(
                 cx.listener(|this, _: &gpui_component::input::Escape, window, cx| {
-                    let back = this
-                        .palette
-                        .as_ref()
-                        .is_some_and(|p| p.mode == PaletteMode::Notebooks);
+                    let back = this.palette.as_ref().is_some_and(|p| {
+                        matches!(p.mode, PaletteMode::Notebooks | PaletteMode::Sort)
+                    });
                     window.close_dialog(cx);
                     this.close_palette(window, cx);
                     if back {
@@ -425,6 +455,7 @@ impl Notes {
                         PaletteMode::Commands => "No matching commands",
                         PaletteMode::Files => "No matching files or folders",
                         PaletteMode::Notebooks => "No matching notebooks",
+                        PaletteMode::Sort => "No matching sort orders",
                     })
                     .into_any_element()
             } else {
@@ -490,6 +521,7 @@ impl Notes {
                 PaletteMode::Commands => "Command palette",
                 PaletteMode::Files => "Go to",
                 PaletteMode::Notebooks => "Change notebook",
+                PaletteMode::Sort => "Sort files",
             })
             .w(px(560.).min(window.viewport_size().width - px(32.)))
             .on_close(move |_, window, cx| {
