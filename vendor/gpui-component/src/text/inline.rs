@@ -8,8 +8,8 @@ use std::{
 use gpui::{
     App, BorderStyle, Bounds, CursorStyle, Edges, Element, ElementId, GlobalElementId, Half,
     HighlightStyle, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, StyledText, TextLayout, Window,
-    point, px, quad,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, StyledText,
+    TextLayout, Window, point, px, quad,
 };
 
 use crate::{ActiveTheme, global_state::GlobalState, input::Selection, text::node::LinkMark};
@@ -449,6 +449,55 @@ impl Element for Inline {
         if let Some(selection) = &state.selection {
             Self::paint_selection(selection, &text_layout, &bounds, window, cx);
         }
+
+        #[cfg(feature = "editor-diagnostics")]
+        if let Some(owner) = GlobalState::global(cx).text_view_state().cloned() {
+            let line_height = window.line_height();
+            let positions = self
+                .links
+                .iter()
+                .flat_map(|(range, link)| {
+                    let last = self.text[range.clone()]
+                        .char_indices()
+                        .last()
+                        .map_or(range.start, |(i, _)| range.start + i);
+                    [range.start, last]
+                        .into_iter()
+                        .filter_map(|offset| {
+                            let position = text_layout.position_for_index(offset)?
+                                + point(px(2.), line_height * 0.5);
+                            Some((link.url.to_string(), position))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            owner.update(cx, |state, _| state.diagnostic_links.extend(positions));
+        }
+
+        // Right-click resolves the painted text independently of the selection.
+        window.on_mouse_event({
+            let owner = GlobalState::global(cx).text_view_state().cloned();
+            let links = self.links.clone();
+            let text_layout = text_layout.clone();
+            let hitbox = hitbox.clone();
+            move |event: &MouseDownEvent, phase, window, cx| {
+                if event.button != gpui::MouseButton::Right
+                    || !phase.bubble()
+                    || !hitbox.is_hovered(window)
+                {
+                    return;
+                }
+                if let (Some(owner), Some(link)) = (
+                    &owner,
+                    Self::link_for_position(&text_layout, &links, event.position),
+                ) {
+                    owner.update(cx, |state, cx| {
+                        state.open_link_menu(link.url, event.position, window, cx)
+                    });
+                    cx.stop_propagation();
+                }
+            }
+        });
 
         // mouse move, update hovered link
         window.on_mouse_event({

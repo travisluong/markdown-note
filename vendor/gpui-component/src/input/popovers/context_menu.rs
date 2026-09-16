@@ -1,14 +1,14 @@
 use gpui::{
-    App, AppContext as _, Context, Corner, DismissEvent, Entity, IntoElement, MouseDownEvent,
-    ParentElement as _, Pixels, Point, Render, Styled, Subscription, Window, anchored, deferred,
-    div, prelude::FluentBuilder as _, px,
+    App, AppContext as _, ClipboardItem, Context, Corner, DismissEvent, Entity, IntoElement,
+    MouseDownEvent, ParentElement as _, Pixels, Point, Render, Styled, Subscription, Window,
+    anchored, deferred, div, prelude::FluentBuilder as _, px,
 };
 use rust_i18n::t;
 
 use crate::{
     ActiveTheme as _,
     input::{self, InputState, popovers::ContextMenu},
-    menu::PopupMenu,
+    menu::{PopupMenu, PopupMenuItem},
 };
 
 /// Context menu for mouse right clicks.
@@ -29,8 +29,14 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Show Mouse context menu
-        if !self.selected_range.contains(offset) {
+        // Resolve the painted link before caret movement can reveal its source.
+        let destination = self
+            .live_preview
+            .then(|| self.link_at_position(event.position))
+            .flatten();
+        if destination.is_some() {
+            self.selecting = false;
+        } else if !self.selected_range.contains(offset) {
             self.move_to(offset, None, cx);
         }
 
@@ -58,6 +64,15 @@ impl InputState {
             this.mouse_position = event.position;
             this.menu.update(cx, |menu, cx| {
                 let mut new_menu = PopupMenu::new(cx)
+                    .when_some(destination, |mut menu, destination| {
+                        menu.menu_items
+                            .push(PopupMenuItem::new("Copy link").on_click(move |_, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    destination.clone(),
+                                ));
+                            }));
+                        menu.separator()
+                    })
                     .when(is_code_editor, |m| {
                         m.menu_with_enable(
                             t!("Input.Go to Definition"),
@@ -82,7 +97,6 @@ impl InputState {
                     .menu(t!("Input.Select All"), Box::new(input::SelectAll));
 
                 if let Some((row, _, columns, revision)) = table_target {
-                    use crate::menu::PopupMenuItem;
                     use input::table::{Alignment, Command};
                     new_menu.menu_items.push(PopupMenuItem::separator());
                     for (label, command, enabled) in [
@@ -110,18 +124,27 @@ impl InputState {
                     }
                 }
 
-                menu.menu_items = new_menu.menu_items;
-                menu.action_context = Some(action_context);
+                new_menu.focus_handle = menu.focus_handle.clone();
+                *menu = new_menu.small().action_context(action_context);
+                menu.focus_handle.focus(window);
                 cx.notify();
             });
             this.open = true;
 
             cx.notify();
         });
+        // Keep the input's default mouse-down focus handler from taking focus back.
+        window.prevent_default();
+        cx.stop_propagation();
+        cx.notify();
     }
 }
 
 impl MouseContextMenu {
+    #[cfg(feature = "editor-diagnostics")]
+    pub(crate) fn diagnostic_menu(&self) -> Option<Entity<PopupMenu>> {
+        self.open.then(|| self.menu.clone())
+    }
     pub(crate) fn new(
         editor: Entity<InputState>,
         window: &mut Window,

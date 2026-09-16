@@ -279,6 +279,19 @@ or joined lines without copying/parsing document text. The delayed-newline and
 exact-context regressions are in tests/editor.rs; tests/horizontal_rules.rs also
 exercises repeated Enter through the real action in TestPlatform.
 
+### Link context menus (2026-09-14)
+
+`src/input/popovers/context_menu.rs` adds Copy link before the existing editor
+and table actions, captures the pre-selection painted destination and resets
+menu navigation on each opening. `src/input/state.rs` adds feature-gated layout
+and menu probes. `src/text/inline.rs` uses exact painted text hits for right-click;
+`src/text/node.rs` routes linked-image presses through a weak Reading owner.
+`src/text/text_view.rs` owns the popup, dismissal subscription and selection
+preservation. Reconcile source snapshot ownership, focus restoration, stale Live
+layout rejection and captured clipboard values during upgrades. No new vendor
+files are added. `tests/link_context_menu.rs` exercises actual headless pointer,
+menu and clipboard paths, including Unicode, wrapped/table/reference links,
+linked images, selection, menu dismissal and pending Reading parses.
 
 ## Shared document views
 

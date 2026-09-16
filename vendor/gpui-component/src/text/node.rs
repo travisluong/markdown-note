@@ -425,6 +425,7 @@ pub(crate) struct NodeContext {
     pub(crate) highlights: Option<super::SourceHighlights>,
     pub(crate) reveal: Option<super::source_highlights::RevealTarget>,
     pub(crate) link_open: Option<Arc<super::text_view::LinkOpenFn>>,
+    pub(crate) link_menu_owner: Option<gpui::WeakEntity<super::text_view::TextViewState>>,
     pub(crate) task_toggle: Option<Arc<super::text_view::TaskToggleFn>>,
     pub(crate) source: SharedString,
     pub(crate) link_refs: HashMap<SharedString, LinkMark>,
@@ -686,7 +687,22 @@ impl Paragraph {
                         let title = image.title();
                         let callback = node_cx.link_open.clone();
                         let source = node_cx.source.clone();
+                        let menu_owner = node_cx.link_menu_owner.clone();
+                        let destination = link.url.clone();
                         this.cursor_pointer()
+                            .on_mouse_down(gpui::MouseButton::Right, move |event, window, cx| {
+                                if let Some(owner) = &menu_owner {
+                                    let _ = owner.update(cx, |state, cx| {
+                                        state.open_link_menu(
+                                            destination.clone(),
+                                            event.position,
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                    cx.stop_propagation();
+                                }
+                            })
                             .tooltip(move |window, cx| {
                                 Tooltip::new(title.clone()).build(window, cx)
                             })
@@ -1537,4 +1553,3 @@ impl CodeBlock {
         );
     }
 }
-

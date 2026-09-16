@@ -1613,6 +1613,95 @@ impl InputState {
         Some(link.destination.clone())
     }
 
+    /// Painted link endpoints for headless pointer tests.
+    #[cfg(feature = "editor-diagnostics")]
+    #[doc(hidden)]
+    pub fn diagnostic_link_positions(&self) -> Vec<(String, Point<Pixels>)> {
+        let Some(layout) = &self.last_layout else {
+            return Vec::new();
+        };
+        let Some(bounds) = self.last_bounds else {
+            return Vec::new();
+        };
+        self.text_wrapper
+            .links
+            .in_range(0..self.text.len())
+            .iter()
+            .flat_map(|link| {
+                [
+                    link.label.start,
+                    link.label.start
+                        + self
+                            .text
+                            .slice(link.label.clone())
+                            .to_string()
+                            .char_indices()
+                            .last()
+                            .map_or(0, |(i, _)| i),
+                ]
+                .into_iter()
+                .filter_map(|offset| {
+                    let row = self.text.offset_to_point(offset).row;
+                    let line = layout.line(row)?;
+                    let local = line.position_for_index(
+                        offset - self.text.line_start_offset(row),
+                        layout.line_height,
+                    )?;
+                    let position = bounds.origin
+                        + point(
+                            layout.line_number_width,
+                            self.text_wrapper.lines.prefix(row) * layout.line_height,
+                        )
+                        + local
+                        + point(px(2.), layout.line_height * 0.5);
+                    (self.link_at_position(position).as_ref() == Some(&link.destination))
+                        .then(|| (link.destination.clone(), position))
+                })
+                .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "editor-diagnostics")]
+    #[doc(hidden)]
+    pub fn diagnostic_mouse_menu(&self, cx: &App) -> Option<Entity<crate::menu::PopupMenu>> {
+        self.mouse_context_menu
+            .read(cx)
+            .diagnostic_menu()
+            .filter(|_| self.context_menu.is_some())
+    }
+
+    #[cfg(feature = "editor-diagnostics")]
+    #[doc(hidden)]
+    pub fn diagnostic_mouse_menu_has_copy_link(&self, cx: &App) -> bool {
+        self.diagnostic_mouse_menu(cx).is_some_and(|menu| {
+            menu.read(cx).menu_items.iter().any(|item| {
+                matches!(item,
+                crate::menu::PopupMenuItem::Item { label, .. } if label == "Copy link")
+            })
+        })
+    }
+
+    #[cfg(feature = "editor-diagnostics")]
+    #[doc(hidden)]
+    pub fn diagnostic_stale_link_menu(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.link_layout_text = None;
+        self.on_mouse_down(
+            &MouseDownEvent {
+                position,
+                button: MouseButton::Right,
+                click_count: 1,
+                ..Default::default()
+            },
+            window,
+            cx,
+        );
+    }
     /// Headless coverage of the production layout hit and mouse-down event path.
     #[cfg(feature = "editor-diagnostics")]
     #[doc(hidden)]

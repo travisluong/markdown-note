@@ -476,6 +476,15 @@ syntax changes painting only, keeping wrapped height and downstream positions
 stable. Source mode and the Reading divider renderer retain their behavior.
 Headless coverage lives in tests/horizontal_rules.rs and tests/editor.rs.
 
+Live-preview link menus belong to InputState's MouseContextMenu; Reading link
+menus belong to TextViewState. Both capture the painted link's parsed destination
+on right-click and copy it verbatim as plain text, preserving relative paths,
+fragments, source and selection. Reading includes linked images and retained
+parse trees. Live uses the existing exact-layout link guard before caret movement;
+Source keeps its ordinary editor menu. PopupMenu owns keyboard/pointer dismissal
+and focus restoration. No link parsing or app-level navigation runs for copying.
+Headless pointer/menu/clipboard coverage lives in tests/link_context_menu.rs.
+
 Live-preview strikethrough ranges come from the shared worker GFM tree via
 input/strikethrough.rs. TextWrapper accepts exact revisions and clears ranges
 on edits and mode/document resets. Presentation hides tilde delimiters outside

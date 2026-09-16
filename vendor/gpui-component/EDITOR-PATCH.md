@@ -441,6 +441,17 @@ existing divider renderer is unchanged. tests/horizontal_rules.rs exercises
 headless reveal, geometry, clicking, themes, modes and undo/redo; tests/editor.rs
 covers GFM contexts, single-parse accounting and stale-result rejection.
 
+Live and Reading links offer Copy link on right-click. InputState resolves the
+painted destination before caret movement, preserves selection, and prepends the
+item to the existing editor/table menu. Reopening resets the menu's selection;
+explicit editor notification also renders menus when the caret does not move.
+TextViewState owns Reading's menu and dismissal subscription. Inline text and
+linked images supply destinations from the displayed parse, including retained
+content during a newer parse. Reading selection starts only on left-click and
+survives menu interaction. Both menus capture plain-text destinations, use
+PopupMenu keyboard/pointer dismissal and restore the originating view's focus.
+No production public API or new input-thread parse is introduced. Feature-gated
+layout/menu probes support tests/link_context_menu.rs on headless TestPlatform.
 
 ## Shared document views
 

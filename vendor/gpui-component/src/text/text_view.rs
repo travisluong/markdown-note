@@ -2,15 +2,17 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, App, Bounds, ClipboardItem, Context, Element, ElementId, Entity, EntityId,
-    FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyBinding,
-    LayoutId, ListState, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, RenderOnce, SharedString, Size, StyleRefinement, Styled, Task, Window, div, px,
+    AnyElement, App, Bounds, ClipboardItem, Context, Corner, DismissEvent, Element, ElementId,
+    Entity, EntityId, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement,
+    IntoElement, KeyBinding, LayoutId, ListState, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, RenderOnce, SharedString, Size, StyleRefinement, Styled,
+    Subscription, Task, Window, anchored, deferred, div, px,
 };
 
 #[cfg(feature = "editor-diagnostics")]
 use crate::ActiveTheme;
 use crate::highlighter::HighlightTheme;
+use crate::menu::{PopupMenu, PopupMenuItem};
 use crate::scroll::ScrollableElement;
 use crate::text::node::CodeBlock;
 use crate::{StyledExt, v_flex};
@@ -61,6 +63,7 @@ impl RenderOnce for TextViewElement {
                 content.node_cx.code_block_actions = self.code_block_actions.clone();
                 content.node_cx.image_document = self.image_document.clone();
                 content.node_cx.link_open = self.link_open.clone();
+                content.node_cx.link_menu_owner = Some(self.state.downgrade());
                 content.node_cx.task_toggle = self.task_toggle.clone();
                 content.node_cx.highlights = self.source_highlights.clone().filter(|search| {
                     search.matches_snapshot(&content.node_cx.source)
@@ -245,6 +248,34 @@ pub struct ReadingSnapshot {
 
 #[cfg(feature = "editor-diagnostics")]
 impl ReadingProbe {
+    pub fn link_positions(&self, cx: &App) -> Vec<(String, Point<Pixels>)> {
+        self.0.upgrade().unwrap().read(cx).diagnostic_links.clone()
+    }
+
+    pub fn link_menu(&self, cx: &App) -> Option<Entity<PopupMenu>> {
+        self.0
+            .upgrade()
+            .unwrap()
+            .read(cx)
+            .link_menu
+            .as_ref()
+            .map(|(_, menu)| menu.clone())
+    }
+
+    pub fn selection(&self, cx: &App) -> (Option<Point<Pixels>>, Option<Point<Pixels>>) {
+        self.0.upgrade().unwrap().read(cx).selection_positions
+    }
+
+    pub fn is_focused(&self, window: &Window, cx: &App) -> bool {
+        self.0
+            .upgrade()
+            .unwrap()
+            .read(cx)
+            .focus_handle
+            .as_ref()
+            .unwrap()
+            .is_focused(window)
+    }
     pub fn snapshot(&self, cx: &App) -> Option<ReadingSnapshot> {
         let entity = self.0.upgrade()?;
         let state = entity.read(cx);
@@ -317,6 +348,10 @@ impl ReadingProbe {
 }
 
 pub(crate) struct TextViewState {
+    #[cfg(feature = "editor-diagnostics")]
+    pub(super) diagnostic_links: Vec<(String, Point<Pixels>)>,
+    link_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>,
+    link_menu_subscription: Option<Subscription>,
     pub(super) source_snapshot: SharedString,
     pub(super) active_search: Option<super::SourceHighlights>,
     parent_entity: Option<EntityId>,
@@ -343,6 +378,10 @@ impl TextViewState {
         let focus_handle = cx.focus_handle();
         Self {
             parent_entity: None,
+            #[cfg(feature = "editor-diagnostics")]
+            diagnostic_links: Vec::new(),
+            link_menu: None,
+            link_menu_subscription: None,
             source_snapshot: SharedString::default(),
             active_search: None,
             latest_request: None,
@@ -363,6 +402,45 @@ impl TextViewState {
 }
 
 impl TextViewState {
+    pub(super) fn open_link_menu(
+        &mut self,
+        destination: SharedString,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let focus = self.focus_handle.clone().expect("Reading focus handle");
+        let menu = PopupMenu::build(window, cx, |mut menu, window, _| {
+            menu.menu_items
+                .push(PopupMenuItem::new("Copy link").on_click(move |_, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(destination.to_string()));
+                }));
+            menu.focus_handle.focus(window);
+            menu.action_context(focus).small()
+        });
+        self.link_menu_subscription =
+            Some(
+                cx.subscribe_in(&menu, window, |this, dismissed, _: &DismissEvent, _, cx| {
+                    if this
+                        .link_menu
+                        .as_ref()
+                        .is_some_and(|(_, menu)| menu == dismissed)
+                    {
+                        this.link_menu = None;
+                        this.link_menu_subscription = None;
+                        if let Some(parent) = this.parent_entity {
+                            App::notify(cx, parent);
+                        }
+                    }
+                }),
+            );
+        self.is_selecting = false;
+        self.link_menu = Some((position, menu));
+        if let Some(parent) = self.parent_entity {
+            App::notify(cx, parent);
+        }
+    }
+
     fn request_parse(&mut self, type_: TextViewType, text: SharedString, cx: &mut Context<Self>) {
         if self.latest_request.as_ref().is_some_and(|latest| {
             latest.type_ == type_
@@ -1023,6 +1101,21 @@ impl Element for TextView {
             })
             .refine_style(&self.style)
             .vertical_scrollbar(list_state)
+            .children(
+                self.state
+                    .read(cx)
+                    .link_menu
+                    .clone()
+                    .map(|(position, menu)| {
+                        deferred(
+                            anchored()
+                                .position(position)
+                                .anchor(Corner::TopLeft)
+                                .snap_to_window_with_margin(px(8.))
+                                .child(menu),
+                        )
+                    }),
+            )
             .into_any_element();
         let layout_id = el.request_layout(window, cx);
         (layout_id, el)
@@ -1056,6 +1149,8 @@ impl Element for TextView {
         self.state.update(cx, |state, _| {
             state.parent_entity = Some(entity_id);
             state.update_bounds(bounds);
+            #[cfg(feature = "editor-diagnostics")]
+            state.diagnostic_links.clear();
             state.is_selectable = is_selectable;
         });
 
@@ -1072,7 +1167,10 @@ impl Element for TextView {
             window.on_mouse_event({
                 let state = self.state.clone();
                 move |event: &MouseDownEvent, phase, _, cx| {
-                    if !bounds.contains(&event.position) || !phase.bubble() {
+                    if event.button != gpui::MouseButton::Left
+                        || !bounds.contains(&event.position)
+                        || !phase.bubble()
+                    {
                         return;
                     }
 
@@ -1120,7 +1218,7 @@ impl Element for TextView {
                 window.on_mouse_event({
                     let state = self.state.clone();
                     move |event: &MouseDownEvent, _, _, cx| {
-                        if bounds.contains(&event.position) {
+                        if bounds.contains(&event.position) || state.read(cx).link_menu.is_some() {
                             return;
                         }
 
