@@ -32,6 +32,7 @@ fn same_book_reload_preserves_choices_made_after_settings_were_read(cx: &mut Tes
             assert!(this.is_busy());
             this.set_mode(ViewMode::Reading, window, cx);
             this.save_sidebar_width(375., cx);
+            this.update_external_autosave(true, window, cx);
             this.update_autosave(
                 notebook::Autosave {
                     enabled: false,
@@ -66,6 +67,7 @@ fn same_book_reload_preserves_choices_made_after_settings_were_read(cx: &mut Tes
         .settings;
     assert_eq!(saved.view_mode, ViewMode::Reading);
     assert_eq!(saved.sidebar_width, 375.);
+    assert!(saved.autosave_external_files);
     assert_eq!(saved.autosave.delay_ms, 500);
     assert_eq!(saved.date_format, "MMMM Do, YYYY");
 }
@@ -76,6 +78,7 @@ fn reselecting_an_unchanged_value_is_an_intent_against_external_reload(cx: &mut 
     let mut external = notebook::Notebook::open(&fixture.root, false).unwrap();
     external.settings.view_mode = ViewMode::Reading;
     external.settings.sidebar_width = 420.;
+    external.settings.autosave_external_files = true;
     notebook::save_book(&external).unwrap();
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
@@ -96,6 +99,7 @@ fn reselecting_an_unchanged_value_is_an_intent_against_external_reload(cx: &mut 
             assert_eq!(this.mode, ViewMode::Source);
             this.set_mode(ViewMode::Source, window, cx);
             this.save_sidebar_width(280., cx);
+            this.update_external_autosave(false, window, cx);
         });
     });
     cx.executor().advance_clock(Duration::from_secs(2));
@@ -103,6 +107,7 @@ fn reselecting_an_unchanged_value_is_an_intent_against_external_reload(cx: &mut 
     cx.update(|_, cx| {
         let notes = notes.read(cx);
         assert_eq!(notes.mode, ViewMode::Source);
+        assert!(!notes.external_autosave_enabled());
         assert_eq!(
             notes
                 .notebooks
@@ -138,6 +143,7 @@ fn preferences_changed_on_a_do_not_replace_b_or_its_external_file(cx: &mut TestA
         notes.update(cx, |this, cx| {
             this.set_mode(ViewMode::Reading, window, cx);
             this.save_sidebar_width(375., cx);
+            this.update_external_autosave(true, window, cx);
         });
     });
     cx.executor().advance_clock(Duration::from_secs(2));
@@ -146,6 +152,7 @@ fn preferences_changed_on_a_do_not_replace_b_or_its_external_file(cx: &mut TestA
         let notes = notes.read(cx);
         assert_eq!(notes.notebooks.active.as_ref().unwrap().root, fixture.other);
         assert_eq!(notes.mode, ViewMode::Source);
+        assert!(!notes.external_autosave_enabled());
         assert_eq!(
             notes
                 .notebooks
@@ -163,6 +170,7 @@ fn preferences_changed_on_a_do_not_replace_b_or_its_external_file(cx: &mut TestA
         .settings;
     assert_eq!(first.view_mode, ViewMode::Reading);
     assert_eq!(first.sidebar_width, 375.);
+    assert!(first.autosave_external_files);
 }
 
 #[gpui::test]

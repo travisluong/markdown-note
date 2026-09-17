@@ -499,6 +499,8 @@ where
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
+    pub autosave_external_files: bool,
+    #[serde(default)]
     pub toolbar: ToolbarSettings,
     #[serde(default)]
     pub excluded_patterns: Vec<String>,
@@ -527,6 +529,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             toolbar: ToolbarSettings::default(),
+            autosave_external_files: false,
             excluded_patterns: Vec::new(),
             file_sort: FileSort::default(),
             show_file_extensions: default_show_file_extensions(),
@@ -588,8 +591,6 @@ pub fn normalize_sidebar_width(width: f32) -> f32 {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Index {
-    #[serde(default)]
-    pub autosave_external_files: bool,
     pub version: u32,
     pub notebooks: Vec<PathBuf>,
     pub active: Option<PathBuf>,
@@ -600,7 +601,6 @@ impl Default for Index {
         Self {
             version: VERSION,
             notebooks: Vec::new(),
-            autosave_external_files: false,
             active: None,
         }
     }

@@ -11,6 +11,7 @@ pub(crate) enum PreferenceIntent {
     ViewMode(ViewMode),
     SidebarWidth(f32),
     Autosave(notebook::Autosave),
+    ExternalAutosave(bool),
 }
 
 pub(super) struct ActivationPreferences {
@@ -19,6 +20,7 @@ pub(super) struct ActivationPreferences {
     view_mode: Option<ViewMode>,
     sidebar_width: Option<f32>,
     autosave: Option<notebook::Autosave>,
+    external_autosave: Option<bool>,
 }
 
 impl ActivationPreferences {
@@ -29,6 +31,7 @@ impl ActivationPreferences {
             view_mode: None,
             sidebar_width: None,
             autosave: None,
+            external_autosave: None,
         }
     }
 
@@ -50,6 +53,7 @@ impl ActivationPreferences {
             PreferenceIntent::ViewMode(mode) => self.view_mode = Some(mode),
             PreferenceIntent::SidebarWidth(width) => self.sidebar_width = Some(width),
             PreferenceIntent::Autosave(autosave) => self.autosave = Some(autosave),
+            PreferenceIntent::ExternalAutosave(enabled) => self.external_autosave = Some(enabled),
         }
     }
 
@@ -62,6 +66,9 @@ impl ActivationPreferences {
         }
         if let Some(width) = self.sidebar_width {
             book.settings.sidebar_width = width;
+        }
+        if let Some(enabled) = self.external_autosave {
+            book.settings.autosave_external_files = enabled;
         }
         if let Some(autosave) = self.autosave {
             book.settings.autosave = autosave;

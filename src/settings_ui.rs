@@ -211,6 +211,15 @@ impl Notes {
             appearance: self.appearance(),
             autosave: self.autosave_settings(),
             autosave_external_files: self.external_autosave_enabled(),
+            external_autosave_scope: self.notebooks.active.as_ref().map_or_else(
+                || "Applies only to this session while no notebook is open.".to_owned(),
+                |book| {
+                    format!(
+                        "Saved for {}. Applies while this notebook is active.",
+                        notebook::name(&book.root)
+                    )
+                },
+            ),
             has_autosave_notebook: self.autosave_root().is_some(),
             date_format: self.date_format().to_owned(),
             show_extensions: self.show_file_extensions(),
@@ -383,7 +392,7 @@ impl Notes {
         }
         let current = self.settings_scope();
         let same_scope = if matches!(intent, SettingsIntent::ExternalAutosaveEnabled(_)) {
-            true // App-wide preference; dialog identity/lifetime still apply.
+            open.scope.preferences == current.preferences
         } else if intent.is_autosave() {
             open.scope.autosave == current.autosave
         } else {

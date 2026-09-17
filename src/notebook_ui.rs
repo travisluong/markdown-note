@@ -1300,12 +1300,25 @@ impl Notes {
     }
 
     pub(crate) fn external_autosave_enabled(&self) -> bool {
-        self.notebooks.index.autosave_external_files
+        self.notebooks
+            .active
+            .as_ref()
+            .map_or(self.session_autosave.enabled, |book| {
+                book.settings.autosave_external_files
+            })
     }
 
     pub(crate) fn set_external_autosave_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        self.notebooks.index.autosave_external_files = enabled;
-        self.persist_notebooks(cx);
+        if self.notebooks.active.is_some() {
+            self.record_activation_preference(PreferenceIntent::ExternalAutosave(enabled));
+            let book = self.notebooks.active.as_mut().unwrap();
+            if book.settings.autosave_external_files != enabled {
+                book.settings.autosave_external_files = enabled;
+                self.persist_notebooks(cx);
+            }
+        } else {
+            self.session_autosave.enabled = enabled;
+        }
     }
     fn pump_settings_writer(&mut self, cx: &mut Context<Self>) {
         let Some(mut job) = self

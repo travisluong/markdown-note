@@ -127,8 +127,9 @@ Canonical loaded notebooks are cached at application level. Each tab retains its
 owning notebook's autosave scope (the longest containing loaded root); preference
 changes persist that notebook and reschedule its tabs even when another sidebar
 notebook is active. Effective autosave for files outside the current notebook is
-controlled independently by the app-wide `Index::autosave_external_files` flag,
-which defaults to false for both new and legacy indexes. This uses the same path
+controlled independently by the active notebook's `Settings::autosave_external_files`
+flag, which defaults to false for new and existing notebooks. Without an active
+notebook it uses a session-only flag, also off by default. This uses the same path
 membership rule as the External file badge, including retained tabs from another
 notebook and files opened without a notebook. Delays retain their owning notebook
 or session scope. General Settings exposes this separate switch and identifies
@@ -186,7 +187,7 @@ These are the invariants most likely to matter when changing a feature:
 
 Preference scope is intentional. Appearance, date, sidebar and toolbar choices use the
 active notebook whenever one exists, otherwise session defaults. Autosave for a
-standalone file outside that notebook uses the app-wide external-file enable flag and session delay. Same-book reloads
+standalone file outside that notebook uses the active notebook's external-file enable flag and session delay (both session-only when no notebook is open). Same-book reloads
 replay only explicit mode, width and notebook-autosave choices made during the
 operation, including unchanged re-selection; untouched loaded settings survive.
 Removing an inactive notebook is an index edit and does not navigate or save the
@@ -632,11 +633,16 @@ file through Open keeps it an ordinary notebook file, and switching notebooks or
 moving a file recomputes the indicator without persisted state.
 External autosave changes travel through SettingsPanel's typed
 `ExternalAutosaveEnabled` intent, retaining dialog identity/lifetime and busy-phase
-autosave guards. NotebookState owns the saved flag in the existing per-user index,
-and the ordinary ordered preference writer and close-flush barrier persist it.
+autosave guards. Its scope follows the active notebook, even when the selected file
+is outside that notebook or belongs to another retained notebook. NotebookState
+saves the flag in that notebook's `.mithril/settings.json` through the ordinary
+ordered preference writer and close-flush barrier; the per-user index no longer
+stores it. An old index-wide flag is ignored rather than copied into notebooks.
+Same-notebook activation replays explicit choices, including unchanged re-selection;
+choices during a switch cannot change the destination notebook's setting.
 `autosave.rs` distinguishes scoped editable preferences from effective per-tab
-policy: the external flag overrides enabled state for external paths without
-changing notebook settings. Toggling it reschedules all retained documents;
+policy: the external flag overrides enabled state for external paths while the
+ordinary notebook autosave preference remains separate. Toggling it reschedules all retained documents;
 notebook installation also recomputes effective policy, cancelling newly external
 files' pending timers when disabled. Already captured writes finish normally.
 Manual Save and unsaved-change prompts retain their existing behavior.

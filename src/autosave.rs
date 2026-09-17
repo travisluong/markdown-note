@@ -103,7 +103,7 @@ impl Notes {
                 }
             }
         } else {
-            self.session_autosave = settings;
+            self.session_autosave.delay_ms = settings.delay_ms;
             self.set_external_autosave_enabled(settings.enabled, cx);
         }
         for id in self.tabs.ids() {
@@ -118,10 +118,11 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.external_autosave_enabled() == enabled {
+        let changed = self.external_autosave_enabled() != enabled;
+        self.set_external_autosave_enabled(enabled, cx);
+        if !changed {
             return;
         }
-        self.set_external_autosave_enabled(enabled, cx);
         for id in self.tabs.ids() {
             self.schedule_tab_autosave(id, window, cx);
         }

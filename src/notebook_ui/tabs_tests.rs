@@ -1642,8 +1642,9 @@ fn external_autosave_opt_in_persists_and_cancels_pending_writes(cx: &mut TestApp
         assert_eq!(fs::read_to_string(path).unwrap(), "external edit");
     }
     assert!(
-        notebook::load_index(&fixture.index)
+        notebook::Notebook::open(&fixture.root, false)
             .unwrap()
+            .settings
             .autosave_external_files
     );
     cx.update(|window, cx| {
@@ -1675,8 +1676,9 @@ fn external_autosave_opt_in_persists_and_cancels_pending_writes(cx: &mut TestApp
     cx.run_until_parked();
     assert_eq!(fs::read_to_string(&paths[1]).unwrap(), "external edit");
     assert!(
-        !notebook::load_index(&fixture.index)
+        !notebook::Notebook::open(&fixture.root, false)
             .unwrap()
+            .settings
             .autosave_external_files
     );
     cx.update(|window, cx| notes.update(cx, |this, cx| this.save(Next::Nothing, window, cx)));
@@ -1745,4 +1747,107 @@ fn notebook_switch_cancels_autosave_for_newly_external_tabs(cx: &mut TestAppCont
         fs::read_to_string(&fixture.note).unwrap(),
         "pending original A"
     );
+}
+
+#[gpui::test]
+fn external_autosave_notebook_preferences_are_independent_across_switches(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let external = fixture.root.parent().unwrap().join("external.txt");
+    fs::write(&external, "original").unwrap();
+    let id = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.install_document(Some(Document::open(external.clone()).unwrap()), window, cx);
+            this.update_external_autosave(true, window, cx);
+            // Editing the external delay must not copy this notebook's enable flag into session defaults.
+            this.update_autosave(
+                notebook::Autosave {
+                    enabled: true,
+                    delay_ms: 100,
+                },
+                window,
+                cx,
+            );
+            assert!(!this.session_autosave.enabled);
+            let id = this.tabs.active.id;
+            this.request(
+                Next::Notebook {
+                    path: fixture.other.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            );
+            id
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(!this.external_autosave_enabled());
+            this.select_tab(id, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.editor.select(0..8, window, cx);
+            this.editor.replace_selection("edited under B", window, cx);
+            assert_eq!(this.editor.text(cx).as_ref(), "edited under B");
+        })
+    });
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert_eq!(fs::read_to_string(&external).unwrap(), "original");
+    assert!(
+        notebook::Notebook::open(&fixture.root, false)
+            .unwrap()
+            .settings
+            .autosave_external_files
+    );
+    assert!(
+        !notebook::Notebook::open(&fixture.other, false)
+            .unwrap()
+            .settings
+            .autosave_external_files
+    );
+    assert!(
+        !fs::read_to_string(&fixture.index)
+            .unwrap()
+            .contains("autosave_external_files")
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.request(
+                Next::Notebook {
+                    path: fixture.root.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            );
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(this.external_autosave_enabled());
+        assert!(this.tab_autosave_settings(id).enabled);
+        assert_eq!(
+            this.tabs.get(id).unwrap().editor.text(cx).as_ref(),
+            "edited under B"
+        );
+        assert!(
+            this.save_state(id).timer.is_some(),
+            "timer missing: error={:?}, dirty={}, blocked={}, ticket={:?}",
+            this.save_state(id).error,
+            this.tabs.get(id).unwrap().observed(cx).dirty,
+            this.document_write_blocked(id),
+            this.tabs.get(id).unwrap().session.autosave()
+        );
+    });
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert_eq!(fs::read_to_string(&external).unwrap(), "edited under B");
 }

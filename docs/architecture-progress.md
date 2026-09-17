@@ -2035,3 +2035,26 @@ harnesses explicitly opt in to retain their lifecycle coverage. The full integra
 command was attempted but could not replace the running application's locked
 `target/debug/mithril.exe`. No native application or desktop interaction was used.
 Unrelated Cargo.lock changes remain untouched.
+## Notebook-scoped external autosave (2026-09-17)
+
+Supersedes the app-wide scope described above. `autosave_external_files` now belongs
+to notebook Settings and defaults to false when absent. The active notebook's flag
+controls external tabs, regardless of their retained owning notebook. Switching
+notebooks recomputes their effective policy; a notebook's choice is never copied
+into another notebook or into standalone session defaults. With no notebook open,
+the toggle is session-only and defaults to off. The previous index-wide flag is
+ignored on read and omitted on subsequent index writes.
+
+Settings identifies the active notebook beside the toggle and rejects intents from
+a dialog captured for another notebook. Explicit changes during same-notebook
+activation, including unchanged re-selection, replay onto that notebook only.
+Notebook persistence uses the existing writer and flush contract.
+
+Verification passed 367 library/application tests (92 + 275), check, formatting,
+and strict all-targets Clippy. Coverage includes independent persisted notebook
+values, actual external-file autosave after switching back to the enabled notebook,
+no session-default leakage, legacy/default schema behavior, stale form rejection,
+and preference replay during same/different notebook activation. The full test
+command was attempted but could not replace the running application's locked
+`target/debug/mithril.exe`. No desktop interaction occurred. Unrelated Cargo.lock
+changes remain untouched.

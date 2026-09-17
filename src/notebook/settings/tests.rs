@@ -74,23 +74,39 @@ fn centered_editor_defaults_round_trip_and_width_validation() {
 }
 
 #[test]
-fn external_autosave_defaults_off_in_new_and_legacy_indexes_and_round_trips() {
+fn external_autosave_defaults_off_per_notebook_and_ignores_former_global_flag() {
     use super::Index;
-    assert!(!Index::default().autosave_external_files);
-    let legacy: Index =
-        serde_json::from_str(r#"{"version":1,"notebooks":[],"active":null}"#).unwrap();
-    assert!(!legacy.autosave_external_files);
+    assert!(!Settings::default().autosave_external_files);
+    let mut legacy = serde_json::to_value(Settings::default()).unwrap();
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("autosave_external_files");
+    assert!(
+        !serde_json::from_value::<Settings>(legacy)
+            .unwrap()
+            .autosave_external_files
+    );
     for enabled in [false, true] {
-        let index = Index {
+        let settings = Settings {
             autosave_external_files: enabled,
-            ..Index::default()
+            ..Settings::default()
         };
-        let encoded = serde_json::to_string(&index).unwrap();
+        let encoded = serde_json::to_string(&settings).unwrap();
         assert_eq!(
-            serde_json::from_str::<Index>(&encoded)
+            serde_json::from_str::<Settings>(&encoded)
                 .unwrap()
                 .autosave_external_files,
             enabled
         );
     }
+    let index: Index = serde_json::from_str(
+        r#"{"version":1,"notebooks":[],"active":null,"autosave_external_files":true}"#,
+    )
+    .unwrap();
+    assert!(
+        !serde_json::to_string(&index)
+            .unwrap()
+            .contains("autosave_external_files")
+    );
 }

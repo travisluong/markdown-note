@@ -76,6 +76,7 @@ pub(super) struct SettingsValues {
     pub appearance: notebook::Appearance,
     pub autosave: notebook::Autosave,
     pub autosave_external_files: bool,
+    pub external_autosave_scope: String,
     pub has_autosave_notebook: bool,
     pub date_format: String,
     pub show_extensions: bool,

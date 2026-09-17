@@ -2643,3 +2643,52 @@ fn external_autosave_setting_applies_with_and_without_a_notebook(cx: &mut TestAp
         cx.update(|_, cx| assert!(!notes.read(cx).external_autosave_enabled()));
     }
 }
+
+#[gpui::test]
+fn external_autosave_form_rejects_a_changed_notebook_scope(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    let form = panel(&notes, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(
+                form.read(cx)
+                    .values
+                    .external_autosave_scope
+                    .contains("Saved for A")
+            );
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::ExternalAutosaveEnabled(true),
+                window,
+                cx,
+            );
+            assert!(!this.external_autosave_enabled());
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let next = panel(&notes, cx);
+    cx.update(|_, cx| {
+        assert!(
+            next.read(cx)
+                .values
+                .external_autosave_scope
+                .contains("Saved for B")
+        )
+    });
+    intent(&next, SettingsIntent::ExternalAutosaveEnabled(true), cx);
+    cx.update(|_, cx| {
+        assert!(
+            notes
+                .read(cx)
+                .notebooks
+                .active
+                .as_ref()
+                .unwrap()
+                .settings
+                .autosave_external_files
+        );
+        assert!(!notes.read(cx).session_autosave.enabled);
+    });
+}
