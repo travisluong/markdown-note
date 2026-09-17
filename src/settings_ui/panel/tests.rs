@@ -2610,3 +2610,36 @@ fn centered_editor_scrollbars_and_gutter_wheel_use_full_viewport(cx: &mut TestAp
         }
     }
 }
+
+#[gpui::test]
+fn external_autosave_setting_applies_with_and_without_a_notebook(cx: &mut TestAppContext) {
+    for active in [false, true] {
+        let (fixture, notes, cx) = fixture(cx, active, true);
+        let form = panel(&notes, cx);
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                assert!(!this.external_autosave_enabled());
+                assert!(!form.read(cx).values.autosave_external_files);
+                assert!(!form.read(cx).values.has_autosave_notebook);
+                this.editor.select(0..8, window, cx);
+                this.editor.replace_selection("edited", window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(&fixture.standalone).unwrap(), "original");
+        intent(&form, SettingsIntent::ExternalAutosaveEnabled(true), cx);
+        cx.update(|_, cx| {
+            assert!(notes.read(cx).external_autosave_enabled());
+            assert!(form.read(cx).values.autosave_external_files);
+        });
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(&fixture.standalone).unwrap(), "edited");
+        intent(&form, SettingsIntent::ExternalAutosaveEnabled(false), cx);
+        intent(&form, SettingsIntent::Close, cx);
+        intent(&form, SettingsIntent::ExternalAutosaveEnabled(true), cx);
+        cx.update(|_, cx| assert!(!notes.read(cx).external_autosave_enabled()));
+    }
+}

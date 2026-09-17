@@ -31,9 +31,25 @@ impl Notes {
             })
     }
     pub(super) fn autosave_settings(&self) -> notebook::Autosave {
-        self.tab_autosave_settings(self.tabs.active.id)
+        let mut settings = self.scoped_autosave_settings(self.tabs.active.id);
+        if self.autosave_root().is_none() {
+            settings.enabled = self.external_autosave_enabled();
+        }
+        settings
     }
     pub(crate) fn tab_autosave_settings(&self, id: tabs::TabId) -> notebook::Autosave {
+        let mut settings = self.scoped_autosave_settings(id);
+        let root = self
+            .notebooks
+            .active
+            .as_ref()
+            .map(|book| book.root.as_path());
+        if self.tabs.get(id).expect("live tab").is_external_to(root) {
+            settings.enabled = self.external_autosave_enabled();
+        }
+        settings
+    }
+    fn scoped_autosave_settings(&self, id: tabs::TabId) -> notebook::Autosave {
         let tab = self.tabs.get(id).expect("live tab");
         tab.notebook
             .as_ref()
@@ -88,6 +104,7 @@ impl Notes {
             }
         } else {
             self.session_autosave = settings;
+            self.set_external_autosave_enabled(settings.enabled, cx);
         }
         for id in self.tabs.ids() {
             self.schedule_tab_autosave(id, window, cx);
@@ -95,6 +112,21 @@ impl Notes {
         cx.notify();
     }
 
+    pub(super) fn update_external_autosave(
+        &mut self,
+        enabled: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.external_autosave_enabled() == enabled {
+            return;
+        }
+        self.set_external_autosave_enabled(enabled, cx);
+        for id in self.tabs.ids() {
+            self.schedule_tab_autosave(id, window, cx);
+        }
+        cx.notify();
+    }
     /// Rearm for retained content or a preference change. Edit events use
     /// Session::edit_notice directly, preserving the asynchronous dirty display.
     #[cfg(any(test, feature = "editor-diagnostics"))]

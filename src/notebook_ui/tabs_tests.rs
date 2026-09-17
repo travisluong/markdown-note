@@ -1582,3 +1582,167 @@ fn external_file_badges_follow_current_notebook_membership(cx: &mut TestAppConte
     cx.refresh().unwrap();
     assert!(cx.debug_bounds(outside_selector).is_some());
 }
+
+#[gpui::test]
+fn external_autosave_opt_in_persists_and_cancels_pending_writes(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let paths = [
+        fixture.other.join("external.md"),
+        fixture.other.join("external.ts"),
+    ];
+    let mut external_tabs = vec![];
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(!this.external_autosave_enabled());
+            this.update_autosave(
+                notebook::Autosave {
+                    enabled: true,
+                    delay_ms: 100,
+                },
+                window,
+                cx,
+            );
+            this.editor.replace_selection("notebook edit ", window, cx);
+        })
+    });
+    for path in &paths {
+        fs::write(path, "original").unwrap();
+        let id = cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.install_document(Some(Document::open(path.clone()).unwrap()), window, cx);
+                this.editor.select(0..8, window, cx);
+                this.editor.replace_selection("external edit", window, cx);
+                assert!(!this.tab_autosave_settings(this.tabs.active.id).enabled);
+                this.tabs.active.id
+            })
+        });
+        external_tabs.push(id);
+    }
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert!(
+        fs::read_to_string(&fixture.note)
+            .unwrap()
+            .contains("notebook edit")
+    );
+    for path in &paths {
+        assert_eq!(fs::read_to_string(path).unwrap(), "original");
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_external_autosave(true, window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    for path in &paths {
+        assert_eq!(fs::read_to_string(path).unwrap(), "external edit");
+    }
+    assert!(
+        notebook::load_index(&fixture.index)
+            .unwrap()
+            .autosave_external_files
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.editor.replace_selection(" pending", window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.save_state(this.tabs.active.id).timer.is_some());
+            this.update_external_autosave(false, window, cx);
+            for id in &external_tabs {
+                assert!(!this.tab_autosave_settings(*id).enabled);
+            }
+            assert!(
+                this.notebooks
+                    .active
+                    .as_ref()
+                    .unwrap()
+                    .settings
+                    .autosave
+                    .enabled
+            );
+        })
+    });
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert_eq!(fs::read_to_string(&paths[1]).unwrap(), "external edit");
+    assert!(
+        !notebook::load_index(&fixture.index)
+            .unwrap()
+            .autosave_external_files
+    );
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.save(Next::Nothing, window, cx)));
+    cx.run_until_parked();
+    assert_eq!(
+        fs::read_to_string(&paths[1]).unwrap(),
+        "external edit pending"
+    );
+}
+
+#[gpui::test]
+fn notebook_switch_cancels_autosave_for_newly_external_tabs(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_autosave(
+                notebook::Autosave {
+                    enabled: true,
+                    delay_ms: 1_000,
+                },
+                window,
+                cx,
+            );
+            this.editor.replace_selection("pending ", window, cx);
+        })
+    });
+    cx.run_until_parked();
+    let first = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let first = this.tabs.active.id;
+            assert!(this.save_state(first).timer.is_some());
+            this.request(
+                Next::Notebook {
+                    path: fixture.other.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            );
+            first
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(
+            this.tabs
+                .get(first)
+                .unwrap()
+                .is_external_to(Some(&fixture.other))
+        );
+        assert!(!this.tab_autosave_settings(first).enabled);
+    });
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert_eq!(fs::read_to_string(&fixture.note).unwrap(), "original A");
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.update_external_autosave(true, window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert_eq!(
+        fs::read_to_string(&fixture.note).unwrap(),
+        "pending original A"
+    );
+}

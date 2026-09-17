@@ -2011,3 +2011,27 @@ and application tests (91 + 270), check, format and strict all-targets Clippy.
 The five public storage tests also passed as recorded above. The broader integration
 suite remains blocked by the running application's locked executable; no desktop
 interaction or native application launch was used.
+## External-file autosave opt-in (2026-09-17)
+
+Settings → General → Saving now includes an app-wide “Autosave external files”
+switch. `Index::autosave_external_files` defaults to false, including when loading
+legacy indexes without this field, and persists through the existing ordered
+preference writer. Effective autosave uses the same membership rule as the tab
+badge: files outside the active notebook, including retained files from another
+notebook and standalone files, use this independent flag. Notebook enable settings
+are preserved; delays retain their existing notebook/session scope. Toggling the
+flag or switching notebooks recomputes timers for all retained tabs. A disabled
+flag cancels pending autosaves; captured writes and manual saves retain their
+normal lifecycle. The duplicate generic autosave switch is hidden for standalone
+files, while their delay remains editable.
+
+Verification passed 365 library/application tests (92 + 273), `cargo check --locked`,
+`cargo fmt --check`, and strict all-targets Clippy with editor-diagnostics. New tests
+cover legacy defaults/serialization, persisted opt-in/out, actual Markdown and
+TypeScript file writes, cancellation of pending writes, unchanged notebook saves,
+manual Save while disabled, notebook-switch policy changes, Settings events with
+and without a notebook, and rejected events from a closed form. Existing autosave
+harnesses explicitly opt in to retain their lifecycle coverage. The full integration
+command was attempted but could not replace the running application's locked
+`target/debug/mithril.exe`. No native application or desktop interaction was used.
+Unrelated Cargo.lock changes remain untouched.

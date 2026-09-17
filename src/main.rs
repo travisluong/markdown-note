@@ -234,7 +234,10 @@ impl Notes {
             tabs,
             documents: Default::default(),
             workspace: None,
-            session_autosave: Default::default(),
+            session_autosave: notebook::Autosave {
+                enabled: false,
+                ..Default::default()
+            },
             notebook_cache: Default::default(),
             sidebar_collapsed: false,
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),

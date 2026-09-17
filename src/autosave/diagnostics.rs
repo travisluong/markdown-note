@@ -12,6 +12,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
     fs::write(&path, b"\xef\xbb\xbfstart\r\n").unwrap();
     notes.update(cx, |this, cx| {
         this.install_document(Some(Document::open(path.clone()).unwrap()), window, cx);
+        this.update_external_autosave(true, window, cx);
         this.session_autosave = notebook::Autosave {
             enabled: true,
             delay_ms: 100,

@@ -210,6 +210,8 @@ impl Notes {
             toolbar: self.toolbar_settings(),
             appearance: self.appearance(),
             autosave: self.autosave_settings(),
+            autosave_external_files: self.external_autosave_enabled(),
+            has_autosave_notebook: self.autosave_root().is_some(),
             date_format: self.date_format().to_owned(),
             show_extensions: self.show_file_extensions(),
             hidden_extensions: self.hidden_extensions().to_vec(),
@@ -225,7 +227,7 @@ impl Notes {
                 |book| format!("Changes are saved for {}.", notebook::name(&book.root)),
             ),
             autosave_scope: self.autosave_root().map_or_else(
-                || "Autosave settings apply to this session.".to_owned(),
+                || "Autosave delay for external files in this session.".to_owned(),
                 |root| format!("Autosave settings apply to {}.", notebook::name(&root)),
             ),
             notice: self.notebooks.notice.clone(),
@@ -380,7 +382,9 @@ impl Notes {
             return;
         }
         let current = self.settings_scope();
-        let same_scope = if intent.is_autosave() {
+        let same_scope = if matches!(intent, SettingsIntent::ExternalAutosaveEnabled(_)) {
+            true // App-wide preference; dialog identity/lifetime still apply.
+        } else if intent.is_autosave() {
             open.scope.autosave == current.autosave
         } else {
             open.scope.preferences == current.preferences
@@ -441,6 +445,10 @@ impl Notes {
                 } else {
                     self.session_toolbar.set_enabled(item, enabled);
                 }
+                false
+            }
+            SettingsIntent::ExternalAutosaveEnabled(enabled) => {
+                self.update_external_autosave(enabled, window, cx);
                 false
             }
             SettingsIntent::AutosaveEnabled(enabled) => {

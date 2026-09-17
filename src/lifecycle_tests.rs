@@ -16,6 +16,7 @@ fn fixture<'a>(
     let (_, cx) = cx.add_window_view(|window, cx| {
         let entity = cx.new(|cx| {
             let mut notes = Notes::new(window, cx);
+            notes.update_external_autosave(true, window, cx);
             notes.session_autosave = notebook::Autosave {
                 enabled: true,
                 delay_ms: 100,

@@ -588,6 +588,8 @@ pub fn normalize_sidebar_width(width: f32) -> f32 {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Index {
+    #[serde(default)]
+    pub autosave_external_files: bool,
     pub version: u32,
     pub notebooks: Vec<PathBuf>,
     pub active: Option<PathBuf>,
@@ -598,6 +600,7 @@ impl Default for Index {
         Self {
             version: VERSION,
             notebooks: Vec::new(),
+            autosave_external_files: false,
             active: None,
         }
     }

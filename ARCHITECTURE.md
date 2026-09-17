@@ -126,9 +126,14 @@ shared source overlay per document, retaining it until the last view leaves.
 Canonical loaded notebooks are cached at application level. Each tab retains its
 owning notebook's autosave scope (the longest containing loaded root); preference
 changes persist that notebook and reschedule its tabs even when another sidebar
-notebook is active. Standalone tabs use the shared session autosave default.
-General Settings identifies autosave scope beside those controls; appearance,
-sidebar and toolbar preferences continue to use the active notebook.
+notebook is active. Effective autosave for files outside the current notebook is
+controlled independently by the app-wide `Index::autosave_external_files` flag,
+which defaults to false for both new and legacy indexes. This uses the same path
+membership rule as the External file badge, including retained tabs from another
+notebook and files opened without a notebook. Delays retain their owning notebook
+or session scope. General Settings exposes this separate switch and identifies
+the scope of the ordinary notebook controls; appearance, sidebar and toolbar
+preferences continue to use the active notebook.
 
 Appearance also owns the centered-editor toggle and maximum pane width (default
 700 logical pixels, bounded to 200–4000). Settings General edits these through
@@ -181,7 +186,7 @@ These are the invariants most likely to matter when changing a feature:
 
 Preference scope is intentional. Appearance, date, sidebar and toolbar choices use the
 active notebook whenever one exists, otherwise session defaults. Autosave for a
-standalone file outside that notebook uses session settings. Same-book reloads
+standalone file outside that notebook uses the app-wide external-file enable flag and session delay. Same-book reloads
 replay only explicit mode, width and notebook-autosave choices made during the
 operation, including unchanged re-selection; untouched loaded settings survive.
 Removing an inactive notebook is an index edit and does not navigate or save the
@@ -625,3 +630,13 @@ the full path. With no notebook, it says “No notebook is open.” Empty tabs h
 badge. This is current membership, not picker provenance: opening an in-notebook
 file through Open keeps it an ordinary notebook file, and switching notebooks or
 moving a file recomputes the indicator without persisted state.
+External autosave changes travel through SettingsPanel's typed
+`ExternalAutosaveEnabled` intent, retaining dialog identity/lifetime and busy-phase
+autosave guards. NotebookState owns the saved flag in the existing per-user index,
+and the ordinary ordered preference writer and close-flush barrier persist it.
+`autosave.rs` distinguishes scoped editable preferences from effective per-tab
+policy: the external flag overrides enabled state for external paths without
+changing notebook settings. Toggling it reschedules all retained documents;
+notebook installation also recomputes effective policy, cancelling newly external
+files' pending timers when disabled. Already captured writes finish normally.
+Manual Save and unsaved-change prompts retain their existing behavior.

@@ -72,3 +72,25 @@ fn centered_editor_defaults_round_trip_and_width_validation() {
         );
     }
 }
+
+#[test]
+fn external_autosave_defaults_off_in_new_and_legacy_indexes_and_round_trips() {
+    use super::Index;
+    assert!(!Index::default().autosave_external_files);
+    let legacy: Index =
+        serde_json::from_str(r#"{"version":1,"notebooks":[],"active":null}"#).unwrap();
+    assert!(!legacy.autosave_external_files);
+    for enabled in [false, true] {
+        let index = Index {
+            autosave_external_files: enabled,
+            ..Index::default()
+        };
+        let encoded = serde_json::to_string(&index).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Index>(&encoded)
+                .unwrap()
+                .autosave_external_files,
+            enabled
+        );
+    }
+}

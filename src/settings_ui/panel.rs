@@ -47,6 +47,7 @@ pub(super) enum SettingsIntent {
         after: bool,
     },
     AutosaveEnabled(bool),
+    ExternalAutosaveEnabled(bool),
     AutosaveDelay(u64),
     ShowExtensions(bool),
     HiddenExtensions(Vec<String>),
@@ -61,7 +62,10 @@ pub(super) enum SettingsIntent {
 }
 impl SettingsIntent {
     pub(super) fn is_autosave(&self) -> bool {
-        matches!(self, Self::AutosaveEnabled(_) | Self::AutosaveDelay(_))
+        matches!(
+            self,
+            Self::AutosaveEnabled(_) | Self::AutosaveDelay(_) | Self::ExternalAutosaveEnabled(_)
+        )
     }
 }
 
@@ -71,6 +75,8 @@ pub(super) struct SettingsValues {
     pub toolbar: notebook::ToolbarSettings,
     pub appearance: notebook::Appearance,
     pub autosave: notebook::Autosave,
+    pub autosave_external_files: bool,
+    pub has_autosave_notebook: bool,
     pub date_format: String,
     pub show_extensions: bool,
     pub hidden_extensions: Vec<String>,

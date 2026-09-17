@@ -1299,6 +1299,14 @@ impl Notes {
         self.pump_settings_writer(cx);
     }
 
+    pub(crate) fn external_autosave_enabled(&self) -> bool {
+        self.notebooks.index.autosave_external_files
+    }
+
+    pub(crate) fn set_external_autosave_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.notebooks.index.autosave_external_files = enabled;
+        self.persist_notebooks(cx);
+    }
     fn pump_settings_writer(&mut self, cx: &mut Context<Self>) {
         let Some(mut job) = self
             .notebooks
