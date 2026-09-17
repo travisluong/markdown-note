@@ -36,6 +36,8 @@ pub(super) enum ColorRole {
 
 #[derive(Clone, Debug)]
 pub(super) enum SettingsIntent {
+    CenteredEditor(bool),
+    CenteredEditorWidth(u16),
     ResetToolbar,
     ToolbarIconSize(notebook::ToolbarIconSize),
     ToolbarItemEnabled(notebook::ToolbarItem, bool),
@@ -102,6 +104,8 @@ pub(crate) struct SettingsPanel {
     excluded_patterns_error: Option<String>,
     date: Entity<InputState>,
     delay: Entity<InputState>,
+    editor_width: Entity<InputState>,
+    editor_width_error: Option<String>,
     hidden_extensions_error: Option<String>,
     date_error: Option<String>,
     delay_error: Option<String>,
@@ -152,7 +156,17 @@ impl SettingsPanel {
                 .placeholder("1000")
                 .default_value(values.autosave.delay_ms.to_string())
         });
+        let editor_width = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("700")
+                .default_value(values.appearance.centered_editor_width.to_string())
+        });
         let mut subscriptions = vec![
+            cx.subscribe(&editor_width, |this, input, event, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.edit_editor_width(input.read(cx).value().as_ref(), cx);
+                }
+            }),
             cx.subscribe(&excluded_patterns, |this, input, event, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.edit_excluded_patterns(input.read(cx).value().as_ref(), cx);
@@ -241,6 +255,8 @@ impl SettingsPanel {
             excluded_patterns_error,
             date,
             delay,
+            editor_width,
+            editor_width_error: None,
             hidden_extensions_error: None,
             date_error: None,
             delay_error: None,
@@ -325,6 +341,19 @@ impl SettingsPanel {
         }
         cx.notify();
     }
+    fn edit_editor_width(&mut self, value: &str, cx: &mut Context<Self>) {
+        if self.values.busy || !self.values.appearance.centered_editor {
+            return;
+        }
+        if let Some(width) = notebook::Appearance::parse_editor_width(value) {
+            self.editor_width_error = None;
+            self.emit_intent(SettingsIntent::CenteredEditorWidth(width), cx);
+        } else {
+            self.editor_width_error = Some("Enter a whole number from 200 to 4000 px.".into());
+        }
+        cx.notify();
+    }
+
     fn edit_delay(&mut self, value: &str, cx: &mut Context<Self>) {
         if let Some(delay) = notebook::Autosave::parse_delay(value) {
             self.delay_error = None;

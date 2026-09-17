@@ -90,6 +90,7 @@ fn panel(notes: &Entity<Notes>, cx: &mut VisualTestContext) -> Entity<SettingsPa
 
 #[derive(Clone, Copy)]
 enum Field {
+    EditorWidth,
     Delay,
     Date,
     Extensions,
@@ -100,6 +101,7 @@ fn input(panel: &Entity<SettingsPanel>, field: Field, value: &str, cx: &mut Visu
         let panel = panel.read(cx);
         let input = match field {
             Field::Delay => &panel.delay,
+            Field::EditorWidth => &panel.editor_width,
             Field::Date => &panel.date,
             Field::Extensions => &panel.hidden_extensions,
             Field::Exclusions => &panel.excluded_patterns,
@@ -1952,6 +1954,13 @@ fn modal_settings_preserves_document_modes_selection_and_undo(cx: &mut TestAppCo
         cx.refresh().unwrap();
         assert!(cx.debug_bounds("dialog-surface").is_some());
         cx.simulate_input("must not edit document");
+        intent(&panel(&notes, cx), SettingsIntent::CenteredEditor(true), cx);
+        input(&panel(&notes, cx), Field::EditorWidth, "750", cx);
+        intent(
+            &panel(&notes, cx),
+            SettingsIntent::CenteredEditor(false),
+            cx,
+        );
         let form = panel(&notes, cx);
         intent(&form, SettingsIntent::Close, cx);
         cx.refresh().unwrap();
@@ -2322,4 +2331,162 @@ fn settings_palette_and_shortcut_share_modal_owner(cx: &mut TestAppContext) {
         assert!(window.has_active_dialog(cx));
         assert!(notes.read(cx).settings_panel.is_none());
     });
+}
+
+#[gpui::test]
+fn centered_editor_form_preserves_width_and_invalid_drafts(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::CenteredEditor(true), cx);
+    input(&form, Field::EditorWidth, "900", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).appearance().centered_editor_width, 900));
+    for value in ["", "199", "4001", "abc", "700px", "700.5"] {
+        input(&form, Field::EditorWidth, value, cx);
+        cx.update(|_, cx| {
+            assert_eq!(notes.read(cx).appearance().centered_editor_width, 900);
+            assert!(form.read(cx).editor_width_error.is_some());
+            assert_eq!(form.read(cx).editor_width.read(cx).value().as_ref(), value);
+        });
+    }
+    input(&form, Field::EditorWidth, "800", cx);
+    intent(&form, SettingsIntent::CenteredEditor(false), cx);
+    cx.update(|_, cx| {
+        assert!(!notes.read(cx).appearance().centered_editor);
+        assert!(form.read(cx).editor_width_error.is_none());
+        assert_eq!(form.read(cx).editor_width.read(cx).value().as_ref(), "800");
+    });
+    intent(&form, SettingsIntent::CenteredEditor(true), cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    let fresh = panel(&notes, cx);
+    intent(&form, SettingsIntent::CenteredEditorWidth(1000), cx);
+    cx.update(|_, cx| {
+        assert_eq!(notes.read(cx).session_appearance.centered_editor_width, 800);
+        assert_eq!(fresh.read(cx).editor_width.read(cx).value().as_ref(), "800");
+    });
+}
+
+#[gpui::test]
+fn centered_editor_persists_and_rejects_wrong_scope_and_busy_events(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, false);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::CenteredEditor(true), cx);
+    input(&form, Field::EditorWidth, "850", cx);
+    let saved = notebook::Notebook::open(&fixture.first.root, false)
+        .unwrap()
+        .settings
+        .appearance;
+    assert!(saved.centered_editor);
+    assert_eq!(saved.centered_editor_width, 850);
+    assert!(
+        !notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .appearance
+            .centered_editor
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(!this.session_appearance.centered_editor);
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::CenteredEditor(true),
+                window,
+                cx,
+            );
+            assert!(!this.appearance().centered_editor);
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::CenteredEditorWidth(900),
+                window,
+                cx,
+            );
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::CenteredEditor(true),
+                window,
+                cx,
+            );
+            assert_eq!(this.appearance().centered_editor_width, 700);
+            assert!(!this.appearance().centered_editor);
+            assert!(form.read(cx).values.busy);
+        })
+    });
+}
+
+#[gpui::test]
+fn centered_editor_layout_fits_all_modes_and_sidebar_sizes(cx: &mut TestAppContext) {
+    use crate::ViewMode;
+    use gpui::{px, size};
+    let (_fixture, notes, cx) = fixture(cx, true, false);
+    intent(&panel(&notes, cx), SettingsIntent::CenteredEditor(true), cx);
+    intent(&panel(&notes, cx), SettingsIntent::Close, cx);
+    for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.set_mode(mode, window, cx)));
+        for (window_width, sidebar_width, collapsed) in [
+            (1400., 280., false),
+            (1400., 440., false),
+            (650., 280., false),
+            (650., 280., true),
+        ] {
+            cx.simulate_resize(size(px(window_width), px(800.)));
+            cx.update(|_, cx| {
+                notes.update(cx, |this, cx| {
+                    this.sidebar_collapsed = collapsed;
+                    this.notebooks
+                        .active
+                        .as_mut()
+                        .unwrap()
+                        .settings
+                        .sidebar_width = sidebar_width;
+                    this.reset_sidebar_resize(cx);
+                    cx.notify();
+                })
+            });
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            let viewport = cx.debug_bounds("document-viewport").unwrap();
+            let pane = cx.debug_bounds("document-pane").unwrap();
+            assert_eq!(
+                pane.size.width,
+                viewport.size.width.min(px(700.)),
+                "{mode:?}"
+            );
+            assert_eq!(pane.size.height, viewport.size.height);
+            assert!(
+                (pane.origin.x - viewport.origin.x - (viewport.size.width - pane.size.width) / 2.)
+                    .abs()
+                    < px(1.)
+            );
+        }
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let mut appearance = this.appearance();
+            appearance.centered_editor = false;
+            this.update_appearance(appearance, window, cx);
+        })
+    });
+    cx.simulate_resize(size(px(1400.), px(800.)));
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    assert_eq!(
+        cx.debug_bounds("document-pane").unwrap(),
+        cx.debug_bounds("document-viewport").unwrap()
+    );
 }

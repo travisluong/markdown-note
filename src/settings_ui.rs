@@ -485,6 +485,14 @@ impl Notes {
                 *value = value.saturating_add_signed(i16::from(delta));
                 true
             }
+            SettingsIntent::CenteredEditor(enabled) => {
+                appearance.centered_editor = enabled;
+                true
+            }
+            SettingsIntent::CenteredEditorWidth(width) => {
+                appearance.centered_editor_width = width;
+                true
+            }
             SettingsIntent::Theme(choice) => {
                 appearance.theme = Some(choice);
                 true

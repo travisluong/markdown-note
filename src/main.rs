@@ -637,6 +637,24 @@ impl Render for Notes {
                 })
                 .into_any_element()
         };
+        let appearance = self.appearance();
+        let content = div()
+            .debug_selector(|| "document-viewport".into())
+            .size_full()
+            .min_w_0()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .debug_selector(|| "document-pane".into())
+                    .size_full()
+                    .min_w_0()
+                    .when(
+                        self.document().is_some() && appearance.centered_editor,
+                        |pane| pane.max_w(px(f32::from(appearance.centered_editor_width))),
+                    )
+                    .child(content),
+            );
         div()
             .id("notes")
             .key_context("Notes")

@@ -92,6 +92,17 @@ impl Render for SettingsPanel {
             );
         }
         body = body
+            .child("Editor")
+            .child(Switch::new("centered-editor").label("Centered editor").checked(appearance.centered_editor)
+                .disabled(self.values.busy)
+                .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::CenteredEditor(*enabled), cx))))
+            .child("Width (px)")
+            .child(Input::new(&self.editor_width).w_full().flex_shrink_0()
+                .disabled(self.values.busy || !appearance.centered_editor))
+            .child(div().text_sm().text_color(cx.theme().muted_foreground)
+                .child("Maximum width for Source, Live preview, and Reading. Shrinks to fit the available space."))
+            .when_some(self.editor_width_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
+            .child("Saving")
             .child(div().text_sm().text_color(cx.theme().muted_foreground).child(self.values.autosave_scope.clone()))
             .child(Switch::new("autosave-enabled").label("Autosave").checked(self.values.autosave.enabled)
                 .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::AutosaveEnabled(*enabled), cx))))

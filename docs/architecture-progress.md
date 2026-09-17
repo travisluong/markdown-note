@@ -1904,3 +1904,34 @@ editor-diagnostics --test mermaid --config
 avoided a Windows LNK1104 lock on the original test executable. No desktop was
 launched or controlled; native visual validation remains manual. The unrelated
 Cargo.lock reorder remains excluded.
+
+## Centered editor preference (2026-09-17)
+
+Settings General now groups a Centered editor toggle and Width (px) input under
+Editor. Full width remains the compatibility default; centered mode starts at
+700 logical pixels and accepts whole numbers from 200 through 4000. Invalid
+input drafts stay visible without replacing the last valid preference. Turning
+the toggle off disables the input and preserves its value. Existing appearance
+scope, stale-form/busy guards and the ordered notebook settings writer apply.
+
+The root renderer centers the retained document pane in Source, Live preview and
+Reading, capping its width to the preference and shrinking to the available area
+beside the sidebar. Existing pane padding is included; tabs, toolbars, images and
+empty content retain their layout. No vendored editor changes were needed.
+
+Windows verification: `cargo check --locked`, `cargo fmt --check`, and
+`cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings`
+passed. `cargo test --locked --features editor-diagnostics --lib --bin mithril`
+passed all 353 tests (89 library and 264 application), including four new tests
+covering schema compatibility/validation, invalid drafts and remembered values,
+persistence and stale/busy guards, and all-mode pane geometry across window and
+sidebar sizes. The existing selection/undo test now also changes the centered
+setting and width while retaining the document.
+
+The broader `cargo test --locked --features editor-diagnostics centered_editor`
+invocation failed while replacing `target/debug/mithril.exe` with Windows access
+denied; a Mithril process was already running. Integration targets therefore
+were not run in this verification. The headless library/application targets
+avoid that executable and passed. No desktop interaction or native application
+launch was used. Native visual validation remains manual. The pre-existing
+Cargo.lock reorder remains excluded from this feature commit.

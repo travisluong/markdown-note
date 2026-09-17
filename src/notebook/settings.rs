@@ -60,6 +60,8 @@ pub struct Appearance {
     pub monospace_font: Option<String>,
     pub content_font_size: u16,
     pub ui_font_size: u16,
+    pub centered_editor: bool,
+    pub centered_editor_width: u16,
     pub dark_mode: Option<bool>,
 }
 
@@ -76,12 +78,22 @@ impl Default for Appearance {
             monospace_font: None,
             content_font_size: 16,
             ui_font_size: 16,
+            centered_editor: false,
+            centered_editor_width: 700,
             dark_mode: None,
         }
     }
 }
 
 impl Appearance {
+    pub fn parse_editor_width(value: &str) -> Option<u16> {
+        value
+            .trim()
+            .parse()
+            .ok()
+            .filter(|width| (200..=4000).contains(width))
+    }
+
     pub fn resolved(mut self, startup_dark: bool) -> Self {
         self = self.normalized();
         let choice = self.theme_choice(startup_dark);
@@ -160,6 +172,7 @@ impl Appearance {
         self.font_color = self.font_color.filter(|c| *c <= 0xffffff);
         self.content_font_size = self.content_font_size.clamp(10, 40);
         self.ui_font_size = self.ui_font_size.clamp(10, 24);
+        self.centered_editor_width = self.centered_editor_width.clamp(200, 4000);
         self
     }
 }
