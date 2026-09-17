@@ -2,6 +2,7 @@ use mithril::notebook::{Notebook, Settings, ToolbarItem, ToolbarSettings, save_b
 
 #[test]
 fn toolbar_defaults_preserve_legacy_and_partially_configured_notebooks() {
+    assert!(!ToolbarSettings::default().sidebar);
     let legacy: Settings =
         serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
     assert_eq!(legacy.toolbar, ToolbarSettings::default());
@@ -17,6 +18,18 @@ fn toolbar_defaults_preserve_legacy_and_partially_configured_notebooks() {
         }
     );
     assert!(serde_json::from_str::<ToolbarSettings>(r#"{"search":"false"}"#).is_err());
+    for enabled in [false, true] {
+        let settings: ToolbarSettings =
+            serde_json::from_str(&format!(r#"{{"sidebar":{enabled}}}"#)).unwrap();
+        assert_eq!(settings.sidebar, enabled);
+        let saved = serde_json::to_string(&settings).unwrap();
+        assert_eq!(
+            serde_json::from_str::<ToolbarSettings>(&saved)
+                .unwrap()
+                .sidebar,
+            enabled
+        );
+    }
 }
 
 #[test]

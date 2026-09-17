@@ -396,7 +396,7 @@ impl Default for ToolbarSettings {
             order: ToolbarItem::DEFAULT_ORDER,
             back: true,
             forward: true,
-            sidebar: true,
+            sidebar: false,
             explorer: true,
             search: true,
             sort: true,

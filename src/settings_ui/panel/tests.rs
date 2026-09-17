@@ -826,6 +826,12 @@ fn toolbar_switches_update_rendering_and_restore_an_empty_toolbar(cx: &mut TestA
     for (item, _) in notebook::ToolbarItem::OPTIONS {
         intent(&form, SettingsIntent::ToolbarItemEnabled(item, true), cx);
     }
+    // Restore the default-off item before checking the reopened defaults.
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, false),
+        cx,
+    );
     for width in [800., 480.] {
         cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(800.)));
         cx.refresh().unwrap();
@@ -1066,6 +1072,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
     use notebook::ToolbarItem::*;
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::ToolbarItemEnabled(Sidebar, true), cx);
     toolbar_section(&form, cx);
     start_toolbar_drag(Sort, cx);
     cx.update(|_, cx| {
@@ -1290,6 +1297,11 @@ fn toolbar_size_buttons_apply_immediately_and_preserve_session_scope(cx: &mut Te
     use gpui::{Modifiers, MouseButton, px};
     let (fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, true),
+        cx,
+    );
     toolbar_section(&form, cx);
     for (index, (size, _)) in notebook::ToolbarIconSize::OPTIONS.into_iter().enumerate() {
         let bounds = cx
@@ -1443,6 +1455,7 @@ fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext)
             let notes = cx.new(|cx| {
                 let mut notes = Notes::new(window, cx);
                 notes.session_toolbar.icon_size = icon_size;
+                notes.session_toolbar.sidebar = true;
                 for item in notebook::ToolbarItem::DEFAULT_ORDER
                     .into_iter()
                     .filter(|item| {
@@ -1497,6 +1510,7 @@ fn formatting_toolbar_items_toggle_reorder_and_keep_their_saved_position(cx: &mu
     let (_fixture, notes, cx) = fixture(cx, false, true);
     cx.simulate_resize(gpui::size(gpui::px(1000.), gpui::px(1400.)));
     let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::ToolbarItemEnabled(Sidebar, true), cx);
     toolbar_section(&form, cx);
     cx.update(|_, cx| {
         form.update(cx, |form, cx| {
@@ -1543,6 +1557,12 @@ fn toolbar_reset_button_restores_every_setting_and_rejects_stale_form(cx: &mut T
     use gpui::{Modifiers, MouseButton};
     let (fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
+    assert!(!cx.update(|_, cx| notes.read(cx).toolbar_settings().sidebar));
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, true),
+        cx,
+    );
     intent(
         &form,
         SettingsIntent::ToolbarIconSize(notebook::ToolbarIconSize::Large),
@@ -1572,6 +1592,7 @@ fn toolbar_reset_button_restores_every_setting_and_rejects_stale_form(cx: &mut T
             form.read(cx).values.toolbar,
             notebook::ToolbarSettings::default()
         );
+        assert!(!form.read(cx).values.toolbar.sidebar);
         notes.update(cx, |this, cx| {
             assert_eq!(this.session_toolbar, notebook::ToolbarSettings::default());
             assert_eq!(

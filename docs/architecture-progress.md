@@ -2123,3 +2123,18 @@ The title-bar run passed 21 of 24 tests, including fullscreen, overflow and capt
 regions; three existing menu-navigation tests encountered the concurrently added
 Hide toolbar menu entry and need their navigation counts updated by that change.
 No desktop interaction or native app launch was used.
+
+## Optional toolbar sidebar button (2026-09-17)
+
+The customizable toolbar Sidebar item now defaults off, while the title-bar
+sidebar button remains available. Missing preferences and Reset toolbar use the
+new default; explicit saved true/false choices retain their values. Geometry and
+reordering fixtures explicitly enable the optional item when they need it.
+
+Verification: all 37 headless toolbar application tests and all five toolbar
+settings integration tests passed with locked offline dependencies. Coverage
+includes missing/partial settings, saved visibility round trips, reset, sizing,
+ordering and persistence. Formatting and whitespace checks passed. The separate
+concurrent visibility change updated the menu-navigation counts; its rerun passed
+all 23 title-bar tests, including the new sidebar interaction regression.
+No desktop interaction or native application launch occurred.

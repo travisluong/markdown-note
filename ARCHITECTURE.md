@@ -421,6 +421,8 @@ returns to commands. Palette and View theme toggles share the guarded
 `toggle_theme` adapter in `settings_ui.rs`, preserving notebook/session scope and
 working without a document. Neither port owns new preference state.
 
+The optional toolbar sidebar button defaults off; explicit saved visibility is retained.
+Resetting toolbar defaults turns that item off again.
 The window toolbar uses `ToolbarSettings` in `notebook/settings.rs` for independent
 sidebar, Explorer, Search and Sort visibility plus eleven Markdown formatting
 controls (bold, italic, strikethrough, heading, inline code, code block, link,
