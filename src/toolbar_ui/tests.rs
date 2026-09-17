@@ -597,3 +597,363 @@ fn toolbar_icon_color_keeps_disabled_formatting_distinct(cx: &mut TestAppContext
         });
     }
 }
+
+fn drag_defaults() -> notebook::ToolbarSettings {
+    notebook::ToolbarSettings {
+        sidebar: true,
+        ..Default::default()
+    }
+}
+
+fn drag_fixture(
+    cx: &mut TestAppContext,
+) -> (tempfile::TempDir, Entity<Notes>, &mut VisualTestContext) {
+    let (dir, notes, cx) = fixture(cx);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.session_toolbar = drag_defaults();
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    (dir, notes, cx)
+}
+
+fn icon_bounds(item: ToolbarItem, cx: &mut VisualTestContext) -> gpui::Bounds<gpui::Pixels> {
+    cx.debug_bounds(format!("window-toolbar-item-{}", item as usize).leak())
+        .unwrap()
+}
+
+fn start_icon_drag(item: ToolbarItem, cx: &mut VisualTestContext) {
+    let start = icon_bounds(item, cx).center();
+    cx.simulate_mouse_move(start, None, Modifiers::default());
+    cx.simulate_mouse_down(start, gpui::MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(
+        gpui::point(start.x + px(12.), start.y),
+        gpui::MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.refresh().unwrap();
+    cx.update(|_, cx| assert!(cx.has_active_drag(), "{item:?} did not start dragging"));
+}
+
+fn finish_icon_drag(target: ToolbarItem, after: bool, cx: &mut VisualTestContext) {
+    let target = icon_bounds(target, cx);
+    let destination = gpui::point(
+        if after {
+            target.right() - px(3.)
+        } else {
+            target.left() + px(3.)
+        },
+        target.center().y,
+    );
+    cx.simulate_mouse_move(destination, gpui::MouseButton::Left, Modifiers::default());
+    cx.refresh().unwrap();
+    cx.simulate_mouse_up(destination, gpui::MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.update(|_, cx| assert!(!cx.has_active_drag()));
+}
+
+#[gpui::test]
+fn icon_drags_reorder_across_wrapped_rows_at_every_size(cx: &mut TestAppContext) {
+    use ToolbarItem::*;
+    let (_dir, notes, cx) = drag_fixture(cx);
+    for (size, _) in ToolbarIconSize::OPTIONS {
+        cx.update(|_, cx| {
+            notes.update(cx, |this, cx| {
+                this.session_toolbar = notebook::ToolbarSettings {
+                    icon_size: size,
+                    ..drag_defaults()
+                };
+                cx.notify();
+            })
+        });
+        cx.simulate_resize(gpui::size(px(180.), px(800.)));
+        cx.refresh().unwrap();
+        assert!(icon_bounds(TaskList, cx).top() > icon_bounds(Sidebar, cx).top());
+        let before = icon_bounds(Sidebar, cx);
+        start_icon_drag(TaskList, cx);
+        assert_eq!(
+            icon_bounds(Sidebar, cx),
+            before,
+            "drag overlays must not move icons"
+        );
+        finish_icon_drag(Sidebar, false, cx);
+        cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[0], TaskList));
+        start_icon_drag(TaskList, cx);
+        finish_icon_drag(UnorderedList, true, cx);
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert_eq!(this.toolbar_settings().order, ToolbarItem::DEFAULT_ORDER);
+            assert_eq!(this.editor.text(cx).as_ref(), "café\n茶");
+            assert_eq!(this.editor.selection(cx), 0..5);
+            assert!(this.editor.is_focused(window, cx));
+            assert!(!this.dirty(cx));
+        });
+    }
+}
+
+#[gpui::test]
+fn disabled_icons_drag_and_short_clicks_still_work(cx: &mut TestAppContext) {
+    use ToolbarItem::*;
+    let (_dir, notes, cx) = drag_fixture(cx);
+    // All notebook/navigation actions are disabled in this standalone fixture.
+    for item in [Sidebar, Back, Forward, Explorer, Search, Sort] {
+        let last = cx.update(|_, cx| *notes.read(cx).toolbar_settings().order.last().unwrap());
+        start_icon_drag(item, cx);
+        finish_icon_drag(last, true, cx);
+        cx.update(|window, cx| {
+            assert_eq!(notes.read(cx).toolbar_settings().order.last(), Some(&item));
+            assert!(notes.read(cx).editor.is_focused(window, cx));
+            assert!(!window.has_active_dialog(cx));
+        });
+    }
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.mode = ViewMode::Reading;
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    for item in [Bold, Heading, Link] {
+        start_icon_drag(item, cx);
+        finish_icon_drag(Italic, false, cx);
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert_eq!(this.editor.text(cx).as_ref(), "café\n茶");
+            assert_eq!(this.editor.selection(cx), 0..5);
+            assert!(!window.has_active_dialog(cx));
+        });
+    }
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.mode = ViewMode::Source;
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    let start = icon_bounds(Bold, cx).center();
+    cx.simulate_mouse_down(start, gpui::MouseButton::Left, Modifiers::default());
+    let end = gpui::point(start.x + px(1.), start.y);
+    cx.simulate_mouse_move(end, gpui::MouseButton::Left, Modifiers::default());
+    cx.update(|_, cx| assert!(!cx.has_active_drag()));
+    cx.simulate_mouse_up(end, gpui::MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "**café**\n茶"));
+}
+
+#[gpui::test]
+fn dropdown_icon_drags_preserve_focus_and_never_open_menus(cx: &mut TestAppContext) {
+    use ToolbarItem::*;
+    let (dir, notes, cx) = drag_fixture(cx);
+    let mut book = notebook::Notebook::open(&dir.path().join("book"), true).unwrap();
+    book.settings.toolbar.sidebar = true;
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            this.notebooks
+                .set_test_persistence_target(dir.path().join("index.json"));
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    for item in [Heading, Sort, Bold, Link] {
+        start_icon_drag(item, cx);
+        cx.update(|window, cx| assert!(notes.read(cx).editor.is_focused(window, cx)));
+        let first = cx.update(|_, cx| notes.read(cx).toolbar_settings().order[0]);
+        finish_icon_drag(first, false, cx);
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert_eq!(this.toolbar_settings().order[0], item);
+            assert!(this.editor.is_focused(window, cx));
+            assert_eq!(this.editor.text(cx).as_ref(), "café\n茶");
+            assert_eq!(this.editor.selection(cx), 0..5);
+            assert!(!window.has_active_dialog(cx));
+        });
+    }
+    click("sidebar-sort", cx);
+    cx.update(|window, cx| assert!(!notes.read(cx).editor.is_focused(window, cx)));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let editor = notes.read(cx).editor.clone();
+        editor.focus(window, cx);
+    });
+    click("toolbar-heading", cx);
+    // A real press can render the outside-click dismissal before mouse-up.
+    let position = icon_bounds(Heading, cx).center();
+    cx.simulate_mouse_down(position, gpui::MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.simulate_mouse_up(position, gpui::MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| assert!(notes.read(cx).editor.is_focused(window, cx)));
+}
+
+#[gpui::test]
+fn icon_order_persists_and_noop_or_outside_drops_do_not_write(cx: &mut TestAppContext) {
+    use ToolbarItem::*;
+    let (dir, notes, cx) = drag_fixture(cx);
+    let mut book = notebook::Notebook::open(&dir.path().join("book"), true).unwrap();
+    book.settings.toolbar.sidebar = true;
+    book.settings.toolbar.set_enabled(Back, false);
+    book.settings.toolbar.set_enabled(Forward, false);
+    let root = book.root.clone();
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            this.notebooks
+                .set_test_persistence_target(dir.path().join("index.json"));
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    start_icon_drag(TaskList, cx);
+    finish_icon_drag(Sidebar, false, cx);
+    let saved = notebook::Notebook::open(&root, false)
+        .unwrap()
+        .settings
+        .toolbar;
+    assert_eq!(saved.order[0], TaskList);
+    assert_eq!(saved.order[2..4], [Back, Forward]);
+    assert!(!saved.back && !saved.forward);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).session_toolbar, drag_defaults()));
+    let settings_path = root.join(".mithril/settings.json");
+    std::fs::remove_file(&settings_path).unwrap();
+    for target in [TaskList, Sidebar] {
+        start_icon_drag(TaskList, cx);
+        finish_icon_drag(target, false, cx);
+        assert!(!settings_path.exists(), "no-op drop submitted preferences");
+    }
+    start_icon_drag(Bold, cx);
+    let outside = gpui::point(px(2.), px(2.));
+    cx.simulate_mouse_move(outside, gpui::MouseButton::Left, Modifiers::default());
+    cx.refresh().unwrap();
+    cx.simulate_mouse_up(outside, gpui::MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    assert!(!settings_path.exists());
+    cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings(), saved));
+}
+
+#[gpui::test]
+fn toolbar_drop_rechecks_owner_scope_visibility_modal_and_busy(cx: &mut TestAppContext) {
+    use ToolbarItem::*;
+    let (dir, notes, cx) = drag_fixture(cx);
+    let foreign_owner = cx.update(|_, cx| cx.new(|_| ()).entity_id());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let valid = WindowToolbarDrag {
+                owner: cx.entity_id(),
+                scope: None,
+                item: Bold,
+                size: ToolbarIconSize::default(),
+            };
+            let before = this.toolbar_settings();
+            for rejected in [
+                WindowToolbarDrag {
+                    owner: foreign_owner,
+                    ..valid.clone()
+                },
+                WindowToolbarDrag {
+                    scope: Some(dir.path().to_path_buf()),
+                    ..valid.clone()
+                },
+            ] {
+                this.drop_window_toolbar_item(&rejected, Sidebar, false, window, cx);
+                assert_eq!(this.toolbar_settings(), before);
+            }
+            for hidden in [Bold, Sidebar] {
+                this.session_toolbar.set_enabled(hidden, false);
+                let hidden_settings = this.toolbar_settings();
+                this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+                assert_eq!(this.toolbar_settings(), hidden_settings);
+                this.session_toolbar.set_enabled(hidden, true);
+            }
+            this.session_toolbar.visible = false;
+            let hidden_toolbar = this.toolbar_settings();
+            this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+            assert_eq!(this.toolbar_settings(), hidden_toolbar);
+            this.session_toolbar.visible = true;
+            window.open_dialog(cx, |dialog, _, _| dialog.title("Blocked"));
+            this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+            assert_eq!(this.toolbar_settings(), before);
+            window.close_dialog(cx);
+            let _ = this.session.pick();
+            this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+            assert_eq!(this.toolbar_settings(), before);
+        })
+    });
+    cx.refresh().unwrap();
+    let start = icon_bounds(Bold, cx).center();
+    cx.simulate_mouse_down(start, gpui::MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(
+        gpui::point(start.x + px(12.), start.y),
+        gpui::MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.update(|_, cx| assert!(!cx.has_active_drag()));
+    cx.simulate_mouse_up(start, gpui::MouseButton::Left, Modifiers::default());
+}
+
+#[gpui::test]
+fn changing_notebooks_during_icon_drag_rejects_the_drop(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = drag_fixture(cx);
+    start_icon_drag(ToolbarItem::Bold, cx);
+    let mut book = notebook::Notebook::open(&dir.path().join("other"), true).unwrap();
+    book.settings.toolbar.sidebar = true;
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            this.notebooks
+                .set_test_persistence_target(dir.path().join("index.json"));
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    finish_icon_drag(ToolbarItem::Sidebar, false, cx);
+    cx.update(|_, cx| {
+        assert_eq!(notes.read(cx).toolbar_settings(), drag_defaults());
+        assert_eq!(notes.read(cx).session_toolbar, drag_defaults());
+    });
+}
+
+#[gpui::test]
+fn dragging_available_back_icon_does_not_navigate_but_clicking_does(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = drag_fixture(cx);
+    let first = dir.path().join("standalone.md").canonicalize().unwrap();
+    let second = dir.path().join("second.md");
+    std::fs::write(&second, "second").unwrap();
+    let second = second.canonicalize().unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.open_path(second.clone(), false, window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let before = cx.update(|_, cx| {
+        notes
+            .read(cx)
+            .tabs
+            .active
+            .navigation
+            .target(crate::app::navigation::Direction::Back)
+    });
+    start_icon_drag(ToolbarItem::Back, cx);
+    finish_icon_drag(ToolbarItem::TaskList, true, cx);
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.path(), Some(second.as_path()));
+        assert_eq!(
+            this.tabs
+                .active
+                .navigation
+                .target(crate::app::navigation::Direction::Back),
+            before
+        );
+        assert!(this.editor.is_focused(window, cx));
+    });
+    click("toolbar-back", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).path(), Some(first.as_path())));
+}

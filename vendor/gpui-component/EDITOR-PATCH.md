@@ -1,5 +1,20 @@
 # Local editor patch
 
+## Toolbar dropdown click triggers
+
+Popover::trigger_on_click and DropdownMenuPopover::trigger_on_click opt into
+completed-left-click activation instead of mouse-down. Both default to false,
+preserving other popovers. Mithril's Heading and Sort toolbar buttons opt in so
+GPUI can distinguish dragging from activation before opening a menu. Disabled
+buttons continue blocking activation. The open state captured on mouse-down survives
+a repaint after outside-click dismissal, so clicking an open trigger still closes
+it. The toolbar registers drag gestures directly
+through Button's existing Interactivity; no Button API or click policy changes.
+
+Reconcile src/popover.rs and src/menu/dropdown_menu.rs on upstream upgrades.
+Coverage: src/toolbar_ui/tests.rs tests ordinary menu clicks, disabled actions,
+reordering without menu activation, and retained editor focus/selection.
+
 ## Independent interface icon colors
 
 Theme.icon_color is an optional, serde-compatible application override. Icons opt

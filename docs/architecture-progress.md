@@ -2154,3 +2154,29 @@ ordering and persistence. Formatting and whitespace checks passed. The separate
 concurrent visibility change updated the menu-navigation counts; its rerun passed
 all 23 title-bar tests, including the new sidebar interaction regression.
 No desktop interaction or native application launch occurred.
+
+## Direct toolbar icon reordering (2026-09-17)
+
+Visible toolbar icons now support GPUI drag gestures, including commands whose
+normal action is disabled. A floating icon and before/after insertion markers
+preserve wrapped layout; only a completed drop updates order. Direct drops and
+Settings list moves share the existing settings adapter and ordered preference
+writer. Window owner, captured notebook/session scope, toolbar/item visibility,
+modal and busy guards reject stale gestures. No reordering schema changes were
+needed, and hidden items retain their saved relative order.
+
+Heading and Sort opt into completed-click dropdown activation. The vendored
+popover retains the open state from mouse-down across dismissal/repaint, so a
+second click closes an open menu. Dragging never invokes a command or opens a
+menu; editor text, selection, focus and navigation remain with their existing
+owners. The vendor patch documents this opt-in contract.
+
+Verification: the full locked offline editor-diagnostics suite passed 594 tests
+(93 library, 298 application, 203 integration; none ignored), using
+`target/theme-validation`, one build job and one test thread. After the final
+completed-click repaint correction and hidden-toolbar guard, all 37 focused
+headless toolbar/settings tests passed again, including eight new regressions.
+`cargo check --locked --offline`, `cargo fmt --check`, and strict all-targets
+Clippy with editor-diagnostics passed on the final code. No desktop interaction
+or native application launch occurred; physical UI validation remains with the
+user. The unrelated Cargo.lock change is excluded from this feature commit.

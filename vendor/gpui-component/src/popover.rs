@@ -1,8 +1,8 @@
 use gpui::{
     AnyElement, App, Bounds, Context, Corner, DismissEvent, ElementId, EventEmitter, FocusHandle,
     Focusable, InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement,
-    Pixels, Point, Render, RenderOnce, StyleRefinement, Styled, Subscription, Window, anchored,
-    canvas, deferred, div, prelude::FluentBuilder as _, px,
+    Pixels, Point, Render, RenderOnce, StatefulInteractiveElement as _, StyleRefinement, Styled,
+    Subscription, Window, anchored, canvas, deferred, div, prelude::FluentBuilder as _, px,
 };
 use std::rc::Rc;
 
@@ -34,6 +34,7 @@ pub struct Popover {
     /// This is used for hotfix the trigger element style to support w_full.
     trigger_style: Option<StyleRefinement>,
     mouse_button: MouseButton,
+    trigger_on_click: bool,
     appearance: bool,
     overlay_closable: bool,
     on_open_change: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
@@ -52,6 +53,7 @@ impl Popover {
             tracked_focus_handle: None,
             children: vec![],
             mouse_button: MouseButton::Left,
+            trigger_on_click: false,
             appearance: true,
             overlay_closable: true,
             default_open: false,
@@ -69,6 +71,13 @@ impl Popover {
     /// Set the mouse button to trigger the popover, default is `MouseButton::Left`.
     pub fn mouse_button(mut self, mouse_button: MouseButton) -> Self {
         self.mouse_button = mouse_button;
+        self
+    }
+
+    /// Open on a completed left click instead of mouse-down, allowing the
+    /// trigger to start a drag without opening the popover. Defaults to false.
+    pub fn trigger_on_click(mut self, enabled: bool) -> Self {
+        self.trigger_on_click = enabled;
         self
     }
 
@@ -193,6 +202,8 @@ pub struct PopoverState {
     focus_handle: FocusHandle,
     pub(crate) tracked_focus_handle: Option<FocusHandle>,
     trigger_bounds: Option<Bounds<Pixels>>,
+    // Preserve click intent when an outside-click dismissal repaints before release.
+    trigger_mouse_down_open: Option<bool>,
     open: bool,
     on_open_change: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
 
@@ -205,6 +216,7 @@ impl PopoverState {
             focus_handle: cx.focus_handle(),
             tracked_focus_handle: None,
             trigger_bounds: None,
+            trigger_mouse_down_open: None,
             open: default_open,
             on_open_change: None,
             _dismiss_subscription: None,
@@ -312,17 +324,41 @@ impl RenderOnce for Popover {
         let el = div()
             .id(self.id)
             .child((trigger)(open, window, cx))
-            .on_mouse_down(self.mouse_button, {
-                let state = state.clone();
-                move |_, window, cx| {
-                    state.update(cx, |state, cx| {
-                        // We force set open to false to toggle it correctly.
-                        // Because if the mouse down out will toggle open first.
-                        state.open = open;
-                        state.toggle_open(window, cx);
-                    });
-                    cx.notify(parent_view_id);
-                }
+            .when(!self.trigger_on_click, |this| {
+                this.on_mouse_down(self.mouse_button, {
+                    let state = state.clone();
+                    move |_, window, cx| {
+                        state.update(cx, |state, cx| {
+                            // We force set open to false to toggle it correctly.
+                            // Because if the mouse down out will toggle open first.
+                            state.open = open;
+                            state.toggle_open(window, cx);
+                        });
+                        cx.notify(parent_view_id);
+                    }
+                })
+            })
+            .when(self.trigger_on_click, |this| {
+                this.on_mouse_down(MouseButton::Left, {
+                    let state = state.clone();
+                    move |_, _, cx| {
+                        state.update(cx, |state, _| state.trigger_mouse_down_open = Some(open));
+                    }
+                })
+                .on_click({
+                    let state = state.clone();
+                    move |event, window, cx| {
+                        state.update(cx, |state, cx| {
+                            let pressed_open = state.trigger_mouse_down_open.take();
+                            state.open = match event {
+                                gpui::ClickEvent::Mouse(_) => pressed_open.unwrap_or(open),
+                                gpui::ClickEvent::Keyboard(_) => open,
+                            };
+                            state.toggle_open(window, cx);
+                        });
+                        cx.notify(parent_view_id);
+                    }
+                })
             })
             .child(
                 canvas(

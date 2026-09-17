@@ -5,7 +5,7 @@ use gpui::{
     RenderOnce, SharedString, StyleRefinement, Styled, Window,
 };
 
-use crate::{button::Button, menu::PopupMenu, popover::Popover, Selectable};
+use crate::{Selectable, button::Button, menu::PopupMenu, popover::Popover};
 
 /// A dropdown menu trait for buttons and other interactive elements
 pub trait DropdownMenu: Styled + Selectable + InteractiveElement + IntoElement + 'static {
@@ -38,6 +38,7 @@ pub struct DropdownMenuPopover<T: Selectable + IntoElement + 'static> {
     style: StyleRefinement,
     anchor: Corner,
     trigger: T,
+    trigger_on_click: bool,
     builder: Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>,
 }
 
@@ -56,6 +57,7 @@ where
             style: StyleRefinement::default(),
             anchor: anchor.into(),
             trigger,
+            trigger_on_click: false,
             builder: Rc::new(builder),
         }
     }
@@ -63,6 +65,12 @@ where
     /// Set the anchor corner for the dropdown menu popover.
     pub fn anchor(mut self, anchor: impl Into<Corner>) -> Self {
         self.anchor = anchor.into();
+        self
+    }
+
+    /// Use a completed click so dragging the trigger does not open its menu.
+    pub fn trigger_on_click(mut self, enabled: bool) -> Self {
+        self.trigger_on_click = enabled;
         self
     }
 
@@ -91,6 +99,7 @@ where
             .appearance(false)
             .overlay_closable(false)
             .trigger(self.trigger)
+            .trigger_on_click(self.trigger_on_click)
             .trigger_style(self.style)
             .anchor(self.anchor)
             .content(move |_, window, cx| {

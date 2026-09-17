@@ -448,6 +448,16 @@ The panel owns drag presentation and validates the originating panel identity;
 the adapter retains dialog lifetime, notebook scope and busy guards. Both the
 settings list and toolbar follow the saved order, including positions for hidden
 items. Disabling all items removes the row and border.
+Direct toolbar icon drags use the same settings-adapter move boundary. Every visible
+icon can move, including unavailable commands; the button retains GPUI's drag
+threshold and suppresses command clicks during a drag. Absolute before/after
+insertion targets preserve wrapping and only commit on drop. Window-owner and
+captured notebook/session scope, current item visibility, busy and modal guards
+reject stale gestures. The drag preview owns no preferences or editor state.
+Heading and Sort opt into the vendored dropdown/popover completed-click trigger;
+other popovers retain mouse-down activation. Headless toolbar interaction tests
+cover reordering, cancellation, disabled commands, focus, persistence and Settings
+synchronization.
 ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
 invalid values default to Medium; explicitly stored Small or Large values survive.
 Toolbar-tab size intents use the same notebook/session

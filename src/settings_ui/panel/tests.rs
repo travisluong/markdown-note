@@ -2797,6 +2797,49 @@ fn icon_and_secondary_pickers_sync_independently_reset_and_reject_stale_events(
 }
 
 #[gpui::test]
+fn settings_list_reflects_direct_toolbar_drag_and_can_move_it_back(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton, point, px};
+    use notebook::ToolbarItem::{Bold, Sidebar};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::ToolbarItemEnabled(Sidebar, true), cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.refresh().unwrap();
+    let start = cx.debug_bounds("toolbar-bold").unwrap().center();
+    cx.simulate_mouse_move(start, None, Modifiers::default());
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(
+        point(start.x + px(12.), start.y),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.refresh().unwrap();
+    cx.update(|_, cx| assert!(cx.has_active_drag()));
+    let target = cx.debug_bounds("toolbar-sidebar-toggle").unwrap();
+    let end = point(target.left() + px(3.), target.center().y);
+    cx.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    cx.refresh().unwrap();
+    cx.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    let reopened = panel(&notes, cx);
+    cx.update(|_, cx| assert_eq!(reopened.read(cx).values.toolbar.order[0], Bold));
+    intent(
+        &reopened,
+        SettingsIntent::ToolbarItemMoved {
+            item: Sidebar,
+            target: Bold,
+            after: false,
+        },
+        cx,
+    );
+    cx.update(|_, cx| {
+        assert_eq!(reopened.read(cx).values.toolbar.order[0], Sidebar);
+        assert_eq!(notes.read(cx).toolbar_settings().order[0], Sidebar);
+    });
+}
+
+#[gpui::test]
 fn toolbar_visibility_toggle_preserves_customization_and_reset_restores_it(
     cx: &mut TestAppContext,
 ) {
