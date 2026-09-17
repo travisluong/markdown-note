@@ -5,9 +5,9 @@ use crate::{
     Save, SearchAllFiles, ShowExplorer, SourceMode, ToggleSidebar, ViewMode,
 };
 use gpui::{
-    AnyElement, App, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement,
-    MouseButton, Pixels, Size, TextRun, WeakEntity, Window, WindowControlArea, anchored, canvas,
-    deferred, div, font, img, prelude::*, px,
+    AnyElement, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement, MouseButton,
+    Pixels, Size, TextRun, WeakEntity, Window, WindowControlArea, anchored, canvas, deferred, div,
+    font, img, prelude::*, px,
 };
 use gpui_component::{
     ActiveTheme, Sizable, WindowExt,
@@ -27,7 +27,8 @@ impl Notes {
         kind: MenuKind,
         menu: PopupMenu,
         owner: WeakEntity<Self>,
-        cx: &mut App,
+        window: &mut Window,
+        cx: &mut Context<PopupMenu>,
     ) -> PopupMenu {
         let busy = self.document_interaction_blocked();
         let can_save = self.document().is_some() && !busy;
@@ -93,6 +94,9 @@ impl Notes {
                 Box::new(ShowExplorer),
                 busy || self.notebooks.active.is_none(),
             )
+            .submenu("Sort files", window, cx, |submenu, _, _| {
+                self.file_sort_menu(submenu, owner.clone())
+            })
             .menu_with_disabled("Command palette…", Box::new(CommandPalette), busy)
             .separator()
             .item(
@@ -119,8 +123,6 @@ impl Notes {
                 Box::new(ReplaceFile),
                 Command::ReplaceFile.unavailable(capabilities).is_some(),
             )
-        } else if kind == MenuKind::Sort {
-            self.file_sort_menu(menu, owner)
         } else if kind == MenuKind::Help {
             menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts))
                 .menu("About", Box::new(About))
@@ -130,11 +132,10 @@ impl Notes {
     }
 }
 
-const MENUS: [MenuKind; 6] = [
+const MENUS: [MenuKind; 5] = [
     MenuKind::File,
     MenuKind::View,
     MenuKind::Search,
-    MenuKind::Sort,
     MenuKind::Notebooks,
     MenuKind::Help,
 ];
@@ -145,7 +146,6 @@ impl MenuKind {
             Self::File => "File",
             Self::View => "View",
             Self::Search => "Search",
-            Self::Sort => "Sort",
             Self::Notebooks => "Notebooks",
             Self::Help => "Help",
             Self::More => "More",
@@ -156,14 +156,16 @@ impl MenuKind {
             Self::File => "file-menu",
             Self::View => "view-menu",
             Self::Search => "search-menu",
-            Self::Sort => "sort-menu",
             Self::Notebooks => "notebooks-menu",
             Self::Help => "help-menu",
             Self::More => "more-menu",
         }
     }
     fn index(self) -> usize {
-        MENUS.iter().position(|kind| *kind == self).unwrap_or(6)
+        MENUS
+            .iter()
+            .position(|kind| *kind == self)
+            .unwrap_or(MENUS.len())
     }
 }
 
@@ -203,7 +205,7 @@ struct HeaderLayout {
     viewport: Size<Pixels>,
     width: Pixels,
     height: Pixels,
-    widths: [Pixels; 7],
+    widths: [Pixels; MENUS.len() + 1],
     gap: Pixels,
     visible: usize,
 }
@@ -213,7 +215,7 @@ impl HeaderLayout {
         viewport: Size<Pixels>,
         width: Pixels,
         rem: Pixels,
-        widths: [Pixels; 7],
+        widths: [Pixels; MENUS.len() + 1],
     ) -> Self {
         let gap = rem * 0.25;
         let reserved = px(if mode.controls() { 4. } else { 8. })
@@ -229,16 +231,16 @@ impl HeaderLayout {
             }
             + if mode.controls() { px(102.) } else { px(0.) };
         let available = width - reserved;
-        let total = widths[..6]
+        let total = widths[..MENUS.len()]
             .iter()
             .fold(px(0.), |total, width| total + *width)
-            + gap * 5.;
+            + gap * (MENUS.len() - 1) as f32;
         let visible = if total <= available {
-            6
+            MENUS.len()
         } else {
             let mut count = 1;
-            let mut used = widths[0] + gap + widths[6];
-            while count < 6 && used + widths[count] + gap <= available {
+            let mut used = widths[0] + gap + widths[MENUS.len()];
+            while count < MENUS.len() && used + widths[count] + gap <= available {
                 used += widths[count] + gap;
                 count += 1;
             }
@@ -258,7 +260,7 @@ impl HeaderLayout {
         if kind.index() < self.visible {
             kind.index()
         } else {
-            6
+            MENUS.len()
         }
     }
 }
@@ -266,7 +268,7 @@ impl HeaderLayout {
 #[derive(Default)]
 pub(super) struct TitleBarState {
     layout: Option<HeaderLayout>,
-    bounds: Rc<RefCell<[Bounds<Pixels>; 7]>>,
+    bounds: Rc<RefCell<[Bounds<Pixels>; MENUS.len() + 1]>>,
     #[cfg(all(test, target_os = "windows"))]
     commands: Vec<windows::CaptionCommand>,
 }
@@ -310,23 +312,24 @@ impl Notes {
             .title_bar
             .layout
             .as_ref()
-            .map_or(6, |layout| layout.visible);
+            .map_or(MENUS.len(), |layout| layout.visible);
         let menu = PopupMenu::build(window, cx, |menu, window, cx| {
             let mut menu = menu.action_context(focus.clone());
             if kind == MenuKind::More {
                 for kind in &MENUS[visible..] {
-                    menu = menu.submenu(kind.label(), window, cx, |submenu, _, cx| {
+                    menu = menu.submenu(kind.label(), window, cx, |submenu, window, cx| {
                         self.populate_menu(
                             *kind,
                             submenu.action_context(focus.clone()),
                             owner.clone(),
+                            window,
                             cx,
                         )
                     });
                 }
                 menu
             } else {
-                self.populate_menu(kind, menu, owner, cx)
+                self.populate_menu(kind, menu, owner, window, cx)
             }
         });
         self.menu_subscription =
@@ -385,7 +388,12 @@ impl Notes {
         let rem = window.rem_size();
         let font = font(cx.theme().font_family.clone());
         let widths = std::array::from_fn(|ix| {
-            let label = if ix == 6 { MenuKind::More } else { MENUS[ix] }.label();
+            let label = if ix == MENUS.len() {
+                MenuKind::More
+            } else {
+                MENUS[ix]
+            }
+            .label();
             let line = window.text_system().shape_line(
                 label.into(),
                 rem * 0.875,
@@ -458,7 +466,7 @@ impl Notes {
         for kind in MENUS[..layout.visible]
             .iter()
             .copied()
-            .chain((layout.visible < 6).then_some(MenuKind::More))
+            .chain((layout.visible < MENUS.len()).then_some(MenuKind::More))
         {
             let bounds = self.title_bar.bounds.clone();
             menus = menus.child(

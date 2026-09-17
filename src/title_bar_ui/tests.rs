@@ -140,7 +140,7 @@ fn narrow_header_overflow_keyboard_commands_and_resize_dismissal(cx: &mut TestAp
     cx.simulate_resize(size(px(400.), px(700.)));
     cx.refresh().unwrap();
     let visible = cx.update(|_, cx| notes.read(cx).title_bar.layout.as_ref().unwrap().visible);
-    assert!((1..6).contains(&visible));
+    assert!((1..MENUS.len()).contains(&visible));
     let more = cx.debug_bounds("more-menu").unwrap();
     let bar = cx.debug_bounds("window-title-bar").unwrap();
     assert!(more.right() <= bar.right());
@@ -162,7 +162,12 @@ fn narrow_header_overflow_keyboard_commands_and_resize_dismissal(cx: &mut TestAp
     cx.refresh().unwrap();
     cx.update(|_, cx| assert!(notes.read(cx).menu.is_none()));
     assert!(cx.debug_bounds("help-menu").is_some());
-    cx.update(|_, cx| assert_eq!(notes.read(cx).title_bar.layout.as_ref().unwrap().visible, 6));
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).title_bar.layout.as_ref().unwrap().visible,
+            MENUS.len()
+        )
+    });
 }
 
 #[gpui::test]
@@ -172,7 +177,8 @@ fn more_submenus_share_commands_and_dismiss_the_parent(cx: &mut TestAppContext) 
     cx.refresh().unwrap();
     click(MenuKind::More, cx);
     // Help is the last overflow entry; enter its submenu and invoke About.
-    let hidden = cx.update(|_, cx| 6 - notes.read(cx).title_bar.layout.as_ref().unwrap().visible);
+    let hidden =
+        cx.update(|_, cx| MENUS.len() - notes.read(cx).title_bar.layout.as_ref().unwrap().visible);
     let keys = std::iter::repeat_n("down", hidden)
         .collect::<Vec<_>>()
         .join(" ");
@@ -204,7 +210,7 @@ fn header_respects_modal_guard_and_large_interface_text(cx: &mut TestAppContext)
             for kind in MENUS[..visible]
                 .iter()
                 .copied()
-                .chain((visible < 6).then_some(MenuKind::More))
+                .chain((visible < MENUS.len()).then_some(MenuKind::More))
             {
                 if let Some(button) = cx.debug_bounds(kind.selector()) {
                     assert!(button.top() >= bar.top() && button.bottom() <= bar.bottom());
@@ -227,7 +233,7 @@ fn header_respects_modal_guard_and_large_interface_text(cx: &mut TestAppContext)
 
 #[test]
 fn platform_layouts_reserve_controls_and_preserve_menu_order() {
-    let widths = [px(60.); 7];
+    let widths = [px(60.); MENUS.len() + 1];
     for mode in [
         HeaderMode::Windows,
         HeaderMode::Mac,
@@ -239,10 +245,10 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         assert!(narrow.visible >= 1);
         assert_eq!(narrow.anchor_index(MenuKind::File), 0);
         for kind in MENUS.iter().skip(narrow.visible) {
-            assert_eq!(narrow.anchor_index(*kind), 6);
+            assert_eq!(narrow.anchor_index(*kind), MENUS.len());
         }
         let wide = HeaderLayout::new(mode, size(px(1000.), px(700.)), px(1000.), px(16.), widths);
-        assert_eq!(wide.visible, 6);
+        assert_eq!(wide.visible, MENUS.len());
     }
     let fullscreen = HeaderLayout::new(
         HeaderMode::Fullscreen,
@@ -251,7 +257,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(16.),
         widths,
     );
-    assert_eq!(fullscreen.visible, 6);
+    assert_eq!(fullscreen.visible, MENUS.len());
     assert!(!fullscreen.mode.combined());
     assert!(!HeaderMode::Server.controls());
     assert!(!HeaderMode::Mac.controls());
@@ -410,8 +416,8 @@ fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut
     cx.run_until_parked();
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    // Three modes, sidebar, Explorer, then Command palette (history disabled).
-    cx.simulate_keystrokes("down down down down down down enter");
+    // Three modes, sidebar, Explorer, Sort files, then Command palette (history disabled).
+    cx.simulate_keystrokes("down down down down down down down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -440,8 +446,8 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
     let first = cx.update(|_, cx| notes.read(cx).tabs.active.id);
     let session_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
     click(MenuKind::View, cx);
-    // No history or notebook: modes, Command palette, Toggle light/dark mode.
-    cx.simulate_keystrokes("down down down down down enter");
+    // No history or notebook: modes, Sort files, Command palette, Toggle light/dark mode.
+    cx.simulate_keystrokes("down down down down down down enter");
     cx.run_until_parked();
     let changed_session = cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -466,8 +472,8 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
     let book_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    // Empty document: three modes, sidebar, Explorer, Command palette, theme.
-    cx.simulate_keystrokes("down down down down down down down enter");
+    // Empty document: three modes, sidebar, Explorer, Sort files, Command palette, theme.
+    cx.simulate_keystrokes("down down down down down down down down enter");
     cx.run_until_parked();
     cx.update(|_, cx| {
         let this = notes.read(cx);

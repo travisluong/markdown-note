@@ -225,7 +225,8 @@ binary tests can compile without requiring a diagnostics feature. Do not use it
 for production feature edits. Form/search-query inputs are separate controls and
 are not document editors.
 
-`title_bar_ui.rs` owns the combined title/menu bar: logo, the existing six menus,
+`title_bar_ui.rs` owns the combined title/menu bar: logo, five menus
+(File, View, Search, Notebooks and Help),
 measured trailing-menu overflow, popup anchors, and platform control/drag regions.
 Windows/macOS request transparent title bars; macOS retains native traffic lights.
 Linux requests client decorations, using Root's existing WindowBorder, and falls
@@ -388,7 +389,7 @@ spellings, preserving native path characters. Async failures update the notice
 only while the captured notebook/generation remains current. Tests inject an
 in-memory backend; other platforms keep GPUI's reveal integration.
 
-The top Sort menu and window toolbar sort button share `Notes::file_sort_menu` in
+View > Sort files and the window toolbar sort button share `Notes::file_sort_menu` in
 `sidebar_ui.rs`. The command palette's Sort picker also uses `FileSort::OPTIONS`,
 marks/selects the active order, and dispatches through `set_file_sort` for Explorer
 updates and persistence. The picker captures the notebook root across dismissal;

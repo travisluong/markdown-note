@@ -1821,3 +1821,20 @@ Cargo checks used --offline --locked and target/titlebar-validation. Tests used
 --config 'profile.test.package.mithril.codegen-units=32' to avoid LNK1104 when
 overwriting older test executables. No desktop interaction was used, and the
 pre-existing Cargo.lock edit is excluded.
+
+## Sort under View (2026-09-16)
+
+Moved the top-level Sort menu to View > Sort files, reusing the same sort menu
+builder as the toolbar. Search retains its file, all-files and replace commands.
+The top bar now contains File, View, Search, Notebooks and Help. Menu widths,
+overflow and popup anchors derive their counts from the menu list. Existing
+headless menu tests follow the updated menu positions and overflow count.
+
+Windows verification passes: all 13 focused title-bar tests, the full headless
+suite, cargo check, cargo fmt --check and strict all-target Clippy with
+editor-diagnostics. Cargo checks used --offline --locked and
+target/titlebar-validation. Tests used the package-only override
+--config 'profile.test.package.mithril.codegen-units=64' after the previous test
+executable could not be overwritten (LNK1104). No desktop interaction was used;
+native visual validation remains manual. The pre-existing Cargo.lock edit is
+excluded.

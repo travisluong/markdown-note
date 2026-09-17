@@ -118,7 +118,6 @@ enum MenuKind {
     File,
     View,
     Search,
-    Sort,
     Notebooks,
     Help,
     More,
