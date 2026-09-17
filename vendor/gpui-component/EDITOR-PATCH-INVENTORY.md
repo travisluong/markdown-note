@@ -335,7 +335,7 @@ stale results; `tests/strikethrough.rs` covers the headless render/edit lifecycl
 | File | Local contract and verification |
 | --- | --- |
 | `Cargo.toml`, `src/lib.rs` | Optional `mermaid` feature pins Merman 0.7.0, resvg 0.45.1 and image 0.25.10. Root application enables it. Renderer diagnostics require `editor-diagnostics`. |
-| `src/mermaid.rs` (added) | Offline source-to-image worker, shared bounded LRU, keyed weak tickets, one running job, bounded pending work, resource denial, alpha conversion, Reading width measurement and renderer/queue diagnostics. |
+| `src/mermaid.rs` (added) | Offline source-to-image worker, shared bounded LRU, keyed weak tickets, one running job, bounded pending work, resource denial, transparent root canvas over native themed surfaces, alpha conversion, Reading width measurement and renderer/queue diagnostics. |
 | `src/input/fenced_code.rs` | Mermaid language classification during the existing worker AST visit, retaining exact code and source ranges. |
 | `src/input/text_wrapper/mermaid.rs` (added), `src/input/text_wrapper.rs` | Multiline anchor/covered/source projections, zero-height source rows, selection reveal, keyed invalidation and weak image retention. |
 | `src/input/element.rs`, `src/input/state.rs` | Visible-block requests, viewport recalculation and scroll compensation; diagram source hit testing and headless diagnostics. |

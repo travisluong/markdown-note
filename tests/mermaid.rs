@@ -9,7 +9,7 @@ use gpui_component::{
 
 #[test]
 fn offline_renderer_families_limits_and_queue() {
-    for (dark, rendered) in gpui_component::diagnostic_mermaid_checks() {
+    for (kind, dark, rendered) in gpui_component::diagnostic_mermaid_checks() {
         let dimensions = rendered.size(0);
         let mut rgba = rendered.as_bytes(0).unwrap().to_vec();
         for p in rgba.as_chunks_mut::<4>().0 {
@@ -20,7 +20,33 @@ fn offline_renderer_families_limits_and_queue() {
                 .unwrap();
         image
             .save(format!(
-                "target/mermaid-{}.png",
+                "target/mermaid-{kind}-{}.png",
+                if dark { "dark" } else { "light" }
+            ))
+            .unwrap();
+        // The native code-block surface must show through in both themes.
+        for (x, y) in [
+            (0, 0),
+            (image.width() - 1, 0),
+            (0, image.height() - 1),
+            (image.width() - 1, image.height() - 1),
+        ] {
+            assert_eq!(
+                image.get_pixel(x, y).0[3],
+                0,
+                "{kind} dark={dark}: opaque canvas at ({x}, {y})"
+            );
+        }
+        let color = if dark { 32 } else { 245 };
+        let mut composite = image::RgbaImage::from_pixel(
+            image.width(),
+            image.height(),
+            image::Rgba([color, color, color, 255]),
+        );
+        image::imageops::overlay(&mut composite, &image, 0, 0);
+        composite
+            .save(format!(
+                "target/mermaid-{kind}-{}-surface.png",
                 if dark { "dark" } else { "light" }
             ))
             .unwrap();

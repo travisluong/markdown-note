@@ -563,7 +563,9 @@ Fenced blocks labelled `mermaid` render offline in Live preview and Reading.
 Source mode remains literal. The vendored `mermaid` Cargo feature is enabled by
 Mithril; `src/mermaid.rs` owns the application-wide rendering queue and LRU cache.
 It pins Merman 0.7.0 for native SVG generation and uses resvg 0.45.1 with all
-image-resource resolvers disabled. Diagram work runs separately from Markdown
+image-resource resolvers disabled. The SVG root canvas is made transparent so
+both views inherit their native themed code-block background; Merman's dark
+palette alone can leave a white canvas. Diagram work runs separately from Markdown
 analysis. A render key contains the parsed code, appearance, width and device
 scale. Weak request tickets discard abandoned queued work and stale completions;
 results never mutate document text, selection or history. One worker runs at a

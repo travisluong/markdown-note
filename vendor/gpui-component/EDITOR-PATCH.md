@@ -509,7 +509,11 @@ the default behavior and link-menu selection retention.
 The optional `mermaid` feature adds pinned Merman 0.7.0 and resvg 0.45.1 rendering
 without a webview or JavaScript runtime. `src/mermaid.rs` owns keyed asynchronous
 render requests, weak interest tickets, image limits, resource isolation and the
-bounded shared cache. `input/fenced_code.rs` retains Mermaid identity in the
+bounded shared cache. Its resvg-safe pipeline applies Merman's root-background
+postprocessor with a transparent canvas so the native surface supplies the
+light/dark background without replacing diagram element colors. Preserve this
+postprocessor on upgrades; the dark palette alone can retain a white canvas.
+`input/fenced_code.rs` retains Mermaid identity in the
 existing worker parse; `input/text_wrapper/mermaid.rs`, TextWrapper and TextElement
 implement multiline source-preserving projections, hit testing and height changes.
 CodeBlock and the Markdown visitor render diagrams in Reading while retaining

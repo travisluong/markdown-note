@@ -1884,3 +1884,23 @@ rendering. No application or desktop interaction was used. Native interactive
 visual validation remains manual; Linux/macOS are covered by the existing CI
 matrix but were not run locally. The pre-existing Cargo.lock package reorder is
 excluded from the feature commit and remains in the working tree.
+
+## Mermaid background correction (2026-09-17)
+
+Reproduced an opaque white canvas in dark mode with a failing native raster pixel
+assertion. Merman 0.7.0 applies the dark element palette but retains a white SVG
+root background. The shared renderer now adds RootBackgroundPostprocessor to
+the existing resvg-safe pipeline, making only the root canvas transparent so
+Live preview and Reading inherit their themed native surfaces.
+
+The five-test Mermaid target passes, including new transparent-corner assertions
+for flowchart and sequence diagrams in both themes. Light/dark sequence artifacts
+were composited onto representative surfaces and inspected headlessly.
+`cargo check --locked`, `cargo fmt --all --check`, and
+`cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings`
+passed. The focused test command was `cargo test --locked --features
+editor-diagnostics --test mermaid --config
+'profile.test.package.mithril.codegen-units=64'`; the command-only profile override
+avoided a Windows LNK1104 lock on the original test executable. No desktop was
+launched or controlled; native visual validation remains manual. The unrelated
+Cargo.lock reorder remains excluded.

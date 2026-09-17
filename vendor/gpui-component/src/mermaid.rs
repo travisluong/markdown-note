@@ -1,7 +1,7 @@
 //! Offline Mermaid rendering shared by Reading and Live preview.
 //! UI callers retain a ticket only while a request is relevant. Workers never mutate documents.
 use gpui::{App, Global, RenderImage, SharedString};
-use merman::render::HeadlessRenderer;
+use merman::render::{HeadlessRenderer, RootBackgroundPostprocessor, SvgPipeline};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Weak},
@@ -207,8 +207,12 @@ fn render(key: &Key) -> Result<Diagram, String> {
             "fontFamily": "Arial", "maxTextSize": MAX_SOURCE
         })))
         .with_diagram_id("mithril-mermaid");
+    // Mermaid parity output can keep a white canvas even with the dark theme.
+    // Let the native code-block surface supply the background in both views.
+    let pipeline = SvgPipeline::resvg_safe()
+        .with_postprocessor(RootBackgroundPostprocessor::new("transparent"));
     let svg = renderer
-        .render_svg_resvg_safe_sync(&key.code)
+        .render_svg_with_pipeline_sync(&key.code, &pipeline)
         .map_err(|e| format!("Mermaid: {e}"))?
         .ok_or_else(|| "Unsupported or empty Mermaid diagram".to_string())?;
     rasterize(&svg, key)
@@ -345,11 +349,28 @@ pub(crate) fn reading(
 
 #[cfg(feature = "editor-diagnostics")]
 #[doc(hidden)]
-pub fn diagnostic_checks() -> Vec<(bool, Arc<RenderImage>)> {
+pub fn diagnostic_checks() -> Vec<(&'static str, bool, Arc<RenderImage>)> {
     let mut examples = Vec::new();
     let fixtures = [
         "flowchart TD\nA[Start] --> B[End]",
-        "sequenceDiagram\nAlice->>Bob: Hello",
+        r#"sequenceDiagram
+    participant U as User
+    participant A as App
+    participant C as Cache
+    participant S as Server
+    U->>A: Open a mysterious note
+    A->>C: Look up note
+    alt Note is cached
+        C-->>A: Return cached note
+    else Cache miss
+        C-->>A: Not found
+        A->>S: Fetch note
+        S-->>A: Secret pancake recipe
+        A->>C: Cache recipe
+    end
+    A-->>U: Display note
+    Note over U,S: Breakfast has been successfully planned
+"#,
         "classDiagram\nAnimal <|-- Duck",
         "stateDiagram-v2\n[*] --> Idle\nIdle --> [*]",
         "erDiagram\nCUSTOMER ||--o{ ORDER : places",
@@ -361,7 +382,9 @@ pub fn diagnostic_checks() -> Vec<(bool, Arc<RenderImage>)> {
             let key = Key::new(source.into(), dark, 320., 2.);
             let d = render(&key).unwrap_or_else(|e| panic!("{source}: {e}"));
             if source == fixtures[0] {
-                examples.push((dark, d.image.clone()));
+                examples.push(("flowchart", dark, d.image.clone()));
+            } else if source == fixtures[1] {
+                examples.push(("sequence", dark, d.image.clone()));
             }
             assert!(d.width > 0. && d.width <= 320. && d.height > 0.);
             assert!(d.bytes <= MAX_PIXELS as usize * 4);
