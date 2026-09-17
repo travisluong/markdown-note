@@ -107,6 +107,17 @@ impl Notes {
                 Box::new(ToggleSidebar),
                 busy || self.notebooks.active.is_none(),
             )
+            .item(
+                PopupMenuItem::new("Hide toolbar")
+                    .checked(!self.toolbar_settings().visible)
+                    .disabled(busy)
+                    .on_click({
+                        let owner = owner.clone();
+                        move |_, window, cx| {
+                            let _ = owner.update(cx, |this, cx| this.toggle_toolbar(window, cx));
+                        }
+                    }),
+            )
             .menu_with_disabled(
                 "Show Explorer",
                 Box::new(ShowExplorer),

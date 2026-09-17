@@ -2795,3 +2795,121 @@ fn icon_and_secondary_pickers_sync_independently_reset_and_reject_stale_events(
         )
     });
 }
+
+#[gpui::test]
+fn toolbar_visibility_toggle_preserves_customization_and_reset_restores_it(
+    cx: &mut TestAppContext,
+) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    // Modal settings blocks the menu adapter.
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.toggle_toolbar(window, cx);
+            assert!(this.toolbar_settings().visible);
+        })
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    let original = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.session_toolbar.search = false;
+            this.session_toolbar.order.rotate_left(3);
+            this.session_toolbar.icon_size = notebook::ToolbarIconSize::Large;
+            let original = this.session_toolbar;
+            this.toggle_toolbar(window, cx);
+            assert_eq!(
+                this.session_toolbar,
+                notebook::ToolbarSettings {
+                    visible: false,
+                    ..original
+                }
+            );
+            original
+        })
+    });
+    cx.refresh().unwrap();
+    // GPUI retains old debug selectors; measure reclaimed content space instead.
+    let hidden_top = cx.debug_bounds("document-viewport").unwrap().top();
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_toolbar(window, cx)));
+    cx.refresh().unwrap();
+    assert!(cx.debug_bounds("document-viewport").unwrap().top() > hidden_top);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.session_toolbar, original);
+            this.toggle_toolbar(window, cx);
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::ResetToolbar, cx);
+    cx.refresh().unwrap();
+    assert!(cx.debug_bounds("document-viewport").unwrap().top() > hidden_top);
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).session_toolbar,
+            notebook::ToolbarSettings::default()
+        )
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            for item in notebook::ToolbarItem::DEFAULT_ORDER {
+                this.session_toolbar.set_enabled(item, false);
+            }
+            this.toggle_toolbar(window, cx);
+            this.toggle_toolbar(window, cx);
+            assert!(this.session_toolbar.visible);
+            let _ = this.session.pick();
+            this.toggle_toolbar(window, cx);
+            assert!(this.session_toolbar.visible);
+        })
+    });
+    cx.refresh().unwrap();
+    assert_eq!(
+        cx.debug_bounds("document-viewport").unwrap().top(),
+        hidden_top
+    );
+}
+
+#[gpui::test]
+fn toolbar_visibility_persists_only_for_the_active_notebook(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+            this.toggle_toolbar(window, cx);
+            assert!(this.session_toolbar.visible);
+        })
+    });
+    cx.run_until_parked();
+    let saved = notebook::Notebook::open(&fixture.first.root, false).unwrap();
+    assert!(!saved.settings.toolbar.visible);
+    assert!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .toolbar
+            .visible
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.second.clone());
+            assert!(this.toolbar_settings().visible);
+            this.notebooks.active = Some(saved);
+            assert!(!this.toolbar_settings().visible);
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::ResetToolbar, cx);
+    assert!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .toolbar
+            .visible
+    );
+}

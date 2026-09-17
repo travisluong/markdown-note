@@ -366,6 +366,7 @@ impl ToolbarItem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolbarSettings {
+    pub visible: bool,
     #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
     pub icon_size: ToolbarIconSize,
     #[serde(deserialize_with = "deserialize_toolbar_order")]
@@ -392,6 +393,7 @@ pub struct ToolbarSettings {
 impl Default for ToolbarSettings {
     fn default() -> Self {
         Self {
+            visible: true,
             icon_size: ToolbarIconSize::default(),
             order: ToolbarItem::DEFAULT_ORDER,
             back: true,

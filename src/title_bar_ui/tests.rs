@@ -436,7 +436,7 @@ fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestA
         })
     });
     cx.refresh().unwrap();
-    // No history: View entries are the three modes, Centered editor, Collapse sidebar and Explorer.
+    // No history: View entries are the three modes, Centered editor, Collapse sidebar, Hide toolbar and Explorer.
     click(MenuKind::View, cx);
     cx.simulate_keystrokes("down down down down down enter");
     cx.run_until_parked();
@@ -448,7 +448,7 @@ fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestA
     });
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    cx.simulate_keystrokes("down down down down down down enter");
+    cx.simulate_keystrokes("down down down down down down down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -485,8 +485,8 @@ fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut
     cx.run_until_parked();
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    // Three modes, Centered editor, sidebar, Explorer, Sort files, then Command palette (history disabled).
-    cx.simulate_keystrokes("down down down down down down down down enter");
+    // Three modes, Centered editor, sidebar, Hide toolbar, Explorer, Sort files, then Command palette (history disabled).
+    cx.simulate_keystrokes("down down down down down down down down down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -515,8 +515,8 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
     let first = cx.update(|_, cx| notes.read(cx).tabs.active.id);
     let session_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
     click(MenuKind::View, cx);
-    // No history or notebook: modes, Centered editor, Sort files, Command palette, Toggle light/dark mode.
-    cx.simulate_keystrokes("down down down down down down down enter");
+    // No history or notebook: modes, Centered editor, Hide toolbar, Sort files, Command palette, Toggle light/dark mode.
+    cx.simulate_keystrokes("down down down down down down down down enter");
     cx.run_until_parked();
     let changed_session = cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -541,8 +541,8 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
     let book_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    // Empty document: three modes, Centered editor, sidebar, Explorer, Sort files, Command palette, theme.
-    cx.simulate_keystrokes("down down down down down down down down down enter");
+    // Empty document: three modes, Centered editor, sidebar, Hide toolbar, Explorer, Sort files, Command palette, theme.
+    cx.simulate_keystrokes("down down down down down down down down down down enter");
     cx.run_until_parked();
     cx.update(|_, cx| {
         let this = notes.read(cx);

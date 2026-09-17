@@ -755,9 +755,10 @@ impl Render for Notes {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .child(self.render_title_bar(window, cx))
-            .when(self.toolbar_settings().any_enabled(), |view| {
-                view.child(self.render_toolbar(window, cx))
-            })
+            .when(
+                self.toolbar_settings().visible && self.toolbar_settings().any_enabled(),
+                |view| view.child(self.render_toolbar(window, cx)),
+            )
             .when_some(
                 self.save_state(self.tabs.active.id).error.clone(),
                 |view, error| view.child(div().p_2().text_sm().child(error)),

@@ -27,6 +27,19 @@ impl Notes {
             .map_or(self.session_toolbar, |book| book.settings.toolbar)
     }
 
+    pub(super) fn toggle_toolbar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
+            return;
+        }
+        if let Some(book) = &mut self.notebooks.active {
+            book.settings.toolbar.visible = !book.settings.toolbar.visible;
+            self.persist_notebooks(cx);
+        } else {
+            self.session_toolbar.visible = !self.session_toolbar.visible;
+        }
+        cx.notify();
+    }
+
     fn show_file_extensions(&self) -> bool {
         self.notebooks
             .active

@@ -6,6 +6,7 @@ fn toolbar_defaults_preserve_legacy_and_partially_configured_notebooks() {
     let legacy: Settings =
         serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
     assert_eq!(legacy.toolbar, ToolbarSettings::default());
+    assert!(legacy.toolbar.visible);
     let partial: Settings = serde_json::from_str(
         r#"{"version":1,"last_file":null,"expanded":[],"toolbar":{"search":false}}"#,
     )
@@ -39,7 +40,10 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
     let mut book = Notebook::open(&root, true).unwrap();
     book.settings.date_format = "MM/DD/YYYY".into();
     for mask in (0..16).chain((4..17).map(|i| 1 << i)).chain([0x1ffff]) {
-        let mut toolbar = ToolbarSettings::default();
+        let mut toolbar = ToolbarSettings {
+            visible: mask % 2 == 0,
+            ..ToolbarSettings::default()
+        };
         for (index, (item, _)) in ToolbarItem::OPTIONS.into_iter().enumerate() {
             toolbar.set_enabled(item, mask & (1 << index) != 0);
         }

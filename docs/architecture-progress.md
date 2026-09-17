@@ -2124,6 +2124,22 @@ regions; three existing menu-navigation tests encountered the concurrently added
 Hide toolbar menu entry and need their navigation counts updated by that change.
 No desktop interaction or native app launch was used.
 
+## Toolbar visibility from View (2026-09-17)
+
+View > Hide toolbar toggles a default-true ToolbarSettings::visible preference.
+It uses the existing notebook writer, or session defaults without a notebook,
+and retains item choices, order and size. Hidden and all-items-disabled toolbars
+consume no row or border; resetting defaults restores visibility. Busy/modal
+interaction is rejected by the settings adapter.
+
+Verification: two new headless visibility regressions, all 23 title/menu tests,
+and all five toolbar-settings tests passed. Coverage includes reclaimed document
+space, saved visibility and legacy defaults, notebook/session isolation, reset,
+and busy/modal guards. Existing menu navigation tests account for the new entry.
+The full locked offline suite, cargo check, cargo fmt --check, and strict
+all-targets Clippy with editor-diagnostics passed using one build/test thread.
+No desktop interaction or native application launch occurred.
+
 ## Optional toolbar sidebar button (2026-09-17)
 
 The customizable toolbar Sidebar item now defaults off, while the title-bar

@@ -421,6 +421,12 @@ returns to commands. Palette and View theme toggles share the guarded
 `toggle_theme` adapter in `settings_ui.rs`, preserving notebook/session scope and
 working without a document. Neither port owns new preference state.
 
+View > Hide toolbar toggles `ToolbarSettings::visible` through the settings adapter,
+persisting per active notebook or using session defaults without a notebook.
+Visibility defaults to true for new and existing settings. Hiding removes the row
+and border without changing item preferences; resetting toolbar defaults restores
+visibility. The toggle follows the existing busy/modal guards.
+
 The optional toolbar sidebar button defaults off; explicit saved visibility is retained.
 Resetting toolbar defaults turns that item off again.
 The window toolbar uses `ToolbarSettings` in `notebook/settings.rs` for independent
