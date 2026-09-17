@@ -1372,3 +1372,124 @@ fn note_and_tab_shortcuts_keep_creation_and_close_lifecycles_distinct(cx: &mut T
     assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), files + 1);
     assert_eq!(fs::read_to_string(&fixture.note).unwrap(), "original A");
 }
+
+#[gpui::test]
+fn text_files_use_picker_source_editing_and_restore_markdown_mode(cx: &mut TestAppContext) {
+    use mithril::commands::Command;
+    let (fixture, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| this.set_mode(ViewMode::Reading, window, cx))
+    });
+    for name in [
+        "file.txt", "file.js", "file.ts", "file.sh", "README", "file.xyz",
+    ] {
+        let path = fixture.other.join(name);
+        fs::write(&path, "original").unwrap();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.request(Next::Open, window, cx);
+                let operation = this.file_picker_operation.take().unwrap();
+                this.finish_file_picker(operation, Ok(Some(path.clone())), window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                assert_eq!(this.document().unwrap().path, path);
+                assert_eq!(this.tabs.active.mode, ViewMode::Source);
+                assert!(this.can_edit_document());
+                assert!(!this.can_edit_markdown());
+                for command in [
+                    Command::LivePreview,
+                    Command::ReadingView,
+                    Command::Bold,
+                    Command::ToggleTasks,
+                    Command::EditLink,
+                ] {
+                    assert!(command.unavailable(this.capabilities()).is_some());
+                    this.run_command(command, window, cx);
+                }
+                this.cycle_view_mode(window, cx);
+                this.set_mode(ViewMode::Reading, window, cx);
+                assert_eq!(this.tabs.active.mode, ViewMode::Source);
+                assert_eq!(
+                    this.notebooks.active.as_ref().unwrap().settings.view_mode,
+                    ViewMode::Reading
+                );
+                assert_eq!(this.tabs.active.editor.text(cx).as_ref(), "original");
+                this.tabs.active.editor.select(0..8, window, cx);
+                this.tabs
+                    .active
+                    .editor
+                    .replace_selection("edited", window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.dispatch_action(Undo);
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert_eq!(
+                notes.read(cx).tabs.active.editor.text(cx).as_ref(),
+                "original"
+            )
+        });
+        cx.dispatch_action(Redo);
+        cx.run_until_parked();
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.save(Next::Nothing, window, cx)));
+        cx.run_until_parked();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "edited");
+    }
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.request(Next::File(fixture.note.clone()), window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).tabs.active.mode, ViewMode::Reading));
+}
+
+#[gpui::test]
+fn non_markdown_retained_views_share_unsaved_text(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let path = fixture.root.join("script.ts");
+    fs::write(&path, "const count = 1;").unwrap();
+    let first = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.install_document(Some(Document::open(path.clone()).unwrap()), window, cx);
+            this.tabs.active.editor.select(14..15, window, cx);
+            this.tabs.active.editor.replace_selection("2", window, cx);
+            let first = this.tabs.active.id;
+            this.new_tab(window, cx);
+            this.request(Next::FileFromPicker(path.clone()), window, cx);
+            first
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.tabs.active.mode, ViewMode::Source);
+            assert_eq!(
+                this.tabs.active.editor.text(cx).as_ref(),
+                "const count = 2;"
+            );
+            assert_eq!(
+                this.tabs.get(first).unwrap().editor.text(cx),
+                this.tabs.active.editor.text(cx)
+            );
+            this.tabs.active.editor.focus(window, cx);
+        })
+    });
+    cx.dispatch_action(Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(
+            this.tabs.active.editor.text(cx).as_ref(),
+            "const count = 1;"
+        );
+        assert_eq!(
+            this.tabs.get(first).unwrap().editor.text(cx),
+            this.tabs.active.editor.text(cx)
+        );
+    });
+}

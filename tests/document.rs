@@ -53,7 +53,7 @@ fn mixed_endings_use_the_first_observed_convention() {
 }
 
 #[test]
-fn opening_rejects_invalid_utf8_missing_files_and_unsupported_extensions() {
+fn opening_rejects_invalid_utf8_missing_files_and_binary_data() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("note.md");
     fs::write(&path, [0xff]).unwrap();
@@ -71,7 +71,7 @@ fn opening_rejects_invalid_utf8_missing_files_and_unsupported_extensions() {
         document::open(&directory.path().join("file.txt"))
             .unwrap_err()
             .kind(),
-        io::ErrorKind::InvalidInput,
+        io::ErrorKind::NotFound,
     );
 }
 
@@ -104,4 +104,32 @@ fn sharing_locked_save_preserves_original_and_cleans_up_temporary_file() {
     assert_eq!(fs::read_to_string(&path).unwrap(), "original");
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
     drop(lock);
+}
+
+#[test]
+fn arbitrary_text_files_round_trip_and_binary_files_are_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    for name in [
+        "file.txt", "file.js", "file.ts", "file.sh", "README", "file.xyz",
+    ] {
+        let path = directory.path().join(name);
+        fs::write(&path, b"\xef\xbb\xbfhello\r\n").unwrap();
+        let loaded = document::open(&path).unwrap();
+        assert_eq!(loaded.text, "hello\n");
+        document::save_file(&path, "edited\n", loaded.format, &loaded.version).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"\xef\xbb\xbfedited\r\n");
+    }
+    for bytes in [
+        b"text\0binary".as_slice(),
+        b"PK\x03\x04archive",
+        b"\xff\xfe",
+    ] {
+        let path = directory.path().join("binary.txt");
+        fs::write(&path, bytes).unwrap();
+        assert_eq!(
+            document::open(&path).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
 }

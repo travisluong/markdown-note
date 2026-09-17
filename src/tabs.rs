@@ -14,6 +14,7 @@ pub(crate) struct Tab {
     pub(crate) editor: Editor,
     pub(crate) editor_subscription: Subscription,
     pub(crate) mode: ViewMode,
+    markdown_mode: Option<ViewMode>,
     pub(crate) reading_text: SharedString,
     pub(crate) reading_search: Option<reading_search::ReadingSearch>,
     pub(crate) reading_view: Option<TextView>,
@@ -36,6 +37,7 @@ impl Tab {
             editor,
             editor_subscription,
             mode: ViewMode::default(),
+            markdown_mode: None,
             reading_text: SharedString::default(),
             reading_search: None,
             reading_view: None,
@@ -50,6 +52,19 @@ impl Tab {
         match self.session.content() {
             Content::Document { value, .. } => Some(value),
             _ => None,
+        }
+    }
+    pub(crate) fn source_only(&self) -> bool {
+        self.document()
+            .is_some_and(|doc| !notebook::markdown(&doc.path))
+    }
+    /// Forcing Source is temporary and never changes notebook preferences.
+    pub(crate) fn apply_document_mode(&mut self) {
+        if self.source_only() {
+            self.markdown_mode.get_or_insert(self.mode);
+            self.mode = ViewMode::Source;
+        } else if let Some(mode) = self.markdown_mode.take() {
+            self.mode = mode;
         }
     }
     pub(crate) fn path(&self) -> Option<&Path> {

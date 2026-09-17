@@ -9,6 +9,8 @@ use gpui::{
 use gpui_component::input::{Input, InputEvent, InputState, Rope};
 use std::{ops::Range, path::PathBuf};
 
+mod language;
+
 /// Only events the application handles. Navigation remains an application action.
 pub enum Event<'a> {
     Changed,
@@ -108,8 +110,10 @@ impl Editor {
         });
     }
     pub fn set_document_path(&self, path: Option<PathBuf>, cx: &mut App) {
-        self.input
-            .update(cx, |input, cx| input.set_image_document(path, cx));
+        self.input.update(cx, |input, cx| {
+            input.set_document_language(path.as_deref().map_or("markdown", language::for_path), cx);
+            input.set_image_document(path, cx);
+        });
     }
     pub fn select(&self, range: Range<usize>, window: &mut Window, cx: &mut App) -> bool {
         self.input

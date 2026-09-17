@@ -389,6 +389,7 @@ impl Notes {
     fn capabilities(&self) -> mithril::capabilities::Capabilities {
         mithril::capabilities::Capabilities {
             has_document: self.document().is_some(),
+            source_only: self.tabs.active.source_only(),
             mode: self.tabs.active.mode,
             busy: self.document_interaction_blocked(),
             has_notebook: self.notebooks.active.is_some(),
@@ -411,6 +412,10 @@ impl Notes {
         self.capabilities().can_edit_document()
     }
 
+    fn can_edit_markdown(&self) -> bool {
+        self.capabilities().can_edit_markdown()
+    }
+
     fn change_view_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
         if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
@@ -428,7 +433,7 @@ impl Notes {
     }
 
     fn set_mode(&mut self, mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
-        if self.settings_panel.is_some() {
+        if self.settings_panel.is_some() || self.tabs.active.source_only() {
             return;
         }
         self.record_activation_preference(notebook_ui::PreferenceIntent::ViewMode(mode));

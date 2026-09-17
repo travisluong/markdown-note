@@ -264,6 +264,7 @@ pub struct InputState {
     pub(super) list_drag: Option<super::list_drag::Drag>,
     pub(super) list_viewport_anchor: Option<(usize, Pixels, Selection)>,
     pub(super) live_preview: bool,
+    document_language: Option<SharedString>,
     #[cfg(feature = "editor-diagnostics")]
     pub(super) preview_painted_revision: u64,
     #[cfg(feature = "editor-diagnostics")]
@@ -392,6 +393,7 @@ impl InputState {
             focus_handle: focus_handle.clone(),
             text: Default::default(),
             live_preview: false,
+            document_language: None,
             preview_task: None,
             #[cfg(feature = "editor-diagnostics")]
             preview_painted_revision: 0,
@@ -914,13 +916,63 @@ impl InputState {
         cx.notify();
     }
 
+    /// Configure a document view without replacing its buffer, selection or history.
+    /// Markdown keeps its existing Live presentation; other languages are source-only.
+    pub fn set_document_language(
+        &mut self,
+        language: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        let language = language.into();
+        if self.document_language.as_ref() == Some(&language) {
+            return;
+        }
+        self.document_language = Some(language);
+        if !self.markdown_editing() {
+            self.set_live_preview(false, cx);
+        }
+        self.configure_document_mode(cx);
+    }
+
+    fn markdown_editing(&self) -> bool {
+        self.document_language
+            .as_ref()
+            .is_none_or(|language| language.as_ref() == "markdown")
+    }
+
+    fn configure_document_mode(&mut self, cx: &mut Context<Self>) {
+        let Some(language) = self.document_language.clone() else {
+            return;
+        };
+        self.mode = if self.live_preview {
+            InputMode::plain_text().multi_line(true)
+        } else {
+            let mut mode = InputMode::code_editor(language.clone());
+            if let InputMode::CodeEditor {
+                line_number,
+                indent_guides,
+                diagnostics,
+                ..
+            } = &mut mode
+            {
+                *line_number = language != "markdown" && language != "text";
+                *indent_guides = *line_number;
+                diagnostics.reset(&self.text);
+            }
+            mode
+        };
+        self._pending_update = true;
+        cx.notify();
+    }
     /// Switch presentation without replacing the buffer or history.
     pub fn set_live_preview(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let enabled = enabled && self.markdown_editing();
         self.list_viewport_anchor = None;
         self.pending_range_reveal = None;
         self.list_drag = None;
         if self.live_preview != enabled {
             self.live_preview = enabled;
+            self.configure_document_mode(cx);
             self.text_wrapper.set_live_preview(enabled, cx);
             self.schedule_preview(cx);
             self.last_selected_range = None;
@@ -1375,7 +1427,11 @@ impl InputState {
             self.clear_inline_completion(cx);
         }
 
-        if self.selected_range.is_empty() && !self.disabled && self.mode.is_multi_line() {
+        if self.selected_range.is_empty()
+            && !self.disabled
+            && self.mode.is_multi_line()
+            && self.markdown_editing()
+        {
             let row = self.text.offset_to_point(self.cursor()).row;
             let start = self.text.line_start_offset(row);
             let line = self.text.slice_line(row).to_string();
@@ -1406,7 +1462,12 @@ impl InputState {
         }
         if self.mode.is_multi_line() {
             // Get current line indent
-            let indent = if self.mode.is_code_editor() {
+            let indent = if self.mode.is_code_editor()
+                && self
+                    .document_language
+                    .as_ref()
+                    .is_none_or(|language| language.as_ref() != "markdown")
+            {
                 self.indent_of_next_line()
             } else {
                 "".to_string()
@@ -1780,6 +1841,9 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if !self.markdown_editing() {
+            return false;
+        }
         let Some(edit) = super::live_preview::nest_lines_with_style(
             &self.text.to_string(),
             self.selected_range.into(),
@@ -1833,6 +1897,9 @@ impl InputState {
 
     /// Create or toggle tasks on intersected lines as one isolated edit.
     pub fn toggle_selected_tasks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.markdown_editing() {
+            return;
+        }
         if self.disabled || !self.mode.is_multi_line() {
             return;
         }
@@ -2961,6 +3028,27 @@ impl Render for InputState {
 
 #[cfg(feature = "editor-diagnostics")]
 impl InputState {
+    /// Read actual syntax ranges after layout on TestPlatform.
+    #[doc(hidden)]
+    pub fn diagnostic_document_syntax_ranges(&self, cx: &App) -> Vec<Range<usize>> {
+        let InputMode::CodeEditor { highlighter, .. } = &self.mode else {
+            return vec![];
+        };
+        highlighter
+            .borrow()
+            .as_ref()
+            .map_or_else(Vec::new, |highlighter| {
+                highlighter
+                    .styles(
+                        &(0..self.text.len()),
+                        &crate::ActiveTheme::theme(cx).highlight_theme,
+                    )
+                    .into_iter()
+                    .filter(|(_, style)| *style != gpui::HighlightStyle::default())
+                    .map(|(range, _)| range)
+                    .collect()
+            })
+    }
     /// Headless geometry probe; never enabled in normal builds.
     #[doc(hidden)]
     pub fn diagnostic_input_paint(&self) -> (Bounds<Pixels>, String, Point<Pixels>) {

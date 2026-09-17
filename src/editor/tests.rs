@@ -300,3 +300,46 @@ fn markdown_format_rejects_disabled_input(cx: &mut TestAppContext) {
         assert_eq!(editor.text(cx).as_ref(), "café");
     });
 }
+
+#[gpui::test]
+fn source_languages_highlight_and_plain_text_enter_stays_literal(cx: &mut TestAppContext) {
+    let (host, cx) = fixture(cx, "const greeting = 'hello';");
+    let editor = cx.update(|_, cx| host.read(cx).editor.clone());
+    for (name, text, highlighted) in [
+        ("script.js", "const greeting = 'hello';", true),
+        ("script.ts", "const greeting: string = 'hello';", true),
+        ("script.sh", "echo \"hello\" # comment", true),
+        ("note.md", "# Heading\n\n**bold**", true),
+        ("plain.txt", "const greeting = 'hello';", false),
+    ] {
+        cx.update(|window, cx| {
+            let len = editor.snapshot(cx).len();
+            editor.select(0..len, window, cx);
+            editor.replace_selection(text, window, cx);
+            editor.set_document_path(Some(name.into()), cx);
+            editor.set_mode(ViewMode::Source, cx);
+        });
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            let ranges = editor
+                .diagnostic_input()
+                .read(cx)
+                .diagnostic_document_syntax_ranges(cx);
+            assert_eq!(!ranges.is_empty(), highlighted, "{name}: {ranges:?}");
+        });
+    }
+    for text in ["- literal", "1. literal", "- [ ] literal"] {
+        cx.update(|window, cx| {
+            let len = editor.snapshot(cx).len();
+            editor.select(0..len, window, cx);
+            editor.replace_selection(text, window, cx);
+            editor.select(text.len()..text.len(), window, cx);
+            editor.set_mode(ViewMode::LivePreview, cx); // Adapter must reject non-Markdown preview.
+            editor.focus(window, cx);
+        });
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(editor.text(cx).as_ref(), format!("{text}\n")));
+    }
+}

@@ -63,13 +63,13 @@ impl Notes {
                 "Live preview",
                 mode == ViewMode::LivePreview,
                 Box::new(LivePreview),
-                busy,
+                busy || capabilities.source_only,
             )
             .menu_with_check_and_disabled(
                 "Reading view",
                 mode == ViewMode::Reading,
                 Box::new(ReadingView),
-                busy,
+                busy || capabilities.source_only,
             )
             .separator()
             .item(

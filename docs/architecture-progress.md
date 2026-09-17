@@ -1978,3 +1978,20 @@ Check, format and strict all-targets Clippy passed on the final code. The comple
 integration suite remains blocked by the locked application executable as recorded
 above. No native app/desktop testing was performed, and unrelated Cargo.lock edits
 remain excluded from both commits.
+
+## Source editing for text files (2026-09-17)
+
+The file loader now accepts arbitrary UTF-8 text files and rejects binary data.
+Non-Markdown documents force Source without persisting that forced mode, and
+retain shared text/history, saves and conflict handling. Filename-based syntax
+highlighting covers supported grammars with a plain-text fallback. Markdown
+formatting and list semantics are unavailable for other file types.
+
+Verification passed: 91 library tests and 269 application tests with
+`cargo test --locked --features editor-diagnostics --lib --bin mithril`, plus all
+five public storage tests by executing the freshly built `document` test binary.
+Check, format and strict all-targets Clippy passed. Full integration testing was
+attempted but Cargo could not replace the locked `target/debug/mithril.exe`;
+`cargo rustc --test document` produced the updated storage test binary despite the
+same application-binary lock. No desktop interaction occurred. Unrelated
+Cargo.lock changes are excluded.

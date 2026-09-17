@@ -102,7 +102,7 @@ fn drop_allowed(mode: ViewMode, busy: bool, note: Option<&Path>, root: Option<&P
         && mode != ViewMode::Reading
         && note
             .zip(root)
-            .is_some_and(|(note, root)| note.starts_with(root))
+            .is_some_and(|(note, root)| notebook::markdown(note) && note.starts_with(root))
 }
 
 impl Notes {

@@ -1064,6 +1064,7 @@ impl Notes {
         });
         let editor = self.document_editor(id, window, cx);
         let tab = self.tabs.get_mut(id).unwrap();
+        tab.apply_document_mode();
         tab.reading_search = None;
         tab.reading_view = None;
         tab.saves.timer = None;
@@ -1160,7 +1161,7 @@ impl Notes {
                     .unwrap_or(true);
                 if let Some(document) = self
                     .retained_document(&path)
-                    .filter(|_| notebook_path_valid && notebook::markdown(&path))
+                    .filter(|_| notebook_path_valid)
                 {
                     self.notebooks.tree_operation = None;
                     if self.complete_content_load(
@@ -2125,7 +2126,9 @@ impl Notes {
                             });
                             if effects.is_empty() { continue; }
                             tab.navigation.remap(&root.join(&from), &root.join(&to));
+                            tab.apply_document_mode();
                             let path = tab.document().map(|d| d.path.clone()); tab.editor.set_document_path(path, cx);
+                            tab.editor.set_mode(tab.mode, cx);
                             if let Some(error) = error { this.save_state_mut(id).error = Some(format!("Could not validate moved file: {error}. Your changes remain in this document.")); }
                             let effects = effects.into_iter().filter(|e| !matches!(e, app::session::Effect::Moved(_) | app::session::Effect::MoveBaselineConflict(_))).collect();
                             this.apply_tab_effects(id, effects, window, cx);

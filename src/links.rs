@@ -111,7 +111,7 @@ impl Notes {
     }
 
     pub(super) fn edit_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.can_edit_document() || window.has_active_dialog(cx) {
+        if !self.can_edit_markdown() || window.has_active_dialog(cx) {
             return;
         }
         let expected = self.tabs.active.editor.snapshot(cx);
@@ -178,7 +178,7 @@ impl Notes {
                             );
                             if this.tabs.active.id != tab_id || this.document_id() != identity
                                 || this.tabs.active.editor.snapshot(cx) != expected
-                                || !this.can_edit_document()
+                                || !this.can_edit_markdown()
                             {
                                 *error.borrow_mut() =
                                     "The document changed. Close this dialog and try again.".into();

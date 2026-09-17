@@ -63,8 +63,16 @@ impl Notes {
         } else {
             editor_focus.clone()
         };
-        let item =
-            |label, command| command_item(label, command, editable, &owner, &target, &editor_focus);
+        let item = |label, command| {
+            command_item(
+                label,
+                command,
+                command.unavailable(self.capabilities()).is_none(),
+                &owner,
+                &target,
+                &editor_focus,
+            )
+        };
         menu = menu.action_context(focus.clone());
         for (label, action, enabled) in [
             ("Undo", Box::new(Undo) as Box<dyn Action>, editable),

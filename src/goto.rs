@@ -68,7 +68,7 @@ impl Notes {
     }
 
     pub(super) fn toggle_selected_tasks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.can_edit_document() || window.has_active_dialog(cx) {
+        if !self.can_edit_markdown() || window.has_active_dialog(cx) {
             return;
         }
         self.tabs.active.editor.toggle_selected_tasks(window, cx);

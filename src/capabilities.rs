@@ -5,6 +5,7 @@ use crate::ViewMode;
 #[derive(Clone, Copy, Debug)]
 pub struct Capabilities {
     pub has_document: bool,
+    pub source_only: bool,
     pub mode: ViewMode,
     pub busy: bool,
     pub has_notebook: bool,
@@ -13,6 +14,9 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
+    pub fn can_edit_markdown(self) -> bool {
+        self.can_edit_document() && !self.source_only
+    }
     pub fn can_edit_document(self) -> bool {
         self.has_document && !self.busy && self.mode != ViewMode::Reading
     }

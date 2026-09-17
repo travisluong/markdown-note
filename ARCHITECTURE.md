@@ -600,3 +600,21 @@ content width before requesting a fitted image. No notebook setting or disk
 format changes are involved. `tests/mermaid.rs` exercises native rendering and
 GPUI TestPlatform behavior; the existing cross-platform validation workflow runs
 it with `editor-diagnostics`. See `docs/mermaid.md` for usage and compatibility.
+
+## Text file editing
+
+`document::open` accepts UTF-8 text (including BOM and existing newline conventions)
+without an extension allowlist; binary control data and invalid UTF-8 are rejected.
+The normal captured-write, conflict, autosave and shared-buffer contracts apply to
+all text files. Notebook discovery and search remain Markdown-specific.
+
+`Tab::apply_document_mode` forces non-Markdown documents into Source at installation
+and path remapping. It retains the previous Markdown mode for subsequent navigation;
+forcing Source never writes the notebook's view preference. Capabilities disable
+Live/Reading and Markdown formatting, tasks, links and image insertion for these
+files, while normal text editing, find/replace, undo and saving remain available.
+`Editor::set_document_path` selects a grammar through `editor/language.rs`; unknown
+extensions use plain text. The vendored `InputState::set_document_language` changes
+syntax presentation without replacing the rope, selection or history. Markdown
+Source uses highlighting and Live retains its existing projection; non-Markdown
+views cannot enable Live or Markdown list continuation/nesting.

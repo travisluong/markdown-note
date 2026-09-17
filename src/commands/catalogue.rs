@@ -225,10 +225,15 @@ impl Command {
         if context.busy {
             return Some("Wait for the current operation to finish");
         }
-        if self.markdown_format().is_some() && !context.can_edit_document() {
+        if (self.markdown_format().is_some() || matches!(self, Self::ToggleTasks | Self::EditLink))
+            && !context.can_edit_markdown()
+        {
             return Some("Open an editable document in Source or Live preview");
         }
         match self {
+            Self::LivePreview | Self::ReadingView if context.source_only => {
+                Some("Non-Markdown files use Source mode")
+            }
             Self::SortFiles if !context.has_notebook => Some("Open a notebook to sort files"),
             Self::Save if !context.can_save() => Some("Open a document to save"),
             Self::ToggleSidebar | Self::ShowExplorer if !context.has_notebook => {

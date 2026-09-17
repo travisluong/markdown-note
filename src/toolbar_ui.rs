@@ -137,7 +137,7 @@ impl Notes {
                             let button =
                                 toolbar_button(id, Icon::default().path(path), settings.icon_size)
                                     .tooltip(item.label())
-                                    .disabled(!self.can_edit_document());
+                                    .disabled(!self.can_edit_markdown());
                             if item == ToolbarItem::Heading {
                                 button
                                     .dropdown_menu({
@@ -195,7 +195,7 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.can_edit_document() && !window.has_active_dialog(cx) {
+        if self.can_edit_markdown() && !window.has_active_dialog(cx) {
             self.tabs.active.editor.format_markdown(format, window, cx);
         }
     }
@@ -225,7 +225,7 @@ impl Notes {
             let selection = selection.clone();
             menu = menu.item(
                 PopupMenuItem::new(label)
-                    .disabled(!self.can_edit_document())
+                    .disabled(!self.can_edit_markdown())
                     .on_click(move |_, window, cx| {
                         let _ = owner.update(cx, |this, cx| {
                             if this.tabs.active.editor.id() == editor

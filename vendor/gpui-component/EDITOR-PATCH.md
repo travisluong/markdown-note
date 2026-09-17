@@ -540,3 +540,14 @@ Reconcile `input/input.rs`, `text/text_view.rs` and `text/node.rs` when upgradin
 Headless app coverage in `src/settings_ui/panel/tests.rs` checks column and track
 geometry in all three modes, narrow windows and sidebar resizing, gutter wheel
 scrolling, right-edge track clicks and thumb drags, and Reading anchor retention.
+
+## Document source languages
+
+`InputState::set_document_language` configures a retained document view's source
+highlighter using the existing CodeEditor mode. Switching Markdown to Live uses
+its original plain-input projection, preserving the buffer, history and selection.
+Other languages reject Live and Markdown list Enter/nesting/task operations.
+Grammar changes reinitialize diagnostics against the current rope and invalidate
+highlighting for the next render. Unconfigured generic inputs keep their behavior.
+The diagnostic syntax-range probe supports headless verification of real styles
+in Mithril's `src/editor/tests.rs`; retain this contract during upstream upgrades.

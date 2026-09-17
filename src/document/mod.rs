@@ -1,4 +1,4 @@
-//! Markdown file decoding and atomic replacement, independent of GPUI state.
+//! UTF-8 text file decoding and atomic replacement, independent of GPUI state.
 //!
 //! The editor owns the live buffer and saved rope. Storage accepts a captured
 //! text snapshot and returns file data; it never updates a document session.
@@ -60,24 +60,21 @@ pub struct LoadedDocument {
 }
 
 pub fn open(path: &Path) -> io::Result<LoadedDocument> {
-    if !path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown")
-        })
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Choose a .md or .markdown file.",
-        ));
-    }
     let path = fs::canonicalize(path)?;
     let captured = storage::capture(&path)?;
     let bytes: &[u8] = captured.version.raw.as_ref();
     let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
     let raw = std::str::from_utf8(if bom { &bytes[3..] } else { bytes })
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "This file is not valid UTF-8."))?;
+    if raw
+        .chars()
+        .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t' | '\u{c}'))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "This file contains binary data. Open a UTF-8 text file instead.",
+        ));
+    }
     // Mixed endings normalize to the first observed convention on save.
     let newline = match raw.bytes().position(|byte| byte == b'\r' || byte == b'\n') {
         Some(index) if raw.as_bytes()[index..].starts_with(b"\r\n") => Newline::CrLf,
