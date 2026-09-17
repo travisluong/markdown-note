@@ -7,10 +7,10 @@ use crate::{
 use gpui::{
     AnyElement, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement, MouseButton,
     Pixels, Size, TextRun, WeakEntity, Window, WindowControlArea, anchored, canvas, deferred, div,
-    font, img, prelude::*, px,
+    font, prelude::*, px,
 };
 use gpui_component::{
-    ActiveTheme, Sizable, WindowExt,
+    ActiveTheme, Disableable, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::Search,
     menu::{PopupMenu, PopupMenuItem},
@@ -240,11 +240,8 @@ impl HeaderLayout {
     ) -> Self {
         let gap = rem * 0.25;
         let reserved = px(if mode.controls() { 4. } else { 8. })
-            + if mode.combined() {
-                px(28. + 32.)
-            } else {
-                px(0.)
-            }
+            + px(28.)
+            + if mode.combined() { px(32.) } else { px(0.) }
             + if mode == HeaderMode::Mac {
                 px(80.)
             } else {
@@ -471,18 +468,30 @@ impl Notes {
         if mode == HeaderMode::Mac {
             bar = bar.child(div().w(px(80.)).flex_shrink_0());
         }
-        if mode.combined() {
-            bar = bar.child(
-                div()
-                    .debug_selector(|| "title-bar-logo".into())
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .w(px(28.))
-                    .flex_shrink_0()
-                    .child(img("brand/mithril.png").size(px(16.))),
-            );
-        }
+        bar = bar.child(
+            Button::new("title-bar-sidebar-toggle")
+                .debug_selector(|| "title-bar-sidebar-toggle".into())
+                .cursor_default()
+                .ghost()
+                .small()
+                .w(px(28.))
+                .flex_shrink_0()
+                .icon(Icon::new(IconName::PanelLeft).size(px(16.)))
+                .tooltip(if self.sidebar_collapsed {
+                    "Show sidebar"
+                } else {
+                    "Collapse sidebar"
+                })
+                .disabled(
+                    self.notebooks.active.is_none()
+                        || self.document_interaction_blocked()
+                        || window.has_active_dialog(cx),
+                )
+                .on_click(cx.listener(|this, _, window, cx| {
+                    cx.stop_propagation();
+                    this.toggle_sidebar(window, cx);
+                })),
+        );
         let mut menus = div().flex().items_center().gap(layout.gap).flex_shrink_0();
         for kind in MENUS[..layout.visible]
             .iter()

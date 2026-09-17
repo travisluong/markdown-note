@@ -245,13 +245,15 @@ binary tests can compile without requiring a diagnostics feature. Do not use it
 for production feature edits. Form/search-query inputs are separate controls and
 are not document editors.
 
-`title_bar_ui.rs` owns the combined title/menu bar: logo, five menus
-(File, View, Search, Notebooks and Help),
+`title_bar_ui.rs` owns the combined title/menu bar: sidebar toggle, six menus
+(File, Edit, View, Search, Notebooks and Help),
 measured trailing-menu overflow, popup anchors, and platform control/drag regions.
 Windows/macOS request transparent title bars; macOS retains native traffic lights.
 Linux requests client decorations, using Root's existing WindowBorder, and falls
 back to menus below a native title bar if the compositor keeps server decorations.
-Fullscreen retains menus without logo, controls or drag space. Toolbar and tabs
+The sidebar icon before File reuses the guarded sidebar adapter and stays available
+in every header mode. Fullscreen retains the toggle and menus without controls or
+drag space. Toolbar and tabs
 remain below the bar. `Notes::window_title` still updates the OS title and unsaved
 marker; filenames and dirty indicators remain visible in tabs.
 
@@ -328,8 +330,8 @@ and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
 marketing site's exact SVG mark. `build.rs` embeds Windows icon resource 1;
 release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
 launcher identity matches `WindowOptions::app_id` (`org.mithril.Mithril`).
-The combined title bar loads the existing brand PNG through the application asset
-source; native shell icons continue to use the packaged resources.
+The title bar uses a sidebar icon button; native shell icons continue to use the
+packaged brand resources.
 
 Windows distribution is owned by
 [`packaging/windows/mithril.iss`](packaging/windows/mithril.iss) and the
@@ -534,7 +536,7 @@ Copy excludes fences and container prefixes and does not edit text or selection.
 Headless pointer/clipboard coverage lives in tests/code_copy.rs.
 
 Sidebar visibility and Explorer selection remain owned by `sidebar_ui.rs`.
-Toolbar, View menu, palette and Mod+Shift+B/Mod+Shift+E share those adapters,
+Title bar, toolbar, View menu, palette and Mod+Shift+B/Mod+Shift+E share those adapters,
 requiring an active notebook and rejecting busy/modal interaction. Hiding the
 sidebar retains the active Search panel; reopening restores its query focus.
 Show Explorer reveals the tree without discarding Search query/results. View

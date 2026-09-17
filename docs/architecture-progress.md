@@ -2109,3 +2109,17 @@ palette edits, picker synchronization/reset/stale events, and actual headless ic
 rendering with text/disabled/semantic-color preservation. No desktop interaction
 or native application launch occurred. Manual visual validation remains with the
 user, and the pre-existing Cargo.lock change remains untouched.
+
+## Title-bar sidebar control (2026-09-17)
+
+The menu-bar logo is replaced with a fixed-width sidebar icon before File. The
+button uses the existing guarded sidebar owner, preserves Search state and focus,
+and remains present in fullscreen and server-decorated layouts. Menu measurement
+reserves its width in every mode; it is outside native caption drag regions.
+
+Verification: the two new headless regressions passed, covering click toggling,
+missing notebook/modal/busy guards, Search query/results retention and focus.
+The title-bar run passed 21 of 24 tests, including fullscreen, overflow and caption
+regions; three existing menu-navigation tests encountered the concurrently added
+Hide toolbar menu entry and need their navigation counts updated by that change.
+No desktop interaction or native app launch was used.

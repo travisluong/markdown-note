@@ -45,6 +45,64 @@ fn click(kind: MenuKind, cx: &mut VisualTestContext) {
     cx.refresh().unwrap();
 }
 
+#[gpui::test]
+fn title_sidebar_button_toggles_without_dragging_and_rechecks_guards(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    let button = cx.debug_bounds("title-bar-sidebar-toggle").unwrap();
+    assert_eq!(button.size.width, px(28.));
+    assert!(button.right() <= cx.debug_bounds("file-menu").unwrap().left());
+    assert!(cx.debug_bounds("title-bar-logo").is_none());
+    // No notebook: the visible control is disabled.
+    cx.simulate_click(button.center(), Modifiers::default());
+    cx.update(|_, cx| assert!(!notes.read(cx).sidebar_collapsed));
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active =
+                Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.editor.focus(window, cx);
+            cx.notify();
+        })
+    });
+    for collapsed in [true, false] {
+        cx.refresh().unwrap();
+        // Pointer movement must not enter a native window move operation.
+        cx.simulate_mouse_down(button.center(), MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(
+            button.center() + gpui::point(px(1.), px(0.)),
+            Some(MouseButton::Left),
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_up(button.center(), MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let this = notes.read(cx);
+            assert_eq!(this.sidebar_collapsed, collapsed);
+            if collapsed {
+                assert!(this.editor.is_focused(window, cx));
+            } else {
+                assert!(this.notebooks.tree_focus.is_focused(window));
+            }
+            #[cfg(target_os = "windows")]
+            assert!(this.title_bar.commands.is_empty());
+        });
+    }
+    cx.update(|window, cx| window.open_dialog(cx, |dialog, _, _| dialog.title("Modal")));
+    cx.refresh().unwrap();
+    cx.simulate_click(button.center(), Modifiers::default());
+    cx.update(|window, cx| {
+        assert!(!notes.read(cx).sidebar_collapsed);
+        window.close_dialog(cx);
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            cx.notify();
+        });
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.simulate_click(button.center(), Modifiers::default());
+    cx.update(|_, cx| assert!(!notes.read(cx).sidebar_collapsed));
+}
+
 #[cfg(target_os = "windows")]
 #[gpui::test]
 fn windows_caption_regions_dispatch_client_input(cx: &mut TestAppContext) {
@@ -257,10 +315,18 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(16.),
         widths,
     );
-    assert_eq!(fullscreen.visible, MENUS.len());
+    assert_eq!(fullscreen.visible, MENUS.len() - 2);
     assert!(!fullscreen.mode.combined());
     assert!(!HeaderMode::Server.controls());
     assert!(!HeaderMode::Mac.controls());
+    let server = HeaderLayout::new(
+        HeaderMode::Server,
+        size(px(400.), px(700.)),
+        px(400.),
+        px(16.),
+        widths,
+    );
+    assert_eq!(server.visible, fullscreen.visible);
 }
 
 #[gpui::test]
@@ -309,6 +375,9 @@ fn fullscreen_keeps_menus_and_restores_windowed_layout(cx: &mut TestAppContext) 
         assert!(layout.visible >= windowed.visible);
         assert!(this.menu.is_none());
     });
+    let toggle = cx.debug_bounds("title-bar-sidebar-toggle").unwrap();
+    assert_eq!(toggle.size.width, px(28.));
+    assert!(toggle.right() <= cx.debug_bounds("file-menu").unwrap().left());
     // A menu click with pointer motion stays an ordinary client interaction.
     let button = cx.debug_bounds("view-menu").unwrap();
     cx.simulate_mouse_down(button.center(), MouseButton::Left, Modifiers::default());
