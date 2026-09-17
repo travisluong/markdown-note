@@ -224,12 +224,19 @@ impl RenderOnce for IconName {
     }
 }
 
+#[cfg(feature = "editor-diagnostics")]
+#[derive(Default)]
+struct IconColorCapture(Vec<(SharedString, Hsla)>);
+#[cfg(feature = "editor-diagnostics")]
+impl gpui::Global for IconColorCapture {}
+
 #[derive(IntoElement)]
 pub struct Icon {
     base: Svg,
     style: StyleRefinement,
     path: SharedString,
     text_color: Option<Hsla>,
+    themed_color: bool,
     size: Option<Size>,
     rotation: Option<Radians>,
 }
@@ -241,6 +248,7 @@ impl Default for Icon {
             style: StyleRefinement::default(),
             path: "".into(),
             text_color: None,
+            themed_color: false,
             size: None,
             rotation: None,
         }
@@ -254,6 +262,7 @@ impl Clone for Icon {
         this.rotation = self.rotation;
         this.size = self.size;
         this.text_color = self.text_color;
+        this.themed_color = self.themed_color;
         this
     }
 }
@@ -261,6 +270,39 @@ impl Clone for Icon {
 impl Icon {
     pub fn new(icon: impl Into<Icon>) -> Self {
         icon.into()
+    }
+
+    /// Use the optional theme icon color for a neutral icon. Explicit text colors
+    /// take precedence. Disable this for inherited disabled or semantic colors.
+    pub fn themed_color(mut self, enabled: bool) -> Self {
+        self.themed_color = enabled;
+        self
+    }
+
+    /// Start an opt-in, headless render trace. No trace is allocated in normal use.
+    #[cfg(feature = "editor-diagnostics")]
+    pub fn diagnostic_begin_color_capture(cx: &mut App) {
+        cx.set_global(IconColorCapture::default());
+    }
+
+    /// Colors resolved by rendered icons since the last capture began.
+    #[cfg(feature = "editor-diagnostics")]
+    pub fn diagnostic_colors(cx: &App) -> Vec<(SharedString, Hsla)> {
+        cx.global::<IconColorCapture>().0.clone()
+    }
+
+    fn resolved_color(&self, inherited: Hsla, cx: &mut App) -> Hsla {
+        let color = self
+            .text_color
+            .or_else(|| self.themed_color.then(|| cx.theme().icon_color).flatten())
+            .unwrap_or(inherited);
+        #[cfg(feature = "editor-diagnostics")]
+        if cx.has_global::<IconColorCapture>() {
+            cx.global_mut::<IconColorCapture>()
+                .0
+                .push((self.path.clone(), color));
+        }
+        color
     }
 
     fn build(name: impl IconNamed) -> Self {
@@ -317,8 +359,8 @@ impl Sizable for Icon {
 }
 
 impl RenderOnce for Icon {
-    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let text_color = self.text_color.unwrap_or_else(|| window.text_style().color);
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let text_color = self.resolved_color(window.text_style().color, cx);
         let text_size = window.text_style().font_size.to_pixels(window.rem_size());
         let has_base_size = self.style.size.width.is_some() || self.style.size.height.is_some();
 
@@ -347,7 +389,7 @@ impl From<Icon> for AnyElement {
 
 impl Render for Icon {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let text_color = self.text_color.unwrap_or_else(|| cx.theme().foreground);
+        let text_color = self.resolved_color(cx.theme().foreground, cx);
         let text_size = window.text_style().font_size.to_pixels(window.rem_size());
         let has_base_size = self.style.size.width.is_some() || self.style.size.height.is_some();
 

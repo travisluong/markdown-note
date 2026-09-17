@@ -57,70 +57,72 @@ impl Notes {
                                     crate::app::navigation::Direction::Forward,
                                 )
                             };
-                            toolbar_button(id, icon, settings.icon_size)
-                                .tooltip(item.label())
-                                .disabled(
-                                    self.document_interaction_blocked()
-                                        || window.has_active_dialog(cx)
-                                        || self.tabs.active.navigation.target(direction).is_none(),
-                                )
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.navigate_history(direction, window, cx)
-                                }))
-                                .into_any_element()
+                            toolbar_button(
+                                id,
+                                icon,
+                                settings.icon_size,
+                                self.document_interaction_blocked()
+                                    || window.has_active_dialog(cx)
+                                    || self.tabs.active.navigation.target(direction).is_none(),
+                            )
+                            .tooltip(item.label())
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.navigate_history(direction, window, cx)
+                            }))
+                            .into_any_element()
                         }
                         ToolbarItem::Sidebar => toolbar_button(
                             "toolbar-sidebar-toggle",
                             IconName::PanelLeft,
                             settings.icon_size,
+                            self.is_busy() || !has_notebook,
                         )
                         .tooltip(if sidebar_visible {
                             "Collapse sidebar"
                         } else {
                             "Show sidebar"
                         })
-                        .disabled(self.is_busy() || !has_notebook)
                         .on_click(
                             cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)),
                         )
                         .into_any_element(),
-                        ToolbarItem::Explorer => {
-                            toolbar_button("sidebar-explorer", IconName::Folder, settings.icon_size)
-                                .tooltip(if cfg!(target_os = "macos") {
-                                    "Explorer (Cmd+Shift+E)"
-                                } else {
-                                    "Explorer (Ctrl+Shift+E)"
-                                })
-                                .selected(sidebar_visible && !searching)
-                                .disabled(disabled)
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.show_explorer(window, cx)
-                                    }),
-                                )
-                                .into_any_element()
-                        }
-                        ToolbarItem::Search => {
-                            toolbar_button("sidebar-search", IconName::Search, settings.icon_size)
-                                .tooltip(if cfg!(target_os = "macos") {
-                                    "Search all files (Cmd+Shift+F)"
-                                } else {
-                                    "Search all files (Ctrl+Shift+F)"
-                                })
-                                .selected(sidebar_visible && searching)
-                                .disabled(disabled)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.open_search_all(window, cx)
-                                }))
-                                .into_any_element()
-                        }
+                        ToolbarItem::Explorer => toolbar_button(
+                            "sidebar-explorer",
+                            IconName::Folder,
+                            settings.icon_size,
+                            disabled,
+                        )
+                        .tooltip(if cfg!(target_os = "macos") {
+                            "Explorer (Cmd+Shift+E)"
+                        } else {
+                            "Explorer (Ctrl+Shift+E)"
+                        })
+                        .selected(sidebar_visible && !searching)
+                        .on_click(cx.listener(|this, _, window, cx| this.show_explorer(window, cx)))
+                        .into_any_element(),
+                        ToolbarItem::Search => toolbar_button(
+                            "sidebar-search",
+                            IconName::Search,
+                            settings.icon_size,
+                            disabled,
+                        )
+                        .tooltip(if cfg!(target_os = "macos") {
+                            "Search all files (Cmd+Shift+F)"
+                        } else {
+                            "Search all files (Ctrl+Shift+F)"
+                        })
+                        .selected(sidebar_visible && searching)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_search_all(window, cx)),
+                        )
+                        .into_any_element(),
                         ToolbarItem::Sort => toolbar_button(
                             "sidebar-sort",
                             Icon::default().path("toolbar/sort.svg"),
                             settings.icon_size,
+                            disabled,
                         )
                         .tooltip("Sort files")
-                        .disabled(disabled)
                         .dropdown_menu({
                             let owner = owner.clone();
                             move |menu, _, cx| {
@@ -134,10 +136,13 @@ impl Notes {
                         .into_any_element(),
                         item => {
                             let (id, path, format) = formatting_item(item);
-                            let button =
-                                toolbar_button(id, Icon::default().path(path), settings.icon_size)
-                                    .tooltip(item.label())
-                                    .disabled(!self.can_edit_markdown());
+                            let button = toolbar_button(
+                                id,
+                                Icon::default().path(path),
+                                settings.icon_size,
+                                !self.can_edit_markdown(),
+                            )
+                            .tooltip(item.label());
                             if item == ToolbarItem::Heading {
                                 button
                                     .dropdown_menu({
@@ -173,10 +178,16 @@ impl Notes {
 }
 
 /// Keep icon geometry independent of Button's built-in icon-to-target ratio.
-fn toolbar_button(id: &'static str, icon: impl Into<Icon>, size: ToolbarIconSize) -> Button {
+fn toolbar_button(
+    id: &'static str,
+    icon: impl Into<Icon>,
+    size: ToolbarIconSize,
+    disabled: bool,
+) -> Button {
     Button::new(id)
         .debug_selector(move || id.into())
         .ghost()
+        .disabled(disabled)
         .with_size(px(size.button_pixels()))
         .size(px(size.button_pixels()))
         .p_0()
@@ -184,7 +195,11 @@ fn toolbar_button(id: &'static str, icon: impl Into<Icon>, size: ToolbarIconSize
             div()
                 .debug_selector(move || format!("{id}-icon"))
                 .size(px(size.icon_pixels()))
-                .child(Icon::new(icon).with_size(px(size.icon_pixels()))),
+                .child(
+                    Icon::new(icon)
+                        .themed_color(!disabled)
+                        .with_size(px(size.icon_pixels())),
+                ),
         )
 }
 

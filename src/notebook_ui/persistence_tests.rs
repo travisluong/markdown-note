@@ -199,7 +199,7 @@ fn an_unrelated_failed_book_does_not_block_activation_or_revert_the_index(cx: &m
 }
 
 #[gpui::test]
-fn border_colors_persist_through_the_settings_writer(cx: &mut TestAppContext) {
+fn palette_colors_persist_through_the_settings_writer(cx: &mut TestAppContext) {
     let (fixture, notes, cx) = fixture(cx);
     for (mode, border) in [
         (notebook::ThemeChoice::Light, 0x123456),
@@ -211,6 +211,8 @@ fn border_colors_persist_through_the_settings_writer(cx: &mut TestAppContext) {
                 appearance.theme = Some(mode);
                 let mut palette = appearance.palette(this.startup_dark);
                 palette.border = border;
+                palette.icon = border;
+                palette.secondary = border;
                 appearance.set_palette(this.startup_dark, palette);
                 this.update_appearance(appearance, window, cx);
             });
@@ -227,6 +229,13 @@ fn border_colors_persist_through_the_settings_writer(cx: &mut TestAppContext) {
     let loaded = notebook::Notebook::open(&fixture.root, false).unwrap();
     assert_eq!(loaded.settings.appearance.light.unwrap().border, 0x123456);
     assert_eq!(loaded.settings.appearance.dark.unwrap().border, 0xabcdef);
+    assert_eq!(loaded.settings.appearance.light.unwrap().icon, 0x123456);
+    assert_eq!(loaded.settings.appearance.dark.unwrap().icon, 0xabcdef);
+    assert_eq!(
+        loaded.settings.appearance.light.unwrap().secondary,
+        0x123456
+    );
+    assert_eq!(loaded.settings.appearance.dark.unwrap().secondary, 0xabcdef);
 }
 
 #[gpui::test]

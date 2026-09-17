@@ -1,5 +1,20 @@
 # Local patch inventory
 
+## Independent interface icon colors (2026-09-17)
+
+| File | Local contract and verification |
+| --- | --- |
+| src/theme/mod.rs | Optional icon_color, defaulting to None for compatibility. |
+| src/icon.rs | Opt-in themed color with explicit-color precedence, clone preservation and matching element/entity render paths. Opt-in diagnostics trace resolved colors for headless tests. |
+| src/button/button.rs | Enabled neutral icons/carets use the override; disabled, primary, semantic and loading variants retain foreground inheritance. |
+| src/menu/popup_menu.rs | Neutral icons, checks and submenu carets honor the override and retain disabled/explicit colors. |
+| src/select.rs | Select arrows and empty-state icons honor the override without recoloring labels. |
+| src/list/list.rs, src/list/delegate.rs, src/list/list_item.rs | Search, empty-state and selection-check icons use the override; existing muted colors remain fallbacks. |
+
+Reconcile these changes on upstream upgrades. Render regressions live in
+tests/theme_icons.rs; application toolbar and Settings tests cover palette
+propagation, disabled formatting, edits, switching, reset and stale events.
+
 ## Dialog close-button pointer isolation
 
 `src/dialog.rs` isolates close-control left-button presses from title dragging

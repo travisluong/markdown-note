@@ -426,6 +426,12 @@ impl RenderOnce for Button {
         let style: ButtonVariant = self.variant;
         let clickable = self.clickable();
         let is_disabled = self.disabled;
+        let themed_icon = !self.disabled
+            && !self.loading
+            && matches!(
+                self.variant,
+                ButtonVariant::Secondary | ButtonVariant::Ghost | ButtonVariant::Text
+            );
         let hoverable = self.hoverable();
         let normal_style = style.normal(self.outline, cx);
         let icon_size = match self.size {
@@ -573,7 +579,7 @@ impl RenderOnce for Button {
                     })
                     .when(!self.loading, |this| {
                         this.when_some(self.icon, |this, icon| {
-                            this.child(icon.with_size(icon_size))
+                            this.child(icon.themed_color(themed_icon).with_size(icon_size))
                         })
                     })
                     .when(self.loading, |this| {
@@ -588,7 +594,11 @@ impl RenderOnce for Button {
                     })
                     .children(self.children)
                     .when(self.dropdown_caret, |this| {
-                        this.child(Icon::new(IconName::ChevronDown).with_size(icon_size))
+                        this.child(
+                            Icon::new(IconName::ChevronDown)
+                                .themed_color(themed_icon)
+                                .with_size(icon_size),
+                        )
                     })
             })
             .when(self.loading && !self.disabled, |this| {

@@ -295,7 +295,7 @@ where
                 .justify_center()
                 .py_6()
                 .text_color(cx.theme().muted_foreground.opacity(0.6))
-                .child(Icon::new(IconName::Inbox).size(px(28.)))
+                .child(Icon::new(IconName::Inbox).themed_color(true).size(px(28.)))
                 .into_any_element()
         }
     }
@@ -859,10 +859,15 @@ where
                                     None => Icon::new(IconName::ChevronDown),
                                 };
 
-                                this.child(icon.xsmall().text_color(match self.options.disabled {
-                                    true => cx.theme().muted_foreground.opacity(0.5),
-                                    false => cx.theme().muted_foreground,
-                                }))
+                                this.child(
+                                    div()
+                                        .text_color(if self.options.disabled {
+                                            cx.theme().muted_foreground.opacity(0.5)
+                                        } else {
+                                            cx.theme().muted_foreground
+                                        })
+                                        .child(icon.xsmall().themed_color(!self.options.disabled)),
+                                )
                             }),
                     )
                     .child(

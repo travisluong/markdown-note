@@ -619,6 +619,8 @@ impl Notes {
                     ColorRole::Font => palette.font = value,
                     ColorRole::Primary => palette.primary = value,
                     ColorRole::Border => palette.border = value,
+                    ColorRole::Icon => palette.icon = value,
+                    ColorRole::Secondary => palette.secondary = value,
                 }
                 appearance.set_palette(self.startup_dark, palette);
                 true
@@ -667,6 +669,10 @@ fn apply_theme_colors(theme: &mut Theme, appearance: notebook::Appearance, start
     theme.background = rgb(palette.background).into();
     theme.foreground = rgb(palette.font).into();
     theme.primary = rgb(palette.primary).into();
+    theme.icon_color = Some(rgb(palette.icon).into());
+    theme.secondary = rgb(palette.secondary).into();
+    theme.secondary_hover = theme.secondary;
+    theme.secondary_active = theme.secondary;
     theme.border = rgb(palette.border).into();
     theme.input = theme.border;
     theme.primary_hover = theme.primary;
@@ -813,6 +819,8 @@ mod palette_tests {
             font: u32::MAX,
             primary: u32::MAX,
             border: u32::MAX,
+            icon: u32::MAX,
+            secondary: u32::MAX,
         });
         assert_eq!(appearance.resolved(false).light, Some(ThemePalette::LIGHT));
     }
@@ -859,11 +867,11 @@ mod palette_tests {
                     background,
                     font,
                     primary: font,
-                    border: if choice == ThemeChoice::Light {
-                        ThemePalette::LIGHT.border
+                    ..if choice == ThemeChoice::Light {
+                        ThemePalette::LIGHT
                     } else {
-                        ThemePalette::DARK.border
-                    },
+                        ThemePalette::DARK
+                    }
                 }
             );
             let encoded = serde_json::to_string(&appearance).unwrap();
@@ -891,6 +899,8 @@ mod palette_tests {
                     font: 0xabcdef,
                     primary: 0xff0000,
                     border: 0x654321,
+                    icon: 0x987654,
+                    secondary: 0x456789,
                 },
                 0x000000,
             ),
@@ -913,6 +923,15 @@ mod palette_tests {
             assert_eq!(theme.foreground, rgb(palette.font).into());
             assert_eq!(theme.border, rgb(palette.border).into());
             assert_eq!(theme.input, theme.border);
+            assert_eq!(theme.icon_color, Some(rgb(palette.icon).into()));
+            assert_eq!(theme.secondary_foreground, theme.foreground);
+            for color in [
+                theme.secondary,
+                theme.secondary_hover,
+                theme.secondary_active,
+            ] {
+                assert_eq!(color, rgb(palette.secondary).into());
+            }
             assert_eq!(theme.ring, focus_color);
             for color in [
                 theme.primary,

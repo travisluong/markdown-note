@@ -2059,7 +2059,18 @@ impl Notes {
                                             )
                                         },
                                     )
-                                    .child(format!("{prefix}{}", row.label))
+                                    .child(
+                                        gpui::StyledText::new(format!("{prefix}{}", row.label))
+                                            .with_highlights(
+                                                (row.directory && !row.disabled).then_some((
+                                                    0..prefix.len(),
+                                                    gpui::HighlightStyle {
+                                                        color: cx.theme().icon_color,
+                                                        ..Default::default()
+                                                    },
+                                                )),
+                                            ),
+                                    )
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         if this.document_interaction_blocked() {
                                             return;

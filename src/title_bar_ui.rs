@@ -609,6 +609,11 @@ impl Notes {
                     .w(px(34.))
                     .h_full()
                     .flex_shrink_0()
+                    .text_color(if enabled {
+                        cx.theme().icon_color.unwrap_or(cx.theme().foreground)
+                    } else {
+                        cx.theme().muted_foreground
+                    })
                     .hover(|style| {
                         if area == WindowControlArea::Close {
                             style

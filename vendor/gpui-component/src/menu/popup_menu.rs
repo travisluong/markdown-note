@@ -969,6 +969,7 @@ impl PopupMenu {
     fn render_icon(
         has_icon: bool,
         checked: bool,
+        enabled: bool,
         icon: Option<Icon>,
         _: &mut Window,
         _: &mut Context<Self>,
@@ -985,7 +986,7 @@ impl PopupMenu {
             Icon::empty()
         };
 
-        Some(icon.xsmall())
+        Some(icon.themed_color(enabled).xsmall())
     }
 
     #[inline]
@@ -1072,7 +1073,14 @@ impl PopupMenu {
                     .cursor_default()
                     .items_center()
                     .gap_x_1()
-                    .children(Self::render_icon(has_left_icon, false, None, window, cx))
+                    .children(Self::render_icon(
+                        has_left_icon,
+                        false,
+                        false,
+                        None,
+                        window,
+                        cx,
+                    ))
                     .child(div().flex_1().child(label.clone())),
             ),
             PopupMenuItem::ElementItem {
@@ -1096,12 +1104,13 @@ impl PopupMenu {
                         .children(Self::render_icon(
                             has_left_icon,
                             is_left_check,
+                            !disabled,
                             icon.clone(),
                             window,
                             cx,
                         ))
                         .child((render)(window, cx))
-                        .children(right_check_icon.map(|icon| icon.ml_3())),
+                        .children(right_check_icon.map(|icon| icon.themed_color(!disabled).ml_3())),
                 ),
             PopupMenuItem::Item {
                 icon,
@@ -1126,6 +1135,7 @@ impl PopupMenu {
                 .children(Self::render_icon(
                     has_left_icon,
                     is_left_check,
+                    !disabled,
                     icon.clone(),
                     window,
                     cx,
@@ -1137,7 +1147,7 @@ impl PopupMenu {
                         .items_center()
                         .justify_between()
                         .when(!show_link_icon, |this| this.child(label.clone()))
-                        .children(right_check_icon)
+                        .children(right_check_icon.map(|icon| icon.themed_color(!disabled)))
                         .when(show_link_icon, |this| {
                             this.child(
                                 h_flex()
@@ -1146,9 +1156,11 @@ impl PopupMenu {
                                     .gap_1p5()
                                     .child(label.clone())
                                     .child(
-                                        Icon::new(IconName::ExternalLink)
-                                            .xsmall()
-                                            .text_color(cx.theme().muted_foreground),
+                                        div().text_color(cx.theme().muted_foreground).child(
+                                            Icon::new(IconName::ExternalLink)
+                                                .xsmall()
+                                                .themed_color(!disabled),
+                                        ),
                                     ),
                             )
                         })
@@ -1173,6 +1185,7 @@ impl PopupMenu {
                         .children(Self::render_icon(
                             has_left_icon,
                             false,
+                            !disabled,
                             icon.clone(),
                             window,
                             cx,
@@ -1184,7 +1197,7 @@ impl PopupMenu {
                                 .items_center()
                                 .justify_between()
                                 .child(label.clone())
-                                .child(IconName::ChevronRight),
+                                .child(Icon::new(IconName::ChevronRight).themed_color(!disabled)),
                         ),
                 )
                 .when(selected, |this| {

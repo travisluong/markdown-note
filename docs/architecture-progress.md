@@ -2083,3 +2083,29 @@ A Unix-only file-symlink regression is also included but was not executed here.
 with `editor-diagnostics` passed. Tests used TestPlatform and temporary files;
 no desktop interaction or native application launch occurred. Unrelated Cargo.lock
 changes remain untouched.
+
+## Independent icon and secondary theme colors (2026-09-17)
+
+Light and Dark palettes now persist six independent RGB colors. Icon defaults to
+the built-in font, while secondary defaults to the rounded 12% primary / 88%
+background blend (#E4E4E4 Light, #383838 Dark). Missing/invalid new fields resolve
+against their containing mode. Settings exposes both pickers through the existing
+scoped intents, live synchronization, persistence and two-palette reset.
+
+Secondary drives the shared secondary/hover/active colors while its text retains
+the font color. Optional component icon coloring covers neutral buttons, menus,
+dialogs, selects and lists, plus application toolbar/caption/disclosure controls.
+Explicit semantic colors, disabled styling and primary/status foregrounds remain
+independent. The vendor patch documents the opt-in API and render diagnostics.
+
+Verification: 582 tests passed (0 ignored), including 93 library and 286
+application tests. The full locked offline suite passed with editor-diagnostics,
+one build job and one test thread, using target/theme-validation. The separate
+output directory avoided the running application's locked executable; serial
+compilation avoided memory exhaustion from concurrent integration-test links.
+Check, formatting, whitespace validation and strict all-targets Clippy passed.
+Coverage includes compatibility/defaults, RGB boundaries, persistence, independent
+palette edits, picker synchronization/reset/stale events, and actual headless icon
+rendering with text/disabled/semantic-color preservation. No desktop interaction
+or native application launch occurred. Manual visual validation remains with the
+user, and the pre-existing Cargo.lock change remains untouched.

@@ -182,12 +182,16 @@ pub struct ThemePalette {
     pub background: u32,
     pub font: u32,
     pub primary: u32,
-    #[serde(default = "missing_border_color")]
+    #[serde(default = "missing_palette_color")]
     pub border: u32,
+    #[serde(default = "missing_palette_color")]
+    pub icon: u32,
+    #[serde(default = "missing_palette_color")]
+    pub secondary: u32,
 }
 
 // Resolve older palettes against their own mode, rather than assuming Light.
-fn missing_border_color() -> u32 {
+fn missing_palette_color() -> u32 {
     u32::MAX
 }
 
@@ -197,12 +201,17 @@ impl ThemePalette {
         font: 0x202020,
         primary: 0x202020,
         border: 0xe5e5e5,
+        icon: 0x202020,
+        // 12% built-in primary over 88% built-in background, rounded per channel.
+        secondary: 0xe4e4e4,
     };
     pub const DARK: Self = Self {
         background: 0x202020,
         font: 0xe6e6e6,
         primary: 0xe6e6e6,
         border: 0x262626,
+        icon: 0xe6e6e6,
+        secondary: 0x383838,
     };
 
     fn normalized(self, defaults: Self) -> Self {
@@ -226,6 +235,16 @@ impl ThemePalette {
                 self.border
             } else {
                 defaults.border
+            },
+            icon: if self.icon <= 0xffffff {
+                self.icon
+            } else {
+                defaults.icon
+            },
+            secondary: if self.secondary <= 0xffffff {
+                self.secondary
+            } else {
+                defaults.secondary
             },
         }
     }
@@ -668,16 +687,18 @@ impl Appearance {
 mod tests;
 
 #[cfg(test)]
-mod border_tests {
+mod palette_tests {
     use super::{Appearance, ThemeChoice, ThemePalette};
 
     #[test]
-    fn old_and_invalid_borders_use_their_palette_mode_defaults() {
+    fn old_and_invalid_colors_use_their_palette_mode_defaults() {
         for border in [None, Some(0x1000000u32), Some(u32::MAX)] {
             let mut palette =
                 serde_json::json!({"background": 0x123456, "font": 0x234567, "primary": 0x345678});
             if let Some(border) = border {
-                palette["border"] = border.into();
+                for field in ["border", "icon", "secondary"] {
+                    palette[field] = border.into();
+                }
             }
             let json = serde_json::json!({"light": palette, "dark": palette});
             for startup in [false, true] {
@@ -685,6 +706,16 @@ mod border_tests {
                 let resolved = appearance.resolved(startup);
                 assert_eq!(resolved.light.unwrap().border, ThemePalette::LIGHT.border);
                 assert_eq!(resolved.dark.unwrap().border, ThemePalette::DARK.border);
+                assert_eq!(resolved.light.unwrap().icon, ThemePalette::LIGHT.icon);
+                assert_eq!(resolved.dark.unwrap().icon, ThemePalette::DARK.icon);
+                assert_eq!(
+                    resolved.light.unwrap().secondary,
+                    ThemePalette::LIGHT.secondary
+                );
+                assert_eq!(
+                    resolved.dark.unwrap().secondary,
+                    ThemePalette::DARK.secondary
+                );
                 assert_eq!(resolved.light.unwrap().background, 0x123456);
                 assert_eq!(resolved.dark.unwrap().primary, 0x345678);
             }
@@ -692,12 +723,14 @@ mod border_tests {
     }
 
     #[test]
-    fn custom_borders_round_trip_independently_and_reset_with_palettes() {
+    fn custom_colors_round_trip_independently_and_reset_with_palettes() {
         let mut appearance = Appearance::default().resolved(false);
         for (mode, border) in [(ThemeChoice::Light, 0), (ThemeChoice::Dark, 0xffffff)] {
             appearance.theme = Some(mode);
             let mut palette = appearance.palette(false);
             palette.border = border;
+            palette.icon = border;
+            palette.secondary = border;
             appearance.set_palette(false, palette);
         }
         let json = serde_json::to_string(&appearance).unwrap();
@@ -705,8 +738,50 @@ mod border_tests {
         assert_eq!(loaded, appearance);
         assert_eq!(loaded.light.unwrap().border, 0);
         assert_eq!(loaded.dark.unwrap().border, 0xffffff);
+        assert_eq!(loaded.light.unwrap().icon, 0);
+        assert_eq!(loaded.dark.unwrap().icon, 0xffffff);
+        assert_eq!(loaded.light.unwrap().secondary, 0);
+        assert_eq!(loaded.dark.unwrap().secondary, 0xffffff);
         appearance.reset_palettes();
         assert_eq!(appearance.light, Some(ThemePalette::LIGHT));
         assert_eq!(appearance.dark, Some(ThemePalette::DARK));
+    }
+}
+
+#[cfg(test)]
+mod additional_color_defaults_tests {
+    use super::{Appearance, ThemeChoice, ThemePalette};
+
+    #[test]
+    fn muted_defaults_are_independent_of_font_primary_and_background_edits() {
+        for (mode, defaults) in [
+            (ThemeChoice::Light, ThemePalette::LIGHT),
+            (ThemeChoice::Dark, ThemePalette::DARK),
+        ] {
+            for shift in [0, 8, 16] {
+                let primary = (defaults.primary >> shift) & 255;
+                let background = (defaults.background >> shift) & 255;
+                assert_eq!(
+                    (defaults.secondary >> shift) & 255,
+                    (12 * primary + 88 * background + 50) / 100
+                );
+            }
+            assert_eq!(defaults.icon, defaults.font);
+            let mut appearance = Appearance {
+                theme: Some(mode),
+                ..Default::default()
+            };
+            appearance.set_palette(
+                false,
+                ThemePalette {
+                    primary: 0xff0000,
+                    font: 0x00ff00,
+                    background: 0x123456,
+                    ..defaults
+                },
+            );
+            assert_eq!(appearance.palette(false).icon, defaults.icon);
+            assert_eq!(appearance.palette(false).secondary, defaults.secondary);
+        }
     }
 }

@@ -201,6 +201,8 @@ impl Render for SettingsPanel {
             "Font color",
             "Primary color",
             "Border color",
+            "Icon color",
+            "Secondary color",
         ]) {
             theme_body = theme_body.child(ColorPicker::new(picker).label(label));
         }

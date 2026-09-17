@@ -191,12 +191,14 @@ impl RenderOnce for ListItem {
                     .child(div().w_full().children(self.children))
                     .when_some(self.check_icon, |this, icon| {
                         this.child(
-                            div().w_5().items_center().justify_center().when(
-                                self.confirmed,
-                                |this| {
-                                    this.child(icon.small().text_color(cx.theme().muted_foreground))
-                                },
-                            ),
+                            div()
+                                .w_5()
+                                .items_center()
+                                .justify_center()
+                                .text_color(cx.theme().muted_foreground)
+                                .when(self.confirmed, |this| {
+                                    this.child(icon.small().themed_color(!self.disabled))
+                                }),
                         )
                     }),
             )

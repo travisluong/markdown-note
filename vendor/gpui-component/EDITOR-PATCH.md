@@ -1,5 +1,20 @@
 # Local editor patch
 
+## Independent interface icon colors
+
+Theme.icon_color is an optional, serde-compatible application override. Icons opt
+in with Icon::themed_color; explicit icon text colors take precedence, while the
+default continues to inherit text color (entity icons default to theme.foreground).
+Both render paths and clones preserve the option. Neutral Button variants, menu
+icons/checks/carets, Select controls and List controls opt in; disabled controls,
+primary/status buttons, loading indicators and semantic colors retain their roles.
+Application toolbar children pass their disabled state explicitly. The optional
+editor-diagnostics color capture records resolved colors only after a test opts in.
+
+Reconcile src/theme/mod.rs, src/icon.rs, src/button/button.rs, src/menu/popup_menu.rs,
+src/select.rs and src/list/{list,delegate,list_item}.rs on upstream upgrades.
+Coverage: tests/theme_icons.rs and application toolbar/settings headless tests.
+
 ## Dialog close-button pointer isolation
 
 `src/dialog.rs` stops left-button presses on the close control from reaching the

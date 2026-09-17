@@ -464,15 +464,24 @@ Toolbar icons use Lucide exclusively. Official SVGs for formatting and sort in
 component's Lucide bundle for navigation and other icons. Source revision, icon
 mapping, license and the rule for future additions live in `assets/toolbar/README.md`.
 
-Theme palettes persist independent Light and Dark background, font, primary, and
-border RGB colors. Missing/invalid border values normalize using the containing
-palette's mode default. SettingsPanel owns the four picker subscriptions and
-emits typed color intents; the settings adapter applies the active palette to
-shared theme colors. The top navigation, sidebar resize divider, other shared
-border consumers, and current sidebar entry outline use theme.border. Shared
-input borders (theme.input), including sidebar and Settings controls, inherit
-theme.border. Focused inputs retain theme.ring; primary checkbox colors and
-distinct interaction colors keep their existing roles.
+Theme palettes persist independent Light and Dark background, font, primary,
+border, icon, and secondary RGB colors. Missing/invalid border, icon and secondary
+values normalize using the containing palette's mode default. Icon defaults to
+the built-in font; secondary is a rounded 12% primary / 88% background blend of
+the built-in colors (Light #E4E4E4, Dark #383838). Both remain independent of
+later font, primary or background edits. SettingsPanel owns six picker subscriptions
+and emits typed color intents; the settings adapter applies the active palette to
+shared theme colors and reset restores both complete palettes. Secondary, its
+hover and active variants use the selected secondary; secondary text uses font.
+The optional component Theme.icon_color and Icon::themed_color opt neutral icons
+into the palette without changing labels, explicit semantic colors, disabled
+inheritance or foregrounds on primary/status buttons. This covers toolbar, tabs,
+menus, dialogs and selectors; Explorer/palette disclosure glyphs color only their
+prefixes. Custom toolbar children receive the button's disabled state explicitly.
+The top navigation, sidebar resize divider, other shared border consumers, and
+current sidebar entry outline use theme.border. Shared input borders (theme.input),
+including sidebar and Settings controls, inherit theme.border. Focused inputs
+retain theme.ring; primary checkbox colors retain their existing role.
 
 List drops replace the smallest changed UTF-8 span and retain a source-mapped viewport anchor through deferred preview layout. Intentional pointer, keyboard, scroll and text changes release the anchor; selection remapping after a drop does not reveal an offscreen caret.
 

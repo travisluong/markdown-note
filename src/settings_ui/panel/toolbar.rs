@@ -69,7 +69,11 @@ impl SettingsPanel {
                     .items_center()
                     .justify_center()
                     .text_color(cx.theme().muted_foreground)
-                    .child(Icon::new(IconName::EllipsisVertical).size(px(16.)))
+                    .child(
+                        Icon::new(IconName::EllipsisVertical)
+                            .themed_color(!self.values.busy)
+                            .size(px(16.)),
+                    )
                     .when(!self.values.busy, |view| {
                         view.cursor_grab()
                             .on_drag(ToolbarDrag { panel, item }, |drag, _, _, cx| {

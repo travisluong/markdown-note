@@ -559,3 +559,41 @@ fn history_shortcuts_and_view_menu_navigate_standalone_files(cx: &mut TestAppCon
         assert!(!this.capabilities().has_back_history);
     });
 }
+
+#[gpui::test]
+fn toolbar_icon_color_keeps_disabled_formatting_distinct(cx: &mut TestAppContext) {
+    use gpui_component::{ActiveTheme, Icon, Theme};
+    let (_dir, notes, cx) = fixture(cx);
+    for mode in [ViewMode::Source, ViewMode::Reading] {
+        cx.update(|_, cx| {
+            notes.update(cx, |this, cx| {
+                this.mode = mode;
+                this.editor.set_mode(mode, cx);
+                cx.notify();
+            });
+            Theme::global_mut(cx).icon_color = Some(gpui::rgb(0x345678).into());
+            Icon::diagnostic_begin_color_capture(cx);
+        });
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear();
+        });
+        cx.update(|_, cx| {
+            let colors = Icon::diagnostic_colors(cx);
+            let bold = colors
+                .iter()
+                .rev()
+                .find(|(path, _)| path.as_ref() == "toolbar/bold.svg")
+                .unwrap()
+                .1;
+            assert_eq!(
+                bold,
+                if mode == ViewMode::Source {
+                    gpui::rgb(0x345678).into()
+                } else {
+                    cx.theme().muted_foreground.opacity(0.5)
+                }
+            );
+        });
+    }
+}

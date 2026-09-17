@@ -40,6 +40,9 @@ impl ActiveTheme for App {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Theme {
     pub colors: ThemeColor,
+    /// Optional color for neutral interface icons; semantic icons retain their colors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_color: Option<Hsla>,
     pub highlight_theme: Arc<HighlightTheme>,
     pub light_theme: Rc<ThemeConfig>,
     pub dark_theme: Rc<ThemeConfig>,
@@ -203,6 +206,7 @@ impl From<&ThemeColor> for Theme {
             tile_shadow: true,
             tile_radius: px(0.),
             colors: *colors,
+            icon_color: None,
             light_theme: Rc::new(ThemeConfig::default()),
             dark_theme: Rc::new(ThemeConfig::default()),
             highlight_theme: HighlightTheme::default_light(),

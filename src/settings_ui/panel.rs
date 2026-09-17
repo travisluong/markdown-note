@@ -32,6 +32,8 @@ pub(super) enum ColorRole {
     Font,
     Primary,
     Border,
+    Icon,
+    Secondary,
 }
 
 #[derive(Clone, Debug)]
@@ -119,7 +121,7 @@ pub(crate) struct SettingsPanel {
     hidden_extensions_error: Option<String>,
     date_error: Option<String>,
     delay_error: Option<String>,
-    colors: [Entity<ColorPickerState>; 4],
+    colors: [Entity<ColorPickerState>; 6],
     fonts: [FontPicker; 3],
     _subscriptions: Vec<Subscription>,
 }
@@ -204,6 +206,8 @@ impl SettingsPanel {
             (ColorRole::Font, palette.font),
             (ColorRole::Primary, palette.primary),
             (ColorRole::Border, palette.border),
+            (ColorRole::Icon, palette.icon),
+            (ColorRole::Secondary, palette.secondary),
         ]
         .map(|(role, value)| {
             let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(rgb(value)));
@@ -291,6 +295,8 @@ impl SettingsPanel {
                 palette.font,
                 palette.primary,
                 palette.border,
+                palette.icon,
+                palette.secondary,
             ]) {
                 picker.update(cx, |picker, cx| picker.set_value(rgb(color), window, cx));
             }

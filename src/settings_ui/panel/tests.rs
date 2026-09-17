@@ -2695,3 +2695,82 @@ fn external_autosave_form_rejects_a_changed_notebook_scope(cx: &mut TestAppConte
 
 #[path = "settings_json_tests.rs"]
 mod settings_json;
+
+#[gpui::test]
+fn icon_and_secondary_pickers_sync_independently_reset_and_reject_stale_events(
+    cx: &mut TestAppContext,
+) {
+    use gpui_component::{ActiveTheme, color_picker::ColorPickerEvent};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let old = panel(&notes, cx);
+    let (events, _subscription) = watch(&old, cx);
+    for (mode, icon, secondary) in [
+        (notebook::ThemeChoice::Light, 0x123456, 0x654321),
+        (notebook::ThemeChoice::Dark, 0xabcdef, 0xfedcba),
+    ] {
+        intent(&old, SettingsIntent::Theme(mode), cx);
+        for (index, color) in [(4, icon), (5, secondary)] {
+            cx.update(|_, cx| {
+                old.read(cx).colors[index].clone().update(cx, |_, cx| {
+                    cx.emit(ColorPickerEvent::Change(Some(gpui::rgb(color).into())));
+                });
+            });
+            cx.run_until_parked();
+        }
+        intent(
+            &old,
+            SettingsIntent::Color(ColorRole::Primary, 0xff0000),
+            cx,
+        );
+        intent(&old, SettingsIntent::Color(ColorRole::Font, 0x00ff00), cx);
+        cx.update(|_, cx| {
+            let appearance = notes.read(cx).appearance();
+            let palette = appearance.palette(false);
+            assert_eq!(palette.icon, icon);
+            assert_eq!(palette.secondary, secondary);
+            assert_eq!(cx.theme().icon_color, Some(gpui::rgb(icon).into()));
+            assert_eq!(cx.theme().secondary, gpui::rgb(secondary).into());
+            assert_eq!(cx.theme().foreground, gpui::rgb(0x00ff00).into());
+        });
+    }
+    intent(
+        &old,
+        SettingsIntent::Theme(notebook::ThemeChoice::Light),
+        cx,
+    );
+    cx.update(|_, cx| {
+        assert_eq!(
+            old.read(cx).colors[4].read(cx).value(),
+            Some(gpui::rgb(0x123456).into())
+        );
+        assert_eq!(
+            old.read(cx).colors[5].read(cx).value(),
+            Some(gpui::rgb(0x654321).into())
+        );
+        assert_eq!(events.read(cx).0.len(), 11, "sync must not emit feedback");
+    });
+    intent(&old, SettingsIntent::ResetPalettes, cx);
+    cx.update(|_, cx| {
+        let appearance = notes.read(cx).appearance().resolved(false);
+        assert_eq!(appearance.light, Some(notebook::ThemePalette::LIGHT));
+        assert_eq!(appearance.dark, Some(notebook::ThemePalette::DARK));
+        assert_eq!(
+            old.read(cx).colors[4].read(cx).value(),
+            Some(gpui::rgb(notebook::ThemePalette::LIGHT.icon).into())
+        );
+        assert_eq!(
+            old.read(cx).colors[5].read(cx).value(),
+            Some(gpui::rgb(notebook::ThemePalette::LIGHT.secondary).into())
+        );
+    });
+    intent(&old, SettingsIntent::Close, cx);
+    for role in [ColorRole::Icon, ColorRole::Secondary] {
+        intent(&old, SettingsIntent::Color(role, 0x456789), cx);
+    }
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).appearance().palette(false),
+            notebook::ThemePalette::LIGHT
+        )
+    });
+}

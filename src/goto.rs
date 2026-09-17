@@ -490,7 +490,12 @@ impl Notes {
                                     .flex()
                                     .flex_col()
                                     .debug_selector(move || format!("palette-text-{i}"))
-                                    .child(div().w_full().truncate().child(entry.label()))
+                                    .child(div().w_full().truncate().child(gpui::StyledText::new(entry.label()).with_highlights(
+                                        matches!(entry, PaletteEntry::File(file) if file.directory).then_some((0.."▸".len(), gpui::HighlightStyle {
+                                            color: cx.theme().icon_color,
+                                            ..Default::default()
+                                        })),
+                                    )))
                                     .child(
                                         div()
                                             .w_full()
