@@ -490,3 +490,16 @@ and reserves trailing space; callers can still provide custom actions.
 reserves opening-row width, and `input/element.rs` lays out visible Live controls
 with revision-guarded clipboard callbacks. Preserve these contracts on upgrades.
 Coverage: `tests/code_copy.rs` and `tests/code_highlighting.rs` in the application.
+
+## Reading selection retention for application menus
+
+`src/text/text_view.rs` adds opt-in `persistent_selection`, default false for
+both Markdown and HTML views. When enabled, outside mouse presses preserve the
+rendered selection, allowing application menus to copy it after taking focus.
+Inside presses still replace the selection. TextView implements Focusable so menu
+Copy can target the rendered view even when another control held focus.
+Mithril enables persistent selections for Reading;
+Copy continues to use rendered text rather than Markdown source. Reconcile the
+flag, constructors and outside-click handler on upgrade. Headless coverage lives
+in `src/title_bar_ui/tests/edit.rs`; existing `tests/link_context_menu.rs` covers
+the default behavior and link-menu selection retention.

@@ -3,7 +3,7 @@ use gpui_component::kbd::Kbd;
 use mithril::commands::Command;
 
 /// Match command semantics, independently of the palette input's focus context.
-fn command_action(command: Command) -> Option<(Box<dyn Action>, &'static str)> {
+pub(super) fn command_action(command: Command) -> Option<(Box<dyn Action>, &'static str)> {
     let (action, context): (Box<dyn Action>, _) = match command {
         Command::Bold => (Box::new(Bold), "DocumentEditor"),
         Command::Italic => (Box::new(Italic), "DocumentEditor"),
@@ -180,6 +180,7 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
             "Close current tab"
         ),
         shortcut!("alt-f", FileMenu, "Notes", "Application", "File menu"),
+        shortcut!("alt-e", EditMenu, "Notes", "Application", "Edit menu"),
         shortcut!("alt-v", ViewMenu, "Notes", "Application", "View menu"),
         shortcut!("alt-s", SearchMenu, "Notes", "Application", "Search menu"),
         shortcut!(

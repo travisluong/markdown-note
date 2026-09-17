@@ -71,6 +71,7 @@ actions!(
         ShowExplorer,
         CloseReadingFind,
         FileMenu,
+        EditMenu,
         ViewMenu,
         SearchMenu,
         NotebooksMenu,
@@ -116,6 +117,7 @@ enum Next {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MenuKind {
     File,
+    Edit,
     View,
     Search,
     Notebooks,
@@ -612,6 +614,7 @@ impl Render for Notes {
                                 ..Default::default()
                             })
                             .selectable(true)
+                            .persistent_selection(true)
                             .scrollable(true)
                             .min_h_0()
                             .flex_1()
@@ -706,6 +709,9 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &About, window, cx| this.open_help(false, window, cx)))
             .on_action(cx.listener(|this, _: &FileMenu, window, cx| {
                 this.show_menu(MenuKind::File, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &EditMenu, window, cx| {
+                this.show_menu(MenuKind::Edit, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewMenu, window, cx| {
                 this.show_menu(MenuKind::View, window, cx)

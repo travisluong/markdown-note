@@ -21,6 +21,8 @@ use std::{cell::RefCell, rc::Rc};
 #[cfg(target_os = "windows")]
 mod windows;
 
+mod edit;
+
 impl Notes {
     fn populate_menu(
         &self,
@@ -48,6 +50,8 @@ impl Notes {
                 .menu_with_disabled("Go to a note…", Box::new(GoTo), busy)
                 .separator()
                 .menu_with_disabled("Settings", Box::new(OpenSettings), self.is_busy())
+        } else if kind == MenuKind::Edit {
+            self.edit_menu(menu, owner, window, cx)
         } else if kind == MenuKind::View {
             menu.menu_with_check_and_disabled(
                 "Source mode",
@@ -132,8 +136,9 @@ impl Notes {
     }
 }
 
-const MENUS: [MenuKind; 5] = [
+const MENUS: [MenuKind; 6] = [
     MenuKind::File,
+    MenuKind::Edit,
     MenuKind::View,
     MenuKind::Search,
     MenuKind::Notebooks,
@@ -144,6 +149,7 @@ impl MenuKind {
     fn label(self) -> &'static str {
         match self {
             Self::File => "File",
+            Self::Edit => "Edit",
             Self::View => "View",
             Self::Search => "Search",
             Self::Notebooks => "Notebooks",
@@ -154,6 +160,7 @@ impl MenuKind {
     fn selector(self) -> &'static str {
         match self {
             Self::File => "file-menu",
+            Self::Edit => "edit-menu",
             Self::View => "view-menu",
             Self::Search => "search-menu",
             Self::Notebooks => "notebooks-menu",

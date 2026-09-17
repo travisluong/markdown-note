@@ -52,7 +52,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
-| Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow and popup anchors. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
+| Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow and popup anchors. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
 | Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
@@ -541,3 +541,18 @@ retains root, generation, path and directory kind across dismissal for Copy
 relative path and Reveal. Selection changes never retarget these commands;
 stale notebooks/generations/rows and removed or linked paths reject execution.
 The active document is never an implicit Explorer target.
+
+## Edit menu and retained selections
+
+The top bar includes File, Edit, View, Search, Notebooks and Help. Edit (Alt+E)
+is presented by `title_bar_ui/edit.rs`: history, clipboard and selection commands
+reuse component actions; Format, date, tasks and link commands reuse the guarded
+command adapter in `goto.rs`. Shortcut labels use the action mapping in
+`help_ui.rs`. Source/Live entries target the remembered document selection.
+Menu callbacks capture document/editor identity, mode, source and selection,
+recheck busy/modal and edit capability, then execute after popup dismissal so
+nested menus cannot steal focus from the editor or a newly opened dialog.
+Reading keeps Copy available for rendered selections and disables editing.
+TextView's opt-in `persistent_selection` retains Reading selections on outside
+clicks, including opening the Edit menu; inside clicks still start a new selection.
+Other TextViews retain their default outside-click selection clearing behavior.

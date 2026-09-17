@@ -280,7 +280,12 @@ impl Notes {
         })
     }
 
-    fn run_command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn run_command(
+        &mut self,
+        command: Command,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.command_unavailable(command).is_some() || window.has_active_dialog(cx) {
             return;
         }

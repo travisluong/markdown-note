@@ -137,10 +137,21 @@ pub struct TextView {
     state: Entity<TextViewState>,
     style: StyleRefinement,
     selectable: bool,
+    persistent_selection: bool,
     scrollable: bool,
     code_block_actions: Option<Arc<CodeBlockActionsFn>>,
     #[cfg(feature = "editor-diagnostics")]
     parse_control: Option<ReadingParseControl>,
+}
+
+impl gpui::Focusable for TextView {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.state
+            .read(cx)
+            .focus_handle
+            .clone()
+            .expect("TextView focus handle")
+    }
 }
 
 #[derive(PartialEq)]
@@ -905,6 +916,7 @@ impl TextView {
             style: StyleRefinement::default(),
             state,
             selectable: false,
+            persistent_selection: false,
             scrollable: false,
             code_block_actions: None,
             image_document: None,
@@ -938,6 +950,7 @@ impl TextView {
             state,
             raw: html,
             selectable: false,
+            persistent_selection: false,
             scrollable: false,
             code_block_actions: None,
             image_document: None,
@@ -970,6 +983,13 @@ impl TextView {
     /// Set the text view to be selectable, default is false.
     pub fn selectable(mut self, selectable: bool) -> Self {
         self.selectable = selectable;
+        self
+    }
+
+    /// Retain the selection when clicking outside this view, for application menus.
+    /// Defaults to false; clicking within the view still starts a new selection.
+    pub fn persistent_selection(mut self, persistent: bool) -> Self {
+        self.persistent_selection = persistent;
         self
     }
 
@@ -1213,7 +1233,7 @@ impl Element for TextView {
                 });
             }
 
-            if has_selection {
+            if has_selection && !self.persistent_selection {
                 // down outside to clear selection
                 window.on_mouse_event({
                     let state = self.state.clone();

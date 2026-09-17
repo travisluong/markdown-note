@@ -1838,3 +1838,23 @@ target/titlebar-validation. Tests used the package-only override
 executable could not be overwritten (LNK1104). No desktop interaction was used;
 native visual validation remains manual. The pre-existing Cargo.lock edit is
 excluded.
+
+## Edit menu (2026-09-17)
+
+Added Edit after File, with Alt+E and shortcut labels from existing action
+bindings. Undo/Redo, Cut/Copy/Paste/Select all use component actions. Format
+contains inline styles, headings/paragraph, lists, blockquote, code block and
+Link; Insert date and Toggle task completion reuse the command adapter.
+Callbacks retain document/editor identity, mode, source and selection and
+recheck capability, busy and modal guards before dispatch. Deferred execution
+preserves destination focus through nested popup dismissal. Empty views retain
+application focus when dismissing Edit. Reading disables edits and copies
+rendered selections through TextView's Focusable implementation and opt-in
+persistent_selection; other TextViews retain their previous selection policy.
+
+Windows verification: the full 543-test headless suite passed, followed by the
+20 focused title-bar tests after adding the empty-view focus guard. Cargo check,
+cargo fmt --check and strict all-target Clippy with editor-diagnostics passed.
+Cargo checks used --offline --locked and target/titlebar-validation; tests used
+--config 'profile.test.package.mithril.codegen-units=64'. No desktop interaction
+was used. Native visual validation remains manual.

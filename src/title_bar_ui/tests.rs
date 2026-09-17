@@ -491,3 +491,5 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
         );
     });
 }
+
+mod edit;
