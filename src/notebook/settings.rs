@@ -209,7 +209,7 @@ impl ThemePalette {
         background: 0x202020,
         font: 0xe6e6e6,
         primary: 0xe6e6e6,
-        border: 0x262626,
+        border: 0x404040,
         icon: 0xe6e6e6,
         secondary: 0x383838,
     };
