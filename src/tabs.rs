@@ -74,6 +74,25 @@ impl Tab {
             Content::Empty => None,
         }
     }
+    pub(crate) fn is_external_to(&self, root: Option<&Path>) -> bool {
+        self.path()
+            .is_some_and(|path| root.is_none_or(|root| !path.starts_with(root)))
+    }
+    pub(crate) fn file_tooltip(&self, root: Option<&Path>) -> String {
+        let Some(path) = self.path() else {
+            return "New tab".into();
+        };
+        if self.is_external_to(root) {
+            let context = if root.is_some() {
+                "This file is outside the current notebook."
+            } else {
+                "No notebook is open."
+            };
+            format!("External file\n{context}\n{}", path.display())
+        } else {
+            path.display().to_string()
+        }
+    }
     pub(crate) fn observed(&self, cx: &App) -> Observed {
         Observed {
             document: self.session.content().document_id(),
@@ -327,6 +346,11 @@ impl Notes {
         self.focus_active_tab(window, cx);
     }
     pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let root = self
+            .notebooks
+            .active
+            .as_ref()
+            .map(|book| book.root.as_path());
         let busy = self.document_interaction_blocked();
         div()
             .id("document-tabs")
@@ -346,10 +370,7 @@ impl Notes {
                     .and_then(Path::file_name)
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "New tab".into());
-                let tooltip = tab
-                    .path()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "New tab".into());
+                let tooltip = tab.file_tooltip(root);
                 div()
                     .id(("tab", id.0))
                     .flex()
@@ -365,6 +386,18 @@ impl Notes {
                                 if tab.dirty_cached { "• " } else { "" },
                                 title
                             ))
+                            .when(tab.is_external_to(root), |button| {
+                                button.child(
+                                    div()
+                                        .debug_selector(move || format!("tab-external-{}", id.0))
+                                        .px_1()
+                                        .rounded(px(3.))
+                                        .bg(cx.theme().muted)
+                                        .text_color(cx.theme().muted_foreground)
+                                        .text_xs()
+                                        .child("External file"),
+                                )
+                            })
                             .tooltip(tooltip)
                             .disabled(busy)
                             .on_click(cx.listener(move |this, _, window, cx| {

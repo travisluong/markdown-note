@@ -1995,3 +1995,19 @@ attempted but Cargo could not replace the locked `target/debug/mithril.exe`;
 `cargo rustc --test document` produced the updated storage test binary despite the
 same application-binary lock. No desktop interaction occurred. Unrelated
 Cargo.lock changes are excluded.
+## External-file tab indicator (2026-09-17)
+
+Tabs now show an “External file” badge when their canonical path is outside the
+active notebook, with an explanatory tooltip and full path. Standalone files use
+“No notebook is open.”; empty tabs are unbadged. Membership is recomputed on render
+so switching notebooks and moving paths cannot leave a stale origin label.
+
+Headless coverage opens an external text file through the real picker completion
+adapter, checks badge geometry and tooltip context, activates the containing
+notebook and verifies the badge disappears, then checks standalone/empty contexts.
+GPUI retains historical debug selectors, so removal is verified by the current tab
+button width and current membership policy. Final verification passed 361 library
+and application tests (91 + 270), check, format and strict all-targets Clippy.
+The five public storage tests also passed as recorded above. The broader integration
+suite remains blocked by the running application's locked executable; no desktop
+interaction or native application launch was used.

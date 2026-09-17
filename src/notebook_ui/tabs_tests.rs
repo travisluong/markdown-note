@@ -1493,3 +1493,92 @@ fn non_markdown_retained_views_share_unsaved_text(cx: &mut TestAppContext) {
         );
     });
 }
+
+#[gpui::test]
+fn external_file_badges_follow_current_notebook_membership(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let path = fixture.other.join("outside.txt");
+    fs::write(&path, "external").unwrap();
+    let (inside, outside) = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let inside = this.tabs.active.id;
+            this.new_tab(window, cx);
+            this.request(Next::Open, window, cx);
+            let operation = this.file_picker_operation.take().unwrap();
+            this.finish_file_picker(operation, Ok(Some(path.clone())), window, cx);
+            (inside, this.tabs.active.id)
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let outside_selector: &'static str =
+        Box::leak(format!("tab-external-{}", outside.0).into_boxed_str());
+    let inside_selector: &'static str =
+        Box::leak(format!("tab-external-{}", inside.0).into_boxed_str());
+    assert!(cx.debug_bounds(outside_selector).is_some());
+    assert!(cx.debug_bounds(inside_selector).is_none());
+    let select_selector: &'static str =
+        Box::leak(format!("tab-select-{}", outside.0).into_boxed_str());
+    let external_width = cx.debug_bounds(select_selector).unwrap().size.width;
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let root = Some(fixture.root.as_path());
+            assert!(
+                this.tabs
+                    .active
+                    .file_tooltip(root)
+                    .contains("This file is outside the current notebook.")
+            );
+            assert!(
+                this.tabs
+                    .active
+                    .file_tooltip(root)
+                    .contains(&path.display().to_string())
+            );
+            assert!(!this.tabs.get(inside).unwrap().is_external_to(root));
+            this.request(
+                Next::Notebook {
+                    path: fixture.other.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            );
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.notebooks.active.as_ref().unwrap().root, fixture.other);
+        assert!(
+            !this
+                .tabs
+                .get(outside)
+                .unwrap()
+                .is_external_to(Some(&fixture.other))
+        );
+    });
+    // GPUI retains old debug selectors; measure the live button to prove badge removal.
+    assert!(cx.debug_bounds(select_selector).unwrap().size.width < external_width);
+    assert!(cx.debug_bounds(inside_selector).is_some());
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = None;
+            this.select_tab(outside, window, cx);
+            assert!(
+                this.tabs
+                    .active
+                    .file_tooltip(None)
+                    .contains("No notebook is open.")
+            );
+            this.new_tab(window, cx);
+            assert!(!this.tabs.active.is_external_to(None));
+            assert_eq!(this.tabs.active.file_tooltip(None), "New tab");
+            cx.notify();
+        })
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    assert!(cx.debug_bounds(outside_selector).is_some());
+}

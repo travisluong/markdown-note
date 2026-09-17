@@ -618,3 +618,10 @@ extensions use plain text. The vendored `InputState::set_document_language` chan
 syntax presentation without replacing the rope, selection or history. Markdown
 Source uses highlighting and Live retains its existing projection; non-Markdown
 views cannot enable Live or Markdown list continuation/nesting.
+The tab strip derives external-file context from each canonical file path and the
+current notebook root. Files outside that root show an “External file” badge;
+the tab tooltip explains “This file is outside the current notebook.” and includes
+the full path. With no notebook, it says “No notebook is open.” Empty tabs have no
+badge. This is current membership, not picker provenance: opening an in-notebook
+file through Open keeps it an ordinary notebook file, and switching notebooks or
+moving a file recomputes the indicator without persisted state.
