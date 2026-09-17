@@ -137,6 +137,15 @@ impl Notes {
         self.update_appearance(appearance, window, cx);
     }
 
+    pub(super) fn toggle_centered_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
+            return;
+        }
+        let mut appearance = self.appearance();
+        appearance.centered_editor = !appearance.centered_editor;
+        self.update_appearance(appearance, window, cx);
+    }
+
     pub(super) fn update_appearance(
         &mut self,
         appearance: notebook::Appearance,

@@ -1958,3 +1958,23 @@ attempted but could not replace the locked `target/debug/mithril.exe`, so integr
 tests remain unrun for this change. No native app or desktop interaction was used;
 manual visual validation remains with the user. Unrelated Cargo.lock changes are
 excluded.
+
+## Centered editor in the View menu (2026-09-17)
+
+View now exposes a checked Centered editor item after the three view modes.
+It uses the existing appearance preference, preserves the configured width, and
+rechecks modal/busy guards at execution. The Settings toggle and width input remain
+available. Existing View-menu keyboard tests were updated for the new item; new
+tests cover toggling in each mode, document/selection retention, standalone and
+notebook preference scope/persistence, empty documents, and modal/busy rejection.
+
+Final verification of both the scrollbar correction and menu addition passed all
+356 library/application tests (89 + 267), using `cargo test --locked --features
+editor-diagnostics --lib --bin mithril --config
+'profile.test.package.mithril.codegen-units=32'`. Build variants 64 and 128 also ran
+successfully during the work; a subsequent link to an already-used executable
+encountered Windows LNK1104, so the final run used a fresh command-only variant.
+Check, format and strict all-targets Clippy passed on the final code. The complete
+integration suite remains blocked by the locked application executable as recorded
+above. No native app/desktop testing was performed, and unrelated Cargo.lock edits
+remain excluded from both commits.

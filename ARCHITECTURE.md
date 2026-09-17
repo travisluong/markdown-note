@@ -132,7 +132,9 @@ sidebar and toolbar preferences continue to use the active notebook.
 
 Appearance also owns the centered-editor toggle and maximum pane width (default
 700 logical pixels, bounded to 200–4000). Settings General edits these through
-typed intents and the existing appearance scope/write guards; standalone use
+typed intents and the existing appearance scope/write guards. View → Centered
+editor exposes the same preference as a checked toggle, rechecking modal/busy
+guards before updating appearance and retaining the saved width; standalone use
 keeps session defaults. Notes passes a content-width constraint to the vendored
 Input and TextView: their text columns center within the available area beside
 the sidebar, while their scroll viewports and scrollbar tracks retain full width.

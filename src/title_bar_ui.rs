@@ -72,6 +72,20 @@ impl Notes {
                 busy,
             )
             .separator()
+            .item(
+                PopupMenuItem::new("Centered editor")
+                    .checked(self.appearance().centered_editor)
+                    .disabled(busy)
+                    .on_click({
+                        let owner = owner.clone();
+                        move |_, window, cx| {
+                            let _ = owner.update(cx, |this, cx| {
+                                this.toggle_centered_editor(window, cx);
+                            });
+                        }
+                    }),
+            )
+            .separator()
             .menu_with_disabled(
                 "Back",
                 Box::new(NavigateBack),

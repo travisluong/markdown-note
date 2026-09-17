@@ -367,9 +367,9 @@ fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestA
         })
     });
     cx.refresh().unwrap();
-    // No history: View entries are the three modes, Collapse sidebar and Explorer.
+    // No history: View entries are the three modes, Centered editor, Collapse sidebar and Explorer.
     click(MenuKind::View, cx);
-    cx.simulate_keystrokes("down down down down enter");
+    cx.simulate_keystrokes("down down down down down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -379,7 +379,7 @@ fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestA
     });
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    cx.simulate_keystrokes("down down down down down enter");
+    cx.simulate_keystrokes("down down down down down down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -416,8 +416,8 @@ fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut
     cx.run_until_parked();
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    // Three modes, sidebar, Explorer, Sort files, then Command palette (history disabled).
-    cx.simulate_keystrokes("down down down down down down down enter");
+    // Three modes, Centered editor, sidebar, Explorer, Sort files, then Command palette (history disabled).
+    cx.simulate_keystrokes("down down down down down down down down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -446,8 +446,8 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
     let first = cx.update(|_, cx| notes.read(cx).tabs.active.id);
     let session_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
     click(MenuKind::View, cx);
-    // No history or notebook: modes, Sort files, Command palette, Toggle light/dark mode.
-    cx.simulate_keystrokes("down down down down down down enter");
+    // No history or notebook: modes, Centered editor, Sort files, Command palette, Toggle light/dark mode.
+    cx.simulate_keystrokes("down down down down down down down enter");
     cx.run_until_parked();
     let changed_session = cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -472,8 +472,8 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
     let book_theme = cx.update(|_, cx| notes.read(cx).appearance().theme_choice(false));
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
-    // Empty document: three modes, sidebar, Explorer, Sort files, Command palette, theme.
-    cx.simulate_keystrokes("down down down down down down down down enter");
+    // Empty document: three modes, Centered editor, sidebar, Explorer, Sort files, Command palette, theme.
+    cx.simulate_keystrokes("down down down down down down down down down enter");
     cx.run_until_parked();
     cx.update(|_, cx| {
         let this = notes.read(cx);
@@ -493,3 +493,89 @@ fn theme_menu_uses_notebook_or_session_scope_and_preserves_tab(cx: &mut TestAppC
 }
 
 mod edit;
+
+#[gpui::test]
+fn centered_editor_view_menu_retains_width_document_and_preference_scope(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    let editor = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let mut appearance = this.appearance();
+            appearance.centered_editor_width = 900;
+            this.update_appearance(appearance, window, cx);
+            this.editor.select(1..4, window, cx);
+            this.editor.id()
+        })
+    });
+    for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.set_mode(mode, window, cx)));
+        cx.refresh().unwrap();
+        for enabled in [true, false] {
+            click(MenuKind::View, cx);
+            cx.simulate_keystrokes("down down down down enter");
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.update(|_, cx| {
+                let this = notes.read(cx);
+                assert!(this.menu.is_none());
+                assert_eq!(this.appearance().centered_editor, enabled);
+                assert_eq!(this.appearance().centered_editor_width, 900);
+                assert_eq!(this.editor.id(), editor);
+                assert_eq!(this.editor.text(cx).as_ref(), "title bar test");
+                assert_eq!(this.editor.selection(cx), 1..4);
+                assert_eq!(this.mode, mode);
+                assert!(!this.dirty(cx));
+            });
+        }
+    }
+    let session = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let session = this.session_appearance.clone();
+            this.notebooks
+                .set_test_persistence_target(dir.path().join("test-index.json"));
+            this.notebooks.active =
+                Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.install_document(None, window, cx);
+            session
+        })
+    });
+    cx.refresh().unwrap();
+    click(MenuKind::View, cx);
+    cx.simulate_keystrokes("down down down down enter");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(this.appearance().centered_editor);
+        assert_eq!(this.appearance().centered_editor_width, 700);
+        assert_eq!(this.session_appearance, session);
+        assert!(this.document().is_none());
+        let saved = crate::notebook::Notebook::open(dir.path(), false)
+            .unwrap()
+            .settings
+            .appearance;
+        assert!(saved.centered_editor);
+        assert_eq!(saved.centered_editor_width, 700);
+    });
+}
+
+#[gpui::test]
+fn centered_editor_view_toggle_rechecks_modal_and_busy_guards(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.open_settings(window, cx);
+            this.toggle_centered_editor(window, cx);
+            assert!(!this.appearance().centered_editor);
+        })
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(this.settings_panel.is_none());
+            let _ = this.session.pick();
+            this.toggle_centered_editor(window, cx);
+            assert!(!this.appearance().centered_editor);
+        })
+    });
+}

@@ -536,16 +536,16 @@ fn history_shortcuts_and_view_menu_navigate_standalone_files(cx: &mut TestAppCon
     cx.simulate_keystrokes(forward);
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
-    // Mode entries stay first; Back follows them and Forward is disabled at the end.
+    // Mode entries and Centered editor stay first; Back follows them and Forward is disabled at the end.
     cx.refresh().unwrap();
     click("view-menu", cx);
-    cx.simulate_keystrokes("down down down down enter");
+    cx.simulate_keystrokes("down down down down down enter");
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶"));
     cx.refresh().unwrap();
     click("view-menu", cx);
-    // Back is now disabled, so the fourth enabled item is Forward.
-    cx.simulate_keystrokes("down down down down enter");
+    // Back is now disabled, so the fifth enabled item is Forward.
+    cx.simulate_keystrokes("down down down down down enter");
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "second"));
     cx.update(|window, cx| notes.update(cx, |this, cx| this.new_tab(window, cx)));
