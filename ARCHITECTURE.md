@@ -133,11 +133,14 @@ sidebar and toolbar preferences continue to use the active notebook.
 Appearance also owns the centered-editor toggle and maximum pane width (default
 700 logical pixels, bounded to 200–4000). Settings General edits these through
 typed intents and the existing appearance scope/write guards; standalone use
-keeps session defaults. Notes centers the retained document surface within the
-available area beside the sidebar in Source, Live preview and Reading, shrinking
-it for narrow viewports. The configured width includes existing pane padding.
-Layout changes retain editor identity, selection and shared undo history; tabs,
-toolbars, images and empty views keep their full available width.
+keeps session defaults. Notes passes a content-width constraint to the vendored
+Input and TextView: their text columns center within the available area beside
+the sidebar, while their scroll viewports and scrollbar tracks retain full width.
+The configured width includes existing horizontal padding. Reading applies
+padding inside its virtualized rows and invalidates cached row heights on column
+changes while retaining its logical scroll anchor. Input keeps its search panel
+and wheel target at full width. Layout changes retain editor identity, selection
+and shared undo history; tabs, toolbars, images and empty views keep their layout.
 
 ## Lifecycle rules
 

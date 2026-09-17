@@ -459,7 +459,11 @@ impl Notes {
 
 impl Render for Notes {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let content_size = px(self.appearance().content_font_size as f32);
+        let appearance = self.appearance();
+        let content_size = px(appearance.content_font_size as f32);
+        let content_max_width = appearance
+            .centered_editor
+            .then(|| px(f32::from(appearance.centered_editor_width)));
         self.sync_settings_panel(window, cx);
         if let Some(search) = &self.search {
             search.update(cx, |panel, cx| {
@@ -521,6 +525,7 @@ impl Render for Notes {
                             .active
                             .editor
                             .widget()
+                            .content_max_width(content_max_width)
                             .h_full()
                             .appearance(false)
                             .text_size(content_size)
@@ -546,7 +551,7 @@ impl Render for Notes {
                 div()
                     .debug_selector(|| "reading-content".into())
                     .size_full()
-                    .p_6()
+                    .py_6()
                     .flex()
                     .flex_col()
                     .gap_2()
@@ -558,10 +563,12 @@ impl Render for Notes {
                         cx.notify();
                     }))
                     .when(self.tabs.active.reading_search.is_some(), |view| {
-                        view.child(self.render_reading_find(cx))
+                        view.child(div().px_6().child(self.render_reading_find(cx)))
                     })
                     .child(
                         reading
+                            .content_max_width(content_max_width)
+                            .content_padding(window.rem_size() * 1.5)
                             .image_document(document_path)
                             .source_highlights(
                                 self.tabs
@@ -637,24 +644,11 @@ impl Render for Notes {
                 })
                 .into_any_element()
         };
-        let appearance = self.appearance();
         let content = div()
             .debug_selector(|| "document-viewport".into())
             .size_full()
             .min_w_0()
-            .flex()
-            .justify_center()
-            .child(
-                div()
-                    .debug_selector(|| "document-pane".into())
-                    .size_full()
-                    .min_w_0()
-                    .when(
-                        self.document().is_some() && appearance.centered_editor,
-                        |pane| pane.max_w(px(f32::from(appearance.centered_editor_width))),
-                    )
-                    .child(content),
-            );
+            .child(content);
         div()
             .id("notes")
             .key_context("Notes")

@@ -2,8 +2,8 @@ use gpui::StatefulInteractiveElement;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, DefiniteLength, Edges, EdgesRefinement, Entity, InteractiveElement as _,
-    IntoElement, IsZero, MouseButton, ParentElement as _, Rems, RenderOnce, StyleRefinement,
-    Styled, Window, div, px, relative,
+    IntoElement, IsZero, MouseButton, ParentElement as _, Pixels, Rems, RenderOnce,
+    StyleRefinement, Styled, Window, div, px, relative,
 };
 
 use crate::button::{Button, ButtonVariants as _};
@@ -27,6 +27,7 @@ pub struct Input {
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     height: Option<DefiniteLength>,
+    content_max_width: Option<Pixels>,
     appearance: bool,
     cleanable: bool,
     mask_toggle: bool,
@@ -65,6 +66,7 @@ impl Input {
             prefix: None,
             suffix: None,
             height: None,
+            content_max_width: None,
             appearance: true,
             cleanable: false,
             mask_toggle: false,
@@ -78,6 +80,13 @@ impl Input {
 
     pub fn prefix(mut self, prefix: impl IntoElement) -> Self {
         self.prefix = Some(prefix.into_any_element());
+        self
+    }
+
+    /// Center multiline content within this width, including input padding.
+    /// The search panel, wheel target and scrollbar retain the full input width.
+    pub fn content_max_width(mut self, width: Option<Pixels>) -> Self {
+        self.content_max_width = width;
         self
     }
 
@@ -167,6 +176,7 @@ impl Input {
     /// This method must after the refine_style.
     fn render_editor(
         paddings: EdgesRefinement<DefiniteLength>,
+        content_max_width: Option<Pixels>,
         input_state: &Entity<InputState>,
         state: &InputState,
         window: &Window,
@@ -197,39 +207,60 @@ impl Input {
         v_flex()
             .size_full()
             .children(state.search_panel.clone())
-            .child(div().flex_1().child(input_state.clone()).map(|this| {
-                if let Some(last_layout) = state.last_layout.as_ref() {
-                    let left = if last_layout.line_number_width.is_zero() {
-                        px(0.)
-                    } else {
-                        // Align left edge to the Line number.
-                        paddings.left + last_layout.line_number_width - LINE_NUMBER_RIGHT_MARGIN
-                    };
-
-                    let scroll_size = gpui::Size {
-                        width: state.scroll_size.width - left + paddings.right + RIGHT_MARGIN,
-                        height: state.scroll_size.height,
-                    };
-
-                    let scrollbar = if !state.soft_wrap {
-                        Scrollbar::new(&state.scroll_handle)
-                    } else {
-                        Scrollbar::vertical(&state.scroll_handle)
-                    };
-
-                    this.relative().child(
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .justify_center()
+                    .child(
                         div()
-                            .absolute()
-                            .top(-paddings.top)
-                            .left(left)
-                            .right(-paddings.right)
-                            .bottom(-paddings.bottom)
-                            .child(scrollbar.scroll_size(scroll_size)),
+                            .debug_selector(|| "editor-text-column".into())
+                            .size_full()
+                            .min_w_0()
+                            .when_some(content_max_width, |column, width| {
+                                column.max_w((width - paddings.left - paddings.right).max(px(1.)))
+                            })
+                            .child(input_state.clone()),
                     )
-                } else {
-                    this
-                }
-            }))
+                    .map(|this| {
+                        if let Some(last_layout) = state.last_layout.as_ref() {
+                            let left = if last_layout.line_number_width.is_zero() {
+                                px(0.)
+                            } else {
+                                // Align left edge to the Line number.
+                                paddings.left + last_layout.line_number_width
+                                    - LINE_NUMBER_RIGHT_MARGIN
+                            };
+
+                            let scroll_size = gpui::Size {
+                                width: state.scroll_size.width - left
+                                    + paddings.right
+                                    + RIGHT_MARGIN,
+                                height: state.scroll_size.height,
+                            };
+
+                            let scrollbar = if !state.soft_wrap {
+                                Scrollbar::new(&state.scroll_handle)
+                            } else {
+                                Scrollbar::vertical(&state.scroll_handle)
+                            };
+
+                            this.relative().child(
+                                div()
+                                    .debug_selector(|| "editor-scrollbar-viewport".into())
+                                    .absolute()
+                                    .top(-paddings.top)
+                                    .left(left)
+                                    .right(-paddings.right)
+                                    .bottom(-paddings.bottom)
+                                    .child(scrollbar.scroll_size(scroll_size)),
+                            )
+                        } else {
+                            this
+                        }
+                    }),
+            )
     }
 }
 
@@ -401,6 +432,7 @@ impl RenderOnce for Input {
                 let paddings = this.style().padding.clone();
                 this.child(Self::render_editor(
                     paddings,
+                    self.content_max_width,
                     &self.state,
                     &state,
                     window,

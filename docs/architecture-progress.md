@@ -1935,3 +1935,26 @@ were not run in this verification. The headless library/application targets
 avoid that executable and passed. No desktop interaction or native application
 launch was used. Native visual validation remains manual. The pre-existing
 Cargo.lock reorder remains excluded from this feature commit.
+
+## Centered columns retain full-width scrollbars (2026-09-17)
+
+Moved the width constraint inside the vendored Input and TextView instead of
+constraining their outer scroll containers. Source and Live preview keep a centered
+text leaf, full-width search and wheel input, and a scrollbar at the document
+viewport's right edge. Reading centers/pads virtualized blocks inside a full-width
+list, with its scrollbar at the same edge. Column changes invalidate Reading row
+measurements and restore the logical scroll anchor. The vendor patch guide records
+the new opt-in layout APIs and upgrade obligations.
+
+Headless verification passed all 354 library/application tests (89 + 265), including
+updated geometry coverage across all modes, narrow windows/sidebar sizes, gutter
+wheel scrolling, right-edge track clicks/thumb dragging, and Reading scroll anchor
+retention on width changes. Command: `cargo test --locked --features
+editor-diagnostics --lib --bin mithril --config
+'profile.test.package.mithril.codegen-units=64'`. The command-only build variant
+avoids Windows LNK1104 locks on the original test executable. Check, format and
+strict all-targets Clippy gates passed. The complete Cargo test command was also
+attempted but could not replace the locked `target/debug/mithril.exe`, so integration
+tests remain unrun for this change. No native app or desktop interaction was used;
+manual visual validation remains with the user. Unrelated Cargo.lock changes are
+excluded.

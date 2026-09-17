@@ -2461,13 +2461,32 @@ fn centered_editor_layout_fits_all_modes_and_sidebar_sizes(cx: &mut TestAppConte
             cx.run_until_parked();
             cx.refresh().unwrap();
             let viewport = cx.debug_bounds("document-viewport").unwrap();
-            let pane = cx.debug_bounds("document-pane").unwrap();
+            let pane = cx
+                .debug_bounds(if mode == ViewMode::Reading {
+                    "reading-text-column-0"
+                } else {
+                    "editor-text-column"
+                })
+                .unwrap();
+            let scrollbar = cx
+                .debug_bounds(if mode == ViewMode::Reading {
+                    "reading-scrollbar-viewport"
+                } else {
+                    "editor-scrollbar-viewport"
+                })
+                .unwrap();
+            assert_eq!(scrollbar.right(), viewport.right(), "{mode:?}");
+            // Input's existing horizontal padding is outside its text leaf.
+            let padding = if mode == ViewMode::Reading {
+                px(0.)
+            } else {
+                gpui_component::Size::default().input_px() * 2.
+            };
             assert_eq!(
-                pane.size.width,
+                pane.size.width + padding,
                 viewport.size.width.min(px(700.)),
                 "{mode:?}"
             );
-            assert_eq!(pane.size.height, viewport.size.height);
             assert!(
                 (pane.origin.x - viewport.origin.x - (viewport.size.width - pane.size.width) / 2.)
                     .abs()
@@ -2486,7 +2505,108 @@ fn centered_editor_layout_fits_all_modes_and_sidebar_sizes(cx: &mut TestAppConte
     cx.run_until_parked();
     cx.refresh().unwrap();
     assert_eq!(
-        cx.debug_bounds("document-pane").unwrap(),
-        cx.debug_bounds("document-viewport").unwrap()
+        cx.debug_bounds("reading-text-column-0").unwrap().size.width,
+        cx.debug_bounds("document-viewport").unwrap().size.width
     );
+}
+
+#[gpui::test]
+fn centered_editor_scrollbars_and_gutter_wheel_use_full_viewport(cx: &mut TestAppContext) {
+    use crate::ViewMode;
+    use gpui::{Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, point, px, size};
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    intent(&panel(&notes, cx), SettingsIntent::CenteredEditor(true), cx);
+    intent(&panel(&notes, cx), SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        gpui_component::Theme::global_mut(cx).scrollbar_show =
+            gpui_component::scroll::ScrollbarShow::Always;
+        notes.update(cx, |this, cx| {
+            this.editor.select(0..8, window, cx);
+            let text = (0..150)
+                .map(|i| {
+                    format!(
+                        "Paragraph {i} with enough text to exercise wrapping and scrolling.\n\n"
+                    )
+                })
+                .collect::<String>();
+            this.editor.replace_selection(&text, window, cx);
+            this.editor.select(0..0, window, cx);
+        });
+    });
+    cx.simulate_resize(size(px(1400.), px(800.)));
+    for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+        cx.update(|window, cx| notes.update(cx, |this, cx| this.set_mode(mode, window, cx)));
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        let viewport = cx.debug_bounds("document-viewport").unwrap();
+        let scroll = cx
+            .debug_bounds(if mode == ViewMode::Reading {
+                "reading-scrollbar-viewport"
+            } else {
+                "editor-scrollbar-viewport"
+            })
+            .unwrap();
+        assert_eq!(scroll.right(), viewport.right());
+        let position = |cx: &mut VisualTestContext| {
+            cx.update(|_, cx| {
+                let this = notes.read(cx);
+                if mode == ViewMode::Reading {
+                    this.reading_view
+                        .as_ref()
+                        .unwrap()
+                        .diagnostic_probe()
+                        .snapshot(cx)
+                        .unwrap()
+                        .scroll_item as f32
+                } else {
+                    -f32::from(
+                        this.editor
+                            .diagnostic_input()
+                            .read(cx)
+                            .diagnostic_input_paint()
+                            .2
+                            .y,
+                    )
+                }
+            })
+        };
+        let before = position(cx);
+        cx.simulate_event(ScrollWheelEvent {
+            position: point(scroll.right() - px(50.), scroll.center().y),
+            delta: ScrollDelta::Pixels(point(px(0.), px(-180.))),
+            ..Default::default()
+        });
+        cx.refresh().unwrap();
+        assert!(position(cx) > before, "gutter wheel in {mode:?}");
+        let before = position(cx);
+        let bottom = point(scroll.right() - px(8.), scroll.bottom() - px(8.));
+        cx.simulate_click(bottom, Modifiers::default());
+        cx.refresh().unwrap();
+        assert!(position(cx) > before, "right edge track in {mode:?}");
+        let top = point(scroll.right() - px(8.), scroll.top() + px(12.));
+        cx.simulate_click(top, Modifiers::default());
+        cx.refresh().unwrap();
+        assert_eq!(position(cx), 0., "track return in {mode:?}");
+        cx.simulate_mouse_move(top, None, Modifiers::default());
+        cx.simulate_mouse_down(top, MouseButton::Left, Modifiers::default());
+        std::thread::sleep(Duration::from_millis(20));
+        cx.simulate_mouse_move(bottom, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(bottom, MouseButton::Left, Modifiers::default());
+        cx.refresh().unwrap();
+        assert!(position(cx) > 0., "right edge thumb drag in {mode:?}");
+        // Changing width at a fixed viewport must remeasure Reading's cached
+        // item heights without throwing away its logical scroll anchor.
+        if mode == ViewMode::Reading {
+            let anchor = position(cx);
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    let mut appearance = this.appearance();
+                    appearance.centered_editor_width = 400;
+                    this.update_appearance(appearance, window, cx);
+                })
+            });
+            cx.refresh().unwrap();
+            assert_eq!(position(cx), anchor);
+        }
+    }
 }

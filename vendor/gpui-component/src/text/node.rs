@@ -7,8 +7,8 @@ use std::{
 use gpui::{
     AnyElement, App, DefiniteLength, Div, Element, ElementId, FontStyle, FontWeight, Half,
     HighlightStyle, InteractiveElement as _, IntoElement, ListState, ObjectFit, ParentElement,
-    SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage as _, Window, div,
-    img, prelude::FluentBuilder as _, px, relative, rems,
+    Pixels, SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage as _, Window,
+    div, img, prelude::FluentBuilder as _, px, relative, rems,
 };
 use markdown::mdast;
 
@@ -1325,6 +1325,8 @@ impl Node {
     pub(super) fn render_root(
         &self,
         list_state: Option<ListState>,
+        content_max_width: Option<Pixels>,
+        content_padding: Pixels,
         node_cx: &NodeContext,
         window: &mut Window,
         cx: &mut App,
@@ -1335,8 +1337,18 @@ impl Node {
         };
 
         let Some(list_state) = list_state else {
-            return self
-                .render_block(options, node_cx, window, cx)
+            return div()
+                .w_full()
+                .flex()
+                .justify_center()
+                .child(
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .when_some(content_max_width, |column, width| column.max_w(width))
+                        .px(content_padding)
+                        .child(self.render_block(options, node_cx, window, cx)),
+                )
                 .into_any_element();
         };
 
@@ -1386,8 +1398,24 @@ impl Node {
                 }
             }
             let is_last = ix + 1 == children.len();
-            children[ix]
-                .render_block(options.is_last(is_last), &node_cx, window, cx)
+            div()
+                .w_full()
+                .flex()
+                .justify_center()
+                .child(
+                    div()
+                        .debug_selector(move || format!("reading-text-column-{ix}"))
+                        .w_full()
+                        .min_w_0()
+                        .when_some(content_max_width, |column, width| column.max_w(width))
+                        .px(content_padding)
+                        .child(children[ix].render_block(
+                            options.is_last(is_last),
+                            &node_cx,
+                            window,
+                            cx,
+                        )),
+                )
                 .into_any_element()
         })
         .size_full()

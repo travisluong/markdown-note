@@ -523,3 +523,20 @@ InputState/ReadingProbe diagnostics expose headless verification only behind
 copy/highlighting, editor/shared-buffer and Reading lifecycle tests when upgrading.
 The component's upstream license remains unchanged; dependencies retain their
 own MIT/Apache licensing. No Cargo registry source is edited.
+
+## Centered document columns with full-width scrollbars
+
+`Input::content_max_width` centers the multiline text leaf while retaining the
+full-width search panel, wheel target and scrollbar overlay. The configured width
+includes the input's existing horizontal padding. `TextView::content_max_width`
+and `content_padding` center/pad rendered blocks inside the full-width virtualized
+list, keeping the scrollbar and gutter wheel input at the viewport edge. Changing
+the column configuration invalidates measured list rows and restores the logical
+scroll anchor. Reading clears its pixel-based selection on column reflow, matching
+its existing viewport-resize behavior. Defaults preserve component content width
+and padding.
+
+Reconcile `input/input.rs`, `text/text_view.rs` and `text/node.rs` when upgrading.
+Headless app coverage in `src/settings_ui/panel/tests.rs` checks column and track
+geometry in all three modes, narrow windows and sidebar resizing, gutter wheel
+scrolling, right-edge track clicks and thumb drags, and Reading anchor retention.

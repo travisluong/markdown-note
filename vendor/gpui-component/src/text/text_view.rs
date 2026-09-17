@@ -42,6 +42,8 @@ pub(crate) fn init(cx: &mut App) {
 
 #[derive(IntoElement, Clone)]
 struct TextViewElement {
+    content_max_width: Option<Pixels>,
+    content_padding: Pixels,
     style: TextViewStyle,
     code_block_actions: Option<Arc<CodeBlockActionsFn>>,
     image_document: Option<std::path::PathBuf>,
@@ -88,6 +90,8 @@ impl RenderOnce for TextViewElement {
                 .map(|this| match &mut state.parsed_result {
                     Some(Ok(content)) => this.child(content.root_node.render_root(
                         self.list_state.clone(),
+                        self.content_max_width,
+                        self.content_padding,
                         &content.node_cx,
                         window,
                         cx,
@@ -126,6 +130,8 @@ pub(crate) type CodeBlockActionsFn =
 /// See also [`MarkdownElement`], [`HtmlElement`]
 #[derive(Clone)]
 pub struct TextView {
+    content_max_width: Option<Pixels>,
+    content_padding: Pixels,
     image_document: Option<std::path::PathBuf>,
     link_open: Option<Arc<LinkOpenFn>>,
     task_toggle: Option<Arc<TaskToggleFn>>,
@@ -359,6 +365,7 @@ impl ReadingProbe {
 }
 
 pub(crate) struct TextViewState {
+    content_layout: (Option<Pixels>, Pixels),
     #[cfg(feature = "editor-diagnostics")]
     pub(super) diagnostic_links: Vec<(String, Point<Pixels>)>,
     link_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>,
@@ -389,6 +396,7 @@ impl TextViewState {
         let focus_handle = cx.focus_handle();
         Self {
             parent_entity: None,
+            content_layout: (None, px(0.)),
             #[cfg(feature = "editor-diagnostics")]
             diagnostic_links: Vec::new(),
             link_menu: None,
@@ -918,6 +926,8 @@ impl TextView {
             selectable: false,
             persistent_selection: false,
             scrollable: false,
+            content_max_width: None,
+            content_padding: px(0.),
             code_block_actions: None,
             image_document: None,
             link_open: None,
@@ -952,6 +962,8 @@ impl TextView {
             selectable: false,
             persistent_selection: false,
             scrollable: false,
+            content_max_width: None,
+            content_padding: px(0.),
             code_block_actions: None,
             image_document: None,
             link_open: None,
@@ -1007,6 +1019,19 @@ impl TextView {
     /// This mode is suitable for small content, such as a few lines of text, a label, etc.
     pub fn scrollable(mut self, scrollable: bool) -> Self {
         self.scrollable = scrollable;
+        self
+    }
+
+    /// Center rendered blocks without narrowing the list viewport or scrollbar.
+    /// The maximum width includes content padding.
+    pub fn content_max_width(mut self, width: Option<Pixels>) -> Self {
+        self.content_max_width = width;
+        self
+    }
+
+    /// Horizontal padding inside rendered blocks, independent of the scrollbar.
+    pub fn content_padding(mut self, padding: Pixels) -> Self {
+        self.content_padding = padding;
         self
     }
 
@@ -1084,6 +1109,20 @@ impl Element for TextView {
             }
             state.request_parse(self.type_, self.raw.clone(), cx);
         });
+        self.state.update(cx, |state, _| {
+            let layout = (self.content_max_width, self.content_padding);
+            if state.content_layout != layout {
+                // Reading selections use pixel coordinates, just as on viewport resize.
+                state.clear_selection();
+                // Column width can change while the list viewport stays fixed.
+                // Invalidate cached row heights while retaining the scroll anchor.
+                let anchor = state.list_state.logical_scroll_top();
+                let count = state.list_state.item_count();
+                state.list_state.splice(0..count, count);
+                state.list_state.scroll_to(anchor);
+                state.content_layout = layout;
+            }
+        });
         let list_state = &self.state.read(cx).list_state;
 
         let focus_handle = self
@@ -1094,6 +1133,7 @@ impl Element for TextView {
             .expect("focus_handle should init by TextViewState::new");
 
         let mut el = div()
+            .debug_selector(|| "reading-scrollbar-viewport".into())
             .key_context(CONTEXT)
             .track_focus(focus_handle)
             .size_full()
@@ -1105,6 +1145,8 @@ impl Element for TextView {
                 }
             })
             .child(TextViewElement {
+                content_max_width: self.content_max_width,
+                content_padding: self.content_padding,
                 style: self.text_style.clone(),
                 code_block_actions: self.code_block_actions.clone(),
                 image_document: self.image_document.clone(),
