@@ -92,6 +92,23 @@ impl Render for SettingsPanel {
             );
         }
         body = body
+            .child(
+                Button::new("open-settings-json")
+                    .debug_selector(|| "open-settings-json".into())
+                    .label("Open settings JSON")
+                    .disabled(self.values.busy || !self.values.has_settings_file || self.values.opening_settings_file)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.emit_intent(SettingsIntent::OpenSettingsJson, cx)
+                    })),
+            )
+            .when(!self.values.has_settings_file, |body| body.child(
+                div().text_sm().text_color(cx.theme().muted_foreground)
+                    .child("Open a notebook to edit its settings JSON."),
+            ))
+            .when(self.values.opening_settings_file, |body| body.child(
+                div().text_sm().text_color(cx.theme().muted_foreground)
+                    .child("Waiting for settings to finish saving…"),
+            ))
             .child("Editor")
             .child(Switch::new("centered-editor").label("Centered editor").checked(appearance.centered_editor)
                 .disabled(self.values.busy)

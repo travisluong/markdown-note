@@ -50,3 +50,77 @@ fn removing_inactive_notebook_keeps_dirty_document_and_its_autosave(cx: &mut Tes
     assert_eq!(fs::read_to_string(&fixture.note).unwrap(), "retained A");
     cx.update(|_, cx| assert!(!notes.read(cx).dirty(cx)));
 }
+
+#[test]
+fn settings_json_resolution_admits_only_exact_regular_settings_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let book = notebook::Notebook::open(&directory.path().join("book"), true).unwrap();
+    let path = notebook::settings_path(&book.root);
+    // Invalid JSON is still text that can be opened for repair.
+    fs::write(&path, "broken JSON").unwrap();
+    assert_eq!(
+        super::resolve_document_path(&book.root, &path).unwrap(),
+        path
+    );
+    assert!(notebook::resolve(&book.root, std::path::Path::new(".mithril/settings.json")).is_err());
+    for relative in [
+        ".mithril/other.json",
+        "nested/.mithril/settings.json",
+        ".mithril/../note.md",
+    ] {
+        assert!(super::resolve_document_path(&book.root, &book.root.join(relative)).is_err());
+    }
+    fs::remove_file(&path).unwrap();
+    assert!(super::resolve_document_path(&book.root, &path).is_err());
+    fs::create_dir(&path).unwrap();
+    assert!(super::resolve_document_path(&book.root, &path).is_err());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn settings_json_resolution_rejects_linked_metadata_directory() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("book");
+    let target = directory.path().join("target");
+    fs::create_dir(&root).unwrap();
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("settings.json"), "{}").unwrap();
+    let link = root.join(".mithril");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let result = std::process::Command::new("powershell.exe")
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW: headless diagnostics only.
+            .args(["-NoProfile", "-NonInteractive", "-Command",
+                "New-Item -ItemType Junction -Path $env:MITHRIL_TEST_LINK -Target $env:MITHRIL_TEST_TARGET | Out-Null"])
+            .env("MITHRIL_TEST_LINK", &link)
+            .env("MITHRIL_TEST_TARGET", &target)
+            .output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    assert!(super::resolve_document_path(&root, &notebook::settings_path(&root)).is_err());
+    #[cfg(windows)]
+    fs::remove_dir(&link).unwrap();
+    #[cfg(unix)]
+    fs::remove_file(&link).unwrap();
+    assert!(target.join("settings.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn settings_json_resolution_rejects_linked_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let book = notebook::Notebook::open(&directory.path().join("book"), true).unwrap();
+    let path = notebook::settings_path(&book.root);
+    let target = directory.path().join("other.json");
+    fs::write(&target, "{}").unwrap();
+    fs::remove_file(&path).unwrap();
+    std::os::unix::fs::symlink(&target, &path).unwrap();
+    assert!(super::resolve_document_path(&book.root, &path).is_err());
+}

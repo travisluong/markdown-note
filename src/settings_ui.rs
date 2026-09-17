@@ -184,6 +184,7 @@ pub(super) struct SettingsDialog {
     panel: WeakEntity<SettingsPanel>,
     lifetime: Weak<()>,
     scope: SettingsScope,
+    opening_file: bool,
     _subscription: Subscription,
 }
 
@@ -231,6 +232,11 @@ impl Notes {
                 .map(|book| book.settings.excluded_patterns.clone()),
             startup_dark: self.startup_dark,
             busy: self.is_busy(),
+            has_settings_file: self.notebooks.active.is_some(),
+            opening_settings_file: self
+                .settings_panel
+                .as_ref()
+                .is_some_and(|open| open.opening_file),
             subtitle: self.notebooks.active.as_ref().map_or_else(
                 || "Changes apply immediately for this session.".to_owned(),
                 |book| format!("Changes are saved for {}.", notebook::name(&book.root)),
@@ -265,6 +271,7 @@ impl Notes {
             panel: panel.downgrade(),
             lifetime: Rc::downgrade(&lifetime),
             scope,
+            opening_file: false,
             _subscription: subscription,
         });
         let owner = cx.weak_entity();
@@ -368,6 +375,78 @@ impl Notes {
         panel.read(cx).focus.focus(window);
         true
     }
+
+    /// The dialog retains navigation authority while its notebook writes drain.
+    /// Called on the initial intent and after each preference-write completion.
+    pub(super) fn resolve_settings_file_open(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(open) = self
+            .settings_panel
+            .as_ref()
+            .filter(|open| open.opening_file)
+        else {
+            return;
+        };
+        let id = open.panel.entity_id();
+        if open.lifetime.upgrade().is_none() || open.scope != self.settings_scope() {
+            self.close_settings_panel(id, window, cx);
+            return;
+        }
+        if self.is_busy() {
+            self.settings_panel.as_mut().unwrap().opening_file = false;
+            self.sync_settings_panel(window, cx);
+            return;
+        }
+        let PreferenceTarget::Notebook(root) = &open.scope.preferences else {
+            return;
+        };
+        let root = root.clone();
+        // Recapture the barrier so edits made while waiting are included too.
+        match self.notebooks.settings_file_flush_status(&root) {
+            notebook::FlushStatus::Pending => self.sync_settings_panel(window, cx),
+            notebook::FlushStatus::Failed(errors) => {
+                self.settings_panel.as_mut().unwrap().opening_file = false;
+                self.notebooks.notice = Some(format!(
+                    "Could not open settings JSON because settings could not be saved: {}",
+                    errors
+                        .iter()
+                        .map(|error| error.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+                self.sync_settings_panel(window, cx);
+            }
+            notebook::FlushStatus::Succeeded => {
+                let tab = self.tabs.active.id;
+                self.close_settings_panel(id, window, cx);
+                // Run after modal dismissal restores focus, including the case
+                // where this file is already the current document.
+                cx.defer_in(window, move |this, window, cx| {
+                    if this.is_busy()
+                        || window.has_active_dialog(cx)
+                        || this.tabs.active.id != tab
+                        || this
+                            .notebooks
+                            .active
+                            .as_ref()
+                            .is_none_or(|book| book.root != root)
+                    {
+                        return;
+                    }
+                    let path = notebook::settings_path(&root);
+                    if this.tabs.active.path() == Some(path.as_path()) {
+                        this.tabs.active.editor.focus(window, cx);
+                    } else {
+                        this.request(crate::Next::File(path), window, cx);
+                    }
+                });
+            }
+        }
+    }
+
     fn handle_settings_intent(
         &mut self,
         sender: EntityId,
@@ -410,6 +489,16 @@ impl Notes {
         }
         let mut appearance = self.appearance();
         let appearance_changed = match intent {
+            SettingsIntent::OpenSettingsJson => {
+                let open = self.settings_panel.as_mut().unwrap();
+                if !open.opening_file
+                    && matches!(open.scope.preferences, PreferenceTarget::Notebook(_))
+                {
+                    open.opening_file = true;
+                    self.resolve_settings_file_open(window, cx);
+                }
+                return;
+            }
             SettingsIntent::ResetToolbar => {
                 let defaults = notebook::ToolbarSettings::default();
                 if let Some(book) = &mut self.notebooks.active {

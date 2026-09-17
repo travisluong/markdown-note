@@ -2058,3 +2058,28 @@ and preference replay during same/different notebook activation. The full test
 command was attempted but could not replace the running application's locked
 `target/debug/mithril.exe`. No desktop interaction occurred. Unrelated Cargo.lock
 changes remain untouched.
+
+## Open settings JSON from Settings (2026-09-17)
+
+General Settings now exposes Open settings JSON for the active notebook, disabled
+without a notebook or during foreground work. A pending request remains attached
+to the dialog's identity, lifetime and scope while the existing preference writer
+drains the notebook's latest submissions. Failures leave Settings open with an
+error; success dismisses the modal before normal current-tab navigation, preserving
+the unsaved-change flow and editor focus.
+
+Document loading admits only the exact notebook settings path through a separate
+regular-file/link check; tree resolution and persisted relative paths retain their
+metadata exclusion. JSON uses existing Source-mode and shared-buffer handling.
+Opening/selecting the settings file does not rewrite settings or replace last_file.
+Manual JSON edits do not automatically update in-memory preferences.
+
+Verification: 376 library/application tests passed (92 library + 284 application),
+including nine new Windows-executed regressions for source-mode opening, file
+identity preservation, unavailable/busy/stale forms, unsaved cancellation, delayed
+and failed writes, missing files, retained edits, and metadata path/link checks.
+A Unix-only file-symlink regression is also included but was not executed here.
+`cargo check --locked --offline`, `cargo fmt --check`, and strict all-targets Clippy
+with `editor-diagnostics` passed. Tests used TestPlatform and temporary files;
+no desktop interaction or native application launch occurred. Unrelated Cargo.lock
+changes remain untouched.

@@ -4,6 +4,34 @@ use mithril::explorer::Explorer;
 #[cfg(test)]
 use std::time::Duration;
 
+/// Only document loading admits the notebook's exact settings file. Tree and
+/// persisted relative paths continue to reject all metadata paths.
+fn resolve_document_path(root: &Path, path: &Path) -> io::Result<PathBuf> {
+    if path == notebook::settings_path(root) {
+        for (component, directory) in [
+            (root.to_path_buf(), true),
+            (root.join(".mithril"), true),
+            (path.to_path_buf(), false),
+        ] {
+            let metadata = std::fs::symlink_metadata(&component)?;
+            if notebook::is_link(&metadata)
+                || (directory && !metadata.is_dir())
+                || (!directory && !metadata.is_file())
+            {
+                return Err(io::Error::other(
+                    "Notebook settings must be a regular file in an unlinked notebook folder.",
+                ));
+            }
+        }
+        return Ok(path.to_path_buf());
+    }
+    notebook::resolve(
+        root,
+        path.strip_prefix(root)
+            .map_err(|_| io::Error::other("File is outside the notebook"))?,
+    )
+}
+
 impl Notes {
     pub(crate) fn new_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.capabilities().can_create_note() || window.has_active_dialog(cx) {
@@ -101,6 +129,14 @@ pub(super) struct NotebookState {
 }
 
 impl NotebookState {
+    pub(super) fn settings_file_flush_status(&self, root: &Path) -> notebook::FlushStatus {
+        self.writer
+            .as_ref()
+            .map_or(notebook::FlushStatus::Succeeded, |writer| {
+                writer.flush_status(&writer.flush_book(root))
+            })
+    }
+
     pub(super) fn index_writable(&self) -> bool {
         self.index_writable
     }
@@ -109,6 +145,11 @@ impl NotebookState {
     pub(crate) fn set_test_persistence_target(&mut self, path: PathBuf) {
         self.index_path = Some(path);
         self.index_writable = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_persistence_delay(&mut self, delay: Duration) {
+        self.write_delay = delay;
     }
 
     pub(super) fn reload_exclusions(&mut self) {
@@ -1156,7 +1197,7 @@ impl Notes {
                     .and_then(|book| {
                         path.strip_prefix(&book.root)
                             .ok()
-                            .map(|relative| notebook::resolve(&book.root, relative).is_ok())
+                            .map(|_| resolve_document_path(&book.root, &path).is_ok())
                     })
                     .unwrap_or(true);
                 if let Some(document) = self
@@ -1189,9 +1230,10 @@ impl Notes {
                         .background_executor()
                         .spawn(async move {
                             if let Some(root) = root
-                                && let Ok(relative) = path.strip_prefix(&root)
+                                && path.starts_with(&root)
                             {
-                                return notebook::resolve(&root, relative).and_then(Document::open);
+                                return resolve_document_path(&root, &path)
+                                    .and_then(Document::open);
                             }
                             Document::open(path)
                         })
@@ -1243,6 +1285,13 @@ impl Notes {
     }
     pub(super) fn remember_file(&mut self, cx: &mut Context<Self>) {
         let document_path = self.document().map(|doc| doc.path.clone());
+        if self.notebooks.active.as_ref().is_some_and(|book| {
+            document_path.as_ref() == Some(&notebook::settings_path(&book.root))
+        }) {
+            // Opening or selecting the settings document must not rewrite its
+            // freshly loaded baseline, nor replace the notebook's last note.
+            return;
+        }
         if let Some(book) = &mut self.notebooks.active {
             // File -> Open may select a standalone document outside this notebook.
             if let Some(relative) = document_path
@@ -1363,6 +1412,7 @@ impl Notes {
                                 this.notebooks.notice = Some(message);
                             }
                             this.resolve_settings_waiter(window, cx);
+                            this.resolve_settings_file_open(window, cx);
                             cx.notify();
                             this.notebooks
                                 .writer

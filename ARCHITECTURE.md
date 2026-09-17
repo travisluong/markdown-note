@@ -607,6 +607,23 @@ format changes are involved. `tests/mermaid.rs` exercises native rendering and
 GPUI TestPlatform behavior; the existing cross-platform validation workflow runs
 it with `editor-diagnostics`. See `docs/mermaid.md` for usage and compatibility.
 
+## Settings JSON editing
+
+General Settings offers Open settings JSON for the active notebook. The dialog
+retains a pending-open flag while the notebook's preference writer drains, checking
+its current flush barrier after each completion so later edits are included. Dialog
+identity, lifetime, scope and busy guards still apply; failure keeps the form open.
+Success dismisses the modal before normal current-tab document navigation and its
+unsaved-change prompt. Without a notebook the button is disabled.
+
+The document-loading adapter alone admits the exact `.mithril/settings.json` path,
+checking the notebook root, metadata directory and regular file for links. Tree
+resolution and persisted relative paths still exclude `.mithril`. JSON uses the
+existing Source-only installation and shared-buffer/save contracts. Opening or
+selecting this document skips last-note persistence, preserving the Markdown mode,
+last note and loaded disk baseline. This adds no automatic reload of manually
+edited preferences.
+
 ## Text file editing
 
 `document::open` accepts UTF-8 text (including BOM and existing newline conventions)

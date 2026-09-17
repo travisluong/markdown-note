@@ -2692,3 +2692,6 @@ fn external_autosave_form_rejects_a_changed_notebook_scope(cx: &mut TestAppConte
         assert!(!notes.read(cx).session_autosave.enabled);
     });
 }
+
+#[path = "settings_json_tests.rs"]
+mod settings_json;

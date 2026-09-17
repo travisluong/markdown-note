@@ -58,6 +58,7 @@ pub(super) enum SettingsIntent {
     Theme(notebook::ThemeChoice),
     Color(ColorRole, u32),
     ResetPalettes,
+    OpenSettingsJson,
     Close,
 }
 impl SettingsIntent {
@@ -84,6 +85,8 @@ pub(super) struct SettingsValues {
     pub excluded_patterns: Option<Vec<String>>,
     pub startup_dark: bool,
     pub busy: bool,
+    pub has_settings_file: bool,
+    pub opening_settings_file: bool,
     pub subtitle: String,
     pub autosave_scope: String,
     pub notice: Option<String>,
@@ -299,6 +302,11 @@ impl SettingsPanel {
     }
 
     fn emit_intent(&mut self, intent: SettingsIntent, cx: &mut Context<Self>) {
+        if matches!(intent, SettingsIntent::OpenSettingsJson)
+            && (!self.values.has_settings_file || self.values.opening_settings_file)
+        {
+            return;
+        }
         // Autosave preferences remain editable while a foreground operation runs.
         // The application independently checks the current scope and capability.
         if !self.values.busy || intent.is_autosave() || matches!(intent, SettingsIntent::Close) {
