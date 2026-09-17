@@ -310,6 +310,10 @@ impl Paragraph {
 
 #[derive(Debug, Clone)]
 pub struct CodeBlock {
+    #[cfg(feature = "mermaid")]
+    pub(crate) mermaid: bool,
+    #[cfg(feature = "mermaid")]
+    diagram: Arc<Mutex<crate::mermaid::Reading>>,
     pub(crate) source_runs: Vec<super::source_map::SourceRun>,
     lang: Option<SharedString>,
     tokens: CodeTokens,
@@ -346,6 +350,10 @@ impl CodeBlock {
 
         Self {
             lang,
+            #[cfg(feature = "mermaid")]
+            mermaid: false,
+            #[cfg(feature = "mermaid")]
+            diagram: Default::default(),
             source_runs: Vec::new(),
             tokens,
             state,
@@ -370,6 +378,16 @@ impl CodeBlock {
         cx: &mut App,
     ) -> AnyElement {
         let style = &node_cx.style;
+        #[cfg(feature = "mermaid")]
+        let diagram = self.mermaid.then(|| {
+            let active = node_cx.highlights.as_ref().and_then(|h| h.active.as_ref());
+            let reveal = active.is_some_and(|r| {
+                self.source_runs
+                    .iter()
+                    .any(|s| s.source.start < r.end && r.start < s.source.end)
+            });
+            crate::mermaid::reading(self.diagram.clone(), self.code(), reveal, window, cx)
+        });
 
         div()
             .when(!options.is_last, |this| this.pb(style.paragraph_gap))
@@ -384,16 +402,33 @@ impl CodeBlock {
                     .relative()
                     .refine_style(&style.code_block)
                     .pr(px(44.))
-                    .child(
-                        Inline::new(
+                    .map(|container| {
+                        let code = Inline::new(
                             "code",
                             self.state.clone(),
                             vec![],
                             self.tokens
                                 .styles(0..self.code().len(), &cx.theme().highlight_theme),
                         )
-                        .source_highlights(&self.source_runs, node_cx),
-                    )
+                        .source_highlights(&self.source_runs, node_cx);
+                        #[cfg(feature = "mermaid")]
+                        if let Some((image, message, probe)) = diagram {
+                            let container = container.child(probe);
+                            return if let Some(image) = image {
+                                container.child(image)
+                            } else {
+                                container.child(code).when_some(message, |c, m| {
+                                    c.child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(m),
+                                    )
+                                })
+                            };
+                        }
+                        container.child(code)
+                    })
                     .map(|this| {
                         let actions = if let Some(actions) = &node_cx.code_block_actions {
                             actions(self, window, cx)
@@ -1551,5 +1586,25 @@ impl CodeBlock {
                 .iter()
                 .any(|(_, s)| s.color == light.style("comment").unwrap().color)
         );
+    }
+}
+
+#[cfg(all(feature = "mermaid", feature = "editor-diagnostics"))]
+impl Node {
+    pub(super) fn diagnostic_mermaid_states(&self, states: &mut Vec<bool>) {
+        match self {
+            Self::CodeBlock(block) if block.mermaid => {
+                states.push(block.diagram.lock().unwrap().ready)
+            }
+            Self::Root { children }
+            | Self::List { children, .. }
+            | Self::ListItem { children, .. }
+            | Self::Blockquote { children } => {
+                for child in children {
+                    child.diagnostic_mermaid_states(states);
+                }
+            }
+            _ => {}
+        }
     }
 }

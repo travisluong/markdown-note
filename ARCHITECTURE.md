@@ -556,3 +556,31 @@ Reading keeps Copy available for rendered selections and disables editing.
 TextView's opt-in `persistent_selection` retains Reading selections on outside
 clicks, including opening the Edit menu; inside clicks still start a new selection.
 Other TextViews retain their default outside-click selection clearing behavior.
+
+## Mermaid diagrams
+
+Fenced blocks labelled `mermaid` render offline in Live preview and Reading.
+Source mode remains literal. The vendored `mermaid` Cargo feature is enabled by
+Mithril; `src/mermaid.rs` owns the application-wide rendering queue and LRU cache.
+It pins Merman 0.7.0 for native SVG generation and uses resvg 0.45.1 with all
+image-resource resolvers disabled. Diagram work runs separately from Markdown
+analysis. A render key contains the parsed code, appearance, width and device
+scale. Weak request tickets discard abandoned queued work and stale completions;
+results never mutate document text, selection or history. One worker runs at a
+time, with at most 64 pending distinct requests. The cache is limited to 64 MiB
+and 256 entries; input is limited to 50,000 bytes and images to 4,000,000 pixels.
+
+The existing AST visitors classify fences and retain source mappings. Live
+projection belongs to `input/text_wrapper/mermaid.rs`: an anchor row displays
+the image, covered source rows have zero display height, and any intersecting
+caret/selection reveals the complete source. Geometry changes use the existing
+scroll anchor compensation. Projections keep weak image references so scrolling
+does not retain images beyond the shared cache. Edits, mode changes, appearance
+and size changes invalidate projections before accepting another keyed result.
+Reading CodeBlock keeps its source runs and requests the same renderer; an active
+Find result reveals the block's source. Both modes retain Copy code and use source
+plus a compact message while pending or on failure. Reading measures the actual
+content width before requesting a fitted image. No notebook setting or disk
+format changes are involved. `tests/mermaid.rs` exercises native rendering and
+GPUI TestPlatform behavior; the existing cross-platform validation workflow runs
+it with `editor-diagnostics`. See `docs/mermaid.md` for usage and compatibility.

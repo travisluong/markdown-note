@@ -17,6 +17,8 @@ pub(super) struct CodeLine {
 
 #[derive(Clone, Debug)]
 pub(super) struct Block {
+    #[cfg(feature = "mermaid")]
+    pub mermaid: bool,
     pub code: gpui::SharedString,
     pub source: Range<usize>,
     pub opening: Range<usize>,
@@ -146,6 +148,8 @@ impl Snapshot {
                         .max(first)
                 };
                 result.details.push(Block {
+                    #[cfg(feature = "mermaid")]
+                    mermaid: crate::mermaid::language(code.lang.as_deref()),
                     code: code.value.clone().into(),
                     source: start..range.end,
                     opening: start..opening_end,

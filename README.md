@@ -80,6 +80,9 @@ for File, View, Notebooks and Help; arrows, Enter and Escape navigate menus.
 **Help → Keyboard shortcuts** lists bindings for the current platform, including
 editor-specific differences such as Command+Shift+Z for redo on macOS.
 
+Mermaid code blocks render offline in Live preview and Reading. See
+[Mermaid diagrams](docs/mermaid.md) for syntax, editing and compatibility.
+
 ## Notebooks and Explorer
 
 Creating a notebook makes a new folder with the chosen name inside its parent

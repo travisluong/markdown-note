@@ -1,3 +1,8 @@
+#[cfg(feature = "mermaid")]
+#[path = "text_wrapper/mermaid.rs"]
+mod mermaid;
+#[cfg(feature = "mermaid")]
+use mermaid::DiagramLine;
 use std::ops::Range;
 
 use gpui::{App, Font, LineFragment, Pixels, Point, ShapedLine, Size, Window, point, px, size};
@@ -31,6 +36,8 @@ pub(super) struct TableRowLayout {
 /// A line with soft wrapped lines info.
 #[derive(Debug, Clone)]
 pub(super) struct LineItem {
+    #[cfg(feature = "mermaid")]
+    pub(super) diagram: Option<DiagramLine>,
     pub(super) code_block: Option<super::fenced_code::Decoration>,
     pub(super) image: Option<ImageLayout>,
     pub(super) table: Option<std::rc::Rc<TableRowLayout>>,
@@ -59,6 +66,12 @@ impl LineItem {
     /// Get number of soft wrapped lines of this line (include the first line).
     #[inline]
     pub(super) fn lines_len(&self) -> usize {
+        #[cfg(feature = "mermaid")]
+        if let Some(diagram) = &self.diagram {
+            if let Some(rows) = diagram.rows() {
+                return rows;
+            }
+        }
         if let Some(image) = &self.image {
             return image.rows
                 + if image.reveal {
@@ -73,11 +86,26 @@ impl LineItem {
     }
 
     pub(super) fn height_units(&self) -> f32 {
+        #[cfg(feature = "mermaid")]
+        if let Some(diagram) = &self.diagram {
+            if let Some(rows) = diagram.rows() {
+                return rows as f32;
+            }
+        }
         self.lines_len() as f32 * self.scale
+            + self.diagram_message_height()
             + self
                 .code_block
                 .as_ref()
                 .map_or(0., |c| c.top() + c.bottom())
+    }
+
+    fn diagram_message_height(&self) -> f32 {
+        #[cfg(feature = "mermaid")]
+        if matches!(self.diagram, Some(DiagramLine::Message(_))) {
+            return 1.;
+        }
+        0.
     }
 
     /// Get the height of this line item with given line height.
@@ -98,6 +126,8 @@ pub(super) struct LongestRow {
 ///
 /// After use lines to calculate the scroll size of the Editor.
 pub(super) struct TextWrapper {
+    #[cfg(feature = "mermaid")]
+    diagrams: std::collections::BTreeMap<usize, mermaid::Projection>,
     pub(super) dividers: std::sync::Arc<Vec<Range<usize>>>,
     pub(super) list_items: std::sync::Arc<Vec<super::list_reorder::Item>>,
     pub(super) inline_code: std::sync::Arc<Vec<super::inline_code::CodeSpan>>,
@@ -153,6 +183,8 @@ impl TextWrapper {
             retired_code: Vec::new(),
             image_document: None,
             images: Default::default(),
+            #[cfg(feature = "mermaid")]
+            diagrams: Default::default(),
             links: Default::default(),
             retired_links: Vec::new(),
             analysis: Default::default(),
@@ -387,6 +419,10 @@ impl TextWrapper {
         new_text: &Rope,
         cx: &mut App,
     ) {
+        #[cfg(feature = "mermaid")]
+        if !range.is_empty() || new_text.len() > 0 {
+            self.clear_diagrams();
+        }
         if !range.is_empty() || new_text.len() > 0 {
             self.edit_syntax(changed_text, range, new_text);
         }
@@ -718,6 +754,8 @@ impl TextWrapper {
                     .collect();
                 new_lines.push(LineItem {
                     code_block: None,
+                    #[cfg(feature = "mermaid")]
+                    diagram: None,
                     image: None,
                     table: None,
                     line: Rope::from(line),
@@ -830,6 +868,8 @@ impl TextWrapper {
 
             new_lines.push(LineItem {
                 code_block,
+                #[cfg(feature = "mermaid")]
+                diagram: None,
                 image: None,
                 table: None,
                 line: Rope::from(line),
@@ -853,6 +893,10 @@ impl TextWrapper {
             {
                 let new = &mut new_lines[0];
                 let offset = changed_text.line_start_offset(start_row);
+                #[cfg(feature = "mermaid")]
+                if old.line == new.line {
+                    new.diagram = old.diagram.clone();
+                }
                 if old.line == new.line && self.tables.at(offset).is_some() {
                     new.table = old.table.clone();
                     new.cache = old.cache.clone();
@@ -880,6 +924,8 @@ impl TextWrapper {
     ///
     /// If the `text` is the same as the current text, do nothing.
     fn update_all(&mut self, text: &Rope, cx: &mut App) {
+        #[cfg(feature = "mermaid")]
+        self.clear_diagrams();
         self.estimating = self.wrap_width.is_some() || self.live_preview;
         self._update(text, &(0..self.text.len()), text, &mut |_, _, _| vec![]);
         self.estimating = false;
@@ -1185,6 +1231,8 @@ impl DisplayPoint {
 pub(crate) struct LineLayout {
     pub(super) divider: Option<super::live_preview::Divider>,
     pub(super) divider_width: Pixels,
+    #[cfg(feature = "mermaid")]
+    pub(super) diagram: Option<DiagramLine>,
     pub(super) code_block: Option<super::fenced_code::Decoration>,
     pub(super) code_width: Pixels,
     pub(super) image: Option<ImageLayout>,
@@ -1213,6 +1261,14 @@ pub(super) struct TablePaintLayout {
 
 impl LineLayout {
     pub(super) fn code_top(&self, line_height: Pixels) -> Pixels {
+        #[cfg(feature = "mermaid")]
+        if matches!(self.diagram, Some(DiagramLine::Message(_))) {
+            return line_height
+                + self
+                    .code_block
+                    .as_ref()
+                    .map_or(px(0.), |c| c.top() * line_height);
+        }
         self.code_block
             .as_ref()
             .map_or(px(0.), |c| c.top() * line_height)
@@ -1228,6 +1284,8 @@ impl LineLayout {
             divider: None,
             divider_width: px(0.),
             code_block: None,
+            #[cfg(feature = "mermaid")]
+            diagram: None,
             code_width: px(0.),
             table: None,
             image: None,
@@ -1280,6 +1338,10 @@ impl LineLayout {
         offset: usize,
         line_height: Pixels,
     ) -> Option<Point<Pixels>> {
+        #[cfg(feature = "mermaid")]
+        if self.diagram.as_ref().is_some_and(|d| d.rows().is_some()) {
+            return Some(point(px(0.), px(0.)));
+        }
         if self.image.as_ref().is_some_and(|i| !i.reveal) {
             return (offset <= self.len()).then(|| point(px(0.), px(0.)));
         }
@@ -1369,6 +1431,14 @@ impl LineLayout {
         pos: Point<Pixels>,
         line_height: Pixels,
     ) -> Option<usize> {
+        #[cfg(feature = "mermaid")]
+        match &self.diagram {
+            Some(DiagramLine::Image { target, rows, .. }) => {
+                return (pos.y >= px(0.) && pos.y < *rows as f32 * line_height).then_some(*target);
+            }
+            Some(DiagramLine::Covered) => return None,
+            _ => {}
+        }
         if self.code_block.is_some() && (pos.y < px(0.) || pos.y >= self.size(line_height).height) {
             return None;
         }
@@ -1501,6 +1571,12 @@ impl LineLayout {
     }
 
     pub(super) fn size(&self, line_height: Pixels) -> Size<Pixels> {
+        #[cfg(feature = "mermaid")]
+        if let Some(d) = &self.diagram {
+            if let Some(rows) = d.rows() {
+                return size(self.code_width, rows as f32 * line_height);
+            }
+        }
         if let Some(image) = &self.image {
             let text_rows = if image.reveal {
                 self.segment_ranges
@@ -1526,8 +1602,17 @@ impl LineLayout {
                 * line_height
                 + self.code_block.as_ref().map_or(px(0.), |c| {
                     (c.top() + c.bottom()) * line_height / self.scale
+                        + self.diagram_message_height(line_height / self.scale)
                 }),
         )
+    }
+
+    fn diagram_message_height(&self, _line_height: Pixels) -> Pixels {
+        #[cfg(feature = "mermaid")]
+        if matches!(self.diagram, Some(DiagramLine::Message(_))) {
+            return _line_height;
+        }
+        px(0.)
     }
 
     pub(super) fn divider_bounds(&self, line_height: Pixels) -> Option<gpui::Bounds<Pixels>> {
@@ -1546,6 +1631,12 @@ impl LineLayout {
         window: &mut Window,
         cx: &mut App,
     ) {
+        #[cfg(feature = "mermaid")]
+        if let Some(diagram) = &self.diagram {
+            if diagram.paint(pos, line_height, window, cx) {
+                return;
+            }
+        }
         if self.code_block.as_ref().is_some_and(|c| c.hidden) {
             return;
         }
@@ -2083,6 +2174,8 @@ mod tests {
             // range: 0..15
             LineItem {
                 code_block: None,
+                #[cfg(feature = "mermaid")]
+                diagram: None,
                 image: None,
                 table: None,
                 line: Rope::from("Hello, 世界!\r"),
@@ -2097,6 +2190,8 @@ mod tests {
             // range: 16..36
             LineItem {
                 code_block: None,
+                #[cfg(feature = "mermaid")]
+                diagram: None,
                 image: None,
                 table: None,
                 line: Rope::from("This is second line."),
@@ -2111,6 +2206,8 @@ mod tests {
             // range: 37..56
             LineItem {
                 code_block: None,
+                #[cfg(feature = "mermaid")]
+                diagram: None,
                 image: None,
                 table: None,
                 line: Rope::from("This is third line."),
@@ -2125,6 +2222,8 @@ mod tests {
             // range: 57..79
             LineItem {
                 code_block: None,
+                #[cfg(feature = "mermaid")]
+                diagram: None,
                 image: None,
                 table: None,
                 line: Rope::from("这里是第 4 行。"),
@@ -2209,6 +2308,8 @@ impl LineItem {
     pub(super) fn diagnostic_line(n: usize) -> Self {
         Self {
             code_block: None,
+            #[cfg(feature = "mermaid")]
+            diagram: None,
             image: None,
             table: None,
             line: Rope::from("x".repeat(n)),

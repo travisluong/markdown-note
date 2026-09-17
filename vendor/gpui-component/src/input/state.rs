@@ -3455,3 +3455,11 @@ impl InputState {
         self.selecting = false;
     }
 }
+
+#[cfg(all(feature = "mermaid", feature = "editor-diagnostics"))]
+impl InputState {
+    #[doc(hidden)]
+    pub fn diagnostic_mermaid_row(&self, row: usize) -> (Option<usize>, Option<String>) {
+        self.text_wrapper.lines[row].diagnostic_mermaid()
+    }
+}

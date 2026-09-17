@@ -693,6 +693,13 @@ impl TextElement {
         let mut offset = 0;
         for row in visible_range.clone() {
             let line_item = &text_wrapper.lines[row];
+            #[cfg(feature = "mermaid")]
+            if let Some(line) = LineLayout::diagram_projection(line_item, text_wrapper.code_width())
+            {
+                lines.push(line);
+                offset += line_item.len() + 1;
+                continue;
+            }
             if let Some(table) = &line_item.table {
                 let mut cells = vec![];
                 let mut cache = line_item.cache.borrow_mut();
@@ -815,6 +822,10 @@ impl TextElement {
             }
             let mut line_layout = LineLayout::new();
             line_layout.code_block = line_item.code_block.clone();
+            #[cfg(feature = "mermaid")]
+            {
+                line_layout.diagram = line_item.diagram.clone();
+            }
             line_layout.mapped = line_item.mapped.clone();
             line_layout.code_width = text_wrapper.code_width();
             line_layout.image = line_item.image.clone();
@@ -1275,6 +1286,8 @@ impl Element for TextElement {
                 state.selected_range.into(),
                 window.rem_size() * 0.75 / line_height,
             );
+            #[cfg(feature = "mermaid")]
+            state.text_wrapper.prepare_diagrams(window, cx);
             state.restore_list_viewport(line_height);
             if let Some(range) = state.pending_range_reveal.clone() {
                 let start_row = state.text.offset_to_point(range.start).row;
@@ -1310,6 +1323,10 @@ impl Element for TextElement {
             state
                 .text_wrapper
                 .measure_images(visible_range.clone(), line_height, window, cx);
+            #[cfg(feature = "mermaid")]
+            state
+                .text_wrapper
+                .measure_diagrams(visible_range.clone(), line_height, window, cx);
             let delta = (state.text_wrapper.lines.prefix(anchor) - before) * line_height;
             if delta != px(0.) {
                 let mut offset = state
@@ -1322,6 +1339,14 @@ impl Element for TextElement {
                 }
             }
             state.restore_list_viewport(line_height);
+        });
+        let state = self.state.read(cx);
+        #[cfg(feature = "mermaid")]
+        let (visible_range, _) =
+            self.calculate_visible_range(state, line_height, bounds.size.height);
+        #[cfg(feature = "mermaid")]
+        self.state.update(cx, |state, cx| {
+            state.text_wrapper.measure(visible_range.clone(), cx)
         });
         let state = self.state.read(cx);
         let visible_top = state.text_wrapper.lines.prefix(visible_range.start) * line_height;

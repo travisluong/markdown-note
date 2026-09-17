@@ -329,3 +329,19 @@ stale results; `tests/strikethrough.rs` covers the headless render/edit lifecycl
   reject callbacks after source revision or mode changes.
 - Regression entry points: application `tests/code_copy.rs`,
   `tests/code_highlighting.rs`. Reconcile all pieces together on upgrades.
+
+## Mermaid extension (2026-09-17)
+
+| File | Local contract and verification |
+| --- | --- |
+| `Cargo.toml`, `src/lib.rs` | Optional `mermaid` feature pins Merman 0.7.0, resvg 0.45.1 and image 0.25.10. Root application enables it. Renderer diagnostics require `editor-diagnostics`. |
+| `src/mermaid.rs` (added) | Offline source-to-image worker, shared bounded LRU, keyed weak tickets, one running job, bounded pending work, resource denial, alpha conversion, Reading width measurement and renderer/queue diagnostics. |
+| `src/input/fenced_code.rs` | Mermaid language classification during the existing worker AST visit, retaining exact code and source ranges. |
+| `src/input/text_wrapper/mermaid.rs` (added), `src/input/text_wrapper.rs` | Multiline anchor/covered/source projections, zero-height source rows, selection reveal, keyed invalidation and weak image retention. |
+| `src/input/element.rs`, `src/input/state.rs` | Visible-block requests, viewport recalculation and scroll compensation; diagram source hit testing and headless diagnostics. |
+| `src/text/format/markdown.rs`, `src/text/node.rs`, `src/text/text_view.rs` | Fenced-only Reading diagram classification, native images, source/error fallback, preserved code actions and active Find reveal, plus probe diagnostics. |
+
+Verification: `tests/mermaid.rs` uses real native rendering and GPUI TestPlatform;
+`tests/editor.rs` also compiles the no-Mermaid wrapper path. Existing code copy,
+code highlighting, shared editor and Reading lifecycle tests cover interactions.
+Reconcile the added feature and both renderer integrations before upgrading.

@@ -1392,3 +1392,15 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(feature = "mermaid", feature = "editor-diagnostics"))]
+impl ReadingProbe {
+    pub fn mermaid_states(&self, cx: &App) -> Vec<bool> {
+        let entity = self.0.upgrade().unwrap();
+        let mut states = Vec::new();
+        if let Some(Ok(content)) = &entity.read(cx).parsed_result {
+            content.root_node.diagnostic_mermaid_states(&mut states);
+        }
+        states
+    }
+}

@@ -9,6 +9,8 @@ mod icon;
 mod index_path;
 #[cfg(any(feature = "inspector", debug_assertions))]
 mod inspector;
+#[cfg(feature = "mermaid")]
+mod mermaid;
 mod root;
 mod styled;
 mod time;
@@ -176,3 +178,7 @@ impl Measure {
 
 #[doc(hidden)]
 pub mod markdown_images;
+
+#[cfg(all(feature = "mermaid", feature = "editor-diagnostics"))]
+#[doc(hidden)]
+pub use mermaid::diagnostic_checks as diagnostic_mermaid_checks;

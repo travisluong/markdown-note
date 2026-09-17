@@ -1858,3 +1858,29 @@ cargo fmt --check and strict all-target Clippy with editor-diagnostics passed.
 Cargo checks used --offline --locked and target/titlebar-validation; tests used
 --config 'profile.test.package.mithril.codegen-units=64'. No desktop interaction
 was used. Native visual validation remains manual.
+
+## Mermaid diagrams (2026-09-17)
+
+Implemented native offline diagrams for fenced Mermaid blocks in Live preview
+and Reading. Pinned Merman 0.7.0 produces resvg-safe SVG; resvg 0.45.1 rasterizes
+on a separate worker with external/embedded image resolution disabled. A shared
+keyed queue deduplicates visible requests and abandons obsolete weak tickets;
+the cache, pending queue, source bytes and raster dimensions are bounded.
+Live preview collapses source rows into an image anchor, reveals the full block
+for editing/selection, and preserves source hit testing and viewport anchoring.
+Reading retains source mappings and reveals active Find results. Copy code,
+shared undo history, native theme changes and source/error fallback are preserved.
+
+Windows verification: `cargo check --locked`, `cargo fmt --check`, and
+`cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings`
+passed. `cargo test --locked --features editor-diagnostics` passed 548 tests;
+the final five-test Mermaid target additionally passed the subsequently added
+shared-buffer/scroll regression. Earlier focused editor/code-copy/highlighting,
+shared editor and Reading lifecycle tests also passed. A concurrent focused link
+attempt hit Windows LNK1104 while the full suite held the same test executable;
+rerunning after it exited passed without configuration changes.
+Headlessly generated light/dark sample images were inspected for text and arrow
+rendering. No application or desktop interaction was used. Native interactive
+visual validation remains manual; Linux/macOS are covered by the existing CI
+matrix but were not run locally. The pre-existing Cargo.lock package reorder is
+excluded from the feature commit and remains in the working tree.

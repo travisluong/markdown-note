@@ -503,3 +503,19 @@ Copy continues to use rendered text rather than Markdown source. Reconcile the
 flag, constructors and outside-click handler on upgrade. Headless coverage lives
 in `src/title_bar_ui/tests/edit.rs`; existing `tests/link_context_menu.rs` covers
 the default behavior and link-menu selection retention.
+
+## Offline Mermaid diagrams
+
+The optional `mermaid` feature adds pinned Merman 0.7.0 and resvg 0.45.1 rendering
+without a webview or JavaScript runtime. `src/mermaid.rs` owns keyed asynchronous
+render requests, weak interest tickets, image limits, resource isolation and the
+bounded shared cache. `input/fenced_code.rs` retains Mermaid identity in the
+existing worker parse; `input/text_wrapper/mermaid.rs`, TextWrapper and TextElement
+implement multiline source-preserving projections, hit testing and height changes.
+CodeBlock and the Markdown visitor render diagrams in Reading while retaining
+source mappings, custom actions and Find's active-match reveal. `lib.rs` and the
+InputState/ReadingProbe diagnostics expose headless verification only behind
+`editor-diagnostics`. Preserve these contracts and rerun `tests/mermaid.rs`, code
+copy/highlighting, editor/shared-buffer and Reading lifecycle tests when upgrading.
+The component's upstream license remains unchanged; dependencies retain their
+own MIT/Apache licensing. No Cargo registry source is edited.
