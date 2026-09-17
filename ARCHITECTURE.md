@@ -410,7 +410,7 @@ ToolbarSettings owns a complete 17-item order, serialized as lowercase item
 names. Loading preserves valid known entries, skips duplicates and unknown entries,
 and appends missing items in default order without changing visibility. Legacy
 four-item orders retain their order and gain missing enabled controls. Back and
-Forward lead the default order; saved custom orders append them.
+Forward follow Sidebar in the default order; saved orders retain their positions.
 Toolbar-tab grips emit typed relative move intents
 only on drop; the adapter updates current preferences and skips unchanged writes.
 The panel owns drag presentation and validates the originating panel identity;

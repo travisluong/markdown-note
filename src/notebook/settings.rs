@@ -283,9 +283,9 @@ pub enum ToolbarItem {
 
 impl ToolbarItem {
     pub const DEFAULT_ORDER: [Self; 17] = [
+        Self::Sidebar,
         Self::Back,
         Self::Forward,
-        Self::Sidebar,
         Self::Explorer,
         Self::Search,
         Self::Sort,

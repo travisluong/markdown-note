@@ -1807,3 +1807,17 @@ suite passes with cargo test --offline --locked --features editor-diagnostics
 avoids a locked pre-existing test executable (LNK1104) without touching its
 running process. No desktop interaction was used; visual UI validation remains
 manual. The pre-existing Cargo.lock edit is excluded.
+
+## Sidebar first in the default toolbar (2026-09-16)
+
+The default toolbar now begins Sidebar, Back, Forward, Explorer, Search, Sort.
+New/default layouts and Reset toolbar share this order; saved orders, including
+the previous default, retain their positions. Updated headless drag expectations
+and extended the existing settings normalization test to cover the saved old order.
+
+Windows verification passes: 31 focused toolbar tests, all 537 headless tests,
+cargo check, cargo fmt --check, and strict all-target Clippy with editor-diagnostics.
+Cargo checks used --offline --locked and target/titlebar-validation. Tests used
+--config 'profile.test.package.mithril.codegen-units=32' to avoid LNK1104 when
+overwriting older test executables. No desktop interaction was used, and the
+pre-existing Cargo.lock edit is excluded.

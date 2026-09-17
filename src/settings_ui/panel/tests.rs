@@ -941,7 +941,7 @@ fn toolbar_renders_only_enabled_buttons_in_order(cx: &mut TestAppContext) {
         let (_, view) = cx.add_window_view(|window, cx| {
             let notes = cx.new(|cx| {
                 let mut notes = Notes::new(window, cx);
-                notes.session_toolbar.order[2..6].rotate_right(1);
+                notes.session_toolbar.order[..6].rotate_right(1);
                 for (index, (item, _)) in notebook::ToolbarItem::OPTIONS.into_iter().enumerate() {
                     notes
                         .session_toolbar
@@ -1076,7 +1076,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
     cx.update(|_, cx| {
         assert_eq!(
             notes.read(cx).toolbar_settings().order,
-            legacy_toolbar_order([Sort, Sidebar, Explorer, Search])
+            toolbar_order_prefix([Sort, Sidebar, Back, Forward, Explorer, Search])
         )
     });
     assert!(
@@ -1099,7 +1099,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
         assert!(!cx.has_active_drag());
         assert_eq!(
             notes.read(cx).toolbar_settings().order,
-            legacy_toolbar_order([Sort, Sidebar, Explorer, Search])
+            toolbar_order_prefix([Sort, Sidebar, Back, Forward, Explorer, Search])
         );
     });
     // Hidden tools can still be moved, and re-enabling keeps the new position.
@@ -1120,7 +1120,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
     cx.update(|_, cx| {
         assert_eq!(
             reopened.read(cx).values.toolbar.order,
-            legacy_toolbar_order([Explorer, Sidebar, Search, Sort])
+            toolbar_order_prefix([Back, Forward, Explorer, Sidebar, Search, Sort])
         );
         assert!(!reopened.read(cx).values.toolbar.sort);
     });
@@ -1132,7 +1132,7 @@ fn toolbar_grips_reorder_on_drop_and_switches_remain_independent(cx: &mut TestAp
     cx.update(|_, cx| {
         assert_eq!(
             notes.read(cx).toolbar_settings().order,
-            legacy_toolbar_order([Explorer, Sidebar, Search, Sort])
+            toolbar_order_prefix([Back, Forward, Explorer, Sidebar, Search, Sort])
         )
     });
 }
@@ -1157,8 +1157,8 @@ fn toolbar_drag_cancellation_same_position_and_busy_are_noops(cx: &mut TestAppCo
             notebook::ToolbarSettings::default()
         )
     });
-    start_toolbar_drag(Sidebar, cx);
-    finish_toolbar_drag(Explorer, false, cx);
+    start_toolbar_drag(Search, cx);
+    finish_toolbar_drag(Sort, false, cx);
     cx.update(|_, cx| {
         assert_eq!(
             notes.read(cx).toolbar_settings(),
@@ -1213,7 +1213,7 @@ fn toolbar_order_persists_with_notebook_and_rejects_old_dialog_drags(cx: &mut Te
     toolbar_section(&form, cx);
     start_toolbar_drag(Search, cx);
     finish_toolbar_drag(Sidebar, false, cx);
-    let expected = legacy_toolbar_order([Search, Sidebar, Explorer, Sort]);
+    let expected = toolbar_order_prefix([Search, Sidebar, Back, Forward, Explorer, Sort]);
     assert_eq!(
         notebook::Notebook::open(&fixture.first.root, false)
             .unwrap()
@@ -1484,9 +1484,9 @@ fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext)
     }
 }
 
-fn legacy_toolbar_order(first: [notebook::ToolbarItem; 4]) -> [notebook::ToolbarItem; 17] {
+fn toolbar_order_prefix(first: [notebook::ToolbarItem; 6]) -> [notebook::ToolbarItem; 17] {
     let mut order = notebook::ToolbarItem::DEFAULT_ORDER;
-    order[2..6].copy_from_slice(&first);
+    order[..6].copy_from_slice(&first);
     order
 }
 #[gpui::test]
@@ -1506,7 +1506,7 @@ fn formatting_toolbar_items_toggle_reorder_and_keep_their_saved_position(cx: &mu
     cx.refresh().unwrap();
     start_toolbar_drag(Bold, cx);
     finish_toolbar_drag(Sidebar, false, cx);
-    cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[2], Bold));
+    cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[0], Bold));
     assert!(
         cx.debug_bounds("toolbar-bold").unwrap().left()
             < cx.debug_bounds("toolbar-sidebar-toggle").unwrap().left()
@@ -1519,14 +1519,14 @@ fn formatting_toolbar_items_toggle_reorder_and_keep_their_saved_position(cx: &mu
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(!notes.read(cx).toolbar_settings().bold);
-        assert_eq!(notes.read(cx).toolbar_settings().order[2], Bold);
+        assert_eq!(notes.read(cx).toolbar_settings().order[0], Bold);
     });
     intent(&form, SettingsIntent::Close, cx);
     cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
     let reopened = panel(&notes, cx);
     cx.update(|_, cx| {
         assert!(!reopened.read(cx).values.toolbar.bold);
-        assert_eq!(reopened.read(cx).values.toolbar.order[2], Bold);
+        assert_eq!(reopened.read(cx).values.toolbar.order[0], Bold);
     });
     intent(
         &reopened,

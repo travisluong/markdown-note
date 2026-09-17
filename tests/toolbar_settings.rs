@@ -49,7 +49,13 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
 #[test]
 fn toolbar_order_migrates_partial_duplicate_unknown_and_legacy_entries() {
     use ToolbarItem::*;
+    let mut previous_default = ToolbarItem::DEFAULT_ORDER;
+    previous_default[..3].copy_from_slice(&[Back, Forward, Sidebar]);
     for (order, prefix) in [
+        (
+            serde_json::json!(previous_default),
+            previous_default.to_vec(),
+        ),
         (serde_json::json!(null), vec![]),
         (serde_json::json!([]), vec![]),
         (serde_json::json!(false), vec![]),
