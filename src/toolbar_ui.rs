@@ -71,11 +71,7 @@ impl Notes {
                         }
                         ToolbarItem::Sidebar => toolbar_button(
                             "toolbar-sidebar-toggle",
-                            if sidebar_visible {
-                                IconName::PanelLeftClose
-                            } else {
-                                IconName::PanelLeftOpen
-                            },
+                            IconName::PanelLeft,
                             settings.icon_size,
                         )
                         .tooltip(if sidebar_visible {
