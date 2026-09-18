@@ -1,7 +1,7 @@
 //! Retained document ownership. Tab identities qualify session-local tickets.
 use crate::*;
 use app::session::{Effect, Observed};
-use gpui_component::{Disableable, IconName};
+use gpui_component::{Disableable, IconName, button::ButtonCustomVariant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct TabId(pub(crate) u64);
@@ -362,10 +362,12 @@ impl Notes {
             .items_center()
             .flex_shrink_0()
             .min_w_0()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .bg(cx.theme().background)
             .overflow_x_scroll()
             .track_scroll(&self.tabs.scroll)
-            .border_b_1()
-            .border_color(cx.theme().border)
             .children(self.tabs.iter().map(|tab| {
                 let id = tab.id;
                 let title = tab
@@ -379,11 +381,16 @@ impl Notes {
                     .flex()
                     .items_center()
                     .flex_shrink_0()
+                    .rounded(px(8.))
+                    .bg(cx.theme().background)
                     .when(id == self.tabs.active.id, |d| d.bg(cx.theme().secondary))
+                    .when(!busy, |d| d.hover(|style| style.bg(cx.theme().secondary)))
+                    .px_1()
                     .child(
                         Button::new(("tab-select", id.0))
                             .debug_selector(move || format!("tab-select-{}", id.0))
-                            .ghost()
+                            // The wrapper paints one hover surface for both controls.
+                            .custom(ButtonCustomVariant::new(cx))
                             .label(format!(
                                 "{}{}",
                                 if tab.dirty_cached { "• " } else { "" },
@@ -410,7 +417,7 @@ impl Notes {
                     .child(
                         Button::new(("tab-close", id.0))
                             .debug_selector(move || format!("tab-close-{}", id.0))
-                            .ghost()
+                            .custom(ButtonCustomVariant::new(cx))
                             .small()
                             .icon(IconName::Close)
                             .tooltip("Close tab")
