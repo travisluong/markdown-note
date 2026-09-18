@@ -192,6 +192,7 @@ struct Notes {
     session_autosave: notebook::Autosave,
     notebook_cache: std::collections::HashMap<PathBuf, notebook::Notebook>,
     sidebar_collapsed: bool,
+    content_toolbar_width: Pixels,
     sidebar_resize: Entity<gpui_component::resizable::ResizableState>,
     session_date_format: String,
     session_show_file_extensions: bool,
@@ -240,6 +241,7 @@ impl Notes {
             },
             notebook_cache: Default::default(),
             sidebar_collapsed: false,
+            content_toolbar_width: px(0.),
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),
             session_date_format: templates::default_format(),
             session_show_file_extensions: notebook::default_show_file_extensions(),
@@ -755,59 +757,6 @@ impl Render for Notes {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .child(self.render_title_bar(window, cx))
-            .when(
-                self.toolbar_settings().visible && self.toolbar_settings().any_enabled(),
-                |view| view.child(self.render_toolbar(window, cx)),
-            )
-            .when_some(
-                self.save_state(self.tabs.active.id).error.clone(),
-                |view, error| {
-                    view.child(
-                        div()
-                            .flex()
-                            .items_start()
-                            .gap_2()
-                            .p_2()
-                            .text_sm()
-                            .child(div().flex_1().min_w_0().whitespace_normal().child(error))
-                            .child(
-                                Button::new("dismiss-save-error")
-                                    .small()
-                                    .ghost()
-                                    .flex_shrink_0()
-                                    .icon(IconName::Close)
-                                    .tooltip("Dismiss message")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.save_state_mut(this.tabs.active.id).error = None;
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-                },
-            )
-            .when_some(self.notebooks.notice.clone(), |view, notice| {
-                view.child(
-                    div()
-                        .flex()
-                        .items_start()
-                        .gap_2()
-                        .p_2()
-                        .text_sm()
-                        .child(div().flex_1().min_w_0().whitespace_normal().child(notice))
-                        .child(
-                            Button::new("dismiss-notebook-notice")
-                                .small()
-                                .ghost()
-                                .flex_shrink_0()
-                                .icon(IconName::Close)
-                                .tooltip("Dismiss message")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.notebooks.notice = None;
-                                    cx.notify();
-                                })),
-                        ),
-                )
-            })
             .child(
                 div().flex().flex_1().min_h_0().overflow_hidden().child(
                     self.render_sidebar_layout(
@@ -827,6 +776,78 @@ impl Render for Notes {
                                     this.drop_files(vec![drag.root.join(&drag.path)], window, cx);
                                 },
                             ))
+                            .when(
+                                [
+                                    notebook::ToolbarRegion::ContentLeft,
+                                    notebook::ToolbarRegion::ContentCenter,
+                                    notebook::ToolbarRegion::ContentRight,
+                                ]
+                                .into_iter()
+                                .any(|region| self.toolbar_region_visible(region)),
+                                |view| view.child(self.render_content_toolbar(window, cx)),
+                            )
+                            .when_some(
+                                self.save_state(self.tabs.active.id).error.clone(),
+                                |view, error| {
+                                    view.child(
+                                        div()
+                                            .flex()
+                                            .items_start()
+                                            .gap_2()
+                                            .p_2()
+                                            .text_sm()
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .whitespace_normal()
+                                                    .child(error),
+                                            )
+                                            .child(
+                                                Button::new("dismiss-save-error")
+                                                    .small()
+                                                    .ghost()
+                                                    .flex_shrink_0()
+                                                    .icon(IconName::Close)
+                                                    .tooltip("Dismiss message")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        this.save_state_mut(this.tabs.active.id)
+                                                            .error = None;
+                                                        cx.notify();
+                                                    })),
+                                            ),
+                                    )
+                                },
+                            )
+                            .when_some(self.notebooks.notice.clone(), |view, notice| {
+                                view.child(
+                                    div()
+                                        .flex()
+                                        .items_start()
+                                        .gap_2()
+                                        .p_2()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .whitespace_normal()
+                                                .child(notice),
+                                        )
+                                        .child(
+                                            Button::new("dismiss-notebook-notice")
+                                                .small()
+                                                .ghost()
+                                                .flex_shrink_0()
+                                                .icon(IconName::Close)
+                                                .tooltip("Dismiss message")
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.notebooks.notice = None;
+                                                    cx.notify();
+                                                })),
+                                        ),
+                                )
+                            })
                             .child(self.render_tabs(cx))
                             .child(
                                 div()

@@ -2220,3 +2220,19 @@ Cargo check, cargo fmt --check, strict all-targets Clippy with editor-diagnostic
 and whitespace checks passed. Transient Windows LNK1104 test-executable access
 errors cleared on retry. No desktop interaction or native application launch
 occurred. The unrelated Cargo.lock change is excluded from this feature commit.
+
+
+## 2026-09-18: workspace toolbar regions
+
+- Moved sidebar controls into the sidebar and navigation/formatting into the content
+  column above tabs. Notices now render inside the workspace. Narrow content wraps
+  formatting below navigation; equal side reservations center wide layouts.
+- Settings and icon drags share fixed region membership and reject cross-region
+  moves. Legacy alignment still round-trips but has no UI or layout effect.
+- Verification: `cargo check --locked --offline`; 39 headless toolbar tests and
+  all 6 toolbar-settings integration tests passed. Formatting applied. Full gates
+  follow the right-panel addition. No native application or desktop testing.
+- The running debug executable prevents Cargo from replacing the usual final
+  binary. Integration tests use `--target-dir target/toolbar-validation --config
+  'build.build-dir="target"'` to reuse intermediate artifacts and redirect the final
+  binary without touching the running application.

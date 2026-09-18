@@ -1,4 +1,4 @@
-//! Window-wide toolbar presentation; sidebar state and actions retain their owners.
+//! Region-based toolbar presentation; actions retain their existing owners.
 use crate::Notes;
 use gpui::{
     AppContext, Context, EntityId, IntoElement, Render, WeakEntity, Window, div, prelude::*, px,
@@ -11,15 +11,130 @@ use gpui_component::{
 };
 use mithril::{
     markdown_edit::Format,
-    notebook::{ToolbarAlignment, ToolbarIconSize, ToolbarItem},
+    notebook::{ToolbarIconSize, ToolbarItem, ToolbarRegion},
 };
 
 impl Notes {
-    pub(super) fn render_toolbar(
+    pub(super) fn toolbar_region_visible(&self, region: ToolbarRegion) -> bool {
+        let settings = self.toolbar_settings();
+        settings.visible
+            && settings
+                .order
+                .into_iter()
+                .any(|item| item.region() == region && settings.enabled(item))
+    }
+
+    pub(super) fn render_sidebar_toolbar(
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> impl IntoElement + use<> {
+        div()
+            .id("sidebar-toolbar")
+            .debug_selector(|| "sidebar-toolbar".into())
+            .w_full()
+            .flex_shrink_0()
+            .p_1()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(self.render_toolbar_region(ToolbarRegion::Sidebar, window, cx))
+    }
+
+    pub(super) fn render_content_toolbar(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let settings = self.toolbar_settings();
+        let width = |region| {
+            let count = settings
+                .order
+                .into_iter()
+                .filter(|item| item.region() == region && settings.enabled(*item))
+                .count();
+            count as f32 * settings.icon_size.button_pixels() + count.saturating_sub(1) as f32 * 4.
+        };
+        let side = width(ToolbarRegion::ContentLeft).max(width(ToolbarRegion::ContentRight));
+        let center = width(ToolbarRegion::ContentCenter);
+        let wrapped = self.content_toolbar_width < px(8. + side * 2. + center + 8.);
+        // Taffy's intrinsic wrapped height can retain the min-content estimate.
+        // Derive the toolbar height from the same available width as its icon rows.
+        let button = settings.icon_size.button_pixels();
+        let per_row = ((f32::from(self.content_toolbar_width) - 4.) / (button + 4.))
+            .floor()
+            .max(1.);
+        let formatting_count = ((center + 4.) / (button + 4.)).floor();
+        let rows = if wrapped {
+            (formatting_count / per_row).ceil() as usize + usize::from(side > 0.)
+        } else {
+            1
+        };
+        let height = rows as f32 * button + rows.saturating_sub(1) as f32 * 4. + 9.;
+        let owner = cx.weak_entity();
+        let left = self.render_toolbar_region(ToolbarRegion::ContentLeft, window, cx);
+        let middle = self.render_toolbar_region(ToolbarRegion::ContentCenter, window, cx);
+        let right = self.render_toolbar_region(ToolbarRegion::ContentRight, window, cx);
+        let row = div()
+            .flex()
+            .items_center()
+            .w_full()
+            .gap_1()
+            .child(div().w(px(side)).flex_shrink_0().child(left));
+        let row = if wrapped {
+            row.child(div().flex_1())
+        } else {
+            row.child(div().flex_1().min_w_0().child(middle))
+        };
+        let row = row.child(
+            div()
+                .w(px(side))
+                .flex_shrink_0()
+                .flex()
+                .justify_end()
+                .child(right),
+        );
+        div()
+            .h(px(height))
+            .id("content-toolbar")
+            .debug_selector(|| "content-toolbar".into())
+            .relative()
+            .flex()
+            .flex_col()
+            .w_full()
+            .flex_shrink_0()
+            .gap_1()
+            .p_1()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(
+                gpui::canvas(
+                    move |bounds, _, cx| {
+                        cx.defer(move |cx| {
+                            let _ = owner.update(cx, |this, cx| {
+                                if this.content_toolbar_width != bounds.size.width {
+                                    this.content_toolbar_width = bounds.size.width;
+                                    cx.notify();
+                                }
+                            });
+                        });
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
+            .when(side > 0. || !wrapped, |view| view.child(row))
+            .when(wrapped && center > 0., |view| {
+                view.child(self.render_toolbar_region(ToolbarRegion::ContentCenter, window, cx))
+            })
+    }
+
+    fn render_toolbar_region(
+        &self,
+        region: ToolbarRegion,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let settings = self.toolbar_settings();
         let has_notebook = self.notebooks.active.is_some();
         let disabled = self.document_interaction_blocked() || !has_notebook;
@@ -29,27 +144,20 @@ impl Notes {
         let can_reorder = !self.document_interaction_blocked() && !window.has_active_dialog(cx);
 
         div()
-            .id("window-toolbar")
-            .debug_selector(|| "window-toolbar".into())
             .flex()
             .flex_wrap()
-            .map(|toolbar| match settings.alignment {
-                ToolbarAlignment::Left => toolbar.justify_start(),
-                ToolbarAlignment::Center => toolbar.justify_center(),
-                ToolbarAlignment::Right => toolbar.justify_end(),
-            })
             .items_center()
+            .min_w_0()
             .w_full()
-            .flex_shrink_0()
             .gap_1()
-            .p_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            .when(region == ToolbarRegion::ContentCenter, |view| {
+                view.justify_center()
+            })
             .children(
                 settings
                     .order
                     .into_iter()
-                    .filter(|item| settings.enabled(*item))
+                    .filter(|item| settings.enabled(*item) && item.region() == region)
                     .map(|item| {
                         let drag = can_reorder.then(|| WindowToolbarDrag {
                             owner: cx.entity_id(),
@@ -251,6 +359,7 @@ impl Notes {
             && drag.scope == self.notebooks.active.as_ref().map(|book| book.root.clone())
             && !self.document_interaction_blocked()
             && !window.has_active_dialog(cx)
+            && drag.item.region() == target.region()
             && settings.visible
             && settings.enabled(drag.item)
             && settings.enabled(target)

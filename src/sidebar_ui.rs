@@ -120,6 +120,10 @@ impl Notes {
             .size_full()
             .min_w_0()
             .overflow_hidden()
+            .when(
+                self.toolbar_region_visible(notebook::ToolbarRegion::Sidebar),
+                |view| view.child(self.render_sidebar_toolbar(window, cx)),
+            )
             // The resize handle supplies the single-pixel divider.
             .child(div().flex_1().min_h_0().overflow_hidden().child(sidebar));
         h_resizable("sidebar-layout")

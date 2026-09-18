@@ -53,7 +53,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
 | Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow and popup anchors. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
-| Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective visibility/order/sizing/alignment from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
+| Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. Fixed regions read effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
@@ -424,15 +424,15 @@ returns to commands. Palette and View theme toggles share the guarded
 `toggle_theme` adapter in `settings_ui.rs`, preserving notebook/session scope and
 working without a document. Neither port owns new preference state.
 
-View > Hide toolbar toggles `ToolbarSettings::visible` through the settings adapter,
+View > Hide toolbars toggles `ToolbarSettings::visible` through the settings adapter,
 persisting per active notebook or using session defaults without a notebook.
-Visibility defaults to true for new and existing settings. Hiding removes the row
-and border without changing item preferences; resetting toolbar defaults restores
+Visibility defaults to true for new and existing settings. Hiding removes both toolbar rows
+and borders without changing item preferences; resetting toolbar defaults restores
 visibility. The toggle follows the existing busy/modal guards.
 
 The optional toolbar sidebar button defaults off; explicit saved visibility is retained.
 Resetting toolbar defaults turns that item off again.
-The window toolbar uses `ToolbarSettings` in `notebook/settings.rs` for independent
+The workspace toolbars use `ToolbarSettings` in `notebook/settings.rs` for independent
 sidebar, Explorer, Search and Sort visibility plus eleven Markdown formatting
 controls (bold, italic, strikethrough, heading, inline code, code block, link,
 blockquote, ordered list, unordered list and task list), all enabled by default.
@@ -449,8 +449,9 @@ Toolbar-tab grips emit typed relative move intents
 only on drop; the adapter updates current preferences and skips unchanged writes.
 The panel owns drag presentation and validates the originating panel identity;
 the adapter retains dialog lifetime, notebook scope and busy guards. Both the
-settings list and toolbar follow the saved order, including positions for hidden
-items. Disabling all items removes the row and border.
+settings list and toolbars filter the saved order by `ToolbarItem::region`, retaining
+positions for hidden items. Cross-region moves are rejected by both drag adapters
+and the pure reorder method. Disabling all items in a toolbar removes its row and border.
 Direct toolbar icon drags use the same settings-adapter move boundary. Every visible
 icon can move, including unavailable commands; the button retains GPUI's drag
 threshold and suppresses command clicks during a drag. Absolute before/after
@@ -461,12 +462,16 @@ Heading and Sort opt into the vendored dropdown/popover completed-click trigger;
 other popovers retain mouse-down activation. Headless toolbar interaction tests
 cover reordering, cancellation, disabled commands, focus, persistence and Settings
 synchronization.
-ToolbarSettings stores Left, Center and Right alignment, serialized as lowercase
-`alignment` values; missing or invalid values default to Left. Settings Toolbar
-applies changes immediately through typed intents and the existing guarded
-notebook/session preference boundary, skipping unchanged writes. Flex justification
-aligns each wrapped row within the full window width, independent of sidebar or
-editor width. Hiding the toolbar retains alignment; resetting defaults restores Left.
+The workspace starts directly below the menu bar. The sidebar toolbar contains
+Explorer, Search and Sort by default; its optional sidebar toggle remains off.
+Content has fixed left navigation, centered formatting and right action regions,
+above the retained tab strip. Equal side reservations center formatting within the
+content column. Its measured width selects one row or a top navigation/action row
+followed by centered wrapping formatting rows. Document errors and notebook notices
+are inside the workspace content column. Sidebar collapse removes its toolbar;
+content controls remain available with no notebook. Settings groups items by region.
+Legacy `alignment` values still deserialize and round-trip but no longer affect
+presentation; there is no alignment control or mutation intent.
 ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
 invalid values default to Medium; explicitly stored Small or Large values survive.
 Toolbar-tab size intents use the same notebook/session
@@ -475,8 +480,8 @@ restoring the complete order, visibility, Left alignment and Medium size togethe
 skipping unchanged notebook writes. The toolbar owns exact 14/20/28 px icons in
 24/32/40 px button targets and wraps controls as needed; its height follows the
 button rows and padding. Theme UI font size does not scale these logical-pixel targets.
-An enabled toolbar remains visible with the sidebar collapsed or no notebook open;
-notebook actions are disabled without a notebook or while busy. Only a visible
+The content toolbar remains visible with the sidebar collapsed or no notebook open;
+sidebar actions appear only with the sidebar and retain their busy guards. Only a visible
 sidebar panel is highlighted. Menu commands and shortcuts remain available.
 Notebook-root file drops remain within Explorer; the toolbar is not a drop target.
 

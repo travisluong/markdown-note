@@ -107,7 +107,7 @@ impl Notes {
                 busy || self.notebooks.active.is_none(),
             )
             .item(
-                PopupMenuItem::new("Hide toolbar")
+                PopupMenuItem::new("Hide toolbars")
                     .checked(!self.toolbar_settings().visible)
                     .disabled(busy)
                     .on_click({

@@ -339,6 +339,14 @@ pub enum ToolbarItem {
 }
 
 impl ToolbarItem {
+    pub fn region(self) -> ToolbarRegion {
+        match self {
+            Self::Sidebar | Self::Explorer | Self::Search | Self::Sort => ToolbarRegion::Sidebar,
+            Self::Back | Self::Forward => ToolbarRegion::ContentLeft,
+            _ => ToolbarRegion::ContentCenter,
+        }
+    }
+
     pub const DEFAULT_ORDER: [Self; 17] = [
         Self::Sidebar,
         Self::Back,
@@ -385,6 +393,24 @@ impl ToolbarItem {
         (Self::TaskList, "Task list"),
         (Self::Back, "Back"),
         (Self::Forward, "Forward"),
+    ];
+}
+
+/// Placement is fixed; customization only changes order inside a region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolbarRegion {
+    Sidebar,
+    ContentLeft,
+    ContentCenter,
+    ContentRight,
+}
+
+impl ToolbarRegion {
+    pub const OPTIONS: [(Self, &'static str); 4] = [
+        (Self::Sidebar, "Sidebar"),
+        (Self::ContentLeft, "Content left"),
+        (Self::ContentCenter, "Content center"),
+        (Self::ContentRight, "Content right"),
     ];
 }
 
@@ -449,7 +475,7 @@ impl ToolbarSettings {
     /// Insert an item on either side of a target without changing visibility.
     /// Returns false when the item already occupies that insertion position.
     pub fn move_item(&mut self, item: ToolbarItem, target: ToolbarItem, after: bool) -> bool {
-        if item == target {
+        if item == target || item.region() != target.region() {
             return false;
         }
         let Some(from) = self.order.iter().position(|entry| *entry == item) else {

@@ -30,7 +30,11 @@ impl SettingsPanel {
         after: bool,
         cx: &mut Context<Self>,
     ) {
-        if drag.panel != cx.entity_id() || self.section != Section::Toolbar || self.values.busy {
+        if drag.panel != cx.entity_id()
+            || self.section != Section::Toolbar
+            || self.values.busy
+            || drag.item.region() != target.region()
+        {
             return;
         }
         self.emit_intent(
@@ -112,11 +116,12 @@ impl SettingsPanel {
                         .when(after, |view| view.bottom_0())
                         .when(!after, |view| view.top_0())
                         .can_drop(move |drag, _, _| {
-                            drag.downcast_ref::<ToolbarDrag>()
-                                .is_some_and(|drag| drag.panel == panel)
+                            drag.downcast_ref::<ToolbarDrag>().is_some_and(|drag| {
+                                drag.panel == panel && drag.item.region() == item.region()
+                            })
                         })
                         .drag_over::<ToolbarDrag>(move |style, drag, _, cx| {
-                            if drag.panel != panel {
+                            if drag.panel != panel || drag.item.region() != item.region() {
                                 return style;
                             }
                             let style = style.border_color(cx.theme().primary);

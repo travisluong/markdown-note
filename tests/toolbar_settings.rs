@@ -124,7 +124,7 @@ fn toolbar_moves_match_insertion_for_all_items_and_representative_orders() {
             for target in items {
                 for after in [false, true] {
                     let mut expected = initial.order.to_vec();
-                    if item != target {
+                    if item != target && item.region() == target.region() {
                         expected.retain(|entry| *entry != item);
                         let insertion = expected.iter().position(|entry| *entry == target).unwrap()
                             + usize::from(after);

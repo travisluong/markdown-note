@@ -252,7 +252,7 @@ fn all_formatting_controls_inherit_presets_and_wrap(cx: &mut TestAppContext) {
         });
         cx.simulate_resize(gpui::size(px(180.), px(800.)));
         cx.refresh().unwrap();
-        let toolbar = cx.debug_bounds("window-toolbar").unwrap();
+        let toolbar = cx.debug_bounds("content-toolbar").unwrap();
         let mut previous = None;
         for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(6) {
             let (id, _, _) = formatting_item(item);
@@ -671,16 +671,16 @@ fn icon_drags_reorder_across_wrapped_rows_at_every_size(cx: &mut TestAppContext)
         });
         cx.simulate_resize(gpui::size(px(180.), px(800.)));
         cx.refresh().unwrap();
-        assert!(icon_bounds(TaskList, cx).top() > icon_bounds(Sidebar, cx).top());
-        let before = icon_bounds(Sidebar, cx);
+        assert!(icon_bounds(TaskList, cx).top() > icon_bounds(Bold, cx).top());
+        let before = icon_bounds(Bold, cx);
         start_icon_drag(TaskList, cx);
         assert_eq!(
-            icon_bounds(Sidebar, cx),
+            icon_bounds(Bold, cx),
             before,
             "drag overlays must not move icons"
         );
-        finish_icon_drag(Sidebar, false, cx);
-        cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[0], TaskList));
+        finish_icon_drag(Bold, false, cx);
+        cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings().order[6], TaskList));
         start_icon_drag(TaskList, cx);
         finish_icon_drag(UnorderedList, true, cx);
         cx.update(|window, cx| {
@@ -698,17 +698,17 @@ fn icon_drags_reorder_across_wrapped_rows_at_every_size(cx: &mut TestAppContext)
 fn disabled_icons_drag_and_short_clicks_still_work(cx: &mut TestAppContext) {
     use ToolbarItem::*;
     let (_dir, notes, cx) = drag_fixture(cx);
-    // All notebook/navigation actions are disabled in this standalone fixture.
-    for item in [Sidebar, Back, Forward, Explorer, Search, Sort] {
-        let last = cx.update(|_, cx| *notes.read(cx).toolbar_settings().order.last().unwrap());
-        start_icon_drag(item, cx);
-        finish_icon_drag(last, true, cx);
-        cx.update(|window, cx| {
-            assert_eq!(notes.read(cx).toolbar_settings().order.last(), Some(&item));
-            assert!(notes.read(cx).editor.is_focused(window, cx));
-            assert!(!window.has_active_dialog(cx));
-        });
-    }
+    // History actions are disabled in this standalone fixture, but can still be reordered.
+    start_icon_drag(Forward, cx);
+    finish_icon_drag(Back, false, cx);
+    cx.update(|window, cx| {
+        assert_eq!(
+            notes.read(cx).toolbar_settings().order[1..3],
+            [Forward, Back]
+        );
+        assert!(notes.read(cx).editor.is_focused(window, cx));
+        assert!(!window.has_active_dialog(cx));
+    });
     cx.update(|_, cx| {
         notes.update(cx, |this, cx| {
             this.mode = ViewMode::Reading;
@@ -761,11 +761,25 @@ fn dropdown_icon_drags_preserve_focus_and_never_open_menus(cx: &mut TestAppConte
     for item in [Heading, Sort, Bold, Link] {
         start_icon_drag(item, cx);
         cx.update(|window, cx| assert!(notes.read(cx).editor.is_focused(window, cx)));
-        let first = cx.update(|_, cx| notes.read(cx).toolbar_settings().order[0]);
+        let first = cx.update(|_, cx| {
+            notes
+                .read(cx)
+                .toolbar_settings()
+                .order
+                .into_iter()
+                .find(|candidate| candidate.region() == item.region())
+                .unwrap()
+        });
         finish_icon_drag(first, false, cx);
         cx.update(|window, cx| {
             let this = notes.read(cx);
-            assert_eq!(this.toolbar_settings().order[0], item);
+            assert_eq!(
+                this.toolbar_settings()
+                    .order
+                    .into_iter()
+                    .find(|candidate| candidate.region() == item.region()),
+                Some(item)
+            );
             assert!(this.editor.is_focused(window, cx));
             assert_eq!(this.editor.text(cx).as_ref(), "café\n茶");
             assert_eq!(this.editor.selection(cx), 0..5);
@@ -810,18 +824,18 @@ fn icon_order_persists_and_noop_or_outside_drops_do_not_write(cx: &mut TestAppCo
     });
     cx.refresh().unwrap();
     start_icon_drag(TaskList, cx);
-    finish_icon_drag(Sidebar, false, cx);
+    finish_icon_drag(Bold, false, cx);
     let saved = notebook::Notebook::open(&root, false)
         .unwrap()
         .settings
         .toolbar;
-    assert_eq!(saved.order[0], TaskList);
-    assert_eq!(saved.order[2..4], [Back, Forward]);
+    assert_eq!(saved.order[6], TaskList);
+    assert_eq!(saved.order[1..3], [Back, Forward]);
     assert!(!saved.back && !saved.forward);
     cx.update(|_, cx| assert_eq!(notes.read(cx).session_toolbar, drag_defaults()));
     let settings_path = root.join(".mithril/settings.json");
     std::fs::remove_file(&settings_path).unwrap();
-    for target in [TaskList, Sidebar] {
+    for target in [TaskList, Bold] {
         start_icon_drag(TaskList, cx);
         finish_icon_drag(target, false, cx);
         assert!(!settings_path.exists(), "no-op drop submitted preferences");
@@ -860,27 +874,27 @@ fn toolbar_drop_rechecks_owner_scope_visibility_modal_and_busy(cx: &mut TestAppC
                     ..valid.clone()
                 },
             ] {
-                this.drop_window_toolbar_item(&rejected, Sidebar, false, window, cx);
+                this.drop_window_toolbar_item(&rejected, Italic, false, window, cx);
                 assert_eq!(this.toolbar_settings(), before);
             }
-            for hidden in [Bold, Sidebar] {
+            for hidden in [Bold, Italic] {
                 this.session_toolbar.set_enabled(hidden, false);
                 let hidden_settings = this.toolbar_settings();
-                this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+                this.drop_window_toolbar_item(&valid, Italic, false, window, cx);
                 assert_eq!(this.toolbar_settings(), hidden_settings);
                 this.session_toolbar.set_enabled(hidden, true);
             }
             this.session_toolbar.visible = false;
             let hidden_toolbar = this.toolbar_settings();
-            this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+            this.drop_window_toolbar_item(&valid, Italic, false, window, cx);
             assert_eq!(this.toolbar_settings(), hidden_toolbar);
             this.session_toolbar.visible = true;
             window.open_dialog(cx, |dialog, _, _| dialog.title("Blocked"));
-            this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+            this.drop_window_toolbar_item(&valid, Italic, false, window, cx);
             assert_eq!(this.toolbar_settings(), before);
             window.close_dialog(cx);
             let _ = this.session.pick();
-            this.drop_window_toolbar_item(&valid, Sidebar, false, window, cx);
+            this.drop_window_toolbar_item(&valid, Italic, false, window, cx);
             assert_eq!(this.toolbar_settings(), before);
         })
     });
@@ -956,4 +970,70 @@ fn dragging_available_back_icon_does_not_navigate_but_clicking_does(cx: &mut Tes
     });
     click("toolbar-back", cx);
     cx.update(|_, cx| assert_eq!(notes.read(cx).path(), Some(first.as_path())));
+}
+
+#[gpui::test]
+fn split_toolbars_follow_columns_and_ignore_legacy_alignment(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    assert!(cx.debug_bounds("sidebar-toolbar").is_none());
+    let book = notebook::Notebook::open(&dir.path().join("book"), true).unwrap();
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            cx.notify();
+        })
+    });
+    for (icon_size, _) in ToolbarIconSize::OPTIONS {
+        for (alignment, _) in notebook::ToolbarAlignment::OPTIONS {
+            cx.update(|_, cx| {
+                notes.update(cx, |this, cx| {
+                    let toolbar = &mut this.notebooks.active.as_mut().unwrap().settings.toolbar;
+                    toolbar.icon_size = icon_size;
+                    toolbar.alignment = alignment;
+                    cx.notify();
+                })
+            });
+            cx.simulate_resize(gpui::size(px(1600.), px(900.)));
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            let sidebar = cx.debug_bounds("sidebar-toolbar").unwrap();
+            let content = cx.debug_bounds("content-toolbar").unwrap();
+            let first = cx.debug_bounds("toolbar-bold").unwrap();
+            let last = cx.debug_bounds("toolbar-task-list").unwrap();
+            assert_eq!(sidebar.top(), content.top());
+            assert_eq!(sidebar.right(), content.left());
+            assert!(
+                (first.left() - content.left() - (content.right() - last.right())).abs() <= px(1.)
+            );
+            assert_eq!(first.top(), cx.debug_bounds("toolbar-back").unwrap().top());
+            for selector in ["sidebar-explorer", "sidebar-search", "sidebar-sort"] {
+                let icon = cx.debug_bounds(selector).unwrap();
+                assert!(icon.left() >= sidebar.left() && icon.right() <= sidebar.right());
+            }
+            cx.simulate_resize(gpui::size(px(400.), px(900.)));
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            assert!(
+                cx.debug_bounds("toolbar-bold").unwrap().top()
+                    > cx.debug_bounds("toolbar-back").unwrap().top()
+            );
+        }
+    }
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_sidebar(window, cx)));
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    assert_eq!(cx.debug_bounds("content-toolbar").unwrap().left(), px(0.));
+}
+
+#[gpui::test]
+fn icon_drop_rejects_cross_region_without_persisting(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = drag_fixture(cx);
+    let before = cx.update(|_, cx| notes.read(cx).toolbar_settings());
+    start_icon_drag(ToolbarItem::Bold, cx);
+    finish_icon_drag(ToolbarItem::Back, false, cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings(), before));
 }
