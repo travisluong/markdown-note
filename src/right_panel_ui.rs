@@ -1,6 +1,6 @@
 //! Session-only terminal placeholder. No terminal process or input is created.
 use super::*;
-use gpui_component::Disableable;
+use crate::toolbar_ui::toolbar_icon_button;
 
 impl Notes {
     pub(super) fn toggle_right_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -25,6 +25,7 @@ impl Notes {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let blocked = self.document_interaction_blocked() || window.has_active_dialog(cx);
+        let icon_size = self.toolbar_settings().icon_size;
         div()
             .id("right-panel")
             .debug_selector(|| "right-panel".into())
@@ -35,10 +36,12 @@ impl Notes {
             .overflow_hidden()
             .child(
                 div()
+                    .h(px(icon_size.button_pixels() + 9.))
+                    .flex_shrink_0()
                     .flex()
                     .items_center()
-                    .gap_1()
-                    .p_1()
+                    .gap(px(4.))
+                    .p(px(4.))
                     .border_b_1()
                     .border_color(cx.theme().border)
                     .child(
@@ -50,16 +53,16 @@ impl Notes {
                             .child("Terminal"),
                     )
                     .child(
-                        Button::new("right-panel-close")
-                            .debug_selector(|| "right-panel-close".into())
-                            .small()
-                            .ghost()
-                            .icon(IconName::Close)
-                            .tooltip("Close terminal panel")
-                            .disabled(blocked)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.toggle_right_panel(window, cx)
-                            })),
+                        toolbar_icon_button(
+                            "right-panel-close",
+                            IconName::Close,
+                            icon_size,
+                            blocked,
+                        )
+                        .tooltip("Close terminal panel")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.toggle_right_panel(window, cx)),
+                        ),
                     ),
             )
             .child(

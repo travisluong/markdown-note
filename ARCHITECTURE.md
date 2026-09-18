@@ -478,6 +478,10 @@ button and placeholder message. Notes retains open/closed state and preferred wi
 for the window session (initially closed, 280 px), independently of tabs/notebooks.
 Opening retains focus; closing restores active content focus. Modal/busy guards
 apply to both controls; hiding toolbars leaves the panel's close button available.
+The terminal header matches one workspace toolbar row: 33/41/49 logical pixels
+for Small/Medium/Large, including 4 px padding per side and a 1 px bottom border.
+Its close button shares toolbar icon/target sizing. The header stays one row tall
+when content controls wrap, independently of the theme's interface font size.
 Workspace layout resets resize state when panel visibility or viewport width changes.
 Side widths normally range from 160 to 600 px; proportional compression preserves
 200 px of content on narrow windows. Projected widths never overwrite preferences.

@@ -469,7 +469,6 @@ impl Notes {
     }
 }
 
-/// Keep icon geometry independent of Button's built-in icon-to-target ratio.
 fn toolbar_button(
     id: &'static str,
     icon: impl Into<Icon>,
@@ -477,16 +476,25 @@ fn toolbar_button(
     disabled: bool,
     drag: Option<WindowToolbarDrag>,
 ) -> Button {
+    toolbar_icon_button(id, icon, size, disabled).when_some(drag, |mut button, drag| {
+        button.interactivity().on_drag(drag, |drag, _, _, cx| {
+            cx.stop_propagation();
+            cx.new(|_| drag.clone())
+        });
+        button
+    })
+}
+
+/// Keep icon geometry independent of Button's built-in icon-to-target ratio.
+pub(super) fn toolbar_icon_button(
+    id: &'static str,
+    icon: impl Into<Icon>,
+    size: ToolbarIconSize,
+    disabled: bool,
+) -> Button {
     Button::new(id)
         .debug_selector(move || id.into())
         .ghost()
-        .when_some(drag, |mut button, drag| {
-            button.interactivity().on_drag(drag, |drag, _, _, cx| {
-                cx.stop_propagation();
-                cx.new(|_| drag.clone())
-            });
-            button
-        })
         .disabled(disabled)
         .with_size(px(size.button_pixels()))
         .size(px(size.button_pixels()))
