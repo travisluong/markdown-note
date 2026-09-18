@@ -2354,3 +2354,35 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   with cargo check --locked --offline, cargo fmt --check, explicit vendor rustfmt,
   and strict all-target Clippy. No desktop interaction or live Claude/Codex prompt
   submission was performed; end-to-end behavior in those CLIs remains manual.
+
+### Multiple terminal tabs
+
+- Replaced the single terminal with stable, monotonically numbered session tabs.
+  The header contains a scrollable tab strip, individual close buttons and a fixed
+  add button; the former heading, Restart/Retry, Stop and panel-close controls are
+  removed. Closing the last tab hides the panel; reopening starts a fresh shell.
+- Each tab retains its shell, output and captured launch directory/settings.
+  Inactive and hidden sessions continue processing output. Input checks the active
+  tab identity, visibility and modal/busy authority; appearance/cursor changes
+  synchronize across every retained session.
+- Tab closure invalidates pending installation and retains cleanup tasks until
+  late launches are stopped and reaped. Accepted window close signals all live
+  sessions before joining them and already-closing tabs. Cancelled document close
+  preserves all sessions.
+- Added TestPlatform coverage for independent input/output, stable labels and
+  numbering, neighbor selection, last-tab reopening, overflow and fixed add-button
+  geometry, header sizes, hidden sessions/preferences, modal/busy guards, failed
+  and exited shells, launch/cleanup barriers and cancelled window close. Added a
+  real-PTY scenario proving that stopping one shell leaves another usable.
+- Verification: cargo check --locked --offline, cargo fmt --check, and strict
+  all-target Clippy with editor-diagnostics passed. All 646 tests passed across
+  the full diagnostics-enabled run and targeted completion: 332 application tests,
+  10 terminal integration tests, and the remaining library/integration suites.
+  Doc-tests also passed (zero cases).
+- The initial sandbox run passed the new two-shell scenario but hit the known
+  ConPTY Ctrl+C restriction in the existing default-shell test. Rerunning the
+  terminal suite outside the sandbox passed all 10 cases; the remaining theme-icon
+  and toolbar-settings targets also passed. Full testing used the separate
+  terminal-tabs-validation output directory with the shared target build cache,
+  preserving the running application binary. No desktop interaction or visible
+  app launch was used; native appearance remains manual validation.

@@ -1,20 +1,92 @@
-//! Retained terminal view and generation-guarded process installation.
+//! Retained terminal tabs and generation-guarded per-session process installation.
 use gpui::{prelude::*, *};
 use gpui_component::{ActiveTheme, WindowExt};
 use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
 use mithril::terminal::{ProcessExit, TerminalProcess, TerminalSettings};
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct TerminalTabId(pub u64);
+
+pub(super) struct TerminalTab {
+    pub id: TerminalTabId,
+    pub title: String,
+    pub session: Entity<TerminalSession>,
+    pub _subscription: Subscription,
+}
+
+#[derive(Default)]
+pub(super) struct TerminalTabs {
+    pub tabs: Vec<TerminalTab>,
+    pub active: Option<TerminalTabId>,
+    pub serial: u64,
+    pub scroll: ScrollHandle,
+    pub cleanup: std::collections::BTreeMap<u64, Task<()>>,
+}
+
+impl TerminalTabs {
+    pub fn active_session(&self) -> Option<&Entity<TerminalSession>> {
+        self.tabs
+            .iter()
+            .find(|tab| Some(tab.id) == self.active)
+            .map(|tab| &tab.session)
+    }
+
+    pub fn reveal_active(&self) {
+        if let Some(index) = self.tabs.iter().position(|tab| Some(tab.id) == self.active) {
+            self.scroll.scroll_to_item(index);
+        }
+    }
+}
+
+pub(super) struct TerminalCleanup {
+    launch: Option<Task<()>>,
+    done: Option<flume::Receiver<()>>,
+}
+
+impl TerminalCleanup {
+    pub async fn wait(self) {
+        if let Some(launch) = self.launch {
+            launch.await;
+        }
+        if let Some(done) = self.done {
+            let _ = done.recv_async().await;
+        }
+    }
+}
+
+pub(super) fn shell_label(settings: TerminalSettings) -> String {
+    #[cfg(windows)]
+    {
+        match settings.windows_shell {
+            mithril::terminal::WindowsShell::Powershell => "PowerShell",
+            mithril::terminal::WindowsShell::GitBash => "Git Bash",
+        }
+        .into()
+    }
+    #[cfg(not(windows))]
+    {
+        mithril::terminal::launch_spec(settings, PathBuf::new())
+            .ok()
+            .and_then(|spec| {
+                spec.program
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| "sh".into())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Status {
     Idle,
     Starting,
     Running,
-    Stopping,
     Finished(ProcessExit),
 }
 
-pub(super) struct TerminalPanel {
+pub(super) struct TerminalSession {
+    id: TerminalTabId,
     pub view: Option<Entity<TerminalView>>,
     owner: WeakEntity<crate::Notes>,
     pub status: Status,
@@ -31,9 +103,10 @@ pub(super) struct TerminalPanel {
     pub last_launch: Option<(TerminalSettings, Result<PathBuf, String>)>,
 }
 
-impl TerminalPanel {
-    pub fn new(owner: WeakEntity<crate::Notes>, cx: &mut Context<Self>) -> Self {
+impl TerminalSession {
+    pub fn new(id: TerminalTabId, owner: WeakEntity<crate::Notes>, cx: &mut Context<Self>) -> Self {
         Self {
+            id,
             owner,
             view: None,
             status: Status::Idle,
@@ -82,7 +155,7 @@ impl TerminalPanel {
         }
         self.status = Status::Starting;
         self.focus.focus(window);
-        // Drop the old view only when replacing its output; Stop retains it.
+        // Each tab launches once and retains its view until closed.
         self.view = None;
         cx.notify();
         #[cfg(test)]
@@ -92,6 +165,7 @@ impl TerminalPanel {
             let (tx, rx) = flume::bounded(64);
             self.fixture_output = Some(tx);
             let owner = self.owner.clone();
+            let id = self.id;
             self.view = Some(cx.new(|cx| {
                 TerminalView::from_receiver(
                     FixtureWriter(self.fixture_input.clone()),
@@ -99,7 +173,7 @@ impl TerminalPanel {
                     self.view_config(),
                     cx,
                 )
-                .with_input_guard(move |window, cx| input_allowed(&owner, window, cx))
+                .with_input_guard(move |window, cx| input_allowed(&owner, id, window, cx))
             }));
             self.status = Status::Running;
             self.focus(window, cx);
@@ -110,7 +184,7 @@ impl TerminalPanel {
                 if let Some(pending) = pending {
                     pending.await;
                 }
-                // A restart never leaves two shells alive.
+                // Preserve cleanup ordering if a session is started again internally.
                 if let Some(old) = old {
                     let _ = old.done.recv_async().await;
                     drop(old);
@@ -158,10 +232,11 @@ impl TerminalPanel {
                 let exit = process.exit.clone();
                 let take_focus = self.focus.is_focused(window) && !window.has_active_dialog(cx);
                 let owner = self.owner.clone();
+                let id = self.id;
                 self.view = Some(cx.new(|cx| {
                     TerminalView::from_receiver(input, output, self.view_config(), cx)
                         .with_resize_callback(move |cols, rows| resize.resize(cols, rows))
-                        .with_input_guard(move |window, cx| input_allowed(&owner, window, cx))
+                        .with_input_guard(move |window, cx| input_allowed(&owner, id, window, cx))
                 }));
                 self.process = Some(process);
                 self.status = Status::Running;
@@ -187,29 +262,21 @@ impl TerminalPanel {
         cx.notify();
     }
 
-    pub fn stop(&mut self, cx: &mut Context<Self>) {
+    /// The accepted close barrier awaits process cleanup before removing the window.
+    pub fn shutdown(&mut self, cx: &mut Context<Self>) -> TerminalCleanup {
+        self.generation += 1;
+        self.status = Status::Finished(ProcessExit::Stopped);
         if let Some(view) = &self.view {
             view.update(cx, |view, _| view.set_input_enabled(false));
         }
-        if let Some(process) = &self.process {
-            self.status = Status::Stopping;
-            process.control.stop();
-        } else {
-            // Invalidate pending launches; their returned process is dropped.
-            self.generation += 1;
-            self.status = Status::Finished(ProcessExit::Stopped);
-        }
-        cx.notify();
-    }
-
-    /// The accepted close barrier awaits process cleanup before removing the window.
-    pub fn shutdown(&mut self) -> (Option<Task<()>>, Option<flume::Receiver<()>>) {
-        self.generation += 1;
         let done = self.process.as_ref().map(|process| {
             process.control.stop();
             process.done.clone()
         });
-        (self.task.take(), done)
+        TerminalCleanup {
+            launch: self.task.take(),
+            done,
+        }
     }
 
     pub fn sync(
@@ -260,7 +327,6 @@ impl TerminalPanel {
             Status::Idle => None,
             Status::Starting => Some("Starting terminal…".into()),
             Status::Running => None,
-            Status::Stopping => Some("Stopping terminal…".into()),
             Status::Finished(ProcessExit::Stopped) => Some("Terminal stopped.".into()),
             Status::Finished(ProcessExit::Exited(code)) => {
                 Some(format!("Shell exited with status {code}."))
@@ -270,7 +336,7 @@ impl TerminalPanel {
     }
 }
 
-impl Render for TerminalPanel {
+impl Render for TerminalSession {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("terminal-panel-content")
@@ -314,11 +380,18 @@ fn div_message(message: String, cx: &App) -> impl IntoElement {
         .child(message)
 }
 
-fn input_allowed(owner: &WeakEntity<crate::Notes>, window: &mut Window, cx: &mut App) -> bool {
+fn input_allowed(
+    owner: &WeakEntity<crate::Notes>,
+    id: TerminalTabId,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
     !window.has_active_dialog(cx)
         && owner.upgrade().is_some_and(|owner| {
             let notes = owner.read(cx);
-            notes.right_panel_open && !notes.document_interaction_blocked()
+            notes.right_panel_open
+                && notes.terminals.active == Some(id)
+                && !notes.document_interaction_blocked()
         })
 }
 #[cfg(test)]
@@ -351,7 +424,7 @@ mod tests {
         let owner = owner.unwrap();
         let (panel, view, tx, input, generation) = cx.update(|window, cx| {
             owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
-            let panel = owner.read(cx).terminal.clone().unwrap();
+            let panel = owner.read(cx).terminals.active_session().cloned().unwrap();
             let state = panel.read(cx);
             (
                 panel.clone(),
@@ -427,7 +500,7 @@ mod tests {
         let owner = owner.unwrap();
         cx.update(|window, cx| {
             owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
-            let panel = owner.read(cx).terminal.clone().unwrap();
+            let panel = owner.read(cx).terminals.active_session().cloned().unwrap();
             panel.update(cx, |panel, cx| {
                 let generation = panel.generation;
                 let view = panel.view.clone().unwrap();
@@ -440,6 +513,232 @@ mod tests {
                     Status::Finished(ProcessExit::Failed("missing shell".into()))
                 );
             });
+        });
+    }
+}
+
+#[cfg(test)]
+mod tab_lifecycle_tests {
+    use super::{ProcessExit, Status, TerminalTabId, input_allowed};
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+
+    fn fixture(cx: &mut TestAppContext) -> (Entity<crate::Notes>, &mut VisualTestContext) {
+        cx.update(gpui_component::init);
+        let mut owner = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let notes = cx.new(|cx| crate::Notes::new(window, cx));
+            owner = Some(notes.clone());
+            gpui_component::Root::new(notes, window, cx)
+        });
+        let owner = owner.unwrap();
+        cx.update(|window, cx| {
+            owner.update(cx, |notes, cx| {
+                notes.new_terminal_tab(window, cx);
+                notes.new_terminal_tab(window, cx);
+            })
+        });
+        (owner, cx)
+    }
+
+    #[gpui::test]
+    fn terminal_background_output_and_preferences_survive_switching_and_hiding(
+        cx: &mut TestAppContext,
+    ) {
+        let (owner, cx) = fixture(cx);
+        let sessions = cx.update(|_, cx| {
+            owner
+                .read(cx)
+                .terminals
+                .tabs
+                .iter()
+                .map(|tab| tab.session.clone())
+                .collect::<Vec<_>>()
+        });
+        let views = cx.update(|_, cx| {
+            sessions
+                .iter()
+                .map(|session| session.read(cx).view.clone().unwrap())
+                .collect::<Vec<_>>()
+        });
+        cx.update(|window, cx| {
+            owner.update(cx, |notes, cx| {
+                notes.toggle_right_panel(window, cx);
+                notes.session_terminal.cursor_style = mithril::terminal::CursorStyle::Underline;
+                notes.sync_terminal(window, cx);
+            })
+        });
+        for (index, session) in sessions.iter().enumerate() {
+            cx.update(|_, cx| {
+                let session = session.read(cx);
+                session
+                    .fixture_output
+                    .as_ref()
+                    .unwrap()
+                    .send(if index == 0 {
+                        b"\x1b[2J\x1b[Hfirst\x1b[6n".to_vec()
+                    } else {
+                        b"\x1b[2J\x1b[Hsecond\x1b[6n".to_vec()
+                    })
+                    .unwrap();
+            });
+        }
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            for (index, session) in sessions.iter().enumerate() {
+                let session = session.read(cx);
+                assert_eq!(session.view.as_ref(), Some(&views[index]));
+                assert_eq!(
+                    views[index].read(cx).config().cursor_style,
+                    gpui_terminal::CursorStyle::Underline
+                );
+                assert_eq!(
+                    *session.fixture_input.lock().unwrap(),
+                    if index == 0 {
+                        b"\x1b[1;6R"
+                    } else {
+                        b"\x1b[1;7R"
+                    }
+                );
+                assert!(!input_allowed(
+                    &owner.downgrade(),
+                    TerminalTabId(index as u64 + 1),
+                    window,
+                    cx
+                ));
+            }
+            owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
+            assert!(input_allowed(
+                &owner.downgrade(),
+                TerminalTabId(2),
+                window,
+                cx
+            ));
+            assert!(!input_allowed(
+                &owner.downgrade(),
+                TerminalTabId(1),
+                window,
+                cx
+            ));
+            owner.update(cx, |notes, cx| {
+                notes.select_terminal_tab(TerminalTabId(1), window, cx)
+            });
+            assert!(input_allowed(
+                &owner.downgrade(),
+                TerminalTabId(1),
+                window,
+                cx
+            ));
+            assert!(!input_allowed(
+                &owner.downgrade(),
+                TerminalTabId(2),
+                window,
+                cx
+            ));
+            assert!(views[0].read(cx).focus_handle().is_focused(window));
+        });
+    }
+
+    #[gpui::test]
+    fn terminal_close_during_launch_and_window_shutdown_join_all_cleanup(cx: &mut TestAppContext) {
+        let (owner, cx) = fixture(cx);
+        let sessions = cx.update(|_, cx| {
+            owner
+                .read(cx)
+                .terminals
+                .tabs
+                .iter()
+                .map(|tab| tab.session.clone())
+                .collect::<Vec<_>>()
+        });
+        let (release_first, first) = flume::bounded::<()>(1);
+        let (release_second, second) = flume::bounded::<()>(1);
+        let (finished_tx, finished_rx) = flume::bounded::<()>(1);
+        cx.update(|window, cx| {
+            for (session, release) in sessions.iter().zip([first, second]) {
+                session.update(cx, |session, cx| {
+                    session.status = Status::Starting;
+                    let generation = session.generation;
+                    session.task = Some(cx.spawn_in(window, async move |this, cx| {
+                        release.recv_async().await.unwrap();
+                        let _ = this.update_in(cx, |session, window, cx| {
+                            // A late result must not replace shutdown status or take focus.
+                            session.install(generation, Err("late launch".into()), window, cx);
+                        });
+                    }));
+                });
+            }
+            owner.update(cx, |notes, cx| {
+                notes.close_terminal_tab(TerminalTabId(1), window, cx)
+            });
+            assert_eq!(owner.read(cx).terminals.tabs.len(), 1);
+            assert_eq!(owner.read(cx).terminals.cleanup.len(), 1);
+            let barrier = owner.update(cx, |notes, cx| notes.shutdown_terminals(cx));
+            cx.spawn(async move |_| {
+                barrier.await;
+                finished_tx.send(()).unwrap();
+            })
+            .detach();
+        });
+        cx.run_until_parked();
+        assert!(finished_rx.try_recv().is_err());
+        // The still-open tab completing does not release the already-closed tab's barrier.
+        release_second.send(()).unwrap();
+        cx.run_until_parked();
+        assert!(finished_rx.try_recv().is_err());
+        release_first.send(()).unwrap();
+        cx.run_until_parked();
+        assert_eq!(finished_rx.try_recv(), Ok(()));
+        cx.update(|_, cx| {
+            assert!(owner.read(cx).terminals.cleanup.is_empty());
+            for session in sessions {
+                assert_eq!(
+                    session.read(cx).status,
+                    Status::Finished(ProcessExit::Stopped)
+                );
+            }
+        });
+    }
+
+    #[gpui::test]
+    fn terminal_exit_and_failure_remain_until_closed_and_cannot_affect_other_tabs(
+        cx: &mut TestAppContext,
+    ) {
+        let (owner, cx) = fixture(cx);
+        let sessions = cx.update(|_, cx| {
+            owner
+                .read(cx)
+                .terminals
+                .tabs
+                .iter()
+                .map(|tab| tab.session.clone())
+                .collect::<Vec<_>>()
+        });
+        cx.update(|window, cx| {
+            sessions[0].update(cx, |session, cx| {
+                session.status = Status::Finished(ProcessExit::Exited(7));
+                cx.notify();
+            });
+            sessions[1].update(cx, |session, cx| {
+                session.install(session.generation, Err("missing shell".into()), window, cx)
+            });
+            owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
+            owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
+            assert_eq!(owner.read(cx).terminals.tabs.len(), 2);
+            assert_eq!(
+                sessions[0].read(cx).message().as_deref(),
+                Some("Shell exited with status 7.")
+            );
+            assert_eq!(
+                sessions[1].read(cx).message().as_deref(),
+                Some("Terminal: missing shell")
+            );
+            assert!(sessions[0].read(cx).view.is_some());
+            owner.update(cx, |notes, cx| notes.new_terminal_tab(window, cx));
+            assert_eq!(owner.read(cx).terminals.active, Some(TerminalTabId(3)));
+            assert_eq!(
+                sessions[0].read(cx).status,
+                Status::Finished(ProcessExit::Exited(7))
+            );
         });
     }
 }

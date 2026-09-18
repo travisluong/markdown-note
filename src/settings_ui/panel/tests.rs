@@ -2968,7 +2968,7 @@ fn terminal_shell_settings_persist_per_notebook_and_reject_stale_forms(cx: &mut 
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             assert!(
-                this.terminal.is_none(),
+                this.terminals.tabs.is_empty(),
                 "changing the shell never launches a process"
             );
             this.notebooks.active = Some(fixture.second.clone());
@@ -3000,7 +3000,7 @@ fn terminal_shell_without_notebook_is_session_only(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         notes.update(cx, |this, _| {
             assert_eq!(this.session_terminal.windows_shell, WindowsShell::GitBash);
-            assert!(this.terminal.is_none());
+            assert!(this.terminals.tabs.is_empty());
             this.notebooks.active = Some(fixture.first.clone());
             assert_eq!(
                 this.terminal_settings().windows_shell,
@@ -3038,7 +3038,7 @@ fn terminal_shell_dropdown_confirms_and_syncs_effective_selection(cx: &mut TestA
             mithril::terminal::WindowsShell::GitBash
         );
         assert_eq!(picker.read(cx).selected_value(), Some(&"Git Bash"));
-        assert!(notes.read(cx).terminal.is_none());
+        assert!(notes.read(cx).terminals.tabs.is_empty());
     });
     for width in [1000., 400.] {
         cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(650.)));
@@ -3084,7 +3084,7 @@ fn terminal_cursor_dropdown_persists_and_rejects_stale_or_busy_forms(cx: &mut Te
         cx.update(|_, cx| {
             assert_eq!(picker.read(cx).selected_value(), Some(&label));
             assert_eq!(notes.read(cx).terminal_settings().cursor_style, style);
-            assert!(notes.read(cx).terminal.is_none());
+            assert!(notes.read(cx).terminals.tabs.is_empty());
         });
         assert_eq!(
             notebook::Notebook::open(&fixture.first.root, false)
@@ -3149,7 +3149,7 @@ fn terminal_cursor_updates_retained_hidden_terminal_and_follows_notebook(cx: &mu
     cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_right_panel(window, cx)));
     cx.refresh().unwrap();
     let (terminal, view, launch) = cx.update(|_, cx| {
-        let terminal = notes.read(cx).terminal.clone().unwrap();
+        let terminal = notes.read(cx).terminals.active_session().cloned().unwrap();
         let view = terminal.read(cx).view.clone().unwrap();
         let launch = terminal.read(cx).last_launch.clone();
         assert_eq!(

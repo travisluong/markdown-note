@@ -152,20 +152,59 @@ impl Render for SettingsPanel {
             .when_some(self.excluded_patterns_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
             .when_some(self.values.notice.clone(), |view, notice| view.child(div().text_sm().child(notice)));
         let terminal_body = div()
-            .w_full().min_w_0().flex().flex_col().gap_3()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap_3()
             .child(self.values.subtitle.clone())
-            .when(cfg!(windows), |body| body
-                .child("Terminal shell")
-                .child(div().debug_selector(|| "terminal-shell-picker".into()).w_full().min_w_0().h_8().flex().flex_shrink_0()
-                    .child(Select::new(&self.terminal_shell).w_full().disabled(self.values.busy)))
-                .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                    .child("Applies on the next terminal start or Restart. The current shell keeps running.")))
-            .when(!cfg!(windows), |body| body.child("Uses your system shell ($SHELL, or /bin/sh)."))
+            .when(cfg!(windows), |body| {
+                body.child("Terminal shell")
+                    .child(
+                        div()
+                            .debug_selector(|| "terminal-shell-picker".into())
+                            .w_full()
+                            .min_w_0()
+                            .h_8()
+                            .flex()
+                            .flex_shrink_0()
+                            .child(
+                                Select::new(&self.terminal_shell)
+                                    .w_full()
+                                    .disabled(self.values.busy),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("Applies to new terminal tabs. Existing shells keep running."),
+                    )
+            })
+            .when(!cfg!(windows), |body| {
+                body.child("Uses your system shell ($SHELL, or /bin/sh).")
+            })
             .child("Cursor style")
-            .child(div().debug_selector(|| "terminal-cursor-picker".into()).w_full().min_w_0().h_8().flex().flex_shrink_0()
-                .child(Select::new(&self.terminal_cursor).w_full().disabled(self.values.busy)))
-            .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                .child("Applies immediately, including to the current terminal."));
+            .child(
+                div()
+                    .debug_selector(|| "terminal-cursor-picker".into())
+                    .w_full()
+                    .min_w_0()
+                    .h_8()
+                    .flex()
+                    .flex_shrink_0()
+                    .child(
+                        Select::new(&self.terminal_cursor)
+                            .w_full()
+                            .disabled(self.values.busy),
+                    ),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Applies immediately to all terminal tabs, including hidden tabs."),
+            );
         let templates_body = div()
             .w_full()
             .min_w_0()

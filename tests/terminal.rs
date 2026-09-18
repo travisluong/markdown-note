@@ -403,3 +403,68 @@ fn terminal_cursor_shapes_preserve_visibility_and_cell_contents() {
             .with_term(|term| assert!(renderer.cursor_quad(point(px(4.), px(6.)), term).is_none()));
     }
 }
+
+#[test]
+fn terminal_sessions_are_independent_and_closing_one_preserves_the_other() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut spec = launch_spec(TerminalSettings::default(), directory.path().into()).unwrap();
+    let powershell = cfg!(windows);
+    if powershell {
+        spec.args = [
+            "-NoLogo",
+            "-NoProfile",
+            "-NoExit",
+            "-Command",
+            "Set-PSReadLineOption -HistorySaveStyle SaveNothing",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+    }
+    let first = TerminalProcess::spawn(spec.clone()).unwrap();
+    let second = TerminalProcess::spawn(spec).unwrap();
+    first
+        .input
+        .clone()
+        .write_all(if powershell {
+            b"$mithril_tab = 'FIRST'; Write-Output ('SESSION_' + $mithril_tab)\r"
+        } else {
+            b"HISTFILE=/dev/null; mithril_tab=FIRST; printf 'SESSION_%s\\n' $mithril_tab\r"
+        })
+        .unwrap();
+    second
+        .input
+        .clone()
+        .write_all(if powershell {
+            b"$mithril_tab = 'SECOND'; Write-Output ('SESSION_' + $mithril_tab)\r"
+        } else {
+            b"HISTFILE=/dev/null; mithril_tab=SECOND; printf 'SESSION_%s\\n' $mithril_tab\r"
+        })
+        .unwrap();
+    wait_for(&first, "SESSION_FIRST");
+    wait_for(&second, "SESSION_SECOND");
+    first.control.stop();
+    assert_eq!(
+        first.exit.recv_timeout(Duration::from_secs(15)).unwrap(),
+        ProcessExit::Stopped
+    );
+    assert_eq!(
+        first.done.recv_timeout(Duration::from_secs(5)),
+        Err(flume::RecvTimeoutError::Disconnected)
+    );
+    second
+        .input
+        .clone()
+        .write_all(if powershell {
+            b"Write-Output ('SURVIVING_' + $mithril_tab)\r"
+        } else {
+            b"printf 'SURVIVING_%s\\n' $mithril_tab\r"
+        })
+        .unwrap();
+    wait_for(&second, "SURVIVING_SECOND");
+    let done = second.done.clone();
+    drop(second);
+    assert_eq!(
+        done.recv_timeout(Duration::from_secs(15)),
+        Err(flume::RecvTimeoutError::Disconnected)
+    );
+}

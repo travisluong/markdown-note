@@ -1070,8 +1070,8 @@ fn right_panel_toggle_focuses_terminal_and_retains_document_selection_and_histor
         assert_eq!(this.editor.id(), editor);
         assert_eq!(this.editor.selection(cx), selection);
         assert!(
-            this.terminal
-                .as_ref()
+            this.terminals
+                .active_session()
                 .unwrap()
                 .read(cx)
                 .view
@@ -1091,7 +1091,7 @@ fn right_panel_toggle_focuses_terminal_and_retains_document_selection_and_histor
         cx.debug_bounds("toolbar-terminal").unwrap().right(),
         toolbar.right() - px(4.)
     );
-    click("right-panel-close", cx);
+    click("toolbar-terminal", cx);
     cx.update(|window, cx| {
         assert!(!notes.read(cx).right_panel_open);
         assert!(notes.read(cx).editor.is_focused(window, cx));
@@ -1177,7 +1177,7 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
         });
     }
     assert!((cx.debug_bounds("right-panel").unwrap().size.width - px(preferred)).abs() <= px(1.));
-    click("right-panel-close", cx);
+    click("toolbar-terminal", cx);
     click("toolbar-terminal", cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
@@ -1195,7 +1195,7 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
 }
 
 #[gpui::test]
-fn right_panel_rechecks_modal_and_busy_guards_and_keeps_close_when_toolbar_hidden(
+fn right_panel_rechecks_modal_and_busy_guards_and_toggles_when_toolbar_hidden(
     cx: &mut TestAppContext,
 ) {
     let (_dir, notes, cx) = fixture(cx);
@@ -1211,7 +1211,8 @@ fn right_panel_rechecks_modal_and_busy_guards_and_keeps_close_when_toolbar_hidde
     click("toolbar-terminal", cx);
     cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_toolbar(window, cx)));
     settle_layout(cx);
-    click("right-panel-close", cx);
+    cx.dispatch_action(crate::ToggleTerminal);
+    cx.run_until_parked();
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             assert!(!this.right_panel_open);
@@ -1276,7 +1277,7 @@ fn right_panel_explicit_narrow_resize_is_retained(cx: &mut TestAppContext) {
     cx.simulate_mouse_up(end, gpui::MouseButton::Left, Modifiers::default());
     settle_layout(cx);
     cx.update(|_, cx| assert_eq!(notes.read(cx).right_panel_width, 180.));
-    click("right-panel-close", cx);
+    click("toolbar-terminal", cx);
     click("toolbar-terminal", cx);
     settle_layout(cx);
     assert_eq!(cx.debug_bounds("right-panel").unwrap().size.width, px(180.));
@@ -1292,11 +1293,11 @@ fn terminal_is_lazy_retained_and_consumes_shell_shortcuts(cx: &mut TestAppContex
         )
     });
     let (_dir, notes, cx) = fixture(cx);
-    cx.update(|_, cx| assert!(notes.read(cx).terminal.is_none()));
+    cx.update(|_, cx| assert!(notes.read(cx).terminals.tabs.is_empty()));
     cx.simulate_keystrokes("ctrl-`");
     cx.run_until_parked();
     let (panel, view) = cx.update(|_, cx| {
-        let panel = notes.read(cx).terminal.clone().unwrap();
+        let panel = notes.read(cx).terminals.active_session().cloned().unwrap();
         let view = panel.read(cx).view.clone().unwrap();
         (panel, view)
     });
@@ -1319,14 +1320,14 @@ fn terminal_is_lazy_retained_and_consumes_shell_shortcuts(cx: &mut TestAppContex
     cx.simulate_keystrokes("ctrl-`");
     cx.run_until_parked();
     cx.update(|window, cx| {
-        assert_eq!(notes.read(cx).terminal, Some(panel.clone()));
+        assert_eq!(notes.read(cx).terminals.active_session(), Some(&panel));
         assert_eq!(panel.read(cx).view, Some(view.clone()));
         assert!(view.read(cx).focus_handle().is_focused(window));
     });
 }
 
 #[gpui::test]
-fn terminal_stop_retains_output_and_restart_uses_current_notebook(cx: &mut TestAppContext) {
+fn terminal_new_tab_uses_current_notebook_and_preserves_existing_session(cx: &mut TestAppContext) {
     let (dir, notes, cx) = fixture(cx);
     let first = notebook::Notebook::open(&dir.path().join("terminal-first"), true).unwrap();
     let mut second = notebook::Notebook::open(&dir.path().join("terminal-second"), true).unwrap();
@@ -1339,7 +1340,7 @@ fn terminal_stop_retains_output_and_restart_uses_current_notebook(cx: &mut TestA
     });
     settle_layout(cx);
     let (panel, view) = cx.update(|_, cx| {
-        let panel = notes.read(cx).terminal.clone().unwrap();
+        let panel = notes.read(cx).terminals.active_session().cloned().unwrap();
         (panel.clone(), panel.read(cx).view.clone().unwrap())
     });
     cx.update(|_, cx| {
@@ -1355,19 +1356,22 @@ fn terminal_stop_retains_output_and_restart_uses_current_notebook(cx: &mut TestA
             mithril::terminal::WindowsShell::Powershell
         );
         assert_eq!(launch.1.as_ref().unwrap(), &first.root);
-        panel.update(cx, |panel, cx| panel.stop(cx));
+
         assert_eq!(panel.read(cx).view, Some(view.clone()));
     });
     cx.refresh().unwrap();
-    click("terminal-restart", cx);
+    click("terminal-tab-add", cx);
     cx.update(|_, cx| {
-        let launch = panel.read(cx).last_launch.as_ref().unwrap();
+        let next = notes.read(cx).terminals.active_session().unwrap();
+        assert_ne!(next, &panel);
+        assert_eq!(panel.read(cx).view, Some(view.clone()));
+        let launch = next.read(cx).last_launch.as_ref().unwrap();
         assert_eq!(
             launch.0.windows_shell,
             mithril::terminal::WindowsShell::GitBash
         );
         assert_eq!(launch.1.as_ref().unwrap(), &second.root);
-        assert_ne!(panel.read(cx).view, Some(view));
+        assert_ne!(next.read(cx).view, Some(view));
     });
 }
 
@@ -1375,7 +1379,7 @@ fn terminal_stop_retains_output_and_restart_uses_current_notebook(cx: &mut TestA
 fn terminal_input_rechecks_modal_authority(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
     click("toolbar-terminal", cx);
-    let panel = cx.update(|_, cx| notes.read(cx).terminal.clone().unwrap());
+    let panel = cx.update(|_, cx| notes.read(cx).terminals.active_session().cloned().unwrap());
     cx.update(|window, cx| {
         window.open_dialog(cx, |dialog, _, _| dialog.title("Test modal"));
         // Force terminal focus under the modal to test the input-time guard,
@@ -1392,7 +1396,7 @@ fn terminal_tab_completion_keeps_focus_and_reaches_the_shell(cx: &mut TestAppCon
     let (_dir, notes, cx) = fixture(cx);
     click("toolbar-terminal", cx);
     let (panel, view) = cx.update(|_, cx| {
-        let panel = notes.read(cx).terminal.clone().unwrap();
+        let panel = notes.read(cx).terminals.active_session().cloned().unwrap();
         let view = panel.read(cx).view.clone().unwrap();
         (panel, view)
     });
@@ -1441,7 +1445,7 @@ fn terminal_shift_enter_is_distinct_from_submit(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
     click("toolbar-terminal", cx);
     let (panel, view) = cx.update(|_, cx| {
-        let panel = notes.read(cx).terminal.clone().unwrap();
+        let panel = notes.read(cx).terminals.active_session().cloned().unwrap();
         let view = panel.read(cx).view.clone().unwrap();
         (panel, view)
     });
@@ -1454,5 +1458,195 @@ fn terminal_shift_enter_is_distinct_from_submit(cx: &mut TestAppContext) {
         );
         assert!(view.read(cx).focus_handle().is_focused(window));
         assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶");
+    });
+}
+
+#[gpui::test]
+fn terminal_tabs_select_close_neighbors_and_reopen_with_stable_numbers(cx: &mut TestAppContext) {
+    use crate::terminal_ui::TerminalTabId;
+    let (_dir, notes, cx) = fixture(cx);
+    cx.simulate_resize(gpui::size(px(1600.), px(800.)));
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.right_panel_width = 600.;
+            cx.notify();
+        })
+    });
+    settle_layout(cx);
+    click("toolbar-terminal", cx);
+    for selector in ["terminal-restart", "terminal-stop", "right-panel-close"] {
+        assert!(cx.debug_bounds(selector).is_none());
+    }
+    let first = cx.update(|_, cx| notes.read(cx).terminals.active_session().cloned().unwrap());
+    cx.simulate_keystrokes("a");
+    click("terminal-tab-add", cx);
+    let second = cx.update(|_, cx| notes.read(cx).terminals.active_session().cloned().unwrap());
+    cx.simulate_keystrokes("b");
+    cx.update(|_, cx| {
+        assert_ne!(first, second);
+        assert_eq!(*first.read(cx).fixture_input.lock().unwrap(), b"a");
+        assert_eq!(*second.read(cx).fixture_input.lock().unwrap(), b"b");
+        let tabs = &notes.read(cx).terminals.tabs;
+        let label = crate::terminal_ui::shell_label(Default::default());
+        assert_eq!(tabs[0].title, format!("{label} 1"));
+        assert_eq!(tabs[1].title, format!("{label} 2"));
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.select_terminal_tab(TerminalTabId(1), window, cx)
+        })
+    });
+    settle_layout(cx);
+    cx.simulate_keystrokes("c");
+    cx.update(|_, cx| assert_eq!(*first.read(cx).fixture_input.lock().unwrap(), b"ac"));
+    // Closing an inactive tab preserves both selection and terminal focus.
+    click("terminal-tab-close-2", cx);
+    cx.update(|window, cx| {
+        assert_eq!(notes.read(cx).terminals.active, Some(TerminalTabId(1)));
+        assert!(
+            first
+                .read(cx)
+                .view
+                .as_ref()
+                .unwrap()
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
+    });
+    click("terminal-tab-add", cx);
+    click("terminal-tab-add", cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.select_terminal_tab(TerminalTabId(3), window, cx)
+        })
+    });
+    settle_layout(cx);
+    click("terminal-tab-close-3", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).terminals.active, Some(TerminalTabId(4))));
+    click("terminal-tab-close-4", cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).terminals.active, Some(TerminalTabId(1))));
+    click("terminal-tab-close-1", cx);
+    cx.update(|window, cx| {
+        let notes = notes.read(cx);
+        assert!(notes.terminals.tabs.is_empty());
+        assert!(notes.terminals.active.is_none());
+        assert!(!notes.right_panel_open);
+        assert!(notes.editor.is_focused(window, cx));
+    });
+    cx.update(|_, cx| assert!(notes.read(cx).terminals.cleanup.is_empty()));
+    click("toolbar-terminal", cx);
+    cx.update(|_, cx| {
+        assert_eq!(notes.read(cx).terminals.active, Some(TerminalTabId(5)));
+        assert_ne!(notes.read(cx).terminals.active_session(), Some(&first));
+    });
+}
+
+#[gpui::test]
+fn terminal_tabs_overflow_reveals_selection_and_keeps_add_visible(cx: &mut TestAppContext) {
+    use crate::terminal_ui::TerminalTabId;
+    let (_dir, notes, cx) = fixture(cx);
+    click("toolbar-terminal", cx);
+    for _ in 0..7 {
+        click("terminal-tab-add", cx);
+    }
+    settle_layout(cx);
+    let assert_visible = |selector: &'static str, cx: &mut VisualTestContext| {
+        let strip = cx.debug_bounds("terminal-tabs").unwrap();
+        let tab = cx.debug_bounds(selector).unwrap();
+        let add = cx.debug_bounds("terminal-tab-add").unwrap();
+        let panel = cx.debug_bounds("right-panel").unwrap();
+        assert!(tab.left() >= strip.left(), "tab starts outside strip");
+        assert!(tab.right() <= strip.right(), "tab ends outside strip");
+        assert!(add.left() >= strip.right());
+        assert!(add.right() <= panel.right());
+    };
+    assert_visible("terminal-tab-8", cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.select_terminal_tab(TerminalTabId(1), window, cx)
+        })
+    });
+    settle_layout(cx);
+    assert_visible("terminal-tab-1", cx);
+    for (size, height) in [
+        (ToolbarIconSize::Small, 33.),
+        (ToolbarIconSize::Medium, 41.),
+        (ToolbarIconSize::Large, 49.),
+    ] {
+        cx.update(|_, cx| {
+            notes.update(cx, |this, cx| {
+                this.session_toolbar.icon_size = size;
+                cx.notify();
+            })
+        });
+        settle_layout(cx);
+        assert_eq!(
+            cx.debug_bounds("terminal-header").unwrap().size.height,
+            px(height)
+        );
+    }
+}
+
+#[gpui::test]
+fn terminal_tab_actions_recheck_modal_and_busy_guards(cx: &mut TestAppContext) {
+    use crate::terminal_ui::TerminalTabId;
+    let (_dir, notes, cx) = fixture(cx);
+    click("toolbar-terminal", cx);
+    click("terminal-tab-add", cx);
+    cx.update(|window, cx| {
+        window.open_dialog(cx, |dialog, _, _| dialog.title("Blocked"));
+        notes.update(cx, |this, cx| {
+            this.new_terminal_tab(window, cx);
+            this.select_terminal_tab(TerminalTabId(1), window, cx);
+            this.close_terminal_tab(TerminalTabId(2), window, cx);
+            assert_eq!(this.terminals.tabs.len(), 2);
+            assert_eq!(this.terminals.active, Some(TerminalTabId(2)));
+        });
+        window.close_dialog(cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            this.new_terminal_tab(window, cx);
+            this.select_terminal_tab(TerminalTabId(1), window, cx);
+            this.close_terminal_tab(TerminalTabId(2), window, cx);
+            assert_eq!(this.terminals.tabs.len(), 2);
+            assert_eq!(this.terminals.active, Some(TerminalTabId(2)));
+        })
+    });
+}
+
+#[gpui::test]
+fn terminal_tabs_survive_cancelled_document_window_close(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    click("toolbar-bold", cx);
+    click("toolbar-terminal", cx);
+    click("terminal-tab-add", cx);
+    let sessions = cx.update(|_, cx| {
+        notes
+            .read(cx)
+            .terminals
+            .tabs
+            .iter()
+            .map(|tab| tab.session.clone())
+            .collect::<Vec<_>>()
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| this.request(crate::Next::Close, window, cx))
+    });
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    settle_layout(cx);
+    cx.update(|_, cx| {
+        let notes = notes.read(cx);
+        assert_eq!(notes.terminals.tabs.len(), 2);
+        assert!(notes.terminals.cleanup.is_empty());
+        for (tab, session) in notes.terminals.tabs.iter().zip(sessions) {
+            assert_eq!(tab.session, session);
+            assert_eq!(session.read(cx).status, crate::terminal_ui::Status::Running);
+        }
     });
 }

@@ -51,7 +51,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; dialog lifetime, form identity and preference scope reject stale events. |
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
-| Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notes owns session-only right-panel visibility/width; the retained TerminalPanel owns presentation and the terminal runtime owns PTY processes. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
+| Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notes owns session-only right-panel visibility/width; TerminalTabs owns retained session identities and cleanup tasks, TerminalSession owns each view, and the terminal runtime owns PTY processes. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
 | Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow and popup anchors. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
 | Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. Fixed regions read effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
@@ -722,12 +722,20 @@ Manual Save and unsaved-change prompts retain their existing behavior.
 ## Right-panel terminal trial
 
 terminal.rs owns shell resolution, bounded PTY I/O, process control and reaping;
-terminal_ui.rs owns one retained view and generation-tagged asynchronous launches.
-right_panel_ui.rs captures launch settings/directory and coordinates focus.
-Hiding the panel retains the shell; Stop retains output and Restart waits for prior
-cleanup before replacing it. Notebook/tab changes never retarget a running shell.
-The accepted session Close effect awaits terminal cleanup before removing the
-window; cancelled document close preserves the terminal.
+terminal_ui.rs owns TerminalTabs (stable IDs, ordered sessions, active selection,
+subscriptions, scrolling and cleanup tasks) and each retained TerminalSession view
+with generation-tagged asynchronous launches. right_panel_ui.rs captures launch
+settings/directory, coordinates tab selection and guards input by active identity.
+The header contains scrollable shell-and-number tabs with individual close buttons
+and a fixed add button. Numbers increase for the lifetime of the window. Closing
+the active tab selects the right neighbor, falling back to the left; closing the
+last tab hides the panel. Opening an empty panel starts a fresh shell.
+Hiding the panel retains every shell and its output; notebook/document changes
+never retarget existing shells. Exited and failed tabs retain output/status.
+Closing a tab invalidates pending installation and retains cleanup until late
+launches have been stopped and reaped. Accepted session Close signals all live
+sessions and awaits both their cleanup and already-closing tabs before removing
+the window; cancelled document close preserves every terminal.
 
 Notebook terminal.windows_shell defaults to powershell, with git_bash as
 the other Windows choice; standalone settings remain session-only. The Terminal
@@ -737,7 +745,8 @@ the existing form-scope guards and ordered writer. Unix uses the user's shell.
 TerminalSettings also owns cursor_style (line by default, box or underline).
 Settings emits a typed cursor preference intent; notebook persistence and standalone
 session scope match shell selection. Notes synchronizes terminal appearance and
-cursor style even while hidden. TerminalPanel retains the latest style during
+cursor style for every session, even while hidden. TerminalSession retains the
+latest style during
 launch so async installation cannot restore an old preference. Config updates
 preserve the PTY, terminal grid and output. The vendored renderer honors application
 cursor visibility while the host configuration determines the shape.
