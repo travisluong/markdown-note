@@ -29,7 +29,9 @@ otherwise home. Switching notebooks or tabs preserves the existing shell and
 directory. Restart uses the current notebook's preference and directory.
 The panel width remains session-only and uses the existing resize geometry.
 
-While terminal focus is active, keys go to the shell. Ctrl+C interrupts a
+While terminal focus is active, keys go to the shell. Tab and Shift+Tab stay in
+the terminal for shell completion and reverse completion (when supported by the
+shell). Ctrl+C interrupts a
 foreground command. Paste uses Ctrl+Shift+V on Windows/Linux and Cmd+V on macOS,
 respecting bracketed-paste mode. Pasting is limited to 1 MiB; a stalled input
 queue reports an error. Modal dialogs block input but output continues.

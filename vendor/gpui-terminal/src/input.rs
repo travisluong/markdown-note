@@ -86,6 +86,22 @@
 use alacritty_terminal::term::TermMode;
 use gpui::Keystroke;
 
+struct TerminalBindings;
+impl gpui::Global for TerminalBindings {}
+
+pub(crate) fn init(cx: &mut gpui::App) {
+    if cx.has_global::<TerminalBindings>() {
+        return;
+    }
+    // Root focus traversal binds these before raw key handlers run. Unbind only
+    // in the terminal context so on_key_down can send completion to the shell.
+    cx.bind_keys([
+        gpui::KeyBinding::new("tab", gpui::NoAction, Some("Terminal")),
+        gpui::KeyBinding::new("shift-tab", gpui::NoAction, Some("Terminal")),
+    ]);
+    cx.set_global(TerminalBindings);
+}
+
 /// Convert a GPUI keystroke to terminal escape sequence bytes.
 ///
 /// This function translates GPUI keyboard events into the appropriate byte sequences

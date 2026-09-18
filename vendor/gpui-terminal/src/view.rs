@@ -468,6 +468,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> Self {
         // Create event channel for terminal events
+        crate::input::init(cx);
         let (event_tx, event_rx) = mpsc::channel();
 
         // Clone event_tx for the reader task to send Exit event when PTY closes

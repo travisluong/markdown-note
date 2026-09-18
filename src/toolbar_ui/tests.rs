@@ -1382,7 +1382,56 @@ fn terminal_input_rechecks_modal_authority(cx: &mut TestAppContext) {
         // rather than relying only on the dialog's normal focus handling.
         panel.read(cx).focus(window, cx);
     });
-    cx.simulate_keystrokes("x ctrl-c");
+    cx.simulate_keystrokes("x ctrl-c tab shift-tab");
     cx.run_until_parked();
     cx.update(|_, cx| assert!(panel.read(cx).fixture_input.lock().unwrap().is_empty()));
+}
+
+#[gpui::test]
+fn terminal_tab_completion_keeps_focus_and_reaches_the_shell(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    click("toolbar-terminal", cx);
+    let (panel, view) = cx.update(|_, cx| {
+        let panel = notes.read(cx).terminal.clone().unwrap();
+        let view = panel.read(cx).view.clone().unwrap();
+        (panel, view)
+    });
+    for (key, bytes) in [
+        ("tab", b"\t".as_slice()),
+        ("shift-tab", b"\x1b[Z".as_slice()),
+    ] {
+        cx.update(|window, cx| {
+            view.read(cx).focus_handle().focus(window);
+            panel.read(cx).fixture_input.lock().unwrap().clear();
+        });
+        cx.refresh().unwrap();
+        cx.simulate_keystrokes(key);
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert_eq!(*panel.read(cx).fixture_input.lock().unwrap(), bytes);
+            assert!(view.read(cx).focus_handle().is_focused(window));
+            assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶");
+        });
+    }
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| view.set_input_enabled(false));
+        panel.read(cx).fixture_input.lock().unwrap().clear();
+    });
+    cx.simulate_keystrokes("tab shift-tab");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(panel.read(cx).fixture_input.lock().unwrap().is_empty());
+        assert!(view.read(cx).focus_handle().is_focused(window));
+        notes.read(cx).focus.focus(window);
+    });
+    cx.refresh().unwrap();
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(
+            !notes.read(cx).focus.is_focused(window),
+            "Tab outside the terminal still navigates focus"
+        );
+        assert!(panel.read(cx).fixture_input.lock().unwrap().is_empty());
+    });
 }

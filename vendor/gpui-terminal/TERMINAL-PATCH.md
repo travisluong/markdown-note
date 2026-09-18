@@ -47,3 +47,9 @@ Cursor configuration extension:
 - Keep SHOW_CURSOR visibility control; application shape requests do not override
   host configuration. cursor_quad exposes the same paint primitive used by paint
   for headless geometry/visibility checks in the root terminal integration suite.
+
+Terminal completion keys:
+- Register Tab/Shift+Tab NoAction bindings once per app in the Terminal context.
+  This suppresses ancestor focus traversal before raw key dispatch, allowing the
+  existing guarded key handler to send HT/backtab to the shell. Other contexts
+  retain normal focus navigation; disabled or modal-blocked terminals send nothing.

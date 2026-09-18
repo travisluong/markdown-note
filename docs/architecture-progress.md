@@ -2325,3 +2325,18 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   The final headless suite ran outside the sandbox because the existing ConPTY
   Ctrl+C scenario cannot complete inside it. No desktop interaction or visible
   application launch was used; native appearance remains manual validation.
+
+### Terminal Tab completion focus fix
+
+- Reproduced Tab being consumed by Root's focus-traversal action before the
+  terminal raw key handler. Register terminal-context Tab/Shift+Tab NoAction
+  bindings once per app so the existing input guard and byte translation own them.
+- The new TestPlatform regression failed before the fix and passes afterward:
+  Tab sends HT, Shift+Tab sends backtab, and both retain terminal focus. It also
+  covers disabled input, unaffected document text and focus traversal outside
+  the terminal. The modal-authority test now exercises both completion keys.
+- Verification: all 324 application tests and all 9 terminal integration tests
+  passed; cargo check, formatting (including changed vendor sources), and strict
+  all-target Clippy with editor-diagnostics passed. Integration used the separate
+  terminal-settings-validation output directory and ran outside the sandbox for
+  the existing ConPTY Ctrl+C scenario. No desktop interaction was used.
