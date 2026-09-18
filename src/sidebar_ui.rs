@@ -123,7 +123,9 @@ impl Notes {
                 .map(|book| book.settings.sidebar_width),
             right_visible.then_some(self.right_panel_width),
         );
-        let mut panels = h_resizable("sidebar-layout").with_state(&self.sidebar_resize);
+        let mut panels = h_resizable("sidebar-layout")
+            .with_state(&self.sidebar_resize)
+            .adjacent_only(true);
         if let Some(width) = geometry.left {
             let sidebar = if self.search_visible(cx) {
                 self.render_search_panel(cx).into_any_element()
@@ -175,10 +177,17 @@ impl Notes {
                         return;
                     }
                     let sizes = state.read(cx).sizes().clone();
-                    if left_visible && let Some(width) = sizes.first() {
+                    let divider = state.read(cx).completed_divider();
+                    if left_visible
+                        && divider == Some(0)
+                        && let Some(width) = sizes.first()
+                    {
                         this.save_sidebar_width(width.as_f32(), cx);
                     }
-                    if right_visible && let Some(width) = sizes.last() {
+                    if right_visible
+                        && divider == Some(usize::from(left_visible))
+                        && let Some(width) = sizes.last()
+                    {
                         this.right_panel_width = notebook::normalize_sidebar_width(width.as_f32());
                     }
                 }),

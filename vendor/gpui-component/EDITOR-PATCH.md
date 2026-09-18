@@ -1,5 +1,15 @@
 # Local editor patch
 
+## Independent workspace dividers
+
+ResizablePanelGroup::adjacent_only opts into resizing only the two panes beside
+the dragged divider, clamped against both panes' limits using measured sizes.
+The default cascading behavior remains available to existing callers.
+ResizableState::completed_divider identifies the completed drag so the app saves
+only that side's preference. Mouse handlers read current drag state at dispatch.
+Reconcile src/resizable/{mod,panel}.rs on upgrade. Root toolbar tests cover
+independent dividers, limits, narrow layouts and preserved preferences.
+
 ## Toolbar dropdown click triggers
 
 Popover::trigger_on_click and DropdownMenuPopover::trigger_on_click opt into

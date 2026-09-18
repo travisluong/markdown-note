@@ -34,6 +34,7 @@ pub struct ResizablePanelGroup {
     axis: Axis,
     size: Option<Pixels>,
     children: Vec<ResizablePanel>,
+    adjacent_only: bool,
     on_resize: Rc<dyn Fn(&Entity<ResizableState>, &mut Window, &mut App)>,
 }
 
@@ -44,6 +45,7 @@ impl ResizablePanelGroup {
             id: id.into(),
             axis: Axis::Horizontal,
             children: vec![],
+            adjacent_only: false,
             state: None,
             size: None,
             on_resize: Rc::new(|_, _, _| {}),
@@ -55,6 +57,12 @@ impl ResizablePanelGroup {
     /// If not provided, it will handle its own state internally.
     pub fn with_state(mut self, state: &Entity<ResizableState>) -> Self {
         self.state = Some(state.clone());
+        self
+    }
+
+    /// Restrict each divider to its two neighboring panels instead of cascading.
+    pub fn adjacent_only(mut self, enabled: bool) -> Self {
+        self.adjacent_only = enabled;
         self
     }
 
@@ -137,6 +145,7 @@ impl RenderOnce for ResizablePanelGroup {
         // Sync panels to the state
         let panels_count = self.children.len();
         state.update(cx, |state, cx| {
+            state.adjacent_only = self.adjacent_only;
             state.sync_panels_count(self.axis, panels_count, cx);
         });
 
@@ -309,6 +318,7 @@ impl RenderOnce for ResizablePanel {
                         // Set current resizing panel ix
                         state.update(cx, |state, _| {
                             state.resizing_panel_ix = Some(ix);
+                            state.completed_divider = None;
                         });
                         cx.new(|_| drag_panel.deref().clone())
                     },
@@ -373,17 +383,16 @@ impl Element for ResizePanelGroupElement {
         _: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
         window: &mut Window,
-        cx: &mut App,
+        _cx: &mut App,
     ) {
         window.on_mouse_event({
             let state = self.state.clone();
             let axis = self.axis;
-            let current_ix = state.read(cx).resizing_panel_ix;
             move |e: &MouseMoveEvent, phase, window, cx| {
                 if !phase.bubble() {
                     return;
                 }
-                let Some(ix) = current_ix else { return };
+                let Some(ix) = state.read(cx).resizing_panel_ix else { return };
 
                 state.update(cx, |state, cx| {
                     let panel = state.panels.get(ix).expect("BUG: invalid panel index");
@@ -404,10 +413,9 @@ impl Element for ResizePanelGroupElement {
         // When any mouse up, stop dragging
         window.on_mouse_event({
             let state = self.state.clone();
-            let current_ix = state.read(cx).resizing_panel_ix;
             let on_resize = self.on_resize.clone();
             move |_: &MouseUpEvent, phase, window, cx| {
-                if current_ix.is_none() {
+                if state.read(cx).resizing_panel_ix.is_none() {
                     return;
                 }
                 if phase.bubble() {

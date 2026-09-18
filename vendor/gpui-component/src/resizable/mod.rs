@@ -36,6 +36,8 @@ pub struct ResizableState {
     panels: Vec<ResizablePanelState>,
     sizes: Vec<Pixels>,
     pub(crate) resizing_panel_ix: Option<usize>,
+    completed_divider: Option<usize>,
+    adjacent_only: bool,
     bounds: Bounds<Pixels>,
 }
 
@@ -46,6 +48,8 @@ impl Default for ResizableState {
             panels: vec![],
             sizes: vec![],
             resizing_panel_ix: None,
+            completed_divider: None,
+            adjacent_only: false,
             bounds: Bounds::default(),
         }
     }
@@ -55,6 +59,11 @@ impl ResizableState {
     /// Get the size of the panels.
     pub fn sizes(&self) -> &Vec<Pixels> {
         &self.sizes
+    }
+
+    /// Index of the panel before the divider in the most recently completed drag.
+    pub fn completed_divider(&self) -> Option<usize> {
+        self.completed_divider
     }
 
     pub(crate) fn insert_panel(
@@ -176,7 +185,7 @@ impl ResizableState {
     }
 
     pub(crate) fn done_resizing(&mut self, cx: &mut Context<Self>) {
-        self.resizing_panel_ix = None;
+        self.completed_divider = self.resizing_panel_ix.take();
         cx.emit(ResizablePanelEvent::Resized);
     }
 
@@ -197,6 +206,29 @@ impl ResizableState {
     /// The `ix`` is the index of the panel to resize,
     /// and the `size` is the new size for the panel.
     fn resize_panel(&mut self, ix: usize, size: Pixels, _: &mut Window, cx: &mut Context<Self>) {
+        if self.adjacent_only {
+            if ix + 1 >= self.panels.len() {
+                return;
+            }
+            self.sync_real_panel_sizes(cx);
+            let left = self.sizes[ix];
+            let right = self.sizes[ix + 1];
+            let left_range = self.panel_size_range(ix);
+            let right_range = self.panel_size_range(ix + 1);
+            let min_delta = (left_range.start - left).max(right - right_range.end);
+            let max_delta = (left_range.end - left).min(right - right_range.start);
+            if min_delta > max_delta {
+                return;
+            }
+            let delta = (size - left).clamp(min_delta, max_delta);
+            self.sizes[ix] = left + delta;
+            self.sizes[ix + 1] = right - delta;
+            for (panel, size) in self.panels.iter_mut().zip(&self.sizes) {
+                panel.size = Some(*size);
+            }
+            cx.notify();
+            return;
+        }
         let old_sizes = self.sizes.clone();
 
         let mut ix = ix;
