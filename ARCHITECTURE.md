@@ -726,12 +726,17 @@ terminal_ui.rs owns TerminalTabs (stable IDs, ordered sessions, active selection
 subscriptions, scrolling and cleanup tasks) and each retained TerminalSession view
 with generation-tagged asynchronous launches. right_panel_ui.rs captures launch
 settings/directory, coordinates tab selection and guards input by active identity.
-The header contains scrollable shell-and-number tabs with individual close buttons
-and a fixed add button. Numbers increase for the lifetime of the window. Closing
+The header contains compact scrollable tabs with individual close buttons
+and an add button beside the strip that stays visible during overflow. Stable IDs increase for the lifetime of the window. Closing
 the active tab selects the right neighbor, falling back to the left; closing the
 last tab hides the panel. Opening an empty panel starts a fresh shell.
 Hiding the panel retains every shell and its output; notebook/document changes
 never retarget existing shells. Exited and failed tabs retain output/status.
+TerminalView emits window-independent TerminalTitleChanged events for OSC 0/2
+and resets while processing output. TerminalSession subscribes with identity,
+view and generation guards, updating the retained tab title even while hidden.
+Empty titles fall back to the shell name; titles are bounded visually with full
+tooltips. Shell hooks and command inference are outside this contract.
 Closing a tab invalidates pending installation and retains cleanup until late
 launches have been stopped and reaped. Accepted session Close signals all live
 sessions and awaits both their cleanup and already-closing tabs before removing

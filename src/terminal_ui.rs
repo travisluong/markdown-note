@@ -11,6 +11,7 @@ pub(super) struct TerminalTabId(pub u64);
 pub(super) struct TerminalTab {
     pub id: TerminalTabId,
     pub title: String,
+    pub fallback_title: String,
     pub session: Entity<TerminalSession>,
     pub _subscription: Subscription,
 }
@@ -94,6 +95,7 @@ pub(super) struct TerminalSession {
     process: Option<TerminalProcess>,
     cursor_style: gpui_terminal::CursorStyle,
     task: Option<Task<()>>,
+    title_subscription: Option<Subscription>,
     focus: FocusHandle,
     #[cfg(test)]
     fixture_output: Option<flume::Sender<Vec<u8>>>,
@@ -114,6 +116,7 @@ impl TerminalSession {
             process: None,
             cursor_style: cursor_style(mithril::terminal::CursorStyle::default()),
             task: None,
+            title_subscription: None,
             focus: cx.focus_handle(),
             #[cfg(test)]
             fixture_output: None,
@@ -157,6 +160,7 @@ impl TerminalSession {
         self.focus.focus(window);
         // Each tab launches once and retains its view until closed.
         self.view = None;
+        self.title_subscription = None;
         cx.notify();
         #[cfg(test)]
         {
@@ -176,6 +180,7 @@ impl TerminalSession {
                 .with_input_guard(move |window, cx| input_allowed(&owner, id, window, cx))
             }));
             self.status = Status::Running;
+            self.subscribe_title(generation, cx);
             self.focus(window, cx);
         }
         #[cfg(not(test))]
@@ -240,6 +245,7 @@ impl TerminalSession {
                 }));
                 self.process = Some(process);
                 self.status = Status::Running;
+                self.subscribe_title(generation, cx);
                 if take_focus {
                     self.focus(window, cx);
                 }
@@ -262,9 +268,49 @@ impl TerminalSession {
         cx.notify();
     }
 
+    fn subscribe_title(&mut self, generation: u64, cx: &mut Context<Self>) {
+        let Some(view) = &self.view else { return };
+        self.title_subscription = Some(cx.subscribe(
+            view,
+            move |this, view, event: &gpui_terminal::TerminalTitleChanged, cx| {
+                if this.generation != generation || this.view.as_ref() != Some(&view) {
+                    return;
+                }
+                let session = cx.entity();
+                let title: String = event
+                    .0
+                    .chars()
+                    .map(|c| if c.is_control() { ' ' } else { c })
+                    .collect();
+                let title = title.trim();
+                let _ = this.owner.update(cx, |owner, cx| {
+                    let Some(tab) = owner
+                        .terminals
+                        .tabs
+                        .iter_mut()
+                        .find(|tab| tab.id == this.id && tab.session == session)
+                    else {
+                        return;
+                    };
+                    let title = if title.is_empty() {
+                        tab.fallback_title.clone()
+                    } else {
+                        title.to_owned()
+                    };
+                    if tab.title != title {
+                        tab.title = title;
+                        owner.terminals.reveal_active();
+                        cx.notify();
+                    }
+                });
+            },
+        ));
+    }
+
     /// The accepted close barrier awaits process cleanup before removing the window.
     pub fn shutdown(&mut self, cx: &mut Context<Self>) -> TerminalCleanup {
         self.generation += 1;
+        self.title_subscription = None;
         self.status = Status::Finished(ProcessExit::Stopped);
         if let Some(view) = &self.view {
             view.update(cx, |view, _| view.set_input_enabled(false));
@@ -538,6 +584,97 @@ mod tab_lifecycle_tests {
             })
         });
         (owner, cx)
+    }
+
+    #[gpui::test]
+    fn reported_titles_update_hidden_tabs_reset_and_reject_stale_views(cx: &mut TestAppContext) {
+        let (owner, cx) = fixture(cx);
+        let sessions = cx.update(|_, cx| {
+            owner
+                .read(cx)
+                .terminals
+                .tabs
+                .iter()
+                .map(|tab| tab.session.clone())
+                .collect::<Vec<_>>()
+        });
+        let send = |index: usize, bytes: &[u8], cx: &mut VisualTestContext| {
+            cx.update(|_, cx| {
+                sessions[index]
+                    .read(cx)
+                    .fixture_output
+                    .as_ref()
+                    .unwrap()
+                    .send(bytes.to_vec())
+                    .unwrap()
+            });
+            cx.run_until_parked();
+            cx.background_executor
+                .advance_clock(std::time::Duration::from_millis(10));
+            cx.run_until_parked();
+        };
+        send(0, b"\x1b]0;npm run", cx);
+        cx.update(|_, cx| {
+            assert_eq!(
+                owner.read(cx).terminals.tabs[0].title,
+                super::shell_label(Default::default())
+            )
+        });
+        send(0, b" dev\x07", cx);
+        cx.update(|window, cx| {
+            let notes = owner.read(cx);
+            assert_eq!(notes.terminals.tabs[0].title, "npm run dev");
+            assert_eq!(notes.terminals.active, Some(TerminalTabId(2)));
+            assert!(
+                sessions[1]
+                    .read(cx)
+                    .view
+                    .as_ref()
+                    .unwrap()
+                    .read(cx)
+                    .focus_handle()
+                    .is_focused(window)
+            );
+            owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
+        });
+        send(1, b"\x1b]2;Claude session\x1b\\", cx);
+        cx.update(|_, cx| assert_eq!(owner.read(cx).terminals.tabs[1].title, "Claude session"));
+        send(0, b"\x1b]2;\x07", cx);
+        cx.update(|_, cx| {
+            assert_eq!(
+                owner.read(cx).terminals.tabs[0].title,
+                super::shell_label(Default::default())
+            )
+        });
+        let old_view = cx.update(|_, cx| sessions[0].read(cx).view.clone().unwrap());
+        cx.update(|window, cx| {
+            sessions[0].update(cx, |session, cx| {
+                session.start(Default::default(), Ok(std::env::temp_dir()), window, cx)
+            })
+        });
+        cx.update(|_, cx| {
+            old_view.update(cx, |_, cx| {
+                cx.emit(gpui_terminal::TerminalTitleChanged("stale".into()))
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert_ne!(owner.read(cx).terminals.tabs[0].title, "stale");
+            owner.update(cx, |notes, cx| {
+                notes.close_terminal_tab(TerminalTabId(1), window, cx)
+            });
+        });
+        cx.update(|_, cx| {
+            old_view.update(cx, |_, cx| {
+                cx.emit(gpui_terminal::TerminalTitleChanged("closed".into()))
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let notes = owner.read(cx);
+            assert_eq!(notes.terminals.tabs.len(), 1);
+            assert_eq!(notes.terminals.tabs[0].title, "Claude session");
+        });
     }
 
     #[gpui::test]

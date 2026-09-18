@@ -1462,7 +1462,7 @@ fn terminal_shift_enter_is_distinct_from_submit(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn terminal_tabs_select_close_neighbors_and_reopen_with_stable_numbers(cx: &mut TestAppContext) {
+fn terminal_tabs_select_close_neighbors_and_reopen_with_stable_ids(cx: &mut TestAppContext) {
     use crate::terminal_ui::TerminalTabId;
     let (_dir, notes, cx) = fixture(cx);
     cx.simulate_resize(gpui::size(px(1600.), px(800.)));
@@ -1488,8 +1488,8 @@ fn terminal_tabs_select_close_neighbors_and_reopen_with_stable_numbers(cx: &mut 
         assert_eq!(*second.read(cx).fixture_input.lock().unwrap(), b"b");
         let tabs = &notes.read(cx).terminals.tabs;
         let label = crate::terminal_ui::shell_label(Default::default());
-        assert_eq!(tabs[0].title, format!("{label} 1"));
-        assert_eq!(tabs[1].title, format!("{label} 2"));
+        assert_eq!(tabs[0].title, label);
+        assert_eq!(tabs[1].title, label);
     });
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
@@ -1555,7 +1555,10 @@ fn terminal_tabs_overflow_reveals_selection_and_keeps_add_visible(cx: &mut TestA
     let document_selector = Box::leak(format!("tab-select-{document_id}").into_boxed_str());
     assert_eq!(
         cx.debug_bounds(document_selector).unwrap().size.height,
-        cx.debug_bounds("terminal-tab-select-1").unwrap().size.height
+        cx.debug_bounds("terminal-tab-select-1")
+            .unwrap()
+            .size
+            .height
     );
     for _ in 0..7 {
         click("terminal-tab-add", cx);

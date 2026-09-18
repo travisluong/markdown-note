@@ -275,6 +275,12 @@ pub type BellCallback = Box<dyn Fn(&mut Window, &mut Context<TerminalView>)>;
 /// ```
 pub type TitleCallback = Box<dyn Fn(&mut Window, &mut Context<TerminalView>, &str)>;
 
+/// A title reported by the terminal, delivered even while its view is hidden.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalTitleChanged(pub String);
+
+impl EventEmitter<TerminalTitleChanged> for TerminalView {}
+
 /// Callback for clipboard store requests.
 ///
 /// This callback is invoked when the terminal wants to store data to the clipboard
@@ -408,6 +414,7 @@ pub struct TerminalView {
 
     /// Callback for terminal title changes
     title_callback: Option<TitleCallback>,
+    pending_title: Option<String>,
 
     /// Callback for clipboard store requests
     clipboard_store_callback: Option<ClipboardStoreCallback>,
@@ -516,7 +523,7 @@ impl TerminalView {
                         let result = this.update(cx, |view: &mut Self, cx: &mut Context<Self>| {
                             for bytes in batch {
                                 view.state.process_bytes(&bytes);
-                                view.drain_protocol_events();
+                                view.drain_protocol_events(cx);
                             }
                             cx.notify();
                         });
@@ -554,6 +561,7 @@ impl TerminalView {
             key_handler: None,
             bell_callback: None,
             title_callback: None,
+            pending_title: None,
             clipboard_store_callback: None,
             exit_callback: None,
             input_enabled: true,
@@ -825,10 +833,16 @@ impl TerminalView {
 
     // Drain events even when the panel is hidden. Protocol replies must never
     // depend on paint, and unsolicited title/bell/clipboard output stays bounded.
-    fn drain_protocol_events(&mut self) {
+    fn drain_protocol_events(&mut self, cx: &mut Context<Self>) {
         while let Ok(event) = self.event_rx.try_recv() {
-            if let TerminalEvent::Write(bytes) = event {
-                self.write_input(bytes.as_bytes());
+            match event {
+                TerminalEvent::Write(bytes) => self.write_input(bytes.as_bytes()),
+                TerminalEvent::Title(title) => {
+                    cx.emit(TerminalTitleChanged(title.clone()));
+                    // Retain only the latest value for the window-dependent callback.
+                    self.pending_title = Some(title);
+                }
+                _ => {}
             }
         }
     }
@@ -899,6 +913,11 @@ impl TerminalView {
     /// and handles them appropriately. Note: bytes are processed in the
     /// async reader task, not here.
     fn process_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(title) = self.pending_title.take()
+            && let Some(callback) = &self.title_callback
+        {
+            callback(window, cx, &title);
+        }
         // Process terminal events (from alacritty event proxy)
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
@@ -912,6 +931,7 @@ impl TerminalView {
                     }
                 }
                 TerminalEvent::Title(title) => {
+                    cx.emit(TerminalTitleChanged(title.clone()));
                     if let Some(ref callback) = self.title_callback {
                         callback(window, cx, &title);
                     }

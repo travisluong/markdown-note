@@ -13,8 +13,12 @@ Local changes:
   constructor's queue; process at most 64 KiB per UI turn and yield between
   batches. Drain protocol events while hidden rather than only during paint.
 - Forward Alacritty PtyWrite replies (including cursor-position queries).
-  Title/bell/OSC clipboard requests are discarded by the embedded byte path;
+  Bell/OSC clipboard requests are discarded by the embedded byte path;
   they cannot mutate the host clipboard or accumulate while hidden.
+- Emit TerminalTitleChanged for OSC 0/2 and resets during output processing,
+  including hidden views. Retain only the latest pending title for the existing
+  window-dependent callback. Mithril subscribes with session/view/generation
+  guards and falls back to the shell label for empty titles.
 - Isolate terminal keys with a Terminal key context and stop propagation.
   Reserve Ctrl+backtick for the host; check a host input guard at key dispatch.
 - Add explicit paste with newline normalization, bracketed-paste wrapping,

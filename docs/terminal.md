@@ -3,9 +3,13 @@
 Use the terminal toolbar button, Ctrl+backtick (including macOS), or the
 **Terminal: Toggle terminal** command to open the right panel. The first opening
 starts one shell. The header contains a horizontally scrollable tab strip and a
-fixed **+** button. Each tab has a stable shell-and-number label, such as
-PowerShell 1, and an **×** button to close that session. New tabs capture the
-current shell preference and starting directory and receive increasing numbers.
+**+** button beside the tabs, kept visible when the strip overflows. Each tab
+shows the shell/application-reported title (OSC 0/2), or its shell name when no
+title is reported, and an **×** button to close that session. Titles update even
+while hidden; long titles are truncated with the full title in a tooltip.
+Command or Claude session names appear when the shell/application reports them;
+Mithril does not install shell hooks to infer commands. New tabs capture the
+current shell preference and starting directory and receive stable internal IDs.
 Selecting a tab restores its terminal and focus; other shells keep processing
 output. Closing an active tab selects its right neighbor, otherwise its left.
 Closing an inactive tab preserves the selected session. Closing the last tab hides

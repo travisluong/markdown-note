@@ -27,12 +27,13 @@ impl Notes {
         .map_err(|e| e.to_string());
         self.terminals.serial += 1;
         let id = TerminalTabId(self.terminals.serial);
-        let title = format!("{} {}", terminal_ui::shell_label(settings), id.0);
+        let title = terminal_ui::shell_label(settings);
         let owner = cx.weak_entity();
         let session = cx.new(|cx| TerminalSession::new(id, owner, cx));
         let subscription = cx.observe(&session, |_, _, cx| cx.notify());
         self.terminals.tabs.push(TerminalTab {
             id,
+            fallback_title: title.clone(),
             title,
             session: session.clone(),
             _subscription: subscription,
@@ -240,7 +241,12 @@ impl Notes {
                                             })
                                             .custom(ButtonCustomVariant::new(cx))
                                             .small()
-                                            .label(tab.title.clone())
+                                            .child(
+                                                div()
+                                                    .max_w(px(160.))
+                                                    .truncate()
+                                                    .child(tab.title.clone()),
+                                            )
                                             .tooltip(tab.title.clone())
                                             .disabled(blocked)
                                             .on_click(cx.listener(move |this, _, window, cx| {
