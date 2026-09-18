@@ -119,7 +119,7 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
             "Editor",
             "Toggle italic"
         ),
-        shortcut!("ctrl-o", GoTo, "Notes", "Application", "Go to a note"),
+        shortcut!("ctrl-o", GoTo, "Notes", "Application", "Go to file"),
         shortcut!(
             "ctrl-p",
             CommandPalette,

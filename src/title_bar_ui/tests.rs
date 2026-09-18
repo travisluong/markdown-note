@@ -459,7 +459,7 @@ fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestA
 }
 
 #[gpui::test]
-fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut TestAppContext) {
+fn discovery_menu_entries_open_focused_palettes(cx: &mut TestAppContext) {
     let (dir, notes, cx) = fixture(cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
@@ -470,9 +470,9 @@ fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut
         })
     });
     cx.refresh().unwrap();
-    click(MenuKind::File, cx);
-    // Open, Save, New note, New tab, Close tab, Go to a note.
-    cx.simulate_keystrokes("down down down down down down enter");
+    click(MenuKind::Search, cx);
+    // Search in file, Search in all files, Search and replace in file, Go to file.
+    cx.simulate_keystrokes("down down down down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -481,8 +481,17 @@ fn discovery_menu_entries_open_focused_palettes_and_preserve_file_order(cx: &mut
         assert!(!this.editor.is_focused(window, cx));
         assert!(this.file_picker_operation.is_none());
     });
-    cx.simulate_keystrokes("escape");
+    // Typing and opening a result establishes query focus after menu dismissal.
+    cx.simulate_input("note.md");
     cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.palette.is_none());
+        assert!(this.editor.is_focused(window, cx));
+        assert!(this.file_picker_operation.is_none());
+    });
     cx.refresh().unwrap();
     click(MenuKind::View, cx);
     // Three modes, Centered editor, sidebar, Hide toolbar, Explorer, Sort files, then Command palette (history disabled).

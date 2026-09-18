@@ -569,7 +569,7 @@ Command rows display right-aligned Kbd badges from registered action bindings.
 The help adapter maps equivalent palette commands to Notes or DocumentEditor
 contexts, independent of palette input focus; commands without bindings have no
 badge. Disabled commands retain badges alongside their availability explanation.
-File > Go to a note and Mod+O use notebook discovery, falling back to the system
+Search > Go to file and Mod+O use notebook discovery, falling back to the system
 file picker without a notebook; palette Open file always uses the system picker.
 View > Command palette opens the command search. Palette Save uses the document
 save capability (including Reading); Manage notebooks rechecks the notebook

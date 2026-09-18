@@ -47,7 +47,6 @@ impl Notes {
                 )
                 .menu_with_disabled("New tab", Box::new(NewTab), busy)
                 .menu_with_disabled("Close tab", Box::new(CloseTab), busy)
-                .menu_with_disabled("Go to a note…", Box::new(GoTo), busy)
                 .separator()
                 .menu_with_disabled("Settings", Box::new(OpenSettings), self.is_busy())
         } else if kind == MenuKind::Edit {
@@ -152,6 +151,8 @@ impl Notes {
                 Box::new(ReplaceFile),
                 Command::ReplaceFile.unavailable(capabilities).is_some(),
             )
+            .separator()
+            .menu_with_disabled("Go to file…", Box::new(GoTo), busy)
         } else if kind == MenuKind::Help {
             menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts))
                 .menu("About", Box::new(About))
