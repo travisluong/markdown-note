@@ -720,7 +720,7 @@ fn top_bar_buttons_have_independent_visibility_and_reserved_space(cx: &mut TestA
                 if let Some(right) = right {
                     assert_eq!(right.size.width, px(28.));
                     if let Some(minimize) = view.debug_bounds("window-minimize") {
-                        assert_eq!(right.right(), minimize.left());
+                        assert_eq!(right.right() + px(4.), minimize.left());
                     } else {
                         assert_eq!(
                             right.right(),

@@ -241,6 +241,7 @@ struct HeaderLayout {
     height: Pixels,
     widths: [Pixels; MENUS.len() + 1],
     gap: Pixels,
+    terminal_gap: Pixels,
     visible: usize,
     panel_buttons: [bool; 2],
 }
@@ -254,7 +255,13 @@ impl HeaderLayout {
         panel_buttons: [bool; 2],
     ) -> Self {
         let gap = rem * 0.25;
+        let terminal_gap = if mode.controls() && panel_buttons[1] {
+            px(4.)
+        } else {
+            px(0.)
+        };
         let reserved = px(if mode.controls() { 4. } else { 8. })
+            + terminal_gap
             + px(28.) * panel_buttons.into_iter().filter(|visible| *visible).count() as f32
             + if mode.combined() { px(32.) } else { px(0.) }
             + if mode == HeaderMode::Mac {
@@ -286,6 +293,7 @@ impl HeaderLayout {
             height: px(34.).max(rem * 1.5 + px(8.)),
             widths,
             gap,
+            terminal_gap,
             visible,
             panel_buttons,
         }
@@ -617,6 +625,7 @@ impl Notes {
                     .ghost()
                     .small()
                     .w(px(28.))
+                    .mr(layout.terminal_gap)
                     .flex_shrink_0()
                     .icon(Icon::new(IconName::PanelRight).size(px(16.)))
                     .tooltip(if self.right_panel_open {
