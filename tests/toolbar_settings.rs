@@ -39,7 +39,7 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
     let root = directory.path().join("notebook");
     let mut book = Notebook::open(&root, true).unwrap();
     book.settings.date_format = "MM/DD/YYYY".into();
-    for mask in (0..16).chain((4..17).map(|i| 1 << i)).chain([0x1ffff]) {
+    for mask in (0..16).chain((4..18).map(|i| 1 << i)).chain([0x3ffff]) {
         let mut toolbar = ToolbarSettings {
             visible: mask % 2 == 0,
             ..ToolbarSettings::default()
@@ -103,7 +103,7 @@ fn toolbar_order_migrates_partial_duplicate_unknown_and_legacy_entries() {
             assert!(settings.enabled(item));
         }
         let json = serde_json::to_value(settings).unwrap();
-        assert_eq!(json["order"].as_array().unwrap().len(), 17);
+        assert_eq!(json["order"].as_array().unwrap().len(), 18);
         assert_eq!(
             serde_json::from_value::<ToolbarSettings>(json).unwrap(),
             settings
@@ -222,4 +222,26 @@ fn toolbar_alignments_default_normalize_and_persist() {
             label.to_lowercase()
         );
     }
+}
+
+#[test]
+fn legacy_toolbar_gains_terminal_without_changing_saved_choices() {
+    use mithril::notebook::ToolbarRegion;
+    let settings: ToolbarSettings = serde_json::from_str(
+        r#"{"order":["italic","bold","forward","back"],"bold":false,"alignment":"right"}"#,
+    )
+    .unwrap();
+    assert!(settings.terminal);
+    assert!(!settings.bold);
+    assert_eq!(
+        &settings.order[..4],
+        &[
+            ToolbarItem::Italic,
+            ToolbarItem::Bold,
+            ToolbarItem::Forward,
+            ToolbarItem::Back
+        ]
+    );
+    assert_eq!(settings.order.last(), Some(&ToolbarItem::Terminal));
+    assert_eq!(ToolbarItem::Terminal.region(), ToolbarRegion::ContentRight);
 }

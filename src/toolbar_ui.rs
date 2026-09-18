@@ -34,7 +34,7 @@ impl Notes {
             .debug_selector(|| "sidebar-toolbar".into())
             .w_full()
             .flex_shrink_0()
-            .p_1()
+            .p(px(4.))
             .border_b_1()
             .border_color(cx.theme().border)
             .child(self.render_toolbar_region(ToolbarRegion::Sidebar, window, cx))
@@ -78,7 +78,7 @@ impl Notes {
             .flex()
             .items_center()
             .w_full()
-            .gap_1()
+            .gap(px(4.))
             .child(div().w(px(side)).flex_shrink_0().child(left));
         let row = if wrapped {
             row.child(div().flex_1())
@@ -102,8 +102,8 @@ impl Notes {
             .flex_col()
             .w_full()
             .flex_shrink_0()
-            .gap_1()
-            .p_1()
+            .gap(px(4.))
+            .p(px(4.))
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
@@ -149,9 +149,12 @@ impl Notes {
             .items_center()
             .min_w_0()
             .w_full()
-            .gap_1()
+            .gap(px(4.))
             .when(region == ToolbarRegion::ContentCenter, |view| {
                 view.justify_center()
+            })
+            .when(region == ToolbarRegion::ContentRight, |view| {
+                view.justify_end()
             })
             .children(
                 settings
@@ -195,6 +198,23 @@ impl Notes {
                                 }))
                                 .into_any_element()
                             }
+                            ToolbarItem::Terminal => toolbar_button(
+                                "toolbar-terminal",
+                                IconName::SquareTerminal,
+                                settings.icon_size,
+                                self.document_interaction_blocked() || window.has_active_dialog(cx),
+                                drag,
+                            )
+                            .tooltip(if self.right_panel_open {
+                                "Close terminal panel"
+                            } else {
+                                "Open terminal panel"
+                            })
+                            .selected(self.right_panel_open)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.toggle_right_panel(window, cx)
+                            }))
+                            .into_any_element(),
                             ToolbarItem::Sidebar => toolbar_button(
                                 "toolbar-sidebar-toggle",
                                 IconName::PanelLeft,
@@ -326,6 +346,7 @@ impl Render for WindowToolbarDrag {
         let icon = match self.item {
             ToolbarItem::Back => Icon::new(IconName::ArrowLeft),
             ToolbarItem::Forward => Icon::new(IconName::ArrowRight),
+            ToolbarItem::Terminal => Icon::new(IconName::SquareTerminal),
             ToolbarItem::Sidebar => Icon::new(IconName::PanelLeft),
             ToolbarItem::Explorer => Icon::new(IconName::Folder),
             ToolbarItem::Search => Icon::new(IconName::Search),

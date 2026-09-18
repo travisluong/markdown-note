@@ -254,7 +254,10 @@ fn all_formatting_controls_inherit_presets_and_wrap(cx: &mut TestAppContext) {
         cx.refresh().unwrap();
         let toolbar = cx.debug_bounds("content-toolbar").unwrap();
         let mut previous = None;
-        for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(6) {
+        for item in ToolbarItem::DEFAULT_ORDER
+            .into_iter()
+            .filter(|item| item.region() == ToolbarRegion::ContentCenter)
+        {
             let (id, _, _) = formatting_item(item);
             let bounds = cx.debug_bounds(id).unwrap();
             assert_eq!(
@@ -275,7 +278,10 @@ fn all_formatting_controls_inherit_presets_and_wrap(cx: &mut TestAppContext) {
 #[test]
 fn application_assets_load_all_formatting_icons_and_component_fallback() {
     let assets = crate::assets::Assets;
-    for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(6) {
+    for item in ToolbarItem::DEFAULT_ORDER
+        .into_iter()
+        .filter(|item| item.region() == ToolbarRegion::ContentCenter)
+    {
         let (_, path, _) = formatting_item(item);
         let bytes = assets.load(path).unwrap().unwrap();
         let svg = std::str::from_utf8(&bytes).unwrap();
@@ -1036,4 +1042,229 @@ fn icon_drop_rejects_cross_region_without_persisting(cx: &mut TestAppContext) {
     start_icon_drag(ToolbarItem::Bold, cx);
     finish_icon_drag(ToolbarItem::Back, false, cx);
     cx.update(|_, cx| assert_eq!(notes.read(cx).toolbar_settings(), before));
+}
+
+fn settle_layout(cx: &mut VisualTestContext) {
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+}
+
+#[gpui::test]
+fn right_panel_toggle_retains_document_focus_selection_and_history(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    let editor = cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(!this.right_panel_open);
+        this.editor.id()
+    });
+    click("toolbar-bold", cx);
+    let selection = cx.update(|_, cx| notes.read(cx).editor.selection(cx));
+    click("toolbar-terminal", cx);
+    settle_layout(cx);
+    cx.update(|window, cx| {
+        let this = notes.read(cx);
+        assert!(this.right_panel_open);
+        assert_eq!(this.editor.id(), editor);
+        assert_eq!(this.editor.selection(cx), selection);
+        assert!(this.editor.is_focused(window, cx));
+    });
+    let panel = cx.debug_bounds("right-panel").unwrap();
+    let toolbar = cx.debug_bounds("content-toolbar").unwrap();
+    assert_eq!(panel.size.width, px(280.));
+    assert_eq!(panel.top(), toolbar.top());
+    assert_eq!(panel.left(), toolbar.right());
+    assert_eq!(
+        cx.debug_bounds("toolbar-terminal").unwrap().right(),
+        toolbar.right() - px(4.)
+    );
+    click("right-panel-close", cx);
+    cx.update(|window, cx| {
+        assert!(!notes.read(cx).right_panel_open);
+        assert!(notes.read(cx).editor.is_focused(window, cx));
+        assert_eq!(notes.read(cx).editor.selection(cx), selection);
+    });
+    cx.dispatch_action(Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶"));
+    click("toolbar-terminal", cx);
+    click("toolbar-terminal", cx);
+    cx.update(|_, cx| assert!(!notes.read(cx).right_panel_open));
+}
+
+#[gpui::test]
+fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    let book = notebook::Notebook::open(&dir.path().join("book"), true).unwrap();
+    let other = notebook::Notebook::open(&dir.path().join("other"), true).unwrap();
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            this.notebooks
+                .set_test_persistence_target(dir.path().join("index.json"));
+            this.toggle_right_panel(window, cx);
+        })
+    });
+    cx.simulate_resize(gpui::size(px(1400.), px(900.)));
+    settle_layout(cx);
+    let panel = cx.debug_bounds("right-panel").unwrap();
+    let start = gpui::point(panel.left(), panel.center().y);
+    cx.simulate_mouse_move(start, None, Modifiers::default());
+    cx.simulate_mouse_down(start, gpui::MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(
+        gpui::point(start.x - px(12.), start.y),
+        gpui::MouseButton::Left,
+        Modifiers::default(),
+    );
+    settle_layout(cx);
+    let end = gpui::point(start.x - px(100.), start.y);
+    cx.simulate_mouse_move(end, gpui::MouseButton::Left, Modifiers::default());
+    settle_layout(cx);
+    cx.simulate_mouse_up(end, gpui::MouseButton::Left, Modifiers::default());
+    settle_layout(cx);
+    let preferred = cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(this.right_panel_width > 350.);
+        assert_eq!(
+            this.notebooks
+                .active
+                .as_ref()
+                .unwrap()
+                .settings
+                .sidebar_width,
+            280.
+        );
+        this.right_panel_width
+    });
+    for width in [400., 600., 1400.] {
+        cx.simulate_resize(gpui::size(px(width), px(900.)));
+        settle_layout(cx);
+        let left = cx.debug_bounds("workspace-sidebar").unwrap();
+        let center = cx.debug_bounds("workspace-content").unwrap();
+        let right = cx.debug_bounds("right-panel").unwrap();
+        assert_eq!(left.right(), center.left());
+        assert_eq!(center.right(), right.left());
+        assert!(
+            center.size.width >= px(199.5),
+            "{left:?} {center:?} {right:?}"
+        );
+        assert!(right.right() <= px(width + 0.5));
+        cx.update(|_, cx| {
+            let this = notes.read(cx);
+            assert_eq!(this.right_panel_width, preferred);
+            assert_eq!(
+                this.notebooks
+                    .active
+                    .as_ref()
+                    .unwrap()
+                    .settings
+                    .sidebar_width,
+                280.
+            );
+        });
+    }
+    assert!((cx.debug_bounds("right-panel").unwrap().size.width - px(preferred)).abs() <= px(1.));
+    click("right-panel-close", cx);
+    click("toolbar-terminal", cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            this.notebooks.active = Some(other);
+            this.reset_sidebar_resize(cx);
+            this.toggle_sidebar(window, cx);
+            assert!(this.right_panel_open);
+            assert_eq!(this.right_panel_width, preferred);
+        })
+    });
+    settle_layout(cx);
+    assert_eq!(cx.debug_bounds("workspace-content").unwrap().left(), px(0.));
+    assert!((cx.debug_bounds("right-panel").unwrap().size.width - px(preferred)).abs() <= px(1.));
+}
+
+#[gpui::test]
+fn right_panel_rechecks_modal_and_busy_guards_and_keeps_close_when_toolbar_hidden(
+    cx: &mut TestAppContext,
+) {
+    let (_dir, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.open_settings(window, cx);
+            this.toggle_right_panel(window, cx);
+            assert!(!this.right_panel_open);
+            window.close_dialog(cx);
+        })
+    });
+    cx.run_until_parked();
+    click("toolbar-terminal", cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_toolbar(window, cx)));
+    settle_layout(cx);
+    click("right-panel-close", cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(!this.right_panel_open);
+            let _ = this.session.pick();
+            this.toggle_right_panel(window, cx);
+            assert!(!this.right_panel_open);
+        })
+    });
+}
+
+#[gpui::test]
+fn toolbar_geometry_uses_logical_pixels_with_large_interface_text(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        gpui_component::Theme::global_mut(cx).font_size = px(28.);
+        window.set_rem_size(px(28.));
+        notes.update(cx, |this, cx| {
+            this.session_toolbar.icon_size = ToolbarIconSize::Large;
+            cx.notify();
+        });
+    });
+    cx.simulate_resize(gpui::size(px(400.), px(800.)));
+    settle_layout(cx);
+    let toolbar = cx.debug_bounds("content-toolbar").unwrap();
+    let back = cx.debug_bounds("toolbar-back").unwrap();
+    let terminal = cx.debug_bounds("toolbar-terminal").unwrap();
+    assert_eq!(back.top(), terminal.top());
+    assert_eq!(back.left(), toolbar.left() + px(4.));
+    assert_eq!(terminal.right(), toolbar.right() - px(4.));
+    for item in ToolbarItem::DEFAULT_ORDER
+        .into_iter()
+        .filter(|item| item.region() == ToolbarRegion::ContentCenter)
+    {
+        let bounds = cx.debug_bounds(formatting_item(item).0).unwrap();
+        assert!(bounds.top() >= back.bottom() + px(4.));
+        assert!(bounds.bottom() <= toolbar.bottom() - px(4.));
+        assert_eq!(bounds.size, gpui::size(px(40.), px(40.)));
+    }
+}
+
+#[gpui::test]
+fn right_panel_explicit_narrow_resize_is_retained(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    cx.simulate_resize(gpui::size(px(400.), px(800.)));
+    click("toolbar-terminal", cx);
+    settle_layout(cx);
+    let panel = cx.debug_bounds("right-panel").unwrap();
+    assert_eq!(panel.size.width, px(200.));
+    cx.update(|_, cx| assert_eq!(notes.read(cx).right_panel_width, 280.));
+    let start = gpui::point(panel.left(), panel.center().y);
+    cx.simulate_mouse_move(start, None, Modifiers::default());
+    cx.simulate_mouse_down(start, gpui::MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(
+        gpui::point(start.x + px(12.), start.y),
+        gpui::MouseButton::Left,
+        Modifiers::default(),
+    );
+    settle_layout(cx);
+    let end = gpui::point(start.x + px(20.), start.y);
+    cx.simulate_mouse_move(end, gpui::MouseButton::Left, Modifiers::default());
+    settle_layout(cx);
+    cx.simulate_mouse_up(end, gpui::MouseButton::Left, Modifiers::default());
+    settle_layout(cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).right_panel_width, 180.));
+    click("right-panel-close", cx);
+    click("toolbar-terminal", cx);
+    settle_layout(cx);
+    assert_eq!(cx.debug_bounds("right-panel").unwrap().size.width, px(180.));
 }

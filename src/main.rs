@@ -18,6 +18,7 @@ mod notebook_ui;
 mod reading_search;
 mod shared_documents;
 
+mod right_panel_ui;
 mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
@@ -192,6 +193,9 @@ struct Notes {
     session_autosave: notebook::Autosave,
     notebook_cache: std::collections::HashMap<PathBuf, notebook::Notebook>,
     sidebar_collapsed: bool,
+    right_panel_open: bool,
+    right_panel_width: f32,
+    workspace_layout: Option<(bool, bool, Pixels)>,
     content_toolbar_width: Pixels,
     sidebar_resize: Entity<gpui_component::resizable::ResizableState>,
     session_date_format: String,
@@ -241,7 +245,10 @@ impl Notes {
             },
             notebook_cache: Default::default(),
             sidebar_collapsed: false,
-            content_toolbar_width: px(0.),
+            right_panel_open: false,
+            right_panel_width: 280.,
+            workspace_layout: None,
+            content_toolbar_width: window.viewport_size().width,
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),
             session_date_format: templates::default_format(),
             session_show_file_extensions: notebook::default_show_file_extensions(),
@@ -761,21 +768,11 @@ impl Render for Notes {
                 div().flex().flex_1().min_h_0().overflow_hidden().child(
                     self.render_sidebar_layout(
                         div()
-                            .id("file-drop-content")
-                            .debug_selector(|| "file-drop-content".into())
+                            .id("content-column")
+                            .debug_selector(|| "content-column".into())
                             .size_full()
                             .flex()
                             .flex_col()
-                            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
-                                cx.stop_propagation();
-                                this.drop_files(paths.paths().to_vec(), window, cx);
-                            }))
-                            .on_drop(cx.listener(
-                                |this, drag: &notebook_ui::EntryDrag, window, cx| {
-                                    cx.stop_propagation();
-                                    this.drop_files(vec![drag.root.join(&drag.path)], window, cx);
-                                },
-                            ))
                             .when(
                                 [
                                     notebook::ToolbarRegion::ContentLeft,
@@ -848,14 +845,40 @@ impl Render for Notes {
                                         ),
                                 )
                             })
-                            .child(self.render_tabs(cx))
                             .child(
                                 div()
+                                    .id("file-drop-content")
+                                    .debug_selector(|| "file-drop-content".into())
+                                    .flex()
+                                    .flex_col()
                                     .flex_1()
-                                    .min_w_0()
                                     .min_h_0()
-                                    .overflow_hidden()
-                                    .child(content),
+                                    .min_w_0()
+                                    .on_drop(cx.listener(
+                                        |this, paths: &ExternalPaths, window, cx| {
+                                            cx.stop_propagation();
+                                            this.drop_files(paths.paths().to_vec(), window, cx);
+                                        },
+                                    ))
+                                    .on_drop(cx.listener(
+                                        |this, drag: &notebook_ui::EntryDrag, window, cx| {
+                                            cx.stop_propagation();
+                                            this.drop_files(
+                                                vec![drag.root.join(&drag.path)],
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    ))
+                                    .child(self.render_tabs(cx))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .min_h_0()
+                                            .overflow_hidden()
+                                            .child(content),
+                                    ),
                             )
                             .into_any_element(),
                         window,

@@ -1473,7 +1473,7 @@ fn toolbar_wraps_and_derives_height_for_every_icon_size(cx: &mut TestAppContext)
     }
 }
 
-fn toolbar_order_prefix(first: [notebook::ToolbarItem; 6]) -> [notebook::ToolbarItem; 17] {
+fn toolbar_order_prefix(first: [notebook::ToolbarItem; 6]) -> [notebook::ToolbarItem; 18] {
     let mut order = notebook::ToolbarItem::DEFAULT_ORDER;
     order[..6].copy_from_slice(&first);
     order

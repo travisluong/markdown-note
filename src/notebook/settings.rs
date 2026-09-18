@@ -336,6 +336,7 @@ pub enum ToolbarItem {
     TaskList,
     Back,
     Forward,
+    Terminal,
 }
 
 impl ToolbarItem {
@@ -343,11 +344,12 @@ impl ToolbarItem {
         match self {
             Self::Sidebar | Self::Explorer | Self::Search | Self::Sort => ToolbarRegion::Sidebar,
             Self::Back | Self::Forward => ToolbarRegion::ContentLeft,
+            Self::Terminal => ToolbarRegion::ContentRight,
             _ => ToolbarRegion::ContentCenter,
         }
     }
 
-    pub const DEFAULT_ORDER: [Self; 17] = [
+    pub const DEFAULT_ORDER: [Self; 18] = [
         Self::Sidebar,
         Self::Back,
         Self::Forward,
@@ -365,6 +367,7 @@ impl ToolbarItem {
         Self::OrderedList,
         Self::UnorderedList,
         Self::TaskList,
+        Self::Terminal,
     ];
 
     pub fn label(self) -> &'static str {
@@ -375,7 +378,7 @@ impl ToolbarItem {
             .1
     }
 
-    pub const OPTIONS: [(Self, &'static str); 17] = [
+    pub const OPTIONS: [(Self, &'static str); 18] = [
         (Self::Sidebar, "Toggle sidebar"),
         (Self::Explorer, "Explorer"),
         (Self::Search, "Search"),
@@ -393,6 +396,7 @@ impl ToolbarItem {
         (Self::TaskList, "Task list"),
         (Self::Back, "Back"),
         (Self::Forward, "Forward"),
+        (Self::Terminal, "Terminal"),
     ];
 }
 
@@ -423,7 +427,7 @@ pub struct ToolbarSettings {
     #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
     pub icon_size: ToolbarIconSize,
     #[serde(deserialize_with = "deserialize_toolbar_order")]
-    pub order: [ToolbarItem; 17],
+    pub order: [ToolbarItem; 18],
     pub back: bool,
     pub forward: bool,
     pub sidebar: bool,
@@ -441,6 +445,7 @@ pub struct ToolbarSettings {
     pub ordered_list: bool,
     pub unordered_list: bool,
     pub task_list: bool,
+    pub terminal: bool,
 }
 
 impl Default for ToolbarSettings {
@@ -467,6 +472,7 @@ impl Default for ToolbarSettings {
             ordered_list: true,
             unordered_list: true,
             task_list: true,
+            terminal: true,
         }
     }
 }
@@ -516,6 +522,7 @@ impl ToolbarSettings {
             ToolbarItem::OrderedList => self.ordered_list,
             ToolbarItem::UnorderedList => self.unordered_list,
             ToolbarItem::TaskList => self.task_list,
+            ToolbarItem::Terminal => self.terminal,
         }
     }
 
@@ -538,6 +545,7 @@ impl ToolbarSettings {
             ToolbarItem::OrderedList => &mut self.ordered_list,
             ToolbarItem::UnorderedList => &mut self.unordered_list,
             ToolbarItem::TaskList => &mut self.task_list,
+            ToolbarItem::Terminal => &mut self.terminal,
         } = enabled;
     }
 
@@ -548,7 +556,7 @@ impl ToolbarSettings {
     }
 }
 
-fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 17], D::Error>
+fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 18], D::Error>
 where
     D: serde::Deserializer<'de>,
 {

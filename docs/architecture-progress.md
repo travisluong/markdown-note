@@ -2236,3 +2236,30 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   binary. Integration tests use `--target-dir target/toolbar-validation --config
   'build.build-dir="target"'` to reuse intermediate artifacts and redirect the final
   binary without touching the running application.
+
+
+## 2026-09-18: resizable terminal placeholder
+
+- Added the default-enabled Terminal item and backward-compatible 18-item toolbar
+  settings. The action opens a session-only right panel with a close control and
+  placeholder text; there is no terminal process, command input, or persistence of
+  right-panel state. Opening preserves focus and closing returns to active content.
+- Workspace geometry now supports either or both side panels. Viewport/visibility
+  changes project preferred widths proportionally around 200 px of content and
+  rebuild resize state without saving projected widths. Completed user gestures
+  save notebook sidebar width and session right-panel width independently of tabs.
+- Content errors/notebook notices stay inside the workspace, above the tab strip.
+  Toolbars and the right panel remain outside document file-drop hit targets.
+  Toolbar padding/gaps use logical pixels so large interface fonts preserve layout.
+- Verification: `cargo check --locked --offline`, `cargo fmt --check`, and
+  `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`
+  passed. The full diagnostic suite passed 606 tests (26 test/doc-test targets),
+  using the separate final-artifact directory documented above. The final content
+  drop-boundary adjustment passed all 308 application tests. Subsequent explicit
+  narrow-resize coverage and the resize callback adjustment passed all 4 focused
+  right-panel tests; formatting and strict Clippy were rerun successfully.
+- Headless coverage includes region geometry, wrapping/presets, large UI text,
+  standalone content, collapse, cross-region rejection, legacy settings, editor
+  identity/selection/undo, focus, modal/busy guards, real resize gestures, preferred
+  width retention, notebook/tab changes, and both panels at 400 px window width.
+  No native application or desktop testing was performed; visual review remains manual.

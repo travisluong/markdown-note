@@ -51,7 +51,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; dialog lifetime, form identity and preference scope reject stale events. |
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
-| Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
+| Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notes owns session-only right-panel visibility/width; its UI creates no terminal process. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
 | Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow and popup anchors. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
 | Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. Fixed regions read effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
@@ -440,7 +440,7 @@ SettingsPanel's
 Toolbar tab emits typed item intents; the settings adapter applies them immediately
 to the active notebook through SettingsWriter, or to session defaults without a
 notebook. Missing settings and missing item fields preserve enabled defaults.
-ToolbarSettings owns a complete 17-item order, serialized as lowercase item
+ToolbarSettings owns a complete 18-item order, serialized as lowercase item
 names. Loading preserves valid known entries, skips duplicates and unknown entries,
 and appends missing items in default order without changing visibility. Legacy
 four-item orders retain their order and gain missing enabled controls. Back and
@@ -464,7 +464,7 @@ cover reordering, cancellation, disabled commands, focus, persistence and Settin
 synchronization.
 The workspace starts directly below the menu bar. The sidebar toolbar contains
 Explorer, Search and Sort by default; its optional sidebar toggle remains off.
-Content has fixed left navigation, centered formatting and right action regions,
+Content has fixed left navigation, centered formatting and a right Terminal action,
 above the retained tab strip. Equal side reservations center formatting within the
 content column. Its measured width selects one row or a top navigation/action row
 followed by centered wrapping formatting rows. Document errors and notebook notices
@@ -472,6 +472,17 @@ are inside the workspace content column. Sidebar collapse removes its toolbar;
 content controls remain available with no notebook. Settings groups items by region.
 Legacy `alignment` values still deserialize and round-trip but no longer affect
 presentation; there is no alignment control or mutation intent.
+The default-enabled Terminal item is appended to old saved orders without changing
+other choices. It toggles a full-height right panel containing a header, close
+button and placeholder message. Notes retains open/closed state and preferred width
+for the window session (initially closed, 280 px), independently of tabs/notebooks.
+Opening retains focus; closing restores active content focus. Modal/busy guards
+apply to both controls; hiding toolbars leaves the panel's close button available.
+Workspace layout resets resize state when panel visibility or viewport width changes.
+Side widths normally range from 160 to 600 px; proportional compression preserves
+200 px of content on narrow windows. Projected widths never overwrite preferences.
+Only completed, current user resize gestures save notebook sidebar
+width and session right-panel width. Widening restores the preferred widths.
 ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
 invalid values default to Medium; explicitly stored Small or Large values survive.
 Toolbar-tab size intents use the same notebook/session

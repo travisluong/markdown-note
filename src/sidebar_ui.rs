@@ -95,55 +95,161 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let left_visible = self.notebooks.active.is_some() && !self.sidebar_collapsed;
+        let right_visible = self.right_panel_open;
+        let viewport_width = window.viewport_size().width;
+        let layout = (left_visible, right_visible, viewport_width);
+        if self.workspace_layout != Some(layout) {
+            self.reset_sidebar_resize(cx);
+            self.workspace_layout = Some(layout);
+        }
         let editor = div()
+            .id("workspace-content")
+            .debug_selector(|| "workspace-content".into())
             .flex_1()
             .min_w_0()
             .h_full()
             .overflow_hidden()
             .child(content);
-        if self.sidebar_collapsed {
+        if !left_visible && !right_visible {
             return editor.into_any_element();
         }
-        let Some(book) = self.notebooks.active.as_ref() else {
-            return editor.into_any_element();
-        };
-        let max_width = (window.viewport_size().width.as_f32() - 200.).clamp(160., 600.);
-        let width = notebook::normalize_sidebar_width(book.settings.sidebar_width).min(max_width);
-        let sidebar = if self.search_visible(cx) {
-            self.render_search_panel(cx).into_any_element()
-        } else {
-            self.render_sidebar(window, cx).into_any_element()
-        };
-        let sidebar = div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .min_w_0()
-            .overflow_hidden()
-            .when(
-                self.toolbar_region_visible(notebook::ToolbarRegion::Sidebar),
-                |view| view.child(self.render_sidebar_toolbar(window, cx)),
-            )
-            // The resize handle supplies the single-pixel divider.
-            .child(div().flex_1().min_h_0().overflow_hidden().child(sidebar));
-        h_resizable("sidebar-layout")
-            .with_state(&self.sidebar_resize)
-            .child(
+        let geometry = WorkspaceGeometry::new(
+            viewport_width.as_f32(),
+            self.notebooks
+                .active
+                .as_ref()
+                .filter(|_| left_visible)
+                .map(|book| book.settings.sidebar_width),
+            right_visible.then_some(self.right_panel_width),
+        );
+        let mut panels = h_resizable("sidebar-layout").with_state(&self.sidebar_resize);
+        if let Some(width) = geometry.left {
+            let sidebar = if self.search_visible(cx) {
+                self.render_search_panel(cx).into_any_element()
+            } else {
+                self.render_sidebar(window, cx).into_any_element()
+            };
+            let sidebar = div()
+                .id("workspace-sidebar")
+                .debug_selector(|| "workspace-sidebar".into())
+                .flex()
+                .flex_col()
+                .size_full()
+                .min_w_0()
+                .overflow_hidden()
+                .when(
+                    self.toolbar_region_visible(notebook::ToolbarRegion::Sidebar),
+                    |view| view.child(self.render_sidebar_toolbar(window, cx)),
+                )
+                .child(div().flex_1().min_h_0().overflow_hidden().child(sidebar));
+            panels = panels.child(
                 resizable_panel()
                     .size(px(width))
-                    .size_range(px(160.)..px(max_width))
+                    .size_range(px(geometry.min_side)..px(geometry.max_side))
                     .child(sidebar),
-            )
-            .child(
+            );
+        }
+        panels = panels.child(
+            resizable_panel()
+                .size_range(px(200.)..Pixels::MAX)
+                .child(editor),
+        );
+        if let Some(width) = geometry.right {
+            panels = panels.child(
                 resizable_panel()
-                    .size_range(px(200.)..Pixels::MAX)
-                    .child(editor),
+                    .size(px(width))
+                    .size_range(px(geometry.min_side)..px(geometry.max_side))
+                    .child(self.render_right_panel(window, cx)),
+            );
+        }
+        panels
+            .on_resize(
+                cx.listener(move |this, state: &Entity<ResizableState>, window, cx| {
+                    // Layout changes are projections, not preference changes. Only a completed
+                    // user resize from the current arrangement may save widths.
+                    if state != &this.sidebar_resize
+                        || this.document_interaction_blocked()
+                        || window.has_active_dialog(cx)
+                    {
+                        return;
+                    }
+                    let sizes = state.read(cx).sizes().clone();
+                    if left_visible && let Some(width) = sizes.first() {
+                        this.save_sidebar_width(width.as_f32(), cx);
+                    }
+                    if right_visible && let Some(width) = sizes.last() {
+                        this.right_panel_width = notebook::normalize_sidebar_width(width.as_f32());
+                    }
+                }),
             )
-            .on_resize(cx.listener(|this, state: &Entity<ResizableState>, _, cx| {
-                if let Some(width) = state.read(cx).sizes().first().copied() {
-                    this.save_sidebar_width(width.as_f32(), cx);
-                }
-            }))
             .into_any_element()
+    }
+}
+
+/// Reserve content space before fitting side panels. These projected widths are
+/// never persisted by a viewport resize or a panel visibility change.
+struct WorkspaceGeometry {
+    left: Option<f32>,
+    right: Option<f32>,
+    min_side: f32,
+    max_side: f32,
+}
+
+impl WorkspaceGeometry {
+    fn new(width: f32, left: Option<f32>, right: Option<f32>) -> Self {
+        let left = left.map(notebook::normalize_sidebar_width);
+        let right = right.map(notebook::normalize_sidebar_width);
+        let count = usize::from(left.is_some()) + usize::from(right.is_some());
+        let budget = (width - 200.).max(0.);
+        let total = left.unwrap_or_default() + right.unwrap_or_default();
+        let scale = if total > 0. {
+            (budget / total).min(1.)
+        } else {
+            1.
+        };
+        // Keep normal minimums whenever the projected panels fit them. A smaller
+        // proportional panel lowers the shared minimum only as far as necessary.
+        let min_side = [left, right]
+            .into_iter()
+            .flatten()
+            .map(|width| width * scale)
+            .fold(160., f32::min);
+        let max_side = (budget - count.saturating_sub(1) as f32 * min_side).clamp(min_side, 600.);
+        Self {
+            left: left.map(|width| width * scale),
+            right: right.map(|width| width * scale),
+            min_side,
+            max_side,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WorkspaceGeometry;
+
+    #[test]
+    fn side_panels_fit_proportionally_and_reserve_content() {
+        for width in [400., 520., 800., 1600.] {
+            for left in [None, Some(160.), Some(280.), Some(600.)] {
+                for right in [None, Some(160.), Some(280.), Some(600.)] {
+                    let geometry = WorkspaceGeometry::new(width, left, right);
+                    let total =
+                        geometry.left.unwrap_or_default() + geometry.right.unwrap_or_default();
+                    assert!(total <= width - 200. + 0.001);
+                    for side in [geometry.left, geometry.right].into_iter().flatten() {
+                        assert!(side >= geometry.min_side - 0.001);
+                        assert!(side <= geometry.max_side + 0.001);
+                    }
+                    if let (Some(left), Some(right)) = (left, right) {
+                        assert!(
+                            (geometry.left.unwrap() / geometry.right.unwrap() - left / right).abs()
+                                < 0.001
+                        );
+                    }
+                }
+            }
+        }
     }
 }

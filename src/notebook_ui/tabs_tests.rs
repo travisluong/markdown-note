@@ -26,6 +26,8 @@ fn assert_content_fills_below_tabs(selector: &str, cx: &mut VisualTestContext) {
     let tolerance = gpui::px(1.);
     assert!(pane.size.height > gpui::px(200.));
     assert!(tabs.size.height > gpui::px(0.));
+    let toolbar = cx.debug_bounds("content-toolbar").unwrap();
+    assert!((toolbar.bottom() - pane.top()).abs() <= tolerance);
     assert!((tabs.top() - pane.top()).abs() <= tolerance);
     assert!(
         (content.top() - tabs.bottom()).abs() <= tolerance,
