@@ -1,5 +1,8 @@
 # Architecture implementation progress
 
+Historical verification records describe development snapshots and do not replace
+current verification of the source.
+
 The full objective is the staged plan in [the audit](architecture-audit.md):
 complete the architectural improvements, improve performance, and preserve
 behavior, prioritizing Windows. Completion requires current implementation and
@@ -509,21 +512,16 @@ proc-macro-error2 future-compatibility warning remains.
 ## Settings field layout (2026-09-12)
 Settings controls use explicit available widths and nonshrinking text fields. Below 560 px, navigation stacks above the form. Placeholders document delay, extensions and date syntax. Headless settings suite: 14 passed, including 800/480 px layout with invalid input. Native UI validation remains user-run.
 
-
 ## Logical line movement (2026-09-12)
 Added document-only Ctrl+Up/Down (Command on macOS), palette commands and Help entries through Editor. Pure tests cover UTF-8, selected blocks, CRLF and EOF; TestPlatform covers Source/Live, undo and redo.
-
 
 ## Inline code styling (2026-09-12)
 Source-preserving inline-code spans now share the existing GFM worker and exact-revision acceptance. Both rendered modes use the fenced-code muted background. Three focused tests passed for Unicode, multi-backticks, multiline content, literal markers, active-line reveal and stale parsing.
 
-
 ## Live-preview list dragging (2026-09-12)
 Implemented cross-list subtree moves with indentation/bullet adaptation, preserved task state, guarded source transactions, insertion preview and edge scrolling. Pure tests cover subtrees/nesting/EOF/blockquote rejection; three TestPlatform transaction tests pass including real marker geometry, drag-versus-click, undo/redo, reversed Unicode selection, Escape and stale edits. Native pointer validation remains user-run.
 
-
 List-drag final review: four pure reorder tests passed, including lazy continuation paragraphs moved into nested lists and CRLF files without a final newline. Accepted edits also cancel pending drag feedback immediately. Strict all-target Clippy passes.
-
 
 ## Sidebar context menu and final editor verification (2026-09-12)
 
@@ -1298,7 +1296,6 @@ Windows headless verification:
   Transient Windows LNK1104 test-executable failures cleared on retry. No native
   application or desktop interaction was used; native visual validation remains
   user-run. The generic vendored dialog implementation was not changed.
-
 
 ## Shared notes in current tabs — 2026-09-15
 
@@ -2221,7 +2218,6 @@ and whitespace checks passed. Transient Windows LNK1104 test-executable access
 errors cleared on retry. No desktop interaction or native application launch
 occurred. The unrelated Cargo.lock change is excluded from this feature commit.
 
-
 ## 2026-09-18: workspace toolbar regions
 
 - Moved sidebar controls into the sidebar and navigation/formatting into the content
@@ -2236,7 +2232,6 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   binary. Integration tests use `--target-dir target/toolbar-validation --config
   'build.build-dir="target"'` to reuse intermediate artifacts and redirect the final
   binary without touching the running application.
-
 
 ## 2026-09-18: resizable terminal placeholder
 
@@ -2298,3 +2293,11 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   used. macOS/Linux code and tests are included in the existing validation matrix,
   but those hosts are unavailable locally and have not been verified in this task.
   Native visual validation remains for the user.
+
+### Terminal settings tab
+
+- Moved Windows shell selection into a dedicated Terminal section after General,
+  using a synchronized select control and the existing preference guards.
+- Verification: all 3 terminal_shell TestPlatform tests passed, including dropdown
+  confirmation, effective-value synchronization, narrow layout, persistence and
+  stale-form rejection. No desktop interaction was used.

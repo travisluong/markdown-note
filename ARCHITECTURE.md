@@ -386,12 +386,9 @@ Ordered line moves normalize affected sibling lists with the original list start
 through list_edit, including selection offsets and continuation indentation.
 The swap and normalization share one isolated history entry in Source and Live.
 
-
 Inline-code ranges are derived by the shared preview worker. TextWrapper invalidates them on edits and accepts exact revisions; mapped presentation and background painting retain UTF-8 source coordinates.
 
-
 List item ranges share preview analysis and are valid only for their exact revision. InputState owns pending marker presses and drag state; list_reorder owns source transforms. Checkbox toggles happen on release unless dragging starts; successful drops emit one normal isolated editor edit.
-
 
 Sidebar context menus live in `notebook_ui/entry_menu.rs`; each target captures
 notebook root, explorer generation and relative path. File operations live in
@@ -733,7 +730,8 @@ The accepted session Close effect awaits terminal cleanup before removing the
 window; cancelled document close preserves the terminal.
 
 Notebook terminal.windows_shell defaults to powershell, with git_bash as
-the other Windows choice; standalone settings remain session-only. Settings uses
+the other Windows choice; standalone settings remain session-only. The Terminal
+settings section owns the shell dropdown and synchronizes its effective selection. Settings uses
 the existing form-scope guards and ordered writer. Unix uses the user's shell.
 Terminal focus consumes shell keys independently of document commands; the host
 retains Ctrl+backtick, and modal/busy input guards are checked at dispatch time.

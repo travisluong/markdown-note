@@ -1,8 +1,9 @@
 //! Application-owned menus and platform title-bar regions.
 use crate::{
-    About, CloseTab, CommandPalette, GoTo, KeyboardShortcuts, LivePreview, MenuKind, NavigateBack,
-    NavigateForward, NewNote, NewTab, Next, Notes, Open, OpenSettings, ReadingView, ReplaceFile,
-    Save, SearchAllFiles, ShowExplorer, SourceMode, ToggleSidebar, ViewMode,
+    About, CloseTab, CommandPalette, GoTo, KeyboardShortcuts, LivePreview, MenuKind,
+    NavigateBack, NavigateForward, NewNote, NewTab, Next, Notes, Open,
+    OpenSettings, ReadingView, ReplaceFile, Save, SearchAllFiles, ShowExplorer, SourceMode,
+    ToggleSidebar, ViewMode,
 };
 use gpui::{
     AnyElement, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement, MouseButton,

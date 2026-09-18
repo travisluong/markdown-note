@@ -6,7 +6,7 @@ starts one shell. Closing the panel hides it; its shell continues running.
 Stop terminates the shell and keeps the output visible. Restart replaces the
 shell and output. Shell exit leaves an exit status; launch errors offer Retry.
 
-Windows General Settings offers PowerShell and Git Bash. The choice is saved
+The Terminal settings tab offers a Windows shell dropdown with PowerShell and Git Bash. The choice is saved
 per notebook, or retained only for the session without a notebook. It takes
 effect on the next start or explicit Restart, never on a running shell.
 PowerShell prefers pwsh on PATH then Windows PowerShell. Git Bash is detected

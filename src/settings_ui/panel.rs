@@ -99,6 +99,7 @@ pub(super) struct SettingsValues {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
     General,
+    Terminal,
     Toolbar,
     Font,
     Templates,
@@ -106,6 +107,11 @@ enum Section {
 }
 
 type FontPicker = Entity<SelectState<SearchableVec<String>>>;
+type ChoicePicker = Entity<SelectState<Vec<&'static str>>>;
+const SHELL_OPTIONS: [(mithril::terminal::WindowsShell, &str); 2] = [
+    (mithril::terminal::WindowsShell::Powershell, "PowerShell"),
+    (mithril::terminal::WindowsShell::GitBash, "Git Bash"),
+];
 
 pub(crate) struct SettingsPanel {
     values: SettingsValues,
@@ -125,6 +131,7 @@ pub(crate) struct SettingsPanel {
     delay_error: Option<String>,
     colors: [Entity<ColorPickerState>; 6],
     fonts: [FontPicker; 3],
+    terminal_shell: ChoicePicker,
     _subscriptions: Vec<Subscription>,
 }
 impl EventEmitter<SettingsIntent> for SettingsPanel {}
@@ -259,6 +266,29 @@ impl SettingsPanel {
             ));
             picker
         });
+        let terminal_shell = cx.new(|cx| {
+            SelectState::new(
+                SHELL_OPTIONS
+                    .iter()
+                    .map(|(_, label)| *label)
+                    .collect::<Vec<_>>(),
+                SHELL_OPTIONS
+                    .iter()
+                    .position(|(shell, _)| *shell == values.terminal.windows_shell)
+                    .map(|row| IndexPath::default().row(row)),
+                window,
+                cx,
+            )
+        });
+        subscriptions.push(cx.subscribe(&terminal_shell, |this, _, event, cx| {
+            let SelectEvent::Confirm(value) = event;
+            if let Some((shell, _)) = SHELL_OPTIONS
+                .iter()
+                .find(|(_, label)| Some(label) == value.as_ref())
+            {
+                this.emit_intent(SettingsIntent::TerminalShell(*shell), cx);
+            }
+        }));
         Self {
             values,
             section: Section::General,
@@ -278,6 +308,7 @@ impl SettingsPanel {
             delay_error: None,
             colors,
             fonts,
+            terminal_shell,
             _subscriptions: subscriptions,
         }
     }
@@ -289,6 +320,16 @@ impl SettingsPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let shell = SHELL_OPTIONS
+            .iter()
+            .find(|(shell, _)| *shell == values.terminal.windows_shell)
+            .unwrap()
+            .1;
+        if self.terminal_shell.read(cx).selected_value() != Some(&shell) {
+            self.terminal_shell.update(cx, |picker, cx| {
+                picker.set_selected_value(&shell, window, cx)
+            });
+        }
         let old_palette = self.values.appearance.palette(self.values.startup_dark);
         let palette = values.appearance.palette(values.startup_dark);
         if old_palette != palette {

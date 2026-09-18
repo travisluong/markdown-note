@@ -1,7 +1,7 @@
 use super::{FontSizeRole, Section, SettingsIntent, SettingsPanel};
 use gpui::{App, Context, Entity, IntoElement, Render, Window, div, prelude::*, px};
 use gpui_component::{
-    ActiveTheme, Disableable, Selectable, Sizable,
+    ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
     color_picker::ColorPicker,
     dialog::Dialog,
@@ -109,19 +109,6 @@ impl Render for SettingsPanel {
                 div().text_sm().text_color(cx.theme().muted_foreground)
                     .child("Waiting for settings to finish saving…"),
             ))
-            .when(cfg!(windows), |body| {
-                let mut body = body.child("Terminal shell");
-                for (id, label, shell) in [
-                    ("terminal-powershell", "PowerShell", mithril::terminal::WindowsShell::Powershell),
-                    ("terminal-git-bash", "Git Bash", mithril::terminal::WindowsShell::GitBash),
-                ] {
-                    body = body.child(Button::new(id).label(label).selected(self.values.terminal.windows_shell == shell)
-                        .disabled(self.values.busy)
-                        .on_click(cx.listener(move |this, _, _, cx| this.emit_intent(SettingsIntent::TerminalShell(shell), cx))));
-                }
-                body.child(div().text_sm().text_color(cx.theme().muted_foreground)
-                    .child("Applies on the next terminal start or Restart. The current shell keeps running."))
-            })
             .child("Editor")
             .child(Switch::new("centered-editor").label("Centered editor").checked(appearance.centered_editor)
                 .disabled(self.values.busy)
@@ -164,6 +151,16 @@ impl Render for SettingsPanel {
                 }))
             .when_some(self.excluded_patterns_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
             .when_some(self.values.notice.clone(), |view, notice| view.child(div().text_sm().child(notice)));
+        let terminal_body = div()
+            .w_full().min_w_0().flex().flex_col().gap_3()
+            .child(self.values.subtitle.clone())
+            .when(cfg!(windows), |body| body
+                .child("Terminal shell")
+                .child(div().debug_selector(|| "terminal-shell-picker".into()).w_full().min_w_0().h_8().flex().flex_shrink_0()
+                    .child(Select::new(&self.terminal_shell).w_full().disabled(self.values.busy)))
+                .child(div().text_sm().text_color(cx.theme().muted_foreground)
+                    .child("Applies on the next terminal start or Restart. The current shell keeps running.")))
+            .when(!cfg!(windows), |body| body.child("Uses your system shell ($SHELL, or /bin/sh)."));
         let templates_body = div()
             .w_full()
             .min_w_0()
@@ -288,6 +285,7 @@ impl Render for SettingsPanel {
         }
         for (id, section, label) in [
             ("settings-general", Section::General, "General"),
+            ("settings-terminal", Section::Terminal, "Terminal"),
             ("settings-toolbar", Section::Toolbar, "Toolbar"),
             ("settings-templates", Section::Templates, "Templates"),
             ("settings-font", Section::Font, "Font"),
@@ -303,6 +301,7 @@ impl Render for SettingsPanel {
         }
         let content = match self.section {
             Section::General => body.w_full().min_w_0().into_any_element(),
+            Section::Terminal => terminal_body.into_any_element(),
             Section::Toolbar => toolbar_body.into_any_element(),
             Section::Font => font_body.into_any_element(),
             Section::Templates => templates_body.into_any_element(),

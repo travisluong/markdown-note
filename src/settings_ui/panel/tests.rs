@@ -2229,6 +2229,7 @@ fn modal_settings_drag_resize_and_reopen_keep_clearance(cx: &mut TestAppContext)
     let form = panel(&notes, cx);
     for section in [
         super::Section::General,
+        super::Section::Terminal,
         super::Section::Toolbar,
         super::Section::Font,
         super::Section::Templates,
@@ -3011,5 +3012,49 @@ fn terminal_shell_without_notebook_is_session_only(cx: &mut TestAppContext) {
                 WindowsShell::GitBash
             );
         })
+    });
+}
+
+#[gpui::test]
+fn terminal_shell_dropdown_confirms_and_syncs_effective_selection(cx: &mut TestAppContext) {
+    use gpui_component::select::SelectEvent;
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    let picker = cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Terminal, cx)
+        });
+        form.read(cx).terminal_shell.clone()
+    });
+    cx.update(|_, cx| {
+        assert_eq!(picker.read(cx).selected_value(), Some(&"PowerShell"));
+        picker.update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("Git Bash"))));
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).terminal_settings().windows_shell,
+            mithril::terminal::WindowsShell::GitBash
+        );
+        assert_eq!(picker.read(cx).selected_value(), Some(&"Git Bash"));
+        assert!(notes.read(cx).terminal.is_none());
+    });
+    for width in [1000., 400.] {
+        cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(650.)));
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("settings-navigation").is_some());
+        assert_eq!(
+            cx.debug_bounds("terminal-shell-picker").is_some(),
+            cfg!(windows)
+        );
+    }
+    cx.update(|window, cx| {
+        form.update(cx, |form, cx| {
+            let mut values = form.values.clone();
+            values.terminal.windows_shell = mithril::terminal::WindowsShell::Powershell;
+            form.sync_effective(values, window, cx);
+        });
+        assert_eq!(picker.read(cx).selected_value(), Some(&"PowerShell"));
     });
 }
