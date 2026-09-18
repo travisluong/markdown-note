@@ -53,3 +53,12 @@ Terminal completion keys:
   This suppresses ancestor focus traversal before raw key dispatch, allowing the
   existing guarded key handler to send HT/backtab to the shell. Other contexts
   retain normal focus navigation; disabled or modal-blocked terminals send nothing.
+
+Multiline prompt key:
+- Encode Shift+Enter as CSI 13;2u instead of collapsing it into Enter's CR.
+  This is an explicit mapping for prompt editors that recognize CSI-u; it neither
+  negotiates nor advertises full kitty keyboard support. Unmodified Enter and
+  Ctrl+J retain CR/LF; other modifier combinations retain their existing behavior.
+- Encoding follows https://sw.kovidgoyal.net/kitty/keyboard-protocol/ (Enter=13,
+  Shift modifier=2). TestPlatform verifies exact bytes, focus, unchanged document
+  contents, and modal/disabled-input guards.

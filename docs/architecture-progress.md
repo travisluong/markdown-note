@@ -2340,3 +2340,17 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   all-target Clippy with editor-diagnostics passed. Integration used the separate
   terminal-settings-validation output directory and ran outside the sandbox for
   the existing ConPTY Ctrl+C scenario. No desktop interaction was used.
+
+### Terminal Shift+Enter distinction
+
+- Reproduced the terminal collapsing Shift+Enter and Enter into the same CR byte.
+  Shift+Enter now emits CSI 13;2u, preserving the key distinction used by multiline
+  prompt editors. Enter, Ctrl+J and completion keys retain their existing encodings;
+  the terminal does not advertise unsupported full keyboard-protocol negotiation.
+- The new TestPlatform regression failed before the fix and passed afterward,
+  checking exact input bytes, retained focus and unchanged document contents.
+  Existing modal and disabled-input coverage now includes Shift+Enter.
+- Verification: all 325 application tests passed with editor-diagnostics, along
+  with cargo check --locked --offline, cargo fmt --check, explicit vendor rustfmt,
+  and strict all-target Clippy. No desktop interaction or live Claude/Codex prompt
+  submission was performed; end-to-end behavior in those CLIs remains manual.

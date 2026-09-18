@@ -1382,7 +1382,7 @@ fn terminal_input_rechecks_modal_authority(cx: &mut TestAppContext) {
         // rather than relying only on the dialog's normal focus handling.
         panel.read(cx).focus(window, cx);
     });
-    cx.simulate_keystrokes("x ctrl-c tab shift-tab");
+    cx.simulate_keystrokes("x ctrl-c tab shift-tab shift-enter");
     cx.run_until_parked();
     cx.update(|_, cx| assert!(panel.read(cx).fixture_input.lock().unwrap().is_empty()));
 }
@@ -1417,7 +1417,7 @@ fn terminal_tab_completion_keeps_focus_and_reaches_the_shell(cx: &mut TestAppCon
         view.update(cx, |view, _| view.set_input_enabled(false));
         panel.read(cx).fixture_input.lock().unwrap().clear();
     });
-    cx.simulate_keystrokes("tab shift-tab");
+    cx.simulate_keystrokes("tab shift-tab shift-enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
         assert!(panel.read(cx).fixture_input.lock().unwrap().is_empty());
@@ -1433,5 +1433,26 @@ fn terminal_tab_completion_keeps_focus_and_reaches_the_shell(cx: &mut TestAppCon
             "Tab outside the terminal still navigates focus"
         );
         assert!(panel.read(cx).fixture_input.lock().unwrap().is_empty());
+    });
+}
+
+#[gpui::test]
+fn terminal_shift_enter_is_distinct_from_submit(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    click("toolbar-terminal", cx);
+    let (panel, view) = cx.update(|_, cx| {
+        let panel = notes.read(cx).terminal.clone().unwrap();
+        let view = panel.read(cx).view.clone().unwrap();
+        (panel, view)
+    });
+    cx.simulate_keystrokes("shift-enter enter ctrl-j tab shift-tab");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert_eq!(
+            *panel.read(cx).fixture_input.lock().unwrap(),
+            b"\x1b[13;2u\r\n\t\x1b[Z"
+        );
+        assert!(view.read(cx).focus_handle().is_focused(window));
+        assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶");
     });
 }

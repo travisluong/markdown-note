@@ -31,7 +31,9 @@ The panel width remains session-only and uses the existing resize geometry.
 
 While terminal focus is active, keys go to the shell. Tab and Shift+Tab stay in
 the terminal for shell completion and reverse completion (when supported by the
-shell). Ctrl+C interrupts a
+shell). Shift+Enter sends a distinct modified-Enter sequence (CSI-u) for multiline
+prompts in applications that recognize it; ordinary Enter still sends carriage
+return. Ctrl+C interrupts a
 foreground command. Paste uses Ctrl+Shift+V on Windows/Linux and Cmd+V on macOS,
 respecting bracketed-paste mode. Pasting is limited to 1 MiB; a stalled input
 queue reports an error. Modal dialogs block input but output continues.
@@ -39,7 +41,7 @@ The theme, monospace font and content font size follow notebook appearance.
 
 The trial does not provide selection/copy, scrollback navigation, terminal
 search, mouse reporting, shell integration, multiple sessions, splits, custom
-shell paths or session restoration across app restarts. Advanced keyboard
+shell paths or session restoration across app restarts. Full advanced keyboard
 protocols and IME composition are not supported by this component.
 
 ## Ownership and shutdown

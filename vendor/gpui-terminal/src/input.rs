@@ -10,6 +10,7 @@
 //! | Key | Sequence | Notes |
 //! |-----|----------|-------|
 //! | Enter | `\r` (0x0D) | Carriage return |
+//! | Shift+Enter | `\x1b[13;2u` | Distinct modified Enter for multiline prompts |
 //! | Escape | `\x1b` (0x1B) | ESC |
 //! | Backspace | `\x7f` (0x7F) | DEL |
 //! | Tab | `\t` (0x09) | Horizontal tab |
@@ -138,6 +139,17 @@ pub fn keystroke_to_bytes(keystroke: &Keystroke, mode: TermMode) -> Option<Vec<u
                 return Some(b"\x00".to_vec()); // Ctrl+Space = NUL
             }
             return Some(b" ".to_vec());
+        }
+        // Preserve Shift+Enter as a distinct key for terminal prompt editors.
+        // CSI-u uses Enter's codepoint (13) and Shift's modifier value (2).
+        // This explicit mapping does not advertise full kitty keyboard support.
+        "enter"
+            if keystroke.modifiers.shift
+                && !keystroke.modifiers.control
+                && !keystroke.modifiers.alt
+                && !keystroke.modifiers.platform =>
+        {
+            return Some(b"\x1b[13;2u".to_vec());
         }
         "enter" => return Some(b"\r".to_vec()),
         "escape" => return Some(b"\x1b".to_vec()),

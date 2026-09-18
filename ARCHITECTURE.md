@@ -745,6 +745,9 @@ Terminal focus consumes shell keys independently of document commands; the host
 retains Ctrl+backtick, and modal/busy input guards are checked at dispatch time.
 The terminal context unbinds Root's Tab/Shift+Tab focus actions so the guarded
 raw key handler sends shell completion bytes while retaining terminal focus.
+Shift+Enter has an explicit CSI-u mapping (ESC [ 13 ; 2 u) so prompt editors can
+distinguish multiline input from Enter's carriage return. This does not enable
+or advertise the full kitty keyboard protocol.
 
 vendor/gpui-terminal is upstream 0.1.0 with the patches recorded in
 TERMINAL-PATCH.md, selected by Cargo's patch table. Preserve its licenses and
