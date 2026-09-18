@@ -246,6 +246,7 @@ impl Notes {
 
     fn settings_values(&self) -> SettingsValues {
         SettingsValues {
+            terminal: self.terminal_settings(),
             toolbar: self.toolbar_settings(),
             appearance: self.appearance(),
             autosave: self.autosave_settings(),
@@ -574,6 +575,15 @@ impl Notes {
                     self.persist_notebooks(cx);
                 } else {
                     self.session_toolbar.set_enabled(item, enabled);
+                }
+                false
+            }
+            SettingsIntent::TerminalShell(shell) => {
+                if let Some(book) = &mut self.notebooks.active {
+                    book.settings.terminal.windows_shell = shell;
+                    self.persist_notebooks(cx);
+                } else {
+                    self.session_terminal.windows_shell = shell;
                 }
                 false
             }

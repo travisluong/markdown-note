@@ -339,6 +339,7 @@ impl Notes {
             }
             Command::SearchFile => self.search_current_file(window, cx),
             Command::ToggleSidebar => self.toggle_sidebar(window, cx),
+            Command::ToggleTerminal => self.toggle_right_panel(window, cx),
             Command::ShowExplorer => self.show_explorer(window, cx),
             Command::SearchAllFiles => self.open_search_all(window, cx),
             Command::ReplaceFile => self.tabs.active.editor.find_and_replace(window, cx),

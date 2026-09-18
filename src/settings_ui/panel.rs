@@ -38,6 +38,7 @@ pub(super) enum ColorRole {
 
 #[derive(Clone, Debug)]
 pub(super) enum SettingsIntent {
+    TerminalShell(mithril::terminal::WindowsShell),
     CenteredEditor(bool),
     CenteredEditorWidth(u16),
     ResetToolbar,
@@ -75,6 +76,7 @@ impl SettingsIntent {
 /// A display snapshot, never written back wholesale or used as disk evidence.
 #[derive(Clone, PartialEq)]
 pub(super) struct SettingsValues {
+    pub terminal: mithril::terminal::TerminalSettings,
     pub toolbar: notebook::ToolbarSettings,
     pub appearance: notebook::Appearance,
     pub autosave: notebook::Autosave,

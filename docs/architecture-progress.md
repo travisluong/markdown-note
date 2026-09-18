@@ -2263,3 +2263,38 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   identity/selection/undo, focus, modal/busy guards, real resize gestures, preferred
   width retention, notebook/tab changes, and both panels at 400 px window width.
   No native application or desktop testing was performed; visual review remains manual.
+
+## 2026-09-18: single-terminal trial
+
+- Replaced the right-panel placeholder with a retained gpui-terminal 0.1.0 view
+  over portable-pty 0.9.0. GPUI remains pinned to 0.2.2. Launch, read, write,
+  resize, stop, reap and close work stay off the UI thread; bounded channels and
+  yielding output batches keep large output from monopolizing rendering.
+- Added notebook-scoped PowerShell/Git Bash settings on Windows, session-only
+  defaults without a notebook, shell discovery and actionable launch errors.
+  Existing settings deserialize with PowerShell; Unix keeps the stored Windows
+  preference while using the user's shell. Running sessions retain their launch
+  directory and shell when notebooks/preferences change.
+- Added Restart/Stop/Retry, retained output and exit status, Ctrl+backtick and
+  command-palette discovery, terminal input isolation, input-time modal guards,
+  theme/font updates and bracketed paste. Accepted window close waits for cleanup;
+  late launches cannot replace newer sessions. Existing document-close cancellation
+  still leaves the terminal intact.
+- Vendored source includes original MIT/Apache licenses, source revision metadata
+  and TERMINAL-PATCH.md. Component patches fix protocol replies, zero-size resize,
+  clipping, cursor/inverse/combining-character rendering, paste and output buffering.
+  Selection/copy, scrollback navigation, splits, multiple terminals and advanced
+  input protocols remain deferred; docs/terminal.md records usage and limits.
+- Validation on Windows: cargo check --locked --offline, cargo fmt --check,
+  cargo clippy --locked --offline --all-targets --features editor-diagnostics
+  -- -D warnings, and the complete cargo test --locked --offline
+  --features editor-diagnostics suite passed. The 7 terminal integration tests
+  include real PowerShell and installed Git Bash startup, cwd, observed 120x40
+  geometry, Ctrl+C, exit/reaping, Stop/Drop and component paste/parser checks.
+  TestPlatform coverage includes shell preference persistence/scope, lazy launch,
+  retention, restart, focus, shortcuts, modal authority and stale launch results.
+- Real PTY signal tests ran outside the Codex sandbox after its restrictions
+  prevented Ctrl+C delivery; no native application windows or desktop input were
+  used. macOS/Linux code and tests are included in the existing validation matrix,
+  but those hosts are unavailable locally and have not been verified in this task.
+  Native visual validation remains for the user.

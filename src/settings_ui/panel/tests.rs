@@ -2931,3 +2931,85 @@ fn toolbar_visibility_persists_only_for_the_active_notebook(cx: &mut TestAppCont
             .visible
     );
 }
+
+#[gpui::test]
+fn terminal_shell_settings_persist_per_notebook_and_reject_stale_forms(cx: &mut TestAppContext) {
+    use mithril::terminal::WindowsShell;
+    let (fixture, notes, cx) = fixture(cx, true, false);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::TerminalShell(WindowsShell::GitBash),
+        cx,
+    );
+    assert_eq!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .terminal
+            .windows_shell,
+        WindowsShell::GitBash
+    );
+    assert_eq!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .terminal
+            .windows_shell,
+        WindowsShell::Powershell
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert!(
+                this.terminal.is_none(),
+                "changing the shell never launches a process"
+            );
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::TerminalShell(WindowsShell::GitBash),
+                window,
+                cx,
+            );
+            assert_eq!(
+                this.terminal_settings().windows_shell,
+                WindowsShell::Powershell
+            );
+            assert!(this.settings_panel.is_none());
+        })
+    });
+}
+
+#[gpui::test]
+fn terminal_shell_without_notebook_is_session_only(cx: &mut TestAppContext) {
+    use mithril::terminal::WindowsShell;
+    let (fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::TerminalShell(WindowsShell::GitBash),
+        cx,
+    );
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            assert_eq!(this.session_terminal.windows_shell, WindowsShell::GitBash);
+            assert!(this.terminal.is_none());
+            this.notebooks.active = Some(fixture.first.clone());
+            assert_eq!(
+                this.terminal_settings().windows_shell,
+                WindowsShell::Powershell
+            );
+            this.notebooks.active = None;
+            assert_eq!(
+                this.terminal_settings().windows_shell,
+                WindowsShell::GitBash
+            );
+        })
+    });
+}

@@ -23,6 +23,7 @@ mod search_ui;
 mod settings_ui;
 mod sidebar_ui;
 mod tabs;
+mod terminal_ui;
 mod title_bar_ui;
 mod toolbar_ui;
 
@@ -69,6 +70,7 @@ actions!(
         NavigateBack,
         NavigateForward,
         ToggleSidebar,
+        ToggleTerminal,
         ShowExplorer,
         CloseReadingFind,
         FileMenu,
@@ -194,6 +196,9 @@ struct Notes {
     notebook_cache: std::collections::HashMap<PathBuf, notebook::Notebook>,
     sidebar_collapsed: bool,
     right_panel_open: bool,
+    terminal: Option<Entity<terminal_ui::TerminalPanel>>,
+    terminal_subscription: Option<Subscription>,
+    session_terminal: mithril::terminal::TerminalSettings,
     right_panel_width: f32,
     workspace_layout: Option<(bool, bool, Pixels)>,
     content_toolbar_width: Pixels,
@@ -246,6 +251,9 @@ impl Notes {
             notebook_cache: Default::default(),
             sidebar_collapsed: false,
             right_panel_open: false,
+            terminal: None,
+            terminal_subscription: None,
+            session_terminal: Default::default(),
             right_panel_width: 280.,
             workspace_layout: None,
             content_toolbar_width: window.viewport_size().width,
@@ -669,6 +677,9 @@ impl Render for Notes {
         div()
             .id("notes")
             .key_context("Notes")
+            .on_action(cx.listener(|this, _: &ToggleTerminal, window, cx| {
+                this.toggle_right_panel(window, cx)
+            }))
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &EditLink, window, cx| this.edit_link(window, cx)))
             .on_action(cx.listener(|this, _: &Search, window, cx| {

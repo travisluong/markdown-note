@@ -24,6 +24,7 @@ pub(super) fn command_action(command: Command) -> Option<(Box<dyn Action>, &'sta
         Command::Forward => (Box::new(NavigateForward), "Notes"),
         Command::SearchFile => (Box::new(Search), "Notes"),
         Command::ToggleSidebar => (Box::new(ToggleSidebar), "Notes"),
+        Command::ToggleTerminal => (Box::new(ToggleTerminal), "Notes"),
         Command::ShowExplorer => (Box::new(ShowExplorer), "Notes"),
         Command::SearchAllFiles => (Box::new(SearchAllFiles), "Notes"),
         Command::ReplaceFile => (Box::new(ReplaceFile), "Notes"),
@@ -73,7 +74,12 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
     macro_rules! shortcut {
         ($key:literal, $action:expr, $context:literal, $group:literal, $description:literal) => {{
             let key = platform_shortcut($key, macos);
-            let binding = KeyBinding::new(&key, $action, Some($context));
+            let context = if $context == "Notes" {
+                "Notes && !Terminal"
+            } else {
+                $context
+            };
+            let binding = KeyBinding::new(&key, $action, Some(context));
             Shortcut {
                 key,
                 description: $description,
@@ -83,6 +89,12 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
         }};
     }
     vec![
+        Shortcut {
+            key: "ctrl-`".into(),
+            description: "Toggle terminal",
+            group: "Terminal",
+            binding: KeyBinding::new("ctrl-`", ToggleTerminal, Some("Notes")),
+        },
         shortcut!(
             "f2",
             RenameEntry,
@@ -486,6 +498,7 @@ mod tests {
             (Command::Forward, "alt-right", "Notes"),
             (Command::SearchFile, "ctrl-f", "Notes"),
             (Command::ToggleSidebar, "ctrl-shift-b", "Notes"),
+            (Command::ToggleTerminal, "ctrl-`", "Notes"),
             (Command::ShowExplorer, "ctrl-shift-e", "Notes"),
             (Command::SearchAllFiles, "ctrl-shift-f", "Notes"),
             (Command::ReplaceFile, "ctrl-h", "Notes"),
@@ -506,7 +519,11 @@ mod tests {
                     assert_eq!(mapped.unwrap().1, *context, "{command:?}");
                     assert_eq!(
                         binding.unwrap().key,
-                        super::platform_shortcut(key, macos),
+                        if command == Command::ToggleTerminal {
+                            key.to_string()
+                        } else {
+                            super::platform_shortcut(key, macos)
+                        },
                         "{command:?}"
                     );
                 } else {

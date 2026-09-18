@@ -1051,7 +1051,9 @@ fn settle_layout(cx: &mut VisualTestContext) {
 }
 
 #[gpui::test]
-fn right_panel_toggle_retains_document_focus_selection_and_history(cx: &mut TestAppContext) {
+fn right_panel_toggle_focuses_terminal_and_retains_document_selection_and_history(
+    cx: &mut TestAppContext,
+) {
     let (_dir, notes, cx) = fixture(cx);
     let editor = cx.update(|_, cx| {
         let this = notes.read(cx);
@@ -1067,7 +1069,18 @@ fn right_panel_toggle_retains_document_focus_selection_and_history(cx: &mut Test
         assert!(this.right_panel_open);
         assert_eq!(this.editor.id(), editor);
         assert_eq!(this.editor.selection(cx), selection);
-        assert!(this.editor.is_focused(window, cx));
+        assert!(
+            this.terminal
+                .as_ref()
+                .unwrap()
+                .read(cx)
+                .view
+                .as_ref()
+                .unwrap()
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
     });
     let panel = cx.debug_bounds("right-panel").unwrap();
     let toolbar = cx.debug_bounds("content-toolbar").unwrap();
@@ -1267,4 +1280,109 @@ fn right_panel_explicit_narrow_resize_is_retained(cx: &mut TestAppContext) {
     click("toolbar-terminal", cx);
     settle_layout(cx);
     assert_eq!(cx.debug_bounds("right-panel").unwrap().size.width, px(180.));
+}
+
+#[gpui::test]
+fn terminal_is_lazy_retained_and_consumes_shell_shortcuts(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys(
+            crate::help_ui::app_shortcuts()
+                .into_iter()
+                .map(|s| s.binding),
+        )
+    });
+    let (_dir, notes, cx) = fixture(cx);
+    cx.update(|_, cx| assert!(notes.read(cx).terminal.is_none()));
+    cx.simulate_keystrokes("ctrl-`");
+    cx.run_until_parked();
+    let (panel, view) = cx.update(|_, cx| {
+        let panel = notes.read(cx).terminal.clone().unwrap();
+        let view = panel.read(cx).view.clone().unwrap();
+        (panel, view)
+    });
+    cx.simulate_keystrokes("ctrl-c ctrl-s ctrl-w ctrl-b up f5");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(this.editor.text(cx).as_ref(), "café\n茶");
+        assert_eq!(this.tabs.ids().len(), 1);
+        assert!(this.right_panel_open);
+        let input = panel.read(cx).fixture_input.lock().unwrap().clone();
+        assert_eq!(input, b"\x03\x13\x17\x02\x1b[A\x1b[15~");
+    });
+    cx.simulate_keystrokes("ctrl-`");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(!notes.read(cx).right_panel_open);
+        assert!(notes.read(cx).editor.is_focused(window, cx));
+    });
+    cx.simulate_keystrokes("ctrl-`");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert_eq!(notes.read(cx).terminal, Some(panel.clone()));
+        assert_eq!(panel.read(cx).view, Some(view.clone()));
+        assert!(view.read(cx).focus_handle().is_focused(window));
+    });
+}
+
+#[gpui::test]
+fn terminal_stop_retains_output_and_restart_uses_current_notebook(cx: &mut TestAppContext) {
+    let (dir, notes, cx) = fixture(cx);
+    let first = notebook::Notebook::open(&dir.path().join("terminal-first"), true).unwrap();
+    let mut second = notebook::Notebook::open(&dir.path().join("terminal-second"), true).unwrap();
+    second.settings.terminal.windows_shell = mithril::terminal::WindowsShell::GitBash;
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(first.clone());
+            this.toggle_right_panel(window, cx);
+        })
+    });
+    settle_layout(cx);
+    let (panel, view) = cx.update(|_, cx| {
+        let panel = notes.read(cx).terminal.clone().unwrap();
+        (panel.clone(), panel.read(cx).view.clone().unwrap())
+    });
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(second.clone());
+            cx.notify();
+        })
+    });
+    cx.update(|_, cx| {
+        let launch = panel.read(cx).last_launch.as_ref().unwrap();
+        assert_eq!(
+            launch.0.windows_shell,
+            mithril::terminal::WindowsShell::Powershell
+        );
+        assert_eq!(launch.1.as_ref().unwrap(), &first.root);
+        panel.update(cx, |panel, cx| panel.stop(cx));
+        assert_eq!(panel.read(cx).view, Some(view.clone()));
+    });
+    cx.refresh().unwrap();
+    click("terminal-restart", cx);
+    cx.update(|_, cx| {
+        let launch = panel.read(cx).last_launch.as_ref().unwrap();
+        assert_eq!(
+            launch.0.windows_shell,
+            mithril::terminal::WindowsShell::GitBash
+        );
+        assert_eq!(launch.1.as_ref().unwrap(), &second.root);
+        assert_ne!(panel.read(cx).view, Some(view));
+    });
+}
+
+#[gpui::test]
+fn terminal_input_rechecks_modal_authority(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    click("toolbar-terminal", cx);
+    let panel = cx.update(|_, cx| notes.read(cx).terminal.clone().unwrap());
+    cx.update(|window, cx| {
+        window.open_dialog(cx, |dialog, _, _| dialog.title("Test modal"));
+        // Force terminal focus under the modal to test the input-time guard,
+        // rather than relying only on the dialog's normal focus handling.
+        panel.read(cx).focus(window, cx);
+    });
+    cx.simulate_keystrokes("x ctrl-c");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(panel.read(cx).fixture_input.lock().unwrap().is_empty()));
 }

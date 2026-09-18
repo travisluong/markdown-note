@@ -1,0 +1,60 @@
+# Terminal trial
+
+Use the terminal toolbar button, Ctrl+backtick (including macOS), or the
+**Terminal: Toggle terminal** command to open the right panel. The first opening
+starts one shell. Closing the panel hides it; its shell continues running.
+Stop terminates the shell and keeps the output visible. Restart replaces the
+shell and output. Shell exit leaves an exit status; launch errors offer Retry.
+
+Windows General Settings offers PowerShell and Git Bash. The choice is saved
+per notebook, or retained only for the session without a notebook. It takes
+effect on the next start or explicit Restart, never on a running shell.
+PowerShell prefers pwsh on PATH then Windows PowerShell. Git Bash is detected
+from Git for Windows installation metadata, standard locations and Git on PATH.
+It must be installed separately; missing Git Bash is an error, not a fallback.
+Other platforms use $SHELL, falling back to /bin/sh.
+
+A shell starts in the active notebook, otherwise the current document's folder,
+otherwise home. Switching notebooks or tabs preserves the existing shell and
+directory. Restart uses the current notebook's preference and directory.
+The panel width remains session-only and uses the existing resize geometry.
+
+While terminal focus is active, keys go to the shell. Ctrl+C interrupts a
+foreground command. Paste uses Ctrl+Shift+V on Windows/Linux and Cmd+V on macOS,
+respecting bracketed-paste mode. Pasting is limited to 1 MiB; a stalled input
+queue reports an error. Modal dialogs block input but output continues.
+The theme, monospace font and content font size follow notebook appearance.
+
+The trial does not provide selection/copy, scrollback navigation, terminal
+search, mouse reporting, shell integration, multiple sessions, splits, custom
+shell paths or session restoration across app restarts. Advanced keyboard
+protocols and IME composition are not supported by this component.
+
+## Ownership and shutdown
+
+- src/terminal.rs owns shell resolution and PTY I/O. Output is bounded to
+  64 x 4 KiB chunks; input is bounded to eight requests of at most 1 MiB.
+  Reader, writer and controller workers keep blocking OS operations off GPUI.
+- src/terminal_ui.rs owns the retained view, status and launch generation.
+  Restarts wait for prior launch/cleanup; late results cannot replace a newer
+  session or steal focus. A disconnected completion channel broadcasts cleanup
+  to restart/close waiters independently of the exit-status consumer.
+- src/right_panel_ui.rs coordinates visibility and captures launch preferences.
+  The existing accepted document-close effect waits for terminal cleanup before
+  removing the window. Cancelling save/close leaves the terminal intact.
+- Notebook settings add terminal.windows_shell with powershell as the
+  compatibility default. Existing ordered settings writes and form-scope guards
+  apply; the preference survives opening the notebook on non-Windows systems.
+
+Windows uses ConPTY. Unix uses cancellable nonblocking descriptors and terminates
+the PTY foreground group on explicit Stop before reaping the shell. Deliberately
+detached jobs are outside the session lifecycle contract.
+
+## Validation
+
+Run the commands in ARCHITECTURE.md. tests/terminal.rs adds headless shell and
+component coverage; Git Bash's scenario skips explicitly when it is not installed.
+Windows sandbox restrictions can block Ctrl+C even though spawn/read/write work;
+run real PTY tests outside that restriction. No test opens the Mithril application,
+a terminal window, or injects desktop input. User validation should check native
+font rendering, panel resizing, shell profiles and real interactive programs.

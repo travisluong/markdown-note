@@ -1,7 +1,7 @@
 use super::{FontSizeRole, Section, SettingsIntent, SettingsPanel};
 use gpui::{App, Context, Entity, IntoElement, Render, Window, div, prelude::*, px};
 use gpui_component::{
-    ActiveTheme, Disableable, Sizable,
+    ActiveTheme, Disableable, Selectable, Sizable,
     button::{Button, ButtonVariants},
     color_picker::ColorPicker,
     dialog::Dialog,
@@ -109,6 +109,19 @@ impl Render for SettingsPanel {
                 div().text_sm().text_color(cx.theme().muted_foreground)
                     .child("Waiting for settings to finish saving…"),
             ))
+            .when(cfg!(windows), |body| {
+                let mut body = body.child("Terminal shell");
+                for (id, label, shell) in [
+                    ("terminal-powershell", "PowerShell", mithril::terminal::WindowsShell::Powershell),
+                    ("terminal-git-bash", "Git Bash", mithril::terminal::WindowsShell::GitBash),
+                ] {
+                    body = body.child(Button::new(id).label(label).selected(self.values.terminal.windows_shell == shell)
+                        .disabled(self.values.busy)
+                        .on_click(cx.listener(move |this, _, _, cx| this.emit_intent(SettingsIntent::TerminalShell(shell), cx))));
+                }
+                body.child(div().text_sm().text_color(cx.theme().muted_foreground)
+                    .child("Applies on the next terminal start or Restart. The current shell keeps running."))
+            })
             .child("Editor")
             .child(Switch::new("centered-editor").label("Centered editor").checked(appearance.centered_editor)
                 .disabled(self.values.busy)
