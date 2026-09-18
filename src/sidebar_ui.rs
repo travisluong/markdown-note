@@ -148,7 +148,7 @@ impl Notes {
             panels = panels.child(
                 resizable_panel()
                     .size(px(width))
-                    .size_range(px(geometry.min_side)..px(geometry.max_side))
+                    .size_range(px(geometry.min_side)..px(geometry.max_left))
                     .child(sidebar),
             );
         }
@@ -161,7 +161,7 @@ impl Notes {
             panels = panels.child(
                 resizable_panel()
                     .size(px(width))
-                    .size_range(px(geometry.min_side)..px(geometry.max_side))
+                    .size_range(px(geometry.min_side)..px(geometry.max_right))
                     .child(self.render_right_panel(window, cx)),
             );
         }
@@ -188,11 +188,19 @@ impl Notes {
                         && divider == Some(usize::from(left_visible))
                         && let Some(width) = sizes.last()
                     {
-                        this.right_panel_width = notebook::normalize_sidebar_width(width.as_f32());
+                        this.right_panel_width = normalize_terminal_width(width.as_f32());
                     }
                 }),
             )
             .into_any_element()
+    }
+}
+
+fn normalize_terminal_width(width: f32) -> f32 {
+    if width.is_finite() {
+        width.max(160.)
+    } else {
+        280.
     }
 }
 
@@ -202,13 +210,14 @@ struct WorkspaceGeometry {
     left: Option<f32>,
     right: Option<f32>,
     min_side: f32,
-    max_side: f32,
+    max_left: f32,
+    max_right: f32,
 }
 
 impl WorkspaceGeometry {
     fn new(width: f32, left: Option<f32>, right: Option<f32>) -> Self {
         let left = left.map(notebook::normalize_sidebar_width);
-        let right = right.map(notebook::normalize_sidebar_width);
+        let right = right.map(normalize_terminal_width);
         let count = usize::from(left.is_some()) + usize::from(right.is_some());
         let budget = (width - 200.).max(0.);
         let total = left.unwrap_or_default() + right.unwrap_or_default();
@@ -224,12 +233,13 @@ impl WorkspaceGeometry {
             .flatten()
             .map(|width| width * scale)
             .fold(160., f32::min);
-        let max_side = (budget - count.saturating_sub(1) as f32 * min_side).clamp(min_side, 600.);
+        let max_side = (budget - count.saturating_sub(1) as f32 * min_side).max(min_side);
         Self {
             left: left.map(|width| width * scale),
             right: right.map(|width| width * scale),
             min_side,
-            max_side,
+            max_left: max_side.min(600.),
+            max_right: max_side,
         }
     }
 }
@@ -242,14 +252,14 @@ mod tests {
     fn side_panels_fit_proportionally_and_reserve_content() {
         for width in [400., 520., 800., 1600.] {
             for left in [None, Some(160.), Some(280.), Some(600.)] {
-                for right in [None, Some(160.), Some(280.), Some(600.)] {
+                for right in [None, Some(160.), Some(280.), Some(600.), Some(1000.)] {
                     let geometry = WorkspaceGeometry::new(width, left, right);
                     let total =
                         geometry.left.unwrap_or_default() + geometry.right.unwrap_or_default();
                     assert!(total <= width - 200. + 0.001);
                     for side in [geometry.left, geometry.right].into_iter().flatten() {
                         assert!(side >= geometry.min_side - 0.001);
-                        assert!(side <= geometry.max_side + 0.001);
+                        assert!(side <= geometry.max_right + 0.001);
                     }
                     if let (Some(left), Some(right)) = (left, right) {
                         assert!(

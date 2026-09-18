@@ -1130,14 +1130,14 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
         Modifiers::default(),
     );
     settle_layout(cx);
-    let end = gpui::point(start.x - px(100.), start.y);
+    let end = gpui::point(start.x - px(700.), start.y);
     cx.simulate_mouse_move(end, gpui::MouseButton::Left, Modifiers::default());
     settle_layout(cx);
     cx.simulate_mouse_up(end, gpui::MouseButton::Left, Modifiers::default());
     settle_layout(cx);
     let preferred = cx.update(|_, cx| {
         let this = notes.read(cx);
-        assert!(this.right_panel_width > 350.);
+        assert!(this.right_panel_width > 600.);
         assert_eq!(
             this.notebooks
                 .active
@@ -1742,4 +1742,25 @@ fn workspace_dividers_stop_at_neighbors_and_save_only_the_dragged_side(cx: &mut 
                 <= 1.
         )
     });
+}
+
+#[gpui::test]
+fn terminal_long_titles_keep_close_and_add_controls_visible(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    click("toolbar-terminal", cx);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.terminals.tabs[0].title = "a very long Claude session title ".repeat(50);
+            cx.notify();
+        })
+    });
+    settle_layout(cx);
+    let panel = cx.debug_bounds("right-panel").unwrap();
+    let select = cx.debug_bounds("terminal-tab-select-1").unwrap();
+    let close = cx.debug_bounds("terminal-tab-close-1").unwrap();
+    let add = cx.debug_bounds("terminal-tab-add").unwrap();
+    assert!(select.size.width <= px(190.));
+    assert!(close.left() >= select.right());
+    assert!(close.right() <= add.left());
+    assert!(add.right() <= panel.right());
 }

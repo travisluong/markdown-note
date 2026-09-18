@@ -42,7 +42,10 @@ A shell starts in the active notebook, otherwise the current document's folder,
 otherwise home. Switching notebooks or tabs preserves the existing shell and
 directory. Each new terminal tab uses the current notebook's preference and
 directory.
-The panel width remains session-only and uses the existing resize geometry.
+The panel width remains session-only, initially 280 px with a 160 px normal
+minimum. Dragging its divider can use all available space up to the 200 px editor
+minimum, without changing the sidebar width. Narrow windows temporarily compress
+side panels; widening restores preferred widths.
 
 While terminal focus is active, keys go to the shell. Tab and Shift+Tab stay in
 the terminal for shell completion and reverse completion (when supported by the

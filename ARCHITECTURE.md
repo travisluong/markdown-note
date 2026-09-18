@@ -480,11 +480,13 @@ for Small/Medium/Large, including 4 px padding per side and a 1 px bottom border
 Its close button shares toolbar icon/target sizing. The header stays one row tall
 when content controls wrap, independently of the theme's interface font size.
 Workspace layout resets resize state when panel visibility or viewport width changes.
-Side widths normally range from 160 to 600 px; proportional compression preserves
+The sidebar normally ranges from 160 to 600 px. The terminal has a 160 px normal
+minimum and no fixed maximum; proportional compression preserves
 200 px of content on narrow windows. Projected widths never overwrite preferences.
 The workspace opts into adjacent-only divider resizing: each divider changes
 only its two neighbors and stops at either pane's limits. Only completed, current
-user resize gestures save the corresponding side's preference. Widening restores the preferred widths.
+user resize gestures save the corresponding side's preference. Widening restores
+the preferred widths.
 ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
 invalid values default to Medium; explicitly stored Small or Large values survive.
 Toolbar-tab size intents use the same notebook/session

@@ -2386,3 +2386,27 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   terminal-tabs-validation output directory with the shared target build cache,
   preserving the running application binary. No desktop interaction or visible
   app launch was used; native appearance remains manual validation.
+
+## Compact tabs and independent terminal resizing (2026-09-18)
+
+- Matched document tab buttons, padding and corners to the compact terminal tabs.
+  The terminal add control follows short tab lists and stays visible on overflow.
+- Connected OSC 0/2 titles through a window-independent TerminalTitleChanged event.
+  Hidden/inactive sessions update with identity/view/generation guards; empty titles
+  restore the shell name. Long labels truncate with full-title tooltips.
+- Workspace dividers opt into adjacent-only resizing and persist only the dragged
+  side's width. The terminal no longer shares the sidebar's 600 px cap; it keeps a
+  160 px normal minimum and reserves 200 px for the editor. Narrow-window fitting
+  and session-only preferred-width restoration remain intact.
+- Headless tests cover compact heights, adjacent add-button positioning, overflow,
+  long titles, split OSC input, hidden updates, resets, stale/closed sessions,
+  divider isolation, widths beyond 600 px and narrow-window restoration.
+- cargo check --locked --offline, cargo fmt --check and strict all-target Clippy
+  with editor-diagnostics passed. The full diagnostics-enabled test suite passed,
+  including all 335 application tests and all 10 real-PTY terminal tests.
+- Windows sandbox linker output-file failures required rerunning the full suite
+  outside the sandbox. Used build.target-dir="target/tab-style-validation" and
+  build.build-dir="target" to preserve the running app while reusing build artifacts.
+  No desktop interaction or native application launch was used. Native visual
+  appearance remains available for user validation. The pre-existing Cargo.lock
+  edit was left untouched.

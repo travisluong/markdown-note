@@ -392,7 +392,9 @@ impl Element for ResizePanelGroupElement {
                 if !phase.bubble() {
                     return;
                 }
-                let Some(ix) = state.read(cx).resizing_panel_ix else { return };
+                let Some(ix) = state.read(cx).resizing_panel_ix else {
+                    return;
+                };
 
                 state.update(cx, |state, cx| {
                     let panel = state.panels.get(ix).expect("BUG: invalid panel index");
