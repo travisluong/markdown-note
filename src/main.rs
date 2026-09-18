@@ -33,7 +33,7 @@ use std::{
 use app::session::{Content, OperationId, Session};
 use gpui::{prelude::*, *};
 use gpui_component::{
-    ActiveTheme, Root, Sizable, WindowExt,
+    ActiveTheme, IconName, Root, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState, Rope, Search},
     menu::PopupMenu,
@@ -761,10 +761,52 @@ impl Render for Notes {
             )
             .when_some(
                 self.save_state(self.tabs.active.id).error.clone(),
-                |view, error| view.child(div().p_2().text_sm().child(error)),
+                |view, error| {
+                    view.child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap_2()
+                            .p_2()
+                            .text_sm()
+                            .child(div().flex_1().min_w_0().whitespace_normal().child(error))
+                            .child(
+                                Button::new("dismiss-save-error")
+                                    .small()
+                                    .ghost()
+                                    .flex_shrink_0()
+                                    .icon(IconName::Close)
+                                    .tooltip("Dismiss message")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.save_state_mut(this.tabs.active.id).error = None;
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+                },
             )
             .when_some(self.notebooks.notice.clone(), |view, notice| {
-                view.child(div().p_2().text_sm().child(notice))
+                view.child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap_2()
+                        .p_2()
+                        .text_sm()
+                        .child(div().flex_1().min_w_0().whitespace_normal().child(notice))
+                        .child(
+                            Button::new("dismiss-notebook-notice")
+                                .small()
+                                .ghost()
+                                .flex_shrink_0()
+                                .icon(IconName::Close)
+                                .tooltip("Dismiss message")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.notebooks.notice = None;
+                                    cx.notify();
+                                })),
+                        ),
+                )
             })
             .child(
                 div().flex().flex_1().min_h_0().overflow_hidden().child(
