@@ -252,6 +252,31 @@ impl ThemePalette {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum ToolbarAlignment {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+impl ToolbarAlignment {
+    pub const OPTIONS: [(Self, &'static str); 3] = [
+        (Self::Left, "Left"),
+        (Self::Center, "Center"),
+        (Self::Right, "Right"),
+    ];
+}
+
+fn deserialize_toolbar_alignment<'de, D>(deserializer: D) -> Result<ToolbarAlignment, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ToolbarIconSize {
     Small,
     #[default]
@@ -367,6 +392,8 @@ impl ToolbarItem {
 #[serde(default)]
 pub struct ToolbarSettings {
     pub visible: bool,
+    #[serde(deserialize_with = "deserialize_toolbar_alignment")]
+    pub alignment: ToolbarAlignment,
     #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
     pub icon_size: ToolbarIconSize,
     #[serde(deserialize_with = "deserialize_toolbar_order")]
@@ -394,6 +421,7 @@ impl Default for ToolbarSettings {
     fn default() -> Self {
         Self {
             visible: true,
+            alignment: ToolbarAlignment::default(),
             icon_size: ToolbarIconSize::default(),
             order: ToolbarItem::DEFAULT_ORDER,
             back: true,

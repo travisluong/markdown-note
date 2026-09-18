@@ -183,3 +183,43 @@ fn toolbar_icon_sizes_default_normalize_and_persist() {
         );
     }
 }
+
+#[test]
+fn toolbar_alignments_default_normalize_and_persist() {
+    use mithril::notebook::ToolbarAlignment;
+    assert_eq!(ToolbarSettings::default().alignment, ToolbarAlignment::Left);
+    assert_eq!(
+        serde_json::from_str::<ToolbarSettings>("{}")
+            .unwrap()
+            .alignment,
+        ToolbarAlignment::Left
+    );
+    for invalid in [
+        serde_json::json!(null),
+        serde_json::json!("justify"),
+        serde_json::json!(42),
+        serde_json::json!([]),
+        serde_json::json!(false),
+        serde_json::json!({}),
+    ] {
+        let settings: ToolbarSettings =
+            serde_json::from_value(serde_json::json!({ "alignment": invalid, "search": false }))
+                .unwrap();
+        assert_eq!(settings.alignment, ToolbarAlignment::Left);
+        assert!(!settings.search);
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut book = Notebook::open(&directory.path().join("book"), true).unwrap();
+    book.settings.toolbar.search = false;
+    book.settings.toolbar.order.rotate_left(3);
+    for (alignment, label) in ToolbarAlignment::OPTIONS {
+        book.settings.toolbar.alignment = alignment;
+        save_book(&book).unwrap();
+        let saved = Notebook::open(&book.root, false).unwrap();
+        assert_eq!(saved.settings.toolbar, book.settings.toolbar);
+        assert_eq!(
+            serde_json::to_value(saved.settings.toolbar).unwrap()["alignment"],
+            label.to_lowercase()
+        );
+    }
+}

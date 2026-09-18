@@ -549,6 +549,17 @@ impl Notes {
                 }
                 false
             }
+            SettingsIntent::ToolbarAlignment(alignment) => {
+                if let Some(book) = &mut self.notebooks.active {
+                    if book.settings.toolbar.alignment != alignment {
+                        book.settings.toolbar.alignment = alignment;
+                        self.persist_notebooks(cx);
+                    }
+                } else {
+                    self.session_toolbar.alignment = alignment;
+                }
+                false
+            }
             SettingsIntent::ToolbarIconSize(size) => {
                 if let Some(book) = &mut self.notebooks.active {
                     if book.settings.toolbar.icon_size != size {

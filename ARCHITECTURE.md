@@ -53,7 +53,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Sidebar geometry and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share geometry. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
 | Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow and popup anchors. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
-| Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
+| Window toolbar | [toolbar_ui.rs](src/toolbar_ui.rs) | Full-width presentation below the text menus, independent of sidebar visibility. Reads effective visibility/order/sizing/alignment from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
@@ -461,12 +461,18 @@ Heading and Sort opt into the vendored dropdown/popover completed-click trigger;
 other popovers retain mouse-down activation. Headless toolbar interaction tests
 cover reordering, cancellation, disabled commands, focus, persistence and Settings
 synchronization.
+ToolbarSettings stores Left, Center and Right alignment, serialized as lowercase
+`alignment` values; missing or invalid values default to Left. Settings Toolbar
+applies changes immediately through typed intents and the existing guarded
+notebook/session preference boundary, skipping unchanged writes. Flex justification
+aligns each wrapped row within the full window width, independent of sidebar or
+editor width. Hiding the toolbar retains alignment; resetting defaults restores Left.
 ToolbarSettings also stores typed Small, Medium and Large icon presets; missing or
 invalid values default to Medium; explicitly stored Small or Large values survive.
 Toolbar-tab size intents use the same notebook/session
 scope, lifetime and busy guards. Reset toolbar to defaults emits one typed intent
-restoring the complete order, visibility and Medium size together, skipping
-unchanged notebook writes. The toolbar owns exact 14/20/28 px icons in
+restoring the complete order, visibility, Left alignment and Medium size together,
+skipping unchanged notebook writes. The toolbar owns exact 14/20/28 px icons in
 24/32/40 px button targets and wraps controls as needed; its height follows the
 button rows and padding. Theme UI font size does not scale these logical-pixel targets.
 An enabled toolbar remains visible with the sidebar collapsed or no notebook open;

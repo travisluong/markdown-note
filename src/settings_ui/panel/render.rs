@@ -214,6 +214,23 @@ impl Render for SettingsPanel {
                     this.emit_intent(SettingsIntent::ResetPalettes, cx)
                 })),
         );
+        let mut toolbar_alignments = div().flex().flex_wrap().gap_2();
+        for (index, (alignment, label)) in
+            notebook::ToolbarAlignment::OPTIONS.into_iter().enumerate()
+        {
+            toolbar_alignments = toolbar_alignments.child(
+                Button::new(("toolbar-alignment", index))
+                    .debug_selector(move || format!("toolbar-alignment-{index}"))
+                    .label(label)
+                    .when(self.values.toolbar.alignment == alignment, |button| {
+                        button.primary()
+                    })
+                    .disabled(self.values.busy)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.emit_intent(SettingsIntent::ToolbarAlignment(alignment), cx)
+                    })),
+            );
+        }
         let mut toolbar_sizes = div().flex().flex_wrap().gap_2();
         for (index, (size, label)) in notebook::ToolbarIconSize::OPTIONS.into_iter().enumerate() {
             toolbar_sizes = toolbar_sizes.child(
@@ -236,6 +253,8 @@ impl Render for SettingsPanel {
             .flex_col()
             .gap_3()
             .child(self.values.subtitle.clone())
+            .child("Alignment")
+            .child(toolbar_alignments)
             .child("Icon size")
             .child(
                 toolbar_sizes.child(

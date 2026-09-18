@@ -1385,6 +1385,77 @@ fn toolbar_size_buttons_apply_immediately_and_preserve_session_scope(cx: &mut Te
 }
 
 #[gpui::test]
+fn toolbar_alignment_persists_for_notebook_and_rejects_scope_and_busy_events(
+    cx: &mut TestAppContext,
+) {
+    use notebook::ToolbarAlignment::{Left, Right};
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"))
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::ToolbarAlignment(Right), cx);
+    assert_eq!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .toolbar
+            .alignment,
+        Right
+    );
+    assert_eq!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .toolbar
+            .alignment,
+        Left
+    );
+    let settings_path = fixture.first.root.join(".mithril/settings.json");
+    fs::remove_file(&settings_path).unwrap();
+    intent(&form, SettingsIntent::ToolbarAlignment(Right), cx);
+    assert!(
+        !settings_path.exists(),
+        "unchanged alignment must not write settings"
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.session_toolbar.alignment, Left);
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::ToolbarAlignment(Right),
+                window,
+                cx,
+            );
+            assert_eq!(this.toolbar_settings().alignment, Left);
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::ToolbarAlignment(Right),
+                window,
+                cx,
+            );
+            assert_eq!(this.toolbar_settings().alignment, Left);
+            assert!(form.read(cx).values.busy);
+        })
+    });
+    let (events, _subscription) = watch(&form, cx);
+    intent(&form, SettingsIntent::ToolbarAlignment(Left), cx);
+    cx.update(|_, cx| assert!(events.read(cx).0.is_empty()));
+}
+
+#[gpui::test]
 fn toolbar_size_persists_for_notebook_and_rejects_scope_and_busy_events(cx: &mut TestAppContext) {
     use notebook::ToolbarIconSize::{Large, Medium};
     let (fixture, notes, cx) = fixture(cx, true, true);
@@ -1640,6 +1711,11 @@ fn toolbar_reset_persists_atomically_skips_defaults_and_rejects_scope_and_busy(
             target: notebook::ToolbarItem::Sidebar,
             after: false,
         },
+        cx,
+    );
+    intent(
+        &form,
+        SettingsIntent::ToolbarAlignment(notebook::ToolbarAlignment::Right),
         cx,
     );
     intent(&form, SettingsIntent::ResetToolbar, cx);
@@ -2858,6 +2934,7 @@ fn toolbar_visibility_toggle_preserves_customization_and_reset_restores_it(
             this.session_toolbar.search = false;
             this.session_toolbar.order.rotate_left(3);
             this.session_toolbar.icon_size = notebook::ToolbarIconSize::Large;
+            this.session_toolbar.alignment = notebook::ToolbarAlignment::Center;
             let original = this.session_toolbar;
             this.toggle_toolbar(window, cx);
             assert_eq!(
@@ -2955,4 +3032,138 @@ fn toolbar_visibility_persists_only_for_the_active_notebook(cx: &mut TestAppCont
             .toolbar
             .visible
     );
+}
+
+#[gpui::test]
+fn toolbar_alignment_buttons_apply_immediately_and_reject_stale_forms(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, MouseButton};
+    use notebook::ToolbarAlignment::{Center, Left, Right};
+    let (fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    toolbar_section(&form, cx);
+    for (index, (alignment, _)) in notebook::ToolbarAlignment::OPTIONS.into_iter().enumerate() {
+        let bounds = cx
+            .debug_bounds(
+                [
+                    "toolbar-alignment-0",
+                    "toolbar-alignment-1",
+                    "toolbar-alignment-2",
+                ][index],
+            )
+            .unwrap();
+        cx.simulate_mouse_down(bounds.center(), MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(bounds.center(), MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            assert_eq!(notes.read(cx).session_toolbar.alignment, alignment);
+            assert_eq!(form.read(cx).values.toolbar.alignment, alignment);
+        });
+        let toolbar = cx.debug_bounds("window-toolbar").unwrap();
+        let first = cx.debug_bounds("toolbar-back").unwrap();
+        let last = cx.debug_bounds("toolbar-task-list").unwrap();
+        match alignment {
+            Left => assert_eq!(first.left(), toolbar.left() + gpui::px(4.)),
+            Center => assert_eq!(
+                first.left() - toolbar.left(),
+                toolbar.right() - last.right()
+            ),
+            Right => assert_eq!(last.right(), toolbar.right() - gpui::px(4.)),
+        }
+    }
+    cx.update(|window, cx| {
+        window.close_dialog(cx);
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.first.clone());
+            assert_eq!(this.toolbar_settings().alignment, Left);
+            this.notebooks.active = None;
+            assert_eq!(this.toolbar_settings().alignment, Right);
+            this.open_settings(window, cx);
+        });
+    });
+    intent(&form, SettingsIntent::ToolbarAlignment(Center), cx);
+    let reopened = panel(&notes, cx);
+    cx.update(|_, cx| {
+        assert_eq!(notes.read(cx).session_toolbar.alignment, Right);
+        assert_eq!(reopened.read(cx).values.toolbar.alignment, Right);
+    });
+    intent(&reopened, SettingsIntent::ResetToolbar, cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).session_toolbar.alignment, Left));
+}
+
+#[gpui::test]
+fn toolbar_alignment_positions_each_wrapped_row_at_every_icon_size(cx: &mut TestAppContext) {
+    use gpui::{px, size};
+    use notebook::{ToolbarAlignment, ToolbarIconSize, ToolbarItem};
+    cx.update(gpui_component::init);
+    for (icon_size, _) in ToolbarIconSize::OPTIONS {
+        for (alignment, _) in ToolbarAlignment::OPTIONS {
+            let (_, view) = cx.add_window_view(|window, cx| {
+                let notes = cx.new(|cx| {
+                    let mut notes = Notes::new(window, cx);
+                    notes.session_toolbar.icon_size = icon_size;
+                    notes.session_toolbar.alignment = alignment;
+                    for item in ToolbarItem::DEFAULT_ORDER {
+                        notes.session_toolbar.set_enabled(
+                            item,
+                            matches!(
+                                item,
+                                ToolbarItem::Sidebar | ToolbarItem::Explorer | ToolbarItem::Search
+                            ),
+                        );
+                    }
+                    notes
+                });
+                let root = cx.new(|cx| NotesWindow {
+                    _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),
+                    notes,
+                });
+                Root::new(root, window, cx)
+            });
+            let button = icon_size.button_pixels();
+            for width in [button * 4. + 40., button * 2. + 22.] {
+                view.simulate_resize(size(px(width), px(800.)));
+                view.refresh().unwrap();
+                let toolbar = view.debug_bounds("window-toolbar").unwrap();
+                let first = view.debug_bounds("toolbar-sidebar-toggle").unwrap();
+                let second = view.debug_bounds("sidebar-explorer").unwrap();
+                let third = view.debug_bounds("sidebar-search").unwrap();
+                let wrapped = width < button * 3. + 16.;
+                let rows = if wrapped {
+                    vec![(first, second), (third, third)]
+                } else {
+                    vec![(first, third)]
+                };
+                assert_eq!(first.top(), second.top());
+                assert_eq!(
+                    third.top(),
+                    first.top() + if wrapped { px(button + 4.) } else { px(0.) }
+                );
+                assert_eq!(
+                    toolbar.size.height,
+                    px(if wrapped {
+                        button * 2. + 13.
+                    } else {
+                        button + 9.
+                    })
+                );
+                for (start, end) in rows {
+                    let row_width = end.right() - start.left();
+                    let expected = match alignment {
+                        ToolbarAlignment::Left => toolbar.left() + px(4.),
+                        ToolbarAlignment::Center => {
+                            toolbar.left() + (toolbar.size.width - row_width) / 2.
+                        }
+                        ToolbarAlignment::Right => toolbar.right() - px(4.) - row_width,
+                    };
+                    assert_eq!(
+                        start.left(),
+                        expected,
+                        "{alignment:?}, {icon_size:?}, width={width}"
+                    );
+                    assert!(end.right() <= toolbar.right() - px(4.));
+                }
+            }
+        }
+    }
 }

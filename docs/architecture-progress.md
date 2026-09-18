@@ -2198,3 +2198,25 @@ and strict all-targets Clippy with editor-diagnostics also passed. The first ful
 run exposed the existing Mermaid diagnostic test's assumption that a local
 target directory exists; creating that ignored output directory allowed the full
 rerun to pass without source changes. No desktop interaction occurred.
+
+## Toolbar alignment preference (2026-09-17)
+
+Settings Toolbar now offers Left, Center and Right above Icon size, applying
+changes immediately to the full-width toolbar. Each wrapped row uses the chosen
+alignment at every icon size. The typed alignment preference serializes in
+lowercase, defaults to Left for missing or invalid values, and uses the existing
+notebook/session scope, guarded settings intents and ordered writer. Unchanged
+selections skip writes, toolbar visibility retains alignment, and Reset toolbar
+restores Left with the other defaults.
+
+Verification: all 601 tests passed (93 library, 304 application, 204 integration;
+none ignored) with locked offline dependencies, editor-diagnostics, one build job
+and one test thread in target/theme-validation. The focused run passed 40 toolbar
+application tests and six toolbar-settings integration tests. New coverage checks
+all alignment values, invalid/missing defaults, persistence, unchanged writes,
+notebook/session isolation, stale and busy events, immediate layout updates,
+reset and hide/show preservation, and wide/wrapped geometry at every icon size.
+Cargo check, cargo fmt --check, strict all-targets Clippy with editor-diagnostics,
+and whitespace checks passed. Transient Windows LNK1104 test-executable access
+errors cleared on retry. No desktop interaction or native application launch
+occurred. The unrelated Cargo.lock change is excluded from this feature commit.

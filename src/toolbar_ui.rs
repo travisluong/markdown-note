@@ -11,7 +11,7 @@ use gpui_component::{
 };
 use mithril::{
     markdown_edit::Format,
-    notebook::{ToolbarIconSize, ToolbarItem},
+    notebook::{ToolbarAlignment, ToolbarIconSize, ToolbarItem},
 };
 
 impl Notes {
@@ -33,6 +33,11 @@ impl Notes {
             .debug_selector(|| "window-toolbar".into())
             .flex()
             .flex_wrap()
+            .map(|toolbar| match settings.alignment {
+                ToolbarAlignment::Left => toolbar.justify_start(),
+                ToolbarAlignment::Center => toolbar.justify_center(),
+                ToolbarAlignment::Right => toolbar.justify_end(),
+            })
             .items_center()
             .w_full()
             .flex_shrink_0()
