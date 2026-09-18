@@ -326,7 +326,10 @@ impl Notes {
         {
             self.tabs.scroll.scroll_to_item(index);
         }
-        if self.document().is_some() {
+        if matches!(
+            self.tabs.active.session.content(),
+            Content::Document { .. } | Content::Empty
+        ) {
             self.remember_file(cx);
         }
         if self.tabs.active.mode == ViewMode::Reading {

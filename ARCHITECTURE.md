@@ -93,6 +93,9 @@ links, search, Go to File, picker and history navigation install in the current
 tab, attaching to retained in-memory text when the canonical note is already open.
 Notebook activation preserves occupied tabs and uses an empty active tab or appends
 a view. Tabs are session-only; selection does not change the notebook sidebar.
+Selecting or creating an empty tab, including one left active after closing a tab,
+clears the active notebook's persisted last file. Startup restores that notebook
+with one empty tab; selecting a notebook document records it for startup again.
 
 `shared_documents.rs` owns one runtime per canonical note. A stable document ID
 qualifies dirty work, timers and write callbacks independently of any view's TabId.

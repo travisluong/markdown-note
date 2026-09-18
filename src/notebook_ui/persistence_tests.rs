@@ -369,3 +369,100 @@ fn exclusions_persist_through_the_writer_and_stay_scoped_to_the_notebook(cx: &mu
             .is_empty()
     );
 }
+
+/// Restore a fresh application owner from the actual files written by the previous session.
+fn assert_startup_tab(fixture: &Fixture, expected: Option<&str>, cx: &mut VisualTestContext) {
+    cx.run_until_parked();
+    let book = notebook::Notebook::open(&fixture.root, false).unwrap();
+    assert_eq!(book.settings.last_file, expected.map(PathBuf::from));
+    let restored = cx.update(|window, cx| {
+        let notes = cx.new(|cx| {
+            let mut notes = Notes::new(window, cx);
+            notes.notebooks.index_path = Some(fixture.index.clone());
+            notes
+        });
+        notes.update(cx, |this, cx| this.restore_notebooks(window, cx));
+        notes
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let notes = restored.read(cx);
+        assert!(!notes.is_busy());
+        assert_eq!(notes.notebooks.active.as_ref().unwrap().root, fixture.root);
+        assert_eq!(notes.tabs.ids().len(), 1);
+        assert_eq!(
+            notes.document().map(|document| document.path.clone()),
+            expected.map(|relative| fixture.root.join(relative))
+        );
+        if expected.is_none() {
+            assert!(matches!(
+                notes.tabs.active.session.content(),
+                crate::app::session::Content::Empty
+            ));
+        }
+    });
+}
+
+#[gpui::test]
+fn startup_remembers_created_and_selected_empty_tabs(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let (document, empty) = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let document = this.tabs.active.id;
+            this.new_tab(window, cx);
+            (document, this.tabs.active.id)
+        })
+    });
+    assert_startup_tab(&fixture, None, cx);
+
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.select_tab(document, window, cx)));
+    assert_startup_tab(&fixture, Some("note.md"), cx);
+
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.select_tab(empty, window, cx)));
+    assert_startup_tab(&fixture, None, cx);
+}
+
+#[gpui::test]
+fn startup_remembers_empty_tab_after_closing_active_or_final_tab(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let document = this.tabs.active.id;
+            this.new_tab(window, cx);
+            this.select_tab(document, window, cx);
+            this.close_tab(document, window, cx);
+        })
+    });
+    assert_startup_tab(&fixture, None, cx);
+
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.request(Next::File(fixture.note.clone()), window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert_startup_tab(&fixture, Some("note.md"), cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.tabs.ids().len(), 1);
+            this.close_tab(this.tabs.active.id, window, cx);
+        })
+    });
+    assert_startup_tab(&fixture, None, cx);
+}
+
+#[gpui::test]
+fn startup_keeps_empty_tab_after_closing_background_document(cx: &mut TestAppContext) {
+    let (fixture, notes, cx) = fixture(cx);
+    let empty = cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let document = this.tabs.active.id;
+            this.new_tab(window, cx);
+            let empty = this.tabs.active.id;
+            this.close_tab(document, window, cx);
+            empty
+        })
+    });
+    assert_startup_tab(&fixture, None, cx);
+    cx.update(|_, cx| assert_eq!(notes.read(cx).tabs.active.id, empty));
+}

@@ -2180,3 +2180,21 @@ headless toolbar/settings tests passed again, including eight new regressions.
 Clippy with editor-diagnostics passed on the final code. No desktop interaction
 or native application launch occurred; physical UI validation remains with the
 user. The unrelated Cargo.lock change is excluded from this feature commit.
+
+## Restore an empty active tab (2026-09-17)
+
+Tab focus now persists Empty as well as Document content through the existing
+notebook preference writer. Creating or selecting an empty tab, or closing a tab
+that leaves an empty tab active, clears last_file. Startup keeps the active
+notebook and restores one empty tab; selecting a notebook note records it again.
+Image selection and the external-file/settings-JSON exceptions remain unchanged.
+
+Verification: three new headless persistence regressions check saved preferences
+and fresh-owner startup for new/selected empty tabs, switching back to a note,
+closing the active or final note, and closing a background note. All 597 tests
+passed (93 library, 301 application, 203 integration), with locked offline
+dependencies, one build job and one test thread. Cargo check, cargo fmt --check,
+and strict all-targets Clippy with editor-diagnostics also passed. The first full
+run exposed the existing Mermaid diagnostic test's assumption that a local
+target directory exists; creating that ignored output directory allowed the full
+rerun to pass without source changes. No desktop interaction occurred.
