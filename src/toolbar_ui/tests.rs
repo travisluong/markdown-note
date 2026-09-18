@@ -1547,6 +1547,16 @@ fn terminal_tabs_overflow_reveals_selection_and_keeps_add_visible(cx: &mut TestA
     use crate::terminal_ui::TerminalTabId;
     let (_dir, notes, cx) = fixture(cx);
     click("toolbar-terminal", cx);
+    settle_layout(cx);
+    let tab = cx.debug_bounds("terminal-tab-1").unwrap();
+    let add = cx.debug_bounds("terminal-tab-add").unwrap();
+    assert!((add.left() - tab.right() - px(4.)).abs() <= px(1.));
+    let document_id = cx.update(|_, cx| notes.read(cx).tabs.active.id.0);
+    let document_selector = Box::leak(format!("tab-select-{document_id}").into_boxed_str());
+    assert_eq!(
+        cx.debug_bounds(document_selector).unwrap().size.height,
+        cx.debug_bounds("terminal-tab-select-1").unwrap().size.height
+    );
     for _ in 0..7 {
         click("terminal-tab-add", cx);
     }

@@ -213,7 +213,7 @@ impl Notes {
                         div()
                             .id("terminal-tabs")
                             .debug_selector(|| "terminal-tabs".into())
-                            .flex_1()
+                            .flex_shrink()
                             .min_w_0()
                             .flex()
                             .items_center()
