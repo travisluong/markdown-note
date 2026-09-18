@@ -582,6 +582,8 @@ where
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
+    pub terminal: crate::terminal::TerminalSettings,
+    #[serde(default)]
     pub autosave_external_files: bool,
     #[serde(default)]
     pub toolbar: ToolbarSettings,
@@ -611,6 +613,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            terminal: Default::default(),
             toolbar: ToolbarSettings::default(),
             autosave_external_files: false,
             excluded_patterns: Vec::new(),

@@ -12,6 +12,7 @@ pub mod markdown_edit;
 pub mod notebook;
 pub mod search;
 pub mod templates;
+pub mod terminal;
 mod view_mode;
 
 pub use view_mode::ViewMode;
