@@ -2452,3 +2452,26 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   application's locked executable. No desktop interaction or visible app launch
   was used. The pre-existing Cargo.lock change and concurrent unrelated edits are
   excluded from this improvement.
+
+### 2026-09-18 — Persisted notebook panel widths
+
+- Notebook settings now store terminal_width alongside sidebar_width. Older
+  notebooks default to 280 px; terminal widths retain the 160 px minimum and no
+  fixed maximum. Without an active notebook, terminal width remains session-only.
+- Completed divider gestures use the ordered settings writer and existing close
+  flush. Notebook activation restores both widths and replays only explicit,
+  correctly scoped choices. Viewport compression and panel toggles do not write
+  projected widths back to settings.
+- Headless coverage drags both dividers, closes with a settings write pending,
+  restores a fresh application from disk and switches notebooks with distinct
+  widths. Storage defaults/normalization, reload replay, stale scope, narrow
+  windows and independent divider behavior also pass.
+- Locked offline check, strict all-target Clippy and formatting passed. All 100
+  library tests, 349 application tests, integration suites and doc-tests passed
+  across the full runs and focused completion. The Mermaid renderer passed after creating its output
+  directory in the validation snapshot. The known ConPTY sandbox failure passed
+  in a headless outside-sandbox terminal-test rerun.
+- Validation used target/panel-width-source and target/panel-width-build to
+  isolate concurrent source edits and Windows linker conflicts in shared outputs.
+  No desktop interaction or native application harness was used. Unrelated
+  terminal-font work and the existing Cargo.lock changes are excluded.

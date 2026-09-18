@@ -10,6 +10,7 @@ use crate::{ViewMode, app::session::OperationId, notebook};
 pub(crate) enum PreferenceIntent {
     ViewMode(ViewMode),
     SidebarWidth(f32),
+    TerminalWidth(f32),
     Autosave(notebook::Autosave),
     ExternalAutosave(bool),
 }
@@ -19,6 +20,7 @@ pub(super) struct ActivationPreferences {
     root: PathBuf,
     view_mode: Option<ViewMode>,
     sidebar_width: Option<f32>,
+    terminal_width: Option<f32>,
     autosave: Option<notebook::Autosave>,
     external_autosave: Option<bool>,
 }
@@ -30,6 +32,7 @@ impl ActivationPreferences {
             root,
             view_mode: None,
             sidebar_width: None,
+            terminal_width: None,
             autosave: None,
             external_autosave: None,
         }
@@ -52,6 +55,7 @@ impl ActivationPreferences {
         match intent {
             PreferenceIntent::ViewMode(mode) => self.view_mode = Some(mode),
             PreferenceIntent::SidebarWidth(width) => self.sidebar_width = Some(width),
+            PreferenceIntent::TerminalWidth(width) => self.terminal_width = Some(width),
             PreferenceIntent::Autosave(autosave) => self.autosave = Some(autosave),
             PreferenceIntent::ExternalAutosave(enabled) => self.external_autosave = Some(enabled),
         }
@@ -66,6 +70,9 @@ impl ActivationPreferences {
         }
         if let Some(width) = self.sidebar_width {
             book.settings.sidebar_width = width;
+        }
+        if let Some(width) = self.terminal_width {
+            book.settings.terminal_width = width;
         }
         if let Some(enabled) = self.external_autosave {
             book.settings.autosave_external_files = enabled;
@@ -104,6 +111,12 @@ mod tests {
         let root = PathBuf::from("A");
         let mut choices = ActivationPreferences::new(operation, root.clone());
         choices.record(stale, &root, PreferenceIntent::ViewMode(ViewMode::Reading));
+        choices.record(stale, &root, PreferenceIntent::TerminalWidth(800.));
+        choices.record(
+            operation,
+            &PathBuf::from("B"),
+            PreferenceIntent::TerminalWidth(900.),
+        );
         choices.record(
             operation,
             &PathBuf::from("B"),
@@ -116,6 +129,7 @@ mod tests {
         choices.replay(operation, &mut book);
         assert_eq!(book.settings.view_mode, ViewMode::LivePreview);
         assert_eq!(book.settings.sidebar_width, 280.);
+        assert_eq!(book.settings.terminal_width, 280.);
     }
 
     #[test]
@@ -136,6 +150,8 @@ mod tests {
             PreferenceIntent::ViewMode(ViewMode::Reading),
         );
         choices.record(operation, &root, PreferenceIntent::SidebarWidth(375.));
+        choices.record(operation, &root, PreferenceIntent::TerminalWidth(700.));
+        choices.record(operation, &root, PreferenceIntent::TerminalWidth(725.));
         choices.record(
             operation,
             &root,
@@ -155,6 +171,7 @@ mod tests {
         choices.replay(operation, &mut book);
         assert_eq!(book.settings.view_mode, ViewMode::Reading);
         assert_eq!(book.settings.sidebar_width, 375.);
+        assert_eq!(book.settings.terminal_width, 725.);
         assert_eq!(
             book.settings.autosave,
             notebook::Autosave {

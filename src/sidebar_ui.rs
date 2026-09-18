@@ -1,6 +1,7 @@
 use super::*;
 use gpui_component::resizable::{ResizableState, h_resizable, resizable_panel};
 use gpui_component::{PixelsExt, menu::PopupMenuItem};
+use notebook::normalize_terminal_width;
 
 impl Notes {
     pub(super) fn file_sort_menu(&self, mut menu: PopupMenu, owner: WeakEntity<Self>) -> PopupMenu {
@@ -89,6 +90,26 @@ impl Notes {
         }
     }
 
+    pub(super) fn terminal_width(&self) -> f32 {
+        self.notebooks
+            .active
+            .as_ref()
+            .map_or(self.right_panel_width, |book| book.settings.terminal_width)
+    }
+
+    pub(super) fn save_terminal_width(&mut self, width: f32, cx: &mut Context<Self>) {
+        let width = normalize_terminal_width(width);
+        self.record_activation_preference(notebook_ui::PreferenceIntent::TerminalWidth(width));
+        if let Some(book) = self.notebooks.active.as_mut() {
+            if book.settings.terminal_width != width {
+                book.settings.terminal_width = width;
+                self.persist_notebooks(cx);
+            }
+        } else {
+            self.right_panel_width = width;
+        }
+    }
+
     pub(super) fn render_sidebar_layout(
         &mut self,
         content: AnyElement,
@@ -121,7 +142,7 @@ impl Notes {
                 .as_ref()
                 .filter(|_| left_visible)
                 .map(|book| book.settings.sidebar_width),
-            right_visible.then_some(self.right_panel_width),
+            right_visible.then_some(self.terminal_width()),
         );
         let mut panels = h_resizable("sidebar-layout")
             .with_state(&self.sidebar_resize)
@@ -188,19 +209,11 @@ impl Notes {
                         && divider == Some(usize::from(left_visible))
                         && let Some(width) = sizes.last()
                     {
-                        this.right_panel_width = normalize_terminal_width(width.as_f32());
+                        this.save_terminal_width(width.as_f32(), cx);
                     }
                 }),
             )
             .into_any_element()
-    }
-}
-
-fn normalize_terminal_width(width: f32) -> f32 {
-    if width.is_finite() {
-        width.max(160.)
-    } else {
-        280.
     }
 }
 

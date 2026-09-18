@@ -198,6 +198,7 @@ struct Notes {
     right_panel_open: bool,
     terminals: terminal_ui::TerminalTabs,
     session_terminal: mithril::terminal::TerminalSettings,
+    // Session fallback when no notebook owns the terminal width.
     right_panel_width: f32,
     workspace_layout: Option<(bool, bool, Pixels)>,
     content_toolbar_width: Pixels,
@@ -252,7 +253,7 @@ impl Notes {
             right_panel_open: false,
             terminals: Default::default(),
             session_terminal: Default::default(),
-            right_panel_width: 280.,
+            right_panel_width: notebook::default_terminal_width(),
             workspace_layout: None,
             content_toolbar_width: window.viewport_size().width,
             sidebar_resize: cx.new(|_| gpui_component::resizable::ResizableState::default()),

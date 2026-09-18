@@ -47,8 +47,10 @@ A shell starts in the active notebook, otherwise the current document's folder,
 otherwise home. Switching notebooks or tabs preserves the existing shell and
 directory. Each new terminal tab uses the current notebook's preference and
 directory.
-The panel width remains session-only, initially 280 px with a 160 px normal
-minimum. Dragging its divider can use all available space up to the 200 px editor
+Sidebar and terminal widths are remembered separately for each notebook after
+closing and reopening the app. Without a notebook, terminal width is session-only.
+Terminal width defaults to 280 px with a 160 px normal minimum. Dragging its
+divider can use all available space up to the 200 px editor
 minimum, without changing the sidebar width. Narrow windows temporarily compress
 side panels; widening restores preferred widths.
 

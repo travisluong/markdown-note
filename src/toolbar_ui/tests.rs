@@ -1140,7 +1140,7 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
     settle_layout(cx);
     let preferred = cx.update(|_, cx| {
         let this = notes.read(cx);
-        assert!(this.right_panel_width > 600.);
+        assert!(this.terminal_width() > 600.);
         assert_eq!(
             this.notebooks
                 .active
@@ -1150,7 +1150,7 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
                 .sidebar_width,
             280.
         );
-        this.right_panel_width
+        this.terminal_width()
     });
     for width in [400., 600., 1400.] {
         cx.simulate_resize(gpui::size(px(width), px(900.)));
@@ -1167,7 +1167,7 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
         assert!(right.right() <= px(width + 0.5));
         cx.update(|_, cx| {
             let this = notes.read(cx);
-            assert_eq!(this.right_panel_width, preferred);
+            assert_eq!(this.terminal_width(), preferred);
             assert_eq!(
                 this.notebooks
                     .active
@@ -1189,12 +1189,12 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
             this.reset_sidebar_resize(cx);
             this.toggle_sidebar(window, cx);
             assert!(this.right_panel_open);
-            assert_eq!(this.right_panel_width, preferred);
+            assert_eq!(this.terminal_width(), 280.);
         })
     });
     settle_layout(cx);
     assert_eq!(cx.debug_bounds("workspace-content").unwrap().left(), px(0.));
-    assert!((cx.debug_bounds("right-panel").unwrap().size.width - px(preferred)).abs() <= px(1.));
+    assert_eq!(cx.debug_bounds("right-panel").unwrap().size.width, px(280.));
 }
 
 #[gpui::test]
@@ -1767,4 +1767,149 @@ fn terminal_long_titles_keep_close_and_add_controls_visible(cx: &mut TestAppCont
     assert!(close.left() >= select.right());
     assert!(close.right() <= add.left());
     assert!(add.right() <= panel.right());
+}
+
+#[gpui::test]
+fn panel_widths_survive_pending_close_startup_and_notebook_switches(cx: &mut TestAppContext) {
+    use std::time::Duration;
+    let (dir, notes, cx) = fixture(cx);
+    let book = notebook::Notebook::open(&dir.path().join("book"), true).unwrap();
+    let mut other = notebook::Notebook::open(&dir.path().join("other"), true).unwrap();
+    other.settings.sidebar_width = 210.;
+    other.settings.terminal_width = 700.;
+    notebook::save_book(&other).unwrap();
+    let index = dir.path().join("index.json");
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.set_test_persistence_target(index.clone());
+            this.request(
+                crate::Next::Notebook {
+                    path: book.root.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            );
+        });
+    });
+    cx.run_until_parked();
+    cx.simulate_resize(gpui::size(px(1400.), px(900.)));
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_right_panel(window, cx)));
+    settle_layout(cx);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_delay(Duration::from_secs(10));
+        })
+    });
+    // Real divider gestures on TestPlatform; no native window or OS input.
+    for (selector, left_edge, delta) in [
+        ("workspace-sidebar", false, 60.0_f32),
+        ("right-panel", true, -220.),
+    ] {
+        let panel = cx.debug_bounds(selector).unwrap();
+        let start = gpui::point(
+            if left_edge {
+                panel.left()
+            } else {
+                panel.right()
+            },
+            panel.center().y,
+        );
+        cx.simulate_mouse_move(start, None, Modifiers::default());
+        cx.simulate_mouse_down(start, gpui::MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(
+            gpui::point(start.x + px(delta.signum() * 12.), start.y),
+            gpui::MouseButton::Left,
+            Modifiers::default(),
+        );
+        settle_layout(cx);
+        let end = gpui::point(start.x + px(delta), start.y);
+        cx.simulate_mouse_move(end, gpui::MouseButton::Left, Modifiers::default());
+        settle_layout(cx);
+        cx.simulate_mouse_up(end, gpui::MouseButton::Left, Modifiers::default());
+        settle_layout(cx);
+    }
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert_eq!(
+            this.notebooks
+                .active
+                .as_ref()
+                .unwrap()
+                .settings
+                .sidebar_width,
+            340.
+        );
+        assert_eq!(this.terminal_width(), 500.);
+    });
+    assert!(!cx.simulate_close());
+    cx.run_until_parked();
+    assert_eq!(cx.windows().len(), 1);
+    assert_eq!(
+        notebook::Notebook::open(&book.root, false)
+            .unwrap()
+            .settings
+            .terminal_width,
+        280.
+    );
+    cx.executor().advance_clock(Duration::from_secs(10));
+    cx.run_until_parked();
+    assert!(cx.windows().is_empty());
+
+    let mut restored = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let entity = cx.new(|cx| {
+            let mut notes = Notes::new(window, cx);
+            notes.notebooks.set_test_persistence_target(index.clone());
+            notes
+        });
+        entity.update(cx, |this, cx| this.restore_notebooks(window, cx));
+        restored = Some(entity.clone());
+        let root = cx.new(|cx| NotesWindow {
+            _subscription: cx.observe(&entity, |_, _, cx| cx.notify()),
+            notes: entity,
+        });
+        Root::new(root, window, cx)
+    });
+    let restored = restored.unwrap();
+    cx.run_until_parked();
+    cx.simulate_resize(gpui::size(px(1400.), px(900.)));
+    cx.update(|window, cx| restored.update(cx, |this, cx| this.toggle_right_panel(window, cx)));
+    settle_layout(cx);
+    assert_eq!(
+        cx.debug_bounds("workspace-sidebar").unwrap().size.width,
+        px(340.)
+    );
+    assert_eq!(cx.debug_bounds("right-panel").unwrap().size.width, px(500.));
+    for (root, sidebar, terminal) in [(&other.root, 210., 700.), (&book.root, 340., 500.)] {
+        cx.update(|window, cx| {
+            restored.update(cx, |this, cx| {
+                this.request(
+                    crate::Next::Notebook {
+                        path: root.clone(),
+                        create: false,
+                    },
+                    window,
+                    cx,
+                );
+            })
+        });
+        cx.run_until_parked();
+        settle_layout(cx);
+        cx.update(|_, cx| {
+            assert_eq!(
+                &restored.read(cx).notebooks.active.as_ref().unwrap().root,
+                root
+            )
+        });
+        assert_eq!(
+            cx.debug_bounds("workspace-sidebar").unwrap().size.width,
+            px(sidebar)
+        );
+        assert_eq!(
+            cx.debug_bounds("right-panel").unwrap().size.width,
+            px(terminal)
+        );
+    }
 }

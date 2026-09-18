@@ -51,7 +51,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; dialog lifetime, form identity and preference scope reject stale events. |
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
-| Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notes owns session-only right-panel visibility/width; TerminalTabs owns retained session identities and cleanup tasks, TerminalSession owns each view, and the terminal runtime owns PTY processes. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
+| Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notebook settings own persisted sidebar/terminal widths; Notes owns session-only right-panel visibility and the terminal width fallback without a notebook; TerminalTabs owns retained session identities and cleanup tasks, TerminalSession owns each view, and the terminal runtime owns PTY processes. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
 | Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow, popup anchors and fixed sidebar/terminal panel buttons. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
 | Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. Fixed regions read effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
@@ -193,7 +193,7 @@ These are the invariants most likely to matter when changing a feature:
    are distinct model outcomes; discard permits failed jobs, never abandoned
    pending jobs. StateChanged must disable editor input while close is waiting.
 
-Preference scope is intentional. Appearance, date, sidebar and toolbar choices use the
+Preference scope is intentional. Appearance, date, sidebar/terminal widths and toolbar choices use the
 active notebook whenever one exists, otherwise session defaults. Autosave for a
 standalone file outside that notebook uses the active notebook's external-file enable flag and session delay (both session-only when no notebook is open). Same-book reloads
 replay only explicit mode, width and notebook-autosave choices made during the
@@ -483,8 +483,11 @@ presentation; there is no alignment control or mutation intent.
 The default-enabled terminal toggle lives in the title bar; its legacy saved-order
 entry remains compatible without rendering a workspace toolbar button. It toggles
 a full-height right panel containing retained terminal tabs. Notes retains
-open/closed state and preferred width for the window session (initially closed,
-280 px), independently of document tabs/notebooks. Opening focuses the active
+open/closed state for the window session (initially closed). Sidebar and terminal
+widths persist per notebook through SettingsWriter and its close-time flush.
+Terminal width defaults to 280 px for older notebooks; without an active notebook,
+it uses a separate session-only width. Notebook activation restores both widths
+and replays only explicit choices scoped to that operation. Opening focuses the active
 terminal; closing restores active content focus. Modal/busy guards apply to both
 the title-bar toggle and panel close button. Hiding toolbars leaves both available.
 The terminal header matches one workspace toolbar row: 33/41/49 logical pixels

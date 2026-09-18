@@ -167,6 +167,37 @@ fn sidebar_width_compatibility_normalization_and_persistence() {
 }
 
 #[test]
+fn terminal_width_compatibility_normalization_and_persistence() {
+    use crate::notebook::normalize_terminal_width;
+    let old: Settings =
+        serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
+    assert_eq!(old.terminal_width, 280.);
+    assert_eq!(normalize_terminal_width(-1.), 160.);
+    assert_eq!(normalize_terminal_width(900.), 900.);
+    assert_eq!(normalize_terminal_width(f32::NAN), 280.);
+    assert_eq!(normalize_terminal_width(f32::INFINITY), 280.);
+    let fixture = tempfile::tempdir().unwrap();
+    for (name, saved, expected) in [
+        ("First", 375.5, 375.5),
+        ("Second", 210., 210.),
+        ("Small", 0., 160.),
+        ("Large", 999., 999.),
+    ] {
+        let root = fixture.path().join(name);
+        let mut book = Notebook::open(&root, true).unwrap();
+        book.settings.terminal_width = saved;
+        write_json(&settings_path(&root), &book.settings).unwrap();
+        assert_eq!(
+            Notebook::open(&root, false)
+                .unwrap()
+                .settings
+                .terminal_width,
+            expected
+        );
+    }
+}
+
+#[test]
 fn appearance_compatibility_and_round_trip() {
     let old: Settings =
         serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();

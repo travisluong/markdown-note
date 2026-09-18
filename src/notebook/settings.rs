@@ -602,6 +602,8 @@ pub struct Settings {
     pub view_mode: crate::ViewMode,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: f32,
+    #[serde(default = "default_terminal_width")]
+    pub terminal_width: f32,
     #[serde(default = "crate::templates::default_format")]
     pub date_format: String,
     pub version: u32,
@@ -625,6 +627,7 @@ impl Default for Settings {
             always_hide_extensions: default_always_hide_extensions(),
             view_mode: crate::ViewMode::default(),
             sidebar_width: default_sidebar_width(),
+            terminal_width: default_terminal_width(),
             version: VERSION,
             last_file: None,
             date_format: crate::templates::default_format(),
@@ -637,6 +640,18 @@ impl Default for Settings {
 
 pub fn default_sidebar_width() -> f32 {
     280.
+}
+
+pub fn default_terminal_width() -> f32 {
+    280.
+}
+
+pub fn normalize_terminal_width(width: f32) -> f32 {
+    if width.is_finite() {
+        width.max(160.)
+    } else {
+        default_terminal_width()
+    }
 }
 
 pub fn default_show_file_extensions() -> bool {

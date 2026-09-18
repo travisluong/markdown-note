@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use super::{
     paths::{is_link, name, resolve, safe_relative, validate_name},
-    settings::{Index, Settings, VERSION, normalize_sidebar_width},
+    settings::{Index, Settings, VERSION, normalize_sidebar_width, normalize_terminal_width},
     tree::{Entry, FileSort},
 };
 
@@ -140,6 +140,7 @@ impl Notebook {
         let existing: Option<Settings> = read_json(&path)?;
         let mut settings = existing.clone().unwrap_or_default();
         settings.sidebar_width = normalize_sidebar_width(settings.sidebar_width);
+        settings.terminal_width = normalize_terminal_width(settings.terminal_width);
         check_version(settings.version)?;
         if settings
             .last_file
