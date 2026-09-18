@@ -765,6 +765,15 @@ the other Windows choice; standalone settings remain session-only. The Terminal
 settings section owns the shell dropdown and synchronizes its effective selection.
 Settings uses
 the existing form-scope guards and ordered writer. Unix uses the user's shell.
+TerminalSettings also owns optional font_family and font_size overrides, exposed
+only in Settings → Terminal. Missing/null overrides follow the resolved editor
+monospace font and content size independently; explicit sizes clamp to 10–40 px.
+Unavailable fonts retain their saved name and use the resolved editor monospace
+font until available. Notes resolves installed font names before synchronizing
+every retained session, including hidden tabs. TerminalSession retains the latest
+complete view configuration during launch; font changes remeasure the grid and
+resize the PTY without replacing its process or output. These settings use the
+same notebook/session scope, guarded form intents and ordered writer as the cursor.
 TerminalSettings also owns cursor_style (line by default, box or underline).
 Settings emits a typed cursor preference intent; notebook persistence and standalone
 session scope match shell selection. Notes synchronizes terminal appearance and

@@ -29,11 +29,30 @@ pub enum CursorStyle {
     Underline,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TerminalSettings {
     pub windows_shell: WindowsShell,
     pub cursor_style: CursorStyle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(
+        deserialize_with = "deserialize_font_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub font_size: Option<u16>,
+}
+
+impl TerminalSettings {
+    pub fn effective_font_size(&self, editor_size: u16) -> u16 {
+        self.font_size.unwrap_or(editor_size).clamp(10, 40)
+    }
+}
+
+fn deserialize_font_size<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u16>, D::Error> {
+    Ok(Option::<u16>::deserialize(deserializer)?.map(|size| size.clamp(10, 40)))
 }
 
 #[derive(Clone, Debug)]

@@ -151,6 +151,10 @@ impl Render for SettingsPanel {
                 }))
             .when_some(self.excluded_patterns_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
             .when_some(self.values.notice.clone(), |view, notice| view.child(div().text_sm().child(notice)));
+        let terminal_size = self
+            .values
+            .terminal
+            .effective_font_size(appearance.content_font_size);
         let terminal_body = div()
             .w_full()
             .min_w_0()
@@ -184,6 +188,84 @@ impl Render for SettingsPanel {
             .when(!cfg!(windows), |body| {
                 body.child("Uses your system shell ($SHELL, or /bin/sh).")
             })
+            .child("Terminal font")
+            .child(
+                div()
+                    .debug_selector(|| "terminal-font-picker".into())
+                    .w_full()
+                    .min_w_0()
+                    .h_8()
+                    .flex()
+                    .flex_shrink_0()
+                    .child(
+                        Select::new(&self.terminal_font)
+                            .w_full()
+                            .disabled(self.values.busy),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .when(narrow, |view| view.w_full())
+                            .when(!narrow, |view| view.flex_1())
+                            .min_w_0()
+                            .child("Terminal font size"),
+                    )
+                    .child(
+                        Button::new("terminal-font-decrease")
+                            .label("−")
+                            .disabled(self.values.busy || terminal_size <= 10)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.emit_intent(SettingsIntent::TerminalFontSizeStep(-1), cx)
+                            })),
+                    )
+                    .child(
+                        div()
+                            .min_w(px(48.))
+                            .text_center()
+                            .child(format!("{terminal_size} px")),
+                    )
+                    .child(
+                        Button::new("terminal-font-increase")
+                            .label("+")
+                            .disabled(self.values.busy || terminal_size >= 40)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.emit_intent(SettingsIntent::TerminalFontSizeStep(1), cx)
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(if self.values.terminal.font_size.is_none() {
+                                "Following editor content size"
+                            } else {
+                                "Custom terminal size"
+                            }),
+                    )
+                    .when(self.values.terminal.font_size.is_some(), |view| {
+                        view.child(
+                            Button::new("terminal-font-size-reset")
+                                .label("Use editor size")
+                                .disabled(self.values.busy)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.emit_intent(SettingsIntent::TerminalFontSizeReset, cx)
+                                })),
+                        )
+                    }),
+            )
             .child("Cursor style")
             .child(
                 div()

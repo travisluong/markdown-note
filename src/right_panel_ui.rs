@@ -6,10 +6,23 @@ use gpui_component::{Disableable, button::ButtonCustomVariant};
 
 impl Notes {
     pub(super) fn terminal_settings(&self) -> mithril::terminal::TerminalSettings {
-        self.notebooks
-            .active
-            .as_ref()
-            .map_or(self.session_terminal, |book| book.settings.terminal)
+        self.notebooks.active.as_ref().map_or_else(
+            || self.session_terminal.clone(),
+            |book| book.settings.terminal.clone(),
+        )
+    }
+
+    fn resolved_terminal_settings(&self, cx: &App) -> mithril::terminal::TerminalSettings {
+        let mut settings = self.terminal_settings();
+        settings.font_family = Some(
+            crate::settings_ui::resolve_font(
+                settings.font_family.as_deref(),
+                &self.installed_fonts,
+                cx.theme().mono_font_family.as_ref(),
+            )
+            .to_string(),
+        );
+        settings
     }
 
     pub(super) fn new_terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -27,7 +40,7 @@ impl Notes {
         .map_err(|e| e.to_string());
         self.terminals.serial += 1;
         let id = TerminalTabId(self.terminals.serial);
-        let title = terminal_ui::shell_label(settings);
+        let title = terminal_ui::shell_label(settings.clone());
         let owner = cx.weak_entity();
         let session = cx.new(|cx| TerminalSession::new(id, owner, cx));
         let subscription = cx.observe(&session, |_, _, cx| cx.notify());
@@ -41,6 +54,13 @@ impl Notes {
         self.terminals.active = Some(id);
         self.right_panel_open = true;
         session.update(cx, |session, cx| {
+            session.sync(
+                true,
+                &self.appearance(),
+                self.startup_dark,
+                self.resolved_terminal_settings(cx),
+                cx,
+            );
             session.start(settings, directory, window, cx)
         });
         self.terminals.reveal_active();
@@ -176,7 +196,7 @@ impl Notes {
                     enabled && self.terminals.active == Some(tab.id),
                     &self.appearance(),
                     self.startup_dark,
-                    self.terminal_settings(),
+                    self.resolved_terminal_settings(cx),
                     cx,
                 )
             });

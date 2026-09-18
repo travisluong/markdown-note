@@ -3279,3 +3279,278 @@ fn top_bar_settings_apply_to_session_without_closing_panels(cx: &mut TestAppCont
         )
     });
 }
+
+#[gpui::test]
+fn terminal_font_controls_persist_reset_and_guard_scope(cx: &mut TestAppContext) {
+    use gpui_component::select::SelectEvent;
+    let (fixture, notes, cx) = fixture(cx, true, false);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+        })
+    });
+    let form = panel(&notes, cx);
+    let picker = cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Terminal, cx)
+        });
+        form.read(cx).terminal_font.clone()
+    });
+    cx.update(|_, cx| {
+        picker.update(cx, |_, cx| {
+            cx.emit(SelectEvent::Confirm(Some(
+                "Saved unavailable font".to_owned(),
+            )))
+        })
+    });
+    intent(&form, SettingsIntent::TerminalFontSizeStep(1), cx);
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let saved = notebook::Notebook::open(&fixture.first.root, false)
+        .unwrap()
+        .settings
+        .terminal;
+    assert_eq!(saved.font_family.as_deref(), Some("Saved unavailable font"));
+    assert_eq!(saved.font_size, Some(17));
+    cx.update(|_, cx| {
+        assert_eq!(
+            picker.read(cx).selected_value().map(String::as_str),
+            Some("Saved unavailable font")
+        );
+        assert!(notes.read(cx).terminals.tabs.is_empty());
+    });
+    intent(&form, SettingsIntent::TerminalFontSizeReset, cx);
+    cx.update(|_, cx| {
+        let settings = notes.read(cx).terminal_settings();
+        assert_eq!(settings.font_size, None);
+        assert_eq!(settings.font_family, saved.font_family);
+    });
+    intent(&form, SettingsIntent::TerminalFontSizeStep(1), cx);
+    cx.update(|_, cx| {
+        picker.update(cx, |_, cx| {
+            cx.emit(SelectEvent::Confirm(Some(
+                super::FOLLOW_EDITOR_FONT.to_owned(),
+            )))
+        })
+    });
+    cx.update(|_, cx| {
+        let settings = notes.read(cx).terminal_settings();
+        assert_eq!(settings.font_size, Some(17));
+        assert_eq!(settings.font_family, None);
+        assert_eq!(
+            picker.read(cx).selected_value().map(String::as_str),
+            Some(super::FOLLOW_EDITOR_FONT)
+        );
+    });
+    // Steps clamp at both ends, independently of editor content size.
+    for _ in 0..50 {
+        intent(&form, SettingsIntent::TerminalFontSizeStep(1), cx);
+    }
+    cx.update(|_, cx| assert_eq!(notes.read(cx).terminal_settings().font_size, Some(40)));
+    for _ in 0..50 {
+        intent(&form, SettingsIntent::TerminalFontSizeStep(-1), cx);
+    }
+    cx.update(|_, cx| assert_eq!(notes.read(cx).terminal_settings().font_size, Some(10)));
+    cx.run_until_parked();
+    assert_eq!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .terminal
+            .font_size,
+        Some(10)
+    );
+    assert_eq!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .terminal
+            .font_size,
+        None
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::TerminalFontSizeStep(1),
+                window,
+                cx,
+            );
+            assert_eq!(this.terminal_settings().font_size, None);
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let fresh = panel(&notes, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            for intent in [
+                SettingsIntent::TerminalFont(Some("Blocked".into())),
+                SettingsIntent::TerminalFontSizeStep(1),
+                SettingsIntent::TerminalFontSizeReset,
+            ] {
+                this.handle_settings_intent(fresh.entity_id(), intent, window, cx);
+            }
+            assert_eq!(this.terminal_settings(), Default::default());
+            assert!(fresh.read(cx).values.busy);
+        })
+    });
+    let (events, _subscription) = watch(&fresh, cx);
+    intent(&fresh, SettingsIntent::TerminalFontSizeStep(1), cx);
+    intent(
+        &fresh,
+        SettingsIntent::TerminalFont(Some("Blocked".into())),
+        cx,
+    );
+    cx.update(|_, cx| assert!(events.read(cx).0.is_empty()));
+}
+
+#[gpui::test]
+fn terminal_fonts_update_all_sessions_and_follow_notebook_scope(cx: &mut TestAppContext) {
+    use gpui_component::ActiveTheme;
+    let (fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.installed_fonts = vec!["Terminal Mono".into(), "Editor Mono".into()];
+            let mut appearance = this.appearance();
+            appearance.monospace_font = Some("Editor Mono".into());
+            appearance.content_font_size = 19;
+            this.update_appearance(appearance, window, cx);
+            this.new_terminal_tab(window, cx);
+            this.new_terminal_tab(window, cx);
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    let sessions = cx.update(|_, cx| {
+        notes
+            .read(cx)
+            .terminals
+            .tabs
+            .iter()
+            .map(|tab| {
+                let session = tab.session.clone();
+                let view = session.read(cx).view.clone().unwrap();
+                let launch = session.read(cx).last_launch.clone();
+                assert_eq!(view.read(cx).config().font_family, "Editor Mono");
+                assert_eq!(view.read(cx).config().font_size, gpui::px(19.));
+                (session, view, launch)
+            })
+            .collect::<Vec<_>>()
+    });
+    intent(
+        &form,
+        SettingsIntent::TerminalFont(Some("terminal mono".into())),
+        cx,
+    );
+    intent(&form, SettingsIntent::TerminalFontSizeStep(1), cx);
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        for (_, view, _) in &sessions {
+            assert_eq!(view.read(cx).config().font_family, "Terminal Mono");
+            assert_eq!(view.read(cx).config().font_size, gpui::px(20.));
+        }
+        assert_eq!(notes.read(cx).session_terminal.font_size, Some(20));
+        assert_eq!(cx.theme().mono_font_family.as_ref(), "Editor Mono");
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let mut appearance = this.appearance();
+            appearance.content_font_size = 21;
+            this.update_appearance(appearance, window, cx);
+        })
+    });
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        for (_, view, _) in &sessions {
+            assert_eq!(view.read(cx).config().font_size, gpui::px(20.));
+        }
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.toggle_right_panel(window, cx);
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::TerminalFont(Some("Unavailable".into())),
+        cx,
+    );
+    intent(&form, SettingsIntent::TerminalFontSizeReset, cx);
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        assert!(!notes.read(cx).right_panel_open);
+        for (session, view, launch) in &sessions {
+            assert_eq!(view.read(cx).config().font_family, "Editor Mono");
+            assert_eq!(view.read(cx).config().font_size, gpui::px(21.));
+            assert_eq!(session.read(cx).view.as_ref(), Some(view));
+            assert_eq!(&session.read(cx).last_launch, launch);
+        }
+        assert_eq!(
+            notes.read(cx).session_terminal.font_family.as_deref(),
+            Some("Unavailable")
+        );
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.first.clone());
+            this.apply_appearance(window, cx);
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        for (_, view, _) in &sessions {
+            assert_eq!(view.read(cx).config().font_size, gpui::px(16.));
+            assert_eq!(
+                view.read(cx).config().font_family,
+                cx.theme().mono_font_family.to_string()
+            );
+        }
+    });
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = None;
+            this.apply_appearance(window, cx);
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        for (_, view, _) in &sessions {
+            assert_eq!(view.read(cx).config().font_size, gpui::px(21.));
+            assert_eq!(view.read(cx).config().font_family, "Editor Mono");
+        }
+    });
+}
+
+#[gpui::test]
+fn terminal_font_controls_fit_narrow_and_wide_dialogs(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Terminal, cx)
+        })
+    });
+    for width in [500., 1200.] {
+        cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(1000.)));
+        cx.refresh().unwrap();
+        let content = cx.debug_bounds("settings-content").unwrap();
+        let font = cx.debug_bounds("terminal-font-picker").unwrap();
+        assert!(font.size.width > gpui::px(100.));
+        assert!(
+            font.left() >= content.left() && font.right() <= content.right(),
+            "{font:?} outside {content:?}"
+        );
+    }
+}

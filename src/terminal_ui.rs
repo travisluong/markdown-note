@@ -93,7 +93,8 @@ pub(super) struct TerminalSession {
     pub status: Status,
     generation: u64,
     process: Option<TerminalProcess>,
-    cursor_style: gpui_terminal::CursorStyle,
+    // Latest appearance survives asynchronous process launch and view installation.
+    config: TerminalConfig,
     task: Option<Task<()>>,
     title_subscription: Option<Subscription>,
     focus: FocusHandle,
@@ -114,7 +115,10 @@ impl TerminalSession {
             status: Status::Idle,
             generation: 0,
             process: None,
-            cursor_style: cursor_style(mithril::terminal::CursorStyle::default()),
+            config: TerminalConfig {
+                cursor_style: cursor_style(mithril::terminal::CursorStyle::default()),
+                ..Default::default()
+            },
             task: None,
             title_subscription: None,
             focus: cx.focus_handle(),
@@ -128,10 +132,7 @@ impl TerminalSession {
     }
 
     fn view_config(&self) -> TerminalConfig {
-        TerminalConfig {
-            cursor_style: self.cursor_style,
-            ..TerminalConfig::default()
-        }
+        self.config.clone()
     }
 
     pub fn focus(&self, window: &mut Window, cx: &App) {
@@ -150,7 +151,7 @@ impl TerminalSession {
     ) {
         self.generation += 1;
         let generation = self.generation;
-        self.cursor_style = cursor_style(settings.cursor_style);
+        self.config.cursor_style = cursor_style(settings.cursor_style);
         let old = self.process.take();
         let pending = self.task.take();
         if let Some(process) = &old {
@@ -333,36 +334,35 @@ impl TerminalSession {
         settings: TerminalSettings,
         cx: &mut Context<Self>,
     ) {
-        self.cursor_style = cursor_style(settings.cursor_style);
+        let palette = appearance.palette(startup_dark);
+        let rgb = |value: u32| ((value >> 16) as u8, (value >> 8) as u8, value as u8);
+        let (br, bg, bb) = rgb(palette.background);
+        let (fr, fg, fb) = rgb(palette.font);
+        self.config.cursor_style = cursor_style(settings.cursor_style);
+        self.config.font_family = settings
+            .font_family
+            .clone()
+            .unwrap_or_else(|| cx.theme().mono_font_family.to_string());
+        self.config.font_size = px(f32::from(
+            settings.effective_font_size(appearance.content_font_size),
+        ));
+        self.config.padding = Edges::all(px(4.));
+        self.config.colors = ColorPalette::builder()
+            .background(br, bg, bb)
+            .foreground(fr, fg, fb)
+            .cursor(fr, fg, fb)
+            .build();
         if let Some(view) = &self.view {
-            let palette = appearance.palette(startup_dark);
-            let rgb = |value: u32| ((value >> 16) as u8, (value >> 8) as u8, value as u8);
-            let (br, bg, bb) = rgb(palette.background);
-            let (fr, fg, fb) = rgb(palette.font);
-            let font = appearance
-                .monospace_font
-                .clone()
-                .unwrap_or_else(|| cx.theme().mono_font_family.to_string());
             view.update(cx, |view, cx| {
                 view.set_input_enabled(enabled && self.status == Status::Running);
                 let config = view.config();
-                if config.cursor_style != self.cursor_style
-                    || config.font_family != font
-                    || config.font_size != px(f32::from(appearance.content_font_size))
-                    || config.colors.background() != gpui::rgb(palette.background).into()
-                    || config.colors.foreground() != gpui::rgb(palette.font).into()
+                if config.cursor_style != self.config.cursor_style
+                    || config.font_family != self.config.font_family
+                    || config.font_size != self.config.font_size
+                    || config.colors.background() != self.config.colors.background()
+                    || config.colors.foreground() != self.config.colors.foreground()
                 {
-                    let mut config = config.clone();
-                    config.cursor_style = self.cursor_style;
-                    config.font_family = font;
-                    config.font_size = px(f32::from(appearance.content_font_size));
-                    config.padding = Edges::all(px(4.));
-                    config.colors = ColorPalette::builder()
-                        .background(br, bg, bb)
-                        .foreground(fr, fg, fb)
-                        .cursor(fr, fg, fb)
-                        .build();
-                    view.update_config(config, cx);
+                    view.update_config(self.config.clone(), cx);
                 }
             });
         }
@@ -458,7 +458,9 @@ mod tests {
     use super::{ProcessExit, Status};
     use gpui::{AppContext, TestAppContext};
     #[gpui::test]
-    fn cursor_sync_preserves_output_and_pending_launch_configuration(cx: &mut TestAppContext) {
+    fn terminal_typography_sync_preserves_output_and_pending_launch_configuration(
+        cx: &mut TestAppContext,
+    ) {
         use mithril::terminal::{CursorStyle, TerminalSettings};
         cx.update(gpui_component::init);
         let mut owner = None;
@@ -491,10 +493,14 @@ mod tests {
                         false,
                         TerminalSettings {
                             cursor_style: style,
+                            font_family: Some("Test terminal font".into()),
+                            font_size: Some(22),
                             ..Default::default()
                         },
                         cx,
                     );
+                    assert_eq!(view.read(cx).config().font_family, "Test terminal font");
+                    assert_eq!(view.read(cx).config().font_size, gpui::px(22.));
                     assert_eq!(panel.view.as_ref(), Some(&view));
                     assert_eq!(panel.generation, generation);
                     assert_eq!(
@@ -520,10 +526,14 @@ mod tests {
                     false,
                     TerminalSettings {
                         cursor_style: CursorStyle::Underline,
+                        font_family: Some("Latest pending font".into()),
+                        font_size: Some(25),
                         ..Default::default()
                     },
                     cx,
                 );
+                assert_eq!(panel.view_config().font_family, "Latest pending font");
+                assert_eq!(panel.view_config().font_size, gpui::px(25.));
                 // Async installation and fixture construction use this same current config.
                 assert_eq!(
                     panel.view_config().cursor_style,

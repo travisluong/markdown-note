@@ -62,7 +62,18 @@ return. Ctrl+C interrupts a
 foreground command. Paste uses Ctrl+Shift+V on Windows/Linux and Cmd+V on macOS,
 respecting bracketed-paste mode. Pasting is limited to 1 MiB; a stalled input
 queue reports an error. Modal dialogs block input but output continues.
-The theme, monospace font and content font size follow notebook appearance.
+The theme follows notebook appearance. In **Settings → Terminal**, **Terminal
+font** defaults to **Follow editor monospace font**. Choose an installed font to
+override it; choose the follow-editor option to reset it. An unavailable saved
+font falls back to the editor monospace font without discarding the saved name.
+
+**Terminal font size** initially follows the editor content size. Its minus/plus
+buttons set an independent size from 10–40 px in 1 px steps. **Use editor size**
+clears that override without changing the terminal font selection. Both controls
+apply immediately to every terminal tab, including hidden and starting sessions,
+without restarting shells or clearing output. Preferences belong to the active
+notebook; without a notebook they last for the current app session. Switching
+notebooks updates terminal typography while preserving existing shell directories.
 
 The trial does not provide selection/copy, scrollback navigation, terminal
 search, mouse reporting, shell integration, splits, custom

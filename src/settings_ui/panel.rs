@@ -40,6 +40,9 @@ pub(super) enum ColorRole {
 pub(super) enum SettingsIntent {
     TerminalShell(mithril::terminal::WindowsShell),
     TerminalCursorStyle(mithril::terminal::CursorStyle),
+    TerminalFont(Option<String>),
+    TerminalFontSizeStep(i8),
+    TerminalFontSizeReset,
     CenteredEditor(bool),
     CenteredEditorWidth(u16),
     ResetToolbar,
@@ -110,6 +113,7 @@ enum Section {
 
 type FontPicker = Entity<SelectState<SearchableVec<String>>>;
 type ChoicePicker = Entity<SelectState<Vec<&'static str>>>;
+const FOLLOW_EDITOR_FONT: &str = "Follow editor monospace font";
 const SHELL_OPTIONS: [(mithril::terminal::WindowsShell, &str); 2] = [
     (mithril::terminal::WindowsShell::Powershell, "PowerShell"),
     (mithril::terminal::WindowsShell::GitBash, "Git Bash"),
@@ -140,6 +144,8 @@ pub(crate) struct SettingsPanel {
     fonts: [FontPicker; 3],
     terminal_shell: ChoicePicker,
     terminal_cursor: ChoicePicker,
+    terminal_font: FontPicker,
+    terminal_fonts: Vec<String>,
     _subscriptions: Vec<Subscription>,
 }
 impl EventEmitter<SettingsIntent> for SettingsPanel {}
@@ -274,6 +280,42 @@ impl SettingsPanel {
             ));
             picker
         });
+        let mut terminal_fonts = installed_fonts.to_vec();
+        terminal_fonts.sort_by_key(|font| font.to_lowercase());
+        terminal_fonts.dedup();
+        if let Some(name) = &values.terminal.font_family
+            && !terminal_fonts.contains(name)
+        {
+            terminal_fonts.push(name.clone());
+        }
+        terminal_fonts.insert(0, FOLLOW_EDITOR_FONT.to_owned());
+        let row = values
+            .terminal
+            .font_family
+            .as_ref()
+            .and_then(|name| terminal_fonts.iter().position(|font| font == name))
+            .unwrap_or(0);
+        let terminal_font = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(terminal_fonts.clone()),
+                Some(IndexPath::default().row(row)),
+                window,
+                cx,
+            )
+            .searchable(true)
+        });
+        subscriptions.push(cx.subscribe(
+            &terminal_font,
+            |this, _, event: &SelectEvent<SearchableVec<String>>, cx| {
+                let SelectEvent::Confirm(value) = event;
+                this.emit_intent(
+                    SettingsIntent::TerminalFont(
+                        value.clone().filter(|name| name != FOLLOW_EDITOR_FONT),
+                    ),
+                    cx,
+                );
+            },
+        ));
         let terminal_shell = cx.new(|cx| {
             SelectState::new(
                 SHELL_OPTIONS
@@ -341,6 +383,8 @@ impl SettingsPanel {
             fonts,
             terminal_shell,
             terminal_cursor,
+            terminal_font,
+            terminal_fonts,
             _subscriptions: subscriptions,
         }
     }
@@ -352,6 +396,22 @@ impl SettingsPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let font = values
+            .terminal
+            .font_family
+            .clone()
+            .unwrap_or_else(|| FOLLOW_EDITOR_FONT.to_owned());
+        if !self.terminal_fonts.contains(&font) {
+            self.terminal_fonts.push(font.clone());
+            self.terminal_font.update(cx, |picker, cx| {
+                picker.set_items(SearchableVec::new(self.terminal_fonts.clone()), window, cx);
+            });
+        }
+        if self.terminal_font.read(cx).selected_value() != Some(&font) {
+            self.terminal_font.update(cx, |picker, cx| {
+                picker.set_selected_value(&font, window, cx)
+            });
+        }
         let shell = SHELL_OPTIONS
             .iter()
             .find(|(shell, _)| *shell == values.terminal.windows_shell)

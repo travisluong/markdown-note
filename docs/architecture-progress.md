@@ -2475,3 +2475,28 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   isolate concurrent source edits and Windows linker conflicts in shared outputs.
   No desktop interaction or native application harness was used. Unrelated
   terminal-font work and the existing Cargo.lock changes are excluded.
+
+### 2026-09-18 — Independent terminal font and size settings
+
+- Added a searchable Terminal font picker and a 10–40 px size stepper in
+  Settings → Terminal. Font and size independently inherit editor typography
+  until overridden; the follow-editor choice and Use editor size reset them.
+- Optional terminal.font_family and terminal.font_size fields preserve old
+  notebooks and standalone session scope. Size values clamp on deserialization;
+  unavailable font names stay saved while rendering uses the editor fallback.
+- Existing guarded intents and SettingsWriter persist changes. All retained
+  terminal sessions update in place; pending launches retain their latest full
+  configuration, and font changes use the existing grid/PTY resize callback.
+- Added headless coverage for persistence, bounds, resets, missing fonts,
+  case-insensitive resolution, notebook switching, busy/stale forms, narrow
+  layout, multiple/hidden sessions, pending launches, output preservation and
+  grid/PTY resizing. All 26 focused application tests and 12 terminal integration
+  tests passed, including the real PowerShell and Git Bash PTY tests.
+- Locked offline check, formatting and strict all-target diagnostics Clippy
+  passed. Validation used target/terminal-settings-validation after the shared
+  default target encountered locked executables and stale artifacts. No desktop
+  interaction or visible application launch was used; Cargo.lock is excluded.
+- The serial full run passed all 100 library tests, 352 application tests and
+  all other integration suites/doc-tests. The existing Windows PTY interrupt
+  test timed out in the sandbox; rerunning all 12 terminal integration tests
+  outside the sandbox passed without code changes.

@@ -347,7 +347,7 @@ fn terminal_cursor_settings_default_and_round_trip() {
             cursor_style,
             ..Default::default()
         };
-        let json = serde_json::to_value(settings).unwrap();
+        let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["cursor_style"], name);
         assert_eq!(
             serde_json::from_value::<TerminalSettings>(json).unwrap(),
@@ -466,5 +466,88 @@ fn terminal_sessions_are_independent_and_closing_one_preserves_the_other() {
     assert_eq!(
         done.recv_timeout(Duration::from_secs(15)),
         Err(flume::RecvTimeoutError::Disconnected)
+    );
+}
+
+#[test]
+fn terminal_font_settings_inherit_round_trip_and_clamp() {
+    for json in [
+        "{}",
+        r#"{"windows_shell":"git_bash"}"#,
+        r#"{"font_family":null,"font_size":null}"#,
+    ] {
+        let settings: TerminalSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.font_family, None);
+        assert_eq!(settings.font_size, None);
+        assert_eq!(settings.effective_font_size(23), 23);
+    }
+    let settings = TerminalSettings {
+        font_family: Some("Missing font kept for another computer".into()),
+        font_size: Some(24),
+        ..Default::default()
+    };
+    assert_eq!(settings.effective_font_size(16), 24);
+    assert_eq!(
+        serde_json::from_str::<TerminalSettings>(&serde_json::to_string(&settings).unwrap())
+            .unwrap(),
+        settings
+    );
+    for (size, expected) in [(0, 10), (9, 10), (16, 16), (40, 40), (65535, 40)] {
+        let settings: TerminalSettings =
+            serde_json::from_value(serde_json::json!({"font_size": size})).unwrap();
+        assert_eq!(settings.font_size, Some(expected));
+        assert_eq!(settings.effective_font_size(16), expected);
+    }
+}
+
+#[gpui::test]
+fn terminal_font_resize_updates_grid_and_pty_callback(cx: &mut gpui::TestAppContext) {
+    use gpui::AppContext;
+    use gpui_terminal::{TerminalConfig, TerminalView};
+    cx.update(gpui_component::init);
+    let recorded = RecordedInput(Default::default());
+    let (_tx, rx) = flume::bounded(64);
+    let sizes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut view = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let terminal = cx.new(|cx| {
+            let sizes = sizes.clone();
+            TerminalView::from_receiver(
+                recorded.clone(),
+                rx,
+                TerminalConfig {
+                    font_size: gpui::px(12.),
+                    ..Default::default()
+                },
+                cx,
+            )
+            .with_resize_callback(move |cols, rows| sizes.lock().unwrap().push((cols, rows)))
+        });
+        view = Some(terminal.clone());
+        gpui_component::Root::new(terminal, window, cx)
+    });
+    let view = view.unwrap();
+    cx.refresh().unwrap();
+    let before = cx.update(|_, cx| view.read(cx).dimensions());
+    sizes.lock().unwrap().clear();
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let mut config = view.config().clone();
+            config.font_size = gpui::px(24.);
+            view.update_config(config, cx);
+        })
+    });
+    cx.refresh().unwrap();
+    let after = cx.update(|_, cx| view.read(cx).dimensions());
+    assert!(
+        after.0 < before.0 && after.1 < before.1,
+        "{before:?} -> {after:?}"
+    );
+    assert!(
+        sizes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|&(cols, rows)| (cols, rows) == after)
     );
 }

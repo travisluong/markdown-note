@@ -605,6 +605,31 @@ impl Notes {
                 }
                 false
             }
+            SettingsIntent::TerminalFont(_)
+            | SettingsIntent::TerminalFontSizeStep(_)
+            | SettingsIntent::TerminalFontSizeReset => {
+                let mut settings = self.terminal_settings();
+                match intent {
+                    SettingsIntent::TerminalFont(font) => settings.font_family = font,
+                    SettingsIntent::TerminalFontSizeStep(delta) => {
+                        settings.font_size = Some(
+                            settings
+                                .effective_font_size(appearance.content_font_size)
+                                .saturating_add_signed(i16::from(delta))
+                                .clamp(10, 40),
+                        );
+                    }
+                    SettingsIntent::TerminalFontSizeReset => settings.font_size = None,
+                    _ => unreachable!(),
+                }
+                if let Some(book) = &mut self.notebooks.active {
+                    book.settings.terminal = settings;
+                    self.persist_notebooks(cx);
+                } else {
+                    self.session_terminal = settings;
+                }
+                false
+            }
             SettingsIntent::ExternalAutosaveEnabled(enabled) => {
                 self.update_external_autosave(enabled, window, cx);
                 false
@@ -1016,7 +1041,11 @@ mod palette_tests {
     }
 }
 
-fn resolve_font(saved: Option<&str>, installed: &[String], fallback: &str) -> SharedString {
+pub(super) fn resolve_font(
+    saved: Option<&str>,
+    installed: &[String],
+    fallback: &str,
+) -> SharedString {
     saved
         .and_then(|name| {
             installed
