@@ -363,7 +363,7 @@ impl Notes {
             .flex_shrink_0()
             .min_w_0()
             .gap_1()
-            .px_2()
+            .px_1()
             .py_1()
             .bg(cx.theme().background)
             .overflow_x_scroll()
@@ -381,16 +381,16 @@ impl Notes {
                     .flex()
                     .items_center()
                     .flex_shrink_0()
-                    .rounded(px(8.))
+                    .rounded(px(4.))
                     .bg(cx.theme().background)
                     .when(id == self.tabs.active.id, |d| d.bg(cx.theme().secondary))
                     .when(!busy, |d| d.hover(|style| style.bg(cx.theme().secondary)))
-                    .px_1()
                     .child(
                         Button::new(("tab-select", id.0))
                             .debug_selector(move || format!("tab-select-{}", id.0))
                             // The wrapper paints one hover surface for both controls.
                             .custom(ButtonCustomVariant::new(cx))
+                            .small()
                             .label(format!(
                                 "{}{}",
                                 if tab.dirty_cached { "• " } else { "" },
@@ -431,6 +431,7 @@ impl Notes {
                 Button::new("tab-add")
                     .debug_selector(|| "tab-add".into())
                     .ghost()
+                    .small()
                     .icon(IconName::Plus)
                     .tooltip("New tab")
                     .disabled(busy)
