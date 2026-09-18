@@ -490,6 +490,7 @@ impl Render for Notes {
             .centered_editor
             .then(|| px(f32::from(appearance.centered_editor_width)));
         self.sync_settings_panel(window, cx);
+        self.sync_terminal(window, cx);
         if let Some(search) = &self.search {
             search.update(cx, |panel, cx| {
                 panel.set_interaction_enabled(self.settings_panel.is_none(), cx);

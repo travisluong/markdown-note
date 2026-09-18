@@ -160,7 +160,12 @@ impl Render for SettingsPanel {
                     .child(Select::new(&self.terminal_shell).w_full().disabled(self.values.busy)))
                 .child(div().text_sm().text_color(cx.theme().muted_foreground)
                     .child("Applies on the next terminal start or Restart. The current shell keeps running.")))
-            .when(!cfg!(windows), |body| body.child("Uses your system shell ($SHELL, or /bin/sh)."));
+            .when(!cfg!(windows), |body| body.child("Uses your system shell ($SHELL, or /bin/sh)."))
+            .child("Cursor style")
+            .child(div().debug_selector(|| "terminal-cursor-picker".into()).w_full().min_w_0().h_8().flex().flex_shrink_0()
+                .child(Select::new(&self.terminal_cursor).w_full().disabled(self.values.busy)))
+            .child(div().text_sm().text_color(cx.theme().muted_foreground)
+                .child("Applies immediately, including to the current terminal."));
         let templates_body = div()
             .w_full()
             .min_w_0()

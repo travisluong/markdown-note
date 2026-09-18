@@ -68,9 +68,18 @@ use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::vte::ansi::Color;
 use gpui::{
-    App, Bounds, Edges, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Point,
+    App, Bounds, Edges, Font, FontFeatures, FontStyle, FontWeight, Hsla, PaintQuad, Pixels, Point,
     SharedString, Size, TextRun, UnderlineStyle, Window, px, quad, transparent_black,
 };
+
+/// Host-selected cursor shape. Shell visibility controls remain effective.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CursorStyle {
+    Line,
+    #[default]
+    Box,
+    Underline,
+}
 
 /// A batched run of text with consistent styling.
 ///
@@ -166,6 +175,8 @@ impl BackgroundRect {
 /// - Background and text batching minimize GPU draw calls
 #[derive(Clone)]
 pub struct TerminalRenderer {
+    /// Shape painted for the terminal cursor.
+    pub cursor_style: CursorStyle,
     /// Font family name (e.g., "Fira Code", "Menlo")
     pub font_family: String,
 
@@ -220,6 +231,7 @@ impl TerminalRenderer {
         let cell_height = font_size * 1.4; // Line height with some spacing
 
         Self {
+            cursor_style: CursorStyle::default(),
             font_family,
             font_size,
             cell_width,
@@ -618,23 +630,34 @@ impl TerminalRenderer {
             }
         }
 
-        // Respect applications hiding the cursor; outline keeps its glyph visible.
+        if let Some(cursor) = self.cursor_quad(origin, term) {
+            window.paint_quad(cursor);
+        }
+    }
+
+    /// Build the cursor paint primitive independently of a window or text layout.
+    /// The host chooses the shape; applications may still hide the cursor.
+    pub fn cursor_quad(
+        &self,
+        origin: Point<Pixels>,
+        term: &Term<GpuiEventProxy>,
+    ) -> Option<PaintQuad> {
         if !term
             .mode()
             .contains(alacritty_terminal::term::TermMode::SHOW_CURSOR)
         {
-            return;
+            return None;
         }
-        let cursor_point = grid.cursor.point;
+        let cursor_point = term.grid().cursor.point;
         let cursor_x = origin.x + self.cell_width * (cursor_point.column.0 as f32);
         let cursor_y = origin.y + self.cell_height * (cursor_point.line.0 as f32);
 
         let cursor_color = self.palette.resolve(
             Color::Named(alacritty_terminal::vte::ansi::NamedColor::Cursor),
-            colors,
+            term.colors(),
         );
 
-        let cursor_bounds = Bounds {
+        let mut cursor_bounds = Bounds {
             origin: Point {
                 x: cursor_x,
                 y: cursor_y,
@@ -645,14 +668,28 @@ impl TerminalRenderer {
             },
         };
 
-        window.paint_quad(quad(
+        let thickness = px(1.0);
+        let outline = self.cursor_style == CursorStyle::Box;
+        match self.cursor_style {
+            CursorStyle::Line => cursor_bounds.size.width = thickness.min(self.cell_width),
+            CursorStyle::Box => {}
+            CursorStyle::Underline => {
+                cursor_bounds.size.height = thickness.min(self.cell_height);
+                cursor_bounds.origin.y += self.cell_height - cursor_bounds.size.height;
+            }
+        }
+        Some(quad(
             cursor_bounds,
             px(0.0),
-            transparent_black(),
-            Edges::all(px(1.0)),
+            if outline {
+                transparent_black()
+            } else {
+                cursor_color
+            },
+            Edges::all(if outline { thickness } else { px(0.0) }),
             cursor_color,
             Default::default(),
-        ));
+        ))
     }
 }
 

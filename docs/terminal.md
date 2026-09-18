@@ -6,13 +6,23 @@ starts one shell. Closing the panel hides it; its shell continues running.
 Stop terminates the shell and keeps the output visible. Restart replaces the
 shell and output. Shell exit leaves an exit status; launch errors offer Retry.
 
-The Terminal settings tab offers a Windows shell dropdown with PowerShell and Git Bash. The choice is saved
+The Terminal settings tab offers a Windows shell dropdown with PowerShell and
+Git Bash. The choice is saved
 per notebook, or retained only for the session without a notebook. It takes
 effect on the next start or explicit Restart, never on a running shell.
 PowerShell prefers pwsh on PATH then Windows PowerShell. Git Bash is detected
 from Git for Windows installation metadata, standard locations and Git on PATH.
 It must be installed separately; missing Git Bash is an error, not a fallback.
 Other platforms use $SHELL, falling back to /bin/sh.
+
+The Terminal tab also offers **Line**, **Box**, and **Underline** cursor styles.
+Line is a thin vertical bar and is the default, including for existing notebooks
+without a cursor preference. Box is the existing outline; Underline sits along
+the bottom of the cell. Changes apply immediately without restarting the shell
+or clearing output, including while the panel is hidden. Cursor preferences use
+the same notebook/session scope as shell selection; switching notebooks applies
+the current notebook's cursor style. Applications can hide the cursor, but their
+shape requests do not override the selected style. Cursor blinking is unchanged.
 
 A shell starts in the active notebook, otherwise the current document's folder,
 otherwise home. Switching notebooks or tabs preserves the existing shell and

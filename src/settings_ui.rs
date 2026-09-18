@@ -587,6 +587,15 @@ impl Notes {
                 }
                 false
             }
+            SettingsIntent::TerminalCursorStyle(style) => {
+                if let Some(book) = &mut self.notebooks.active {
+                    book.settings.terminal.cursor_style = style;
+                    self.persist_notebooks(cx);
+                } else {
+                    self.session_terminal.cursor_style = style;
+                }
+                false
+            }
             SettingsIntent::ExternalAutosaveEnabled(enabled) => {
                 self.update_external_autosave(enabled, window, cx);
                 false

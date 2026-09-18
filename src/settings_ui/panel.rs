@@ -39,6 +39,7 @@ pub(super) enum ColorRole {
 #[derive(Clone, Debug)]
 pub(super) enum SettingsIntent {
     TerminalShell(mithril::terminal::WindowsShell),
+    TerminalCursorStyle(mithril::terminal::CursorStyle),
     CenteredEditor(bool),
     CenteredEditorWidth(u16),
     ResetToolbar,
@@ -112,6 +113,11 @@ const SHELL_OPTIONS: [(mithril::terminal::WindowsShell, &str); 2] = [
     (mithril::terminal::WindowsShell::Powershell, "PowerShell"),
     (mithril::terminal::WindowsShell::GitBash, "Git Bash"),
 ];
+const CURSOR_OPTIONS: [(mithril::terminal::CursorStyle, &str); 3] = [
+    (mithril::terminal::CursorStyle::Line, "Line"),
+    (mithril::terminal::CursorStyle::Box, "Box"),
+    (mithril::terminal::CursorStyle::Underline, "Underline"),
+];
 
 pub(crate) struct SettingsPanel {
     values: SettingsValues,
@@ -132,6 +138,7 @@ pub(crate) struct SettingsPanel {
     colors: [Entity<ColorPickerState>; 6],
     fonts: [FontPicker; 3],
     terminal_shell: ChoicePicker,
+    terminal_cursor: ChoicePicker,
     _subscriptions: Vec<Subscription>,
 }
 impl EventEmitter<SettingsIntent> for SettingsPanel {}
@@ -289,6 +296,29 @@ impl SettingsPanel {
                 this.emit_intent(SettingsIntent::TerminalShell(*shell), cx);
             }
         }));
+        let terminal_cursor = cx.new(|cx| {
+            SelectState::new(
+                CURSOR_OPTIONS
+                    .iter()
+                    .map(|(_, label)| *label)
+                    .collect::<Vec<_>>(),
+                CURSOR_OPTIONS
+                    .iter()
+                    .position(|(style, _)| *style == values.terminal.cursor_style)
+                    .map(|row| IndexPath::default().row(row)),
+                window,
+                cx,
+            )
+        });
+        subscriptions.push(cx.subscribe(&terminal_cursor, |this, _, event, cx| {
+            let SelectEvent::Confirm(value) = event;
+            if let Some((style, _)) = CURSOR_OPTIONS
+                .iter()
+                .find(|(_, label)| Some(label) == value.as_ref())
+            {
+                this.emit_intent(SettingsIntent::TerminalCursorStyle(*style), cx);
+            }
+        }));
         Self {
             values,
             section: Section::General,
@@ -309,6 +339,7 @@ impl SettingsPanel {
             colors,
             fonts,
             terminal_shell,
+            terminal_cursor,
             _subscriptions: subscriptions,
         }
     }
@@ -331,6 +362,16 @@ impl SettingsPanel {
             });
         }
         let old_palette = self.values.appearance.palette(self.values.startup_dark);
+        let cursor = CURSOR_OPTIONS
+            .iter()
+            .find(|(style, _)| *style == values.terminal.cursor_style)
+            .unwrap()
+            .1;
+        if self.terminal_cursor.read(cx).selected_value() != Some(&cursor) {
+            self.terminal_cursor.update(cx, |picker, cx| {
+                picker.set_selected_value(&cursor, window, cx)
+            });
+        }
         let palette = values.appearance.palette(values.startup_dark);
         if old_palette != palette {
             for (picker, color) in self.colors.iter().zip([

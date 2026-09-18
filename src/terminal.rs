@@ -21,9 +21,19 @@ pub enum WindowsShell {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CursorStyle {
+    #[default]
+    Line,
+    Box,
+    Underline,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TerminalSettings {
     pub windows_shell: WindowsShell,
+    pub cursor_style: CursorStyle,
 }
 
 #[derive(Clone, Debug)]

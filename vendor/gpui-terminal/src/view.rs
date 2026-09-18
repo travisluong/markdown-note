@@ -50,7 +50,7 @@
 use crate::colors::ColorPalette;
 use crate::event::{GpuiEventProxy, TerminalEvent};
 use crate::input::keystroke_to_bytes;
-use crate::render::TerminalRenderer;
+use crate::render::{CursorStyle, TerminalRenderer};
 use crate::terminal::TerminalState;
 use gpui::{Edges, *};
 use std::io::{Read, Write};
@@ -111,6 +111,8 @@ use std::thread;
 /// ```
 #[derive(Clone, Debug)]
 pub struct TerminalConfig {
+    /// Host-selected cursor shape; terminal applications can still hide it.
+    pub cursor_style: CursorStyle,
     /// Number of columns (character width) in the terminal
     pub cols: usize,
 
@@ -142,6 +144,7 @@ pub struct TerminalConfig {
 impl Default for TerminalConfig {
     fn default() -> Self {
         Self {
+            cursor_style: CursorStyle::default(),
             cols: 80,
             rows: 24,
             font_family: "monospace".into(),
@@ -477,12 +480,13 @@ impl TerminalView {
         let state = TerminalState::new(config.cols, config.rows, event_proxy);
 
         // Create renderer with font settings and color palette
-        let renderer = TerminalRenderer::new(
+        let mut renderer = TerminalRenderer::new(
             config.font_family.clone(),
             config.font_size,
             config.line_height_multiplier,
             config.colors.clone(),
         );
+        renderer.cursor_style = config.cursor_style;
 
         // Create focus handle
         let focus_handle = cx.focus_handle();
@@ -987,6 +991,7 @@ impl TerminalView {
     /// * `config` - The new configuration to apply
     /// * `cx` - The context for triggering a repaint
     pub fn update_config(&mut self, config: TerminalConfig, cx: &mut Context<Self>) {
+        self.renderer.cursor_style = config.cursor_style;
         // Update renderer with new font settings and palette
         self.renderer.font_family = config.font_family.clone();
         self.renderer.font_size = config.font_size;

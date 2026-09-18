@@ -731,8 +731,16 @@ window; cancelled document close preserves the terminal.
 
 Notebook terminal.windows_shell defaults to powershell, with git_bash as
 the other Windows choice; standalone settings remain session-only. The Terminal
-settings section owns the shell dropdown and synchronizes its effective selection. Settings uses
+settings section owns the shell dropdown and synchronizes its effective selection.
+Settings uses
 the existing form-scope guards and ordered writer. Unix uses the user's shell.
+TerminalSettings also owns cursor_style (line by default, box or underline).
+Settings emits a typed cursor preference intent; notebook persistence and standalone
+session scope match shell selection. Notes synchronizes terminal appearance and
+cursor style even while hidden. TerminalPanel retains the latest style during
+launch so async installation cannot restore an old preference. Config updates
+preserve the PTY, terminal grid and output. The vendored renderer honors application
+cursor visibility while the host configuration determines the shape.
 Terminal focus consumes shell keys independently of document commands; the host
 retains Ctrl+backtick, and modal/busy input guards are checked at dispatch time.
 

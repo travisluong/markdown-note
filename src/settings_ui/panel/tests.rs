@@ -3058,3 +3058,172 @@ fn terminal_shell_dropdown_confirms_and_syncs_effective_selection(cx: &mut TestA
         assert_eq!(picker.read(cx).selected_value(), Some(&"PowerShell"));
     });
 }
+
+#[gpui::test]
+fn terminal_cursor_dropdown_persists_and_rejects_stale_or_busy_forms(cx: &mut TestAppContext) {
+    use gpui_component::select::SelectEvent;
+    use mithril::terminal::CursorStyle;
+    let (fixture, notes, cx) = fixture(cx, true, false);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+        })
+    });
+    let form = panel(&notes, cx);
+    let picker = cx.update(|_, cx| {
+        form.update(cx, |form, cx| {
+            form.select_section(super::Section::Terminal, cx)
+        });
+        form.read(cx).terminal_cursor.clone()
+    });
+    for (style, label) in super::CURSOR_OPTIONS {
+        cx.update(|_, cx| picker.update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some(label)))));
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            assert_eq!(picker.read(cx).selected_value(), Some(&label));
+            assert_eq!(notes.read(cx).terminal_settings().cursor_style, style);
+            assert!(notes.read(cx).terminal.is_none());
+        });
+        assert_eq!(
+            notebook::Notebook::open(&fixture.first.root, false)
+                .unwrap()
+                .settings
+                .terminal
+                .cursor_style,
+            style
+        );
+    }
+    assert_eq!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .terminal
+            .cursor_style,
+        CursorStyle::Line
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::TerminalCursorStyle(CursorStyle::Box),
+                window,
+                cx,
+            );
+            assert_eq!(this.terminal_settings().cursor_style, CursorStyle::Line);
+            assert!(this.settings_panel.is_none());
+            this.open_settings(window, cx);
+        })
+    });
+    let fresh = panel(&notes, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            this.handle_settings_intent(
+                fresh.entity_id(),
+                SettingsIntent::TerminalCursorStyle(CursorStyle::Box),
+                window,
+                cx,
+            );
+            assert_eq!(this.terminal_settings().cursor_style, CursorStyle::Line);
+            assert!(fresh.read(cx).values.busy);
+        })
+    });
+    let (events, _subscription) = watch(&fresh, cx);
+    intent(
+        &fresh,
+        SettingsIntent::TerminalCursorStyle(CursorStyle::Box),
+        cx,
+    );
+    cx.update(|_, cx| assert!(events.read(cx).0.is_empty()));
+}
+
+#[gpui::test]
+fn terminal_cursor_updates_retained_hidden_terminal_and_follows_notebook(cx: &mut TestAppContext) {
+    use mithril::terminal::CursorStyle;
+    let (fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_right_panel(window, cx)));
+    cx.refresh().unwrap();
+    let (terminal, view, launch) = cx.update(|_, cx| {
+        let terminal = notes.read(cx).terminal.clone().unwrap();
+        let view = terminal.read(cx).view.clone().unwrap();
+        let launch = terminal.read(cx).last_launch.clone();
+        assert_eq!(
+            view.read(cx).config().cursor_style,
+            gpui_terminal::CursorStyle::Line
+        );
+        (terminal, view, launch)
+    });
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::TerminalCursorStyle(CursorStyle::Box),
+        cx,
+    );
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).config().cursor_style,
+            gpui_terminal::CursorStyle::Box
+        )
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.toggle_right_panel(window, cx);
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(
+        &form,
+        SettingsIntent::TerminalCursorStyle(CursorStyle::Underline),
+        cx,
+    );
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).config().cursor_style,
+            gpui_terminal::CursorStyle::Underline
+        );
+        assert!(!notes.read(cx).right_panel_open);
+        assert_eq!(
+            notes.read(cx).session_terminal.cursor_style,
+            CursorStyle::Underline
+        );
+        assert_eq!(terminal.read(cx).view.as_ref(), Some(&view));
+        assert_eq!(terminal.read(cx).last_launch, launch);
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(fixture.first.clone());
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).config().cursor_style,
+            gpui_terminal::CursorStyle::Line
+        )
+    });
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = None;
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).config().cursor_style,
+            gpui_terminal::CursorStyle::Underline
+        )
+    });
+}

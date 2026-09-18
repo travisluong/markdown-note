@@ -2301,3 +2301,27 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
 - Verification: all 3 terminal_shell TestPlatform tests passed, including dropdown
   confirmation, effective-value synchronization, narrow layout, persistence and
   stale-form rejection. No desktop interaction was used.
+
+### Terminal cursor styles
+
+- Added notebook-scoped terminal.cursor_style with Line as the missing-field
+  default and Box/Underline alternatives. Standalone preferences are session-only.
+  The Terminal section uses synchronized selectors and existing busy/lifetime/scope
+  guards; cursor edits never start or restart a shell.
+- Notes synchronizes retained terminal appearance while visible or hidden.
+  TerminalPanel retains the current style during asynchronous launches; changing
+  styles preserves the view, process generation, grid and output. The vendored
+  configuration and renderer support all three shapes and preserve SHOW_CURSOR.
+- Verification: cargo check --locked --offline, cargo fmt --check, explicit
+  rustfmt checks on the changed vendor sources, and strict all-target Clippy with
+  editor-diagnostics passed. The complete diagnostics-enabled suite passed all
+  636 tests, including 323 application tests and all 9 terminal integration tests.
+  New coverage exercises defaults/round trips, cursor geometry and hiding,
+  dropdown persistence and guards, hidden terminals, notebook switches, retained
+  protocol position and pending-launch configuration.
+- Full tests used cargo --config 'build.target-dir="target/terminal-settings-validation"'
+  --config 'build.build-dir="target"' test --locked --offline --features
+  editor-diagnostics -j 1, preserving the user's running target/debug/mithril.exe.
+  The final headless suite ran outside the sandbox because the existing ConPTY
+  Ctrl+C scenario cannot complete inside it. No desktop interaction or visible
+  application launch was used; native appearance remains manual validation.

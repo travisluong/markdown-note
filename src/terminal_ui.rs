@@ -20,6 +20,7 @@ pub(super) struct TerminalPanel {
     pub status: Status,
     generation: u64,
     process: Option<TerminalProcess>,
+    cursor_style: gpui_terminal::CursorStyle,
     task: Option<Task<()>>,
     focus: FocusHandle,
     #[cfg(test)]
@@ -38,6 +39,7 @@ impl TerminalPanel {
             status: Status::Idle,
             generation: 0,
             process: None,
+            cursor_style: cursor_style(mithril::terminal::CursorStyle::default()),
             task: None,
             focus: cx.focus_handle(),
             #[cfg(test)]
@@ -46,6 +48,13 @@ impl TerminalPanel {
             fixture_input: Default::default(),
             #[cfg(test)]
             last_launch: None,
+        }
+    }
+
+    fn view_config(&self) -> TerminalConfig {
+        TerminalConfig {
+            cursor_style: self.cursor_style,
+            ..TerminalConfig::default()
         }
     }
 
@@ -65,6 +74,7 @@ impl TerminalPanel {
     ) {
         self.generation += 1;
         let generation = self.generation;
+        self.cursor_style = cursor_style(settings.cursor_style);
         let old = self.process.take();
         let pending = self.task.take();
         if let Some(process) = &old {
@@ -86,7 +96,7 @@ impl TerminalPanel {
                 TerminalView::from_receiver(
                     FixtureWriter(self.fixture_input.clone()),
                     rx,
-                    TerminalConfig::default(),
+                    self.view_config(),
                     cx,
                 )
                 .with_input_guard(move |window, cx| input_allowed(&owner, window, cx))
@@ -149,7 +159,7 @@ impl TerminalPanel {
                 let take_focus = self.focus.is_focused(window) && !window.has_active_dialog(cx);
                 let owner = self.owner.clone();
                 self.view = Some(cx.new(|cx| {
-                    TerminalView::from_receiver(input, output, TerminalConfig::default(), cx)
+                    TerminalView::from_receiver(input, output, self.view_config(), cx)
                         .with_resize_callback(move |cols, rows| resize.resize(cols, rows))
                         .with_input_guard(move |window, cx| input_allowed(&owner, window, cx))
                 }));
@@ -207,8 +217,10 @@ impl TerminalPanel {
         enabled: bool,
         appearance: &mithril::notebook::Appearance,
         startup_dark: bool,
+        settings: TerminalSettings,
         cx: &mut Context<Self>,
     ) {
+        self.cursor_style = cursor_style(settings.cursor_style);
         if let Some(view) = &self.view {
             let palette = appearance.palette(startup_dark);
             let rgb = |value: u32| ((value >> 16) as u8, (value >> 8) as u8, value as u8);
@@ -221,12 +233,14 @@ impl TerminalPanel {
             view.update(cx, |view, cx| {
                 view.set_input_enabled(enabled && self.status == Status::Running);
                 let config = view.config();
-                if config.font_family != font
+                if config.cursor_style != self.cursor_style
+                    || config.font_family != font
                     || config.font_size != px(f32::from(appearance.content_font_size))
                     || config.colors.background() != gpui::rgb(palette.background).into()
                     || config.colors.foreground() != gpui::rgb(palette.font).into()
                 {
                     let mut config = config.clone();
+                    config.cursor_style = self.cursor_style;
                     config.font_family = font;
                     config.font_size = px(f32::from(appearance.content_font_size));
                     config.padding = Edges::all(px(4.));
@@ -285,6 +299,13 @@ impl Render for TerminalPanel {
             )
     }
 }
+fn cursor_style(style: mithril::terminal::CursorStyle) -> gpui_terminal::CursorStyle {
+    match style {
+        mithril::terminal::CursorStyle::Line => gpui_terminal::CursorStyle::Line,
+        mithril::terminal::CursorStyle::Box => gpui_terminal::CursorStyle::Box,
+        mithril::terminal::CursorStyle::Underline => gpui_terminal::CursorStyle::Underline,
+    }
+}
 fn div_message(message: String, cx: &App) -> impl IntoElement {
     div()
         .p_2()
@@ -317,6 +338,83 @@ impl std::io::Write for FixtureWriter {
 mod tests {
     use super::{ProcessExit, Status};
     use gpui::{AppContext, TestAppContext};
+    #[gpui::test]
+    fn cursor_sync_preserves_output_and_pending_launch_configuration(cx: &mut TestAppContext) {
+        use mithril::terminal::{CursorStyle, TerminalSettings};
+        cx.update(gpui_component::init);
+        let mut owner = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let notes = cx.new(|cx| crate::Notes::new(window, cx));
+            owner = Some(notes.clone());
+            gpui_component::Root::new(notes, window, cx)
+        });
+        let owner = owner.unwrap();
+        let (panel, view, tx, input, generation) = cx.update(|window, cx| {
+            owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
+            let panel = owner.read(cx).terminal.clone().unwrap();
+            let state = panel.read(cx);
+            (
+                panel.clone(),
+                state.view.clone().unwrap(),
+                state.fixture_output.clone().unwrap(),
+                state.fixture_input.clone(),
+                state.generation,
+            )
+        });
+        tx.send(b"\x1b[2J\x1b[Hretained".to_vec()).unwrap();
+        cx.run_until_parked();
+        for style in [CursorStyle::Box, CursorStyle::Underline, CursorStyle::Line] {
+            cx.update(|_, cx| {
+                panel.update(cx, |panel, cx| {
+                    panel.sync(
+                        true,
+                        &Default::default(),
+                        false,
+                        TerminalSettings {
+                            cursor_style: style,
+                            ..Default::default()
+                        },
+                        cx,
+                    );
+                    assert_eq!(panel.view.as_ref(), Some(&view));
+                    assert_eq!(panel.generation, generation);
+                    assert_eq!(
+                        view.read(cx).config().cursor_style,
+                        super::cursor_style(style)
+                    );
+                });
+            });
+            input.lock().unwrap().clear();
+            tx.send(b"\x1b[6n".to_vec()).unwrap();
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(10));
+            cx.run_until_parked();
+            assert_eq!(*input.lock().unwrap(), b"\x1b[1;9R");
+        }
+        cx.update(|_, cx| {
+            panel.update(cx, |panel, cx| {
+                panel.view = None;
+                panel.status = Status::Starting;
+                panel.sync(
+                    false,
+                    &Default::default(),
+                    false,
+                    TerminalSettings {
+                        cursor_style: CursorStyle::Underline,
+                        ..Default::default()
+                    },
+                    cx,
+                );
+                // Async installation and fixture construction use this same current config.
+                assert_eq!(
+                    panel.view_config().cursor_style,
+                    gpui_terminal::CursorStyle::Underline
+                );
+                assert_eq!(panel.generation, generation);
+            })
+        });
+    }
+
     #[gpui::test]
     fn stale_launch_failure_cannot_replace_a_new_session(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);

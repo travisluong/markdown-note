@@ -135,6 +135,7 @@ fn terminal_git_bash_roundtrip_when_installed() {
     }
     exercise(TerminalSettings {
         windows_shell: WindowsShell::GitBash,
+        ..TerminalSettings::default()
     });
 }
 
@@ -211,12 +212,14 @@ fn terminal_launch_failure_and_old_settings_defaults() {
     json.as_object_mut().unwrap().remove("terminal");
     let restored: mithril::notebook::Settings = serde_json::from_value(json).unwrap();
     assert_eq!(restored.terminal.windows_shell, WindowsShell::Powershell);
+    assert_eq!(restored.terminal.cursor_style, CursorStyle::Line);
     let settings = TerminalSettings {
         windows_shell: WindowsShell::GitBash,
+        ..TerminalSettings::default()
     };
     assert_eq!(
         serde_json::to_string(&settings).unwrap(),
-        r#"{"windows_shell":"git_bash"}"#
+        r#"{"windows_shell":"git_bash","cursor_style":"line"}"#
     );
     assert_eq!(
         serde_json::from_str::<TerminalSettings>(r#"{"windows_shell":"git_bash"}"#).unwrap(),
@@ -327,4 +330,76 @@ fn terminal_view_paste_modes_unicode_input_and_disabled_input(cx: &mut gpui::Tes
     cx.simulate_keystrokes("x ctrl-c");
     cx.run_until_parked();
     assert!(recorded.0.lock().unwrap().is_empty());
+}
+
+#[test]
+fn terminal_cursor_settings_default_and_round_trip() {
+    for json in ["{}", r#"{"windows_shell":"git_bash"}"#] {
+        let settings: TerminalSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.cursor_style, CursorStyle::Line);
+    }
+    for (cursor_style, name) in [
+        (CursorStyle::Line, "line"),
+        (CursorStyle::Box, "box"),
+        (CursorStyle::Underline, "underline"),
+    ] {
+        let settings = TerminalSettings {
+            cursor_style,
+            ..Default::default()
+        };
+        let json = serde_json::to_value(settings).unwrap();
+        assert_eq!(json["cursor_style"], name);
+        assert_eq!(
+            serde_json::from_value::<TerminalSettings>(json).unwrap(),
+            settings
+        );
+    }
+}
+
+#[test]
+fn terminal_cursor_shapes_preserve_visibility_and_cell_contents() {
+    use gpui::{Edges, point, px, size};
+    use gpui_terminal::{ColorPalette, CursorStyle, TerminalRenderer};
+    let (tx, _) = std::sync::mpsc::channel();
+    let mut terminal = TerminalState::new(80, 24, GpuiEventProxy::new(tx));
+    terminal.process_bytes(b"hello\x1b[2;3H");
+    let mut renderer =
+        TerminalRenderer::new("monospace".into(), px(14.), 1.2, ColorPalette::default());
+    renderer.cell_width = px(10.);
+    renderer.cell_height = px(20.);
+    for (style, origin, dimensions, border) in [
+        (
+            CursorStyle::Line,
+            point(px(24.), px(26.)),
+            size(px(1.), px(20.)),
+            px(0.),
+        ),
+        (
+            CursorStyle::Box,
+            point(px(24.), px(26.)),
+            size(px(10.), px(20.)),
+            px(1.),
+        ),
+        (
+            CursorStyle::Underline,
+            point(px(24.), px(45.)),
+            size(px(10.), px(1.)),
+            px(0.),
+        ),
+    ] {
+        renderer.cursor_style = style;
+        // Application shape requests do not override the user's selection.
+        terminal.process_bytes(b"\x1b[2 q\x1b[?25h");
+        terminal.with_term(|term| {
+            let cursor = renderer.cursor_quad(point(px(4.), px(6.)), term).unwrap();
+            assert_eq!(cursor.bounds.origin, origin);
+            assert_eq!(cursor.bounds.size, dimensions);
+            assert_eq!(cursor.border_widths, Edges::all(border));
+            let text: String = term.grid().display_iter().map(|cell| cell.cell.c).collect();
+            assert!(text.contains("hello"));
+        });
+        terminal.process_bytes(b"\x1b[?25l");
+        terminal
+            .with_term(|term| assert!(renderer.cursor_quad(point(px(4.), px(6.)), term).is_none()));
+    }
 }

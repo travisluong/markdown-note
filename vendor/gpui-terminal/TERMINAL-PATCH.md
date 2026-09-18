@@ -37,3 +37,13 @@ headless PTYs. Application TestPlatform tests cover focus, shortcuts, modal
 authority, retention, settings and stale session completion. Re-run those tests
 and all architecture verification commands when upgrading; never patch Cargo's
 registry cache.
+
+Cursor configuration extension:
+- Expose CursorStyle (Line, Box, Underline) in TerminalConfig and the renderer;
+  construction and update_config both apply it without resetting terminal state.
+- Paint a thin vertical line, the existing transparent box outline, or a thin
+  underline. The component keeps Box as its compatibility default; Mithril
+  explicitly selects Line unless its notebook/session preference says otherwise.
+- Keep SHOW_CURSOR visibility control; application shape requests do not override
+  host configuration. cursor_quad exposes the same paint primitive used by paint
+  for headless geometry/visibility checks in the root terminal integration suite.

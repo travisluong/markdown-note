@@ -78,6 +78,21 @@ impl Notes {
         cx.notify();
     }
 
+    pub(super) fn sync_terminal(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(panel) = &self.terminal {
+            let enabled = !self.document_interaction_blocked() && !window.has_active_dialog(cx);
+            panel.update(cx, |panel, cx| {
+                panel.sync(
+                    enabled,
+                    &self.appearance(),
+                    self.startup_dark,
+                    self.terminal_settings(),
+                    cx,
+                )
+            });
+        }
+    }
+
     pub(super) fn render_right_panel(
         &self,
         window: &mut Window,
@@ -85,11 +100,6 @@ impl Notes {
     ) -> impl IntoElement {
         let blocked = self.document_interaction_blocked() || window.has_active_dialog(cx);
         let icon_size = self.toolbar_settings().icon_size;
-        if let Some(panel) = &self.terminal {
-            panel.update(cx, |panel, cx| {
-                panel.sync(!blocked, &self.appearance(), self.startup_dark, cx)
-            });
-        }
         let active = self.terminal.as_ref().is_some_and(|panel| {
             matches!(
                 panel.read(cx).status,
