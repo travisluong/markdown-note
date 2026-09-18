@@ -554,6 +554,7 @@ impl Notes {
                 .into_any_element()
             });
         dialog
+            .overlay_color(gpui::transparent_black())
             .title(match palette.mode {
                 PaletteMode::Commands => "Command palette",
                 PaletteMode::Files => "Go to",

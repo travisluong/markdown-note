@@ -1,5 +1,15 @@
 # Local editor patch
 
+## Per-dialog overlay colors
+
+`Dialog::overlay_color` overrides only the backdrop paint color, defaulting to the
+theme overlay. A transparent color retains modal mouse interception and outside-click
+dismissal; `overlay(false)` retains its existing behavior. Mithril's shared palette
+dialog opts into transparency for Commands, Go To, Change Notebook and Sort Files.
+Reconcile `src/dialog.rs` on upgrades. The diagnostics-only color accessor and
+`goto::tests::palette_overlays_preserve_colors_and_outside_click_focus` cover default
+and transparent colors in both themes, dismissal and focus restoration on TestPlatform.
+
 ## Independent workspace dividers
 
 ResizablePanelGroup::adjacent_only opts into resizing only the two panes beside

@@ -42,6 +42,86 @@ fn fixture<'a>(
 }
 
 #[gpui::test]
+fn palette_overlays_preserve_colors_and_outside_click_focus(cx: &mut TestAppContext) {
+    use super::PaletteMode;
+    use gpui::{Modifiers, MouseButton, point, px, transparent_black};
+    use gpui_component::{ActiveTheme, Theme, ThemeMode, dialog::Dialog};
+
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "text").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    for theme in [ThemeMode::Light, ThemeMode::Dark] {
+        cx.update(|window, cx| Theme::change(theme, Some(window), cx));
+        for mode in [
+            PaletteMode::Commands,
+            PaletteMode::Files,
+            PaletteMode::Notebooks,
+            PaletteMode::Sort,
+        ] {
+            cx.update(|window, cx| {
+                let default_dialog = Dialog::new(window, cx);
+                assert_eq!(
+                    default_dialog.diagnostic_overlay_color(cx),
+                    cx.theme().overlay
+                );
+                assert_eq!(
+                    default_dialog.overlay(false).diagnostic_overlay_color(cx),
+                    transparent_black()
+                );
+                let background = cx.theme().background;
+                let overlay = cx.theme().overlay;
+                notes.update(cx, |this, cx| {
+                    this.editor.focus(window, cx);
+                    this.open_palette(mode, Vec::new(), None, window, cx);
+                    let dialog = this.palette_dialog(Dialog::new(window, cx), window, cx);
+                    assert_eq!(dialog.diagnostic_overlay_color(cx), transparent_black());
+                    assert!(window.has_active_dialog(cx));
+                    assert!(
+                        this.palette
+                            .as_ref()
+                            .unwrap()
+                            .query
+                            .focus_handle(cx)
+                            .is_focused(window)
+                    );
+                });
+                assert_eq!(cx.theme().background, background);
+                assert_eq!(cx.theme().overlay, overlay);
+            });
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            // The transparent backdrop still captures non-dismissing mouse presses.
+            cx.simulate_mouse_down(
+                point(px(1.), px(1.)),
+                MouseButton::Right,
+                Modifiers::default(),
+            );
+            cx.update(|window, cx| {
+                assert!(window.has_active_dialog(cx));
+                assert!(
+                    notes
+                        .read(cx)
+                        .palette
+                        .as_ref()
+                        .unwrap()
+                        .query
+                        .focus_handle(cx)
+                        .is_focused(window)
+                );
+            });
+            // A left press outside the surface dismisses and restores editor focus.
+            cx.simulate_click(point(px(1.), px(1.)), Modifiers::default());
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                assert!(!window.has_active_dialog(cx));
+                assert!(notes.read(cx).palette.is_none());
+                assert!(notes.read(cx).editor.is_focused(window, cx));
+            });
+        }
+    }
+}
+
+#[gpui::test]
 fn palette_shortcut_badges_preserve_focus_and_fit_narrow_rows(cx: &mut TestAppContext) {
     use gpui::{px, size};
 

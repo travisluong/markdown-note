@@ -72,6 +72,11 @@ unmoved dialogs recenter, while dragged positions are retained where possible.
 DialogPlacement exposes opt-in margins and preferred-size updates; other dialogs
 retain the default 16-pixel margin and existing fixed-size behavior.
 
+The shared palette dialog in `goto.rs` uses `Dialog::overlay_color` with a transparent
+backdrop for Commands, Go To, Change Notebook and Sort Files. Opening these palettes
+preserves the workspace colors while retaining modal input blocking, outside-click
+dismissal and focus restoration. Other dialogs retain the theme's overlay color.
+
 Navigation history is a pure, session-only owner in `app/navigation.rs`, held by
 each Tab. The session adapter proposes a revision-tagged history visit through Next;
 only accepted document/image installation commits its cursor. Ordinary installs

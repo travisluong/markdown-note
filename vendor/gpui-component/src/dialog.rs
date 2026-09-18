@@ -186,6 +186,7 @@ pub struct Dialog {
     button_props: DialogButtonProps,
     close_button: bool,
     overlay: bool,
+    overlay_color: Option<Hsla>,
     overlay_closable: bool,
     keyboard: bool,
 
@@ -217,6 +218,7 @@ impl Dialog {
             width: px(480.),
             max_width: None,
             overlay: true,
+            overlay_color: None,
             keyboard: true,
             layer_ix: 0,
             overlay_visible: false,
@@ -360,6 +362,26 @@ impl Dialog {
         self
     }
 
+    /// Override the theme's overlay color without changing modal mouse handling.
+    pub fn overlay_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.overlay_color = Some(color.into());
+        self
+    }
+
+    fn resolved_overlay_color(&self, cx: &App) -> Hsla {
+        if self.overlay {
+            self.overlay_color.unwrap_or_else(|| overlay_color(true, cx))
+        } else {
+            overlay_color(false, cx)
+        }
+    }
+
+    /// Return the color used to paint this dialog's overlay in headless tests.
+    #[cfg(feature = "editor-diagnostics")]
+    pub fn diagnostic_overlay_color(&self, cx: &App) -> Hsla {
+        self.resolved_overlay_color(cx)
+    }
+
     /// Set the overlay closable of the dialog, defaults to `true`.
     ///
     /// When the overlay is clicked, the dialog will be closed.
@@ -393,6 +415,7 @@ impl Styled for Dialog {
 
 impl RenderOnce for Dialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl gpui::IntoElement {
+        let overlay_color = self.resolved_overlay_color(cx);
         let layer_ix = self.layer_ix;
         let on_close = self.on_close.clone();
         let on_ok = self.on_ok.clone();
@@ -550,7 +573,7 @@ impl RenderOnce for Dialog {
                         )
                     })
                     .when(self.overlay_visible, |this| {
-                        this.bg(overlay_color(self.overlay, cx))
+                        this.bg(overlay_color)
                     })
                     .when(self.overlay, |this| {
                         // Only the last dialog owns the `mouse down - close dialog` event.

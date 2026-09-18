@@ -2432,3 +2432,23 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
 - Full validation used target/top-bar-validation with build.build-dir="target"
   to reuse artifacts without replacing the running application. No desktop
   interaction or visible application launch was used. Left Cargo.lock untouched.
+
+### 2026-09-18 — Preserve workspace colors behind palettes
+
+- Added Dialog::overlay_color as a per-dialog backdrop paint override. The shared
+  Commands, Go To, Change Notebook and Sort Files palette builder uses transparent
+  black while retaining modal mouse handling, outside-click dismissal and focus
+  restoration. Ordinary dialogs and sheets retain the theme overlay.
+- Added headless coverage for all four palette modes in Light and Dark themes,
+  unchanged default dialog colors, outside presses and restored editor focus.
+  Updated the architecture map and vendor patch log.
+- Locked offline check, format check and strict all-target diagnostics Clippy
+  passed. All 25 palette tests passed. The serial full run passed all 99 library
+  tests, 348 application tests and remaining integration suites/doc-tests except
+  the known sandbox ConPTY interrupt case; all 10 terminal integration tests
+  passed when rerun outside the sandbox.
+- Full validation used target/palette-overlay-validation
+  with build.build-dir="target" after the standard target encountered the running
+  application's locked executable. No desktop interaction or visible app launch
+  was used. The pre-existing Cargo.lock change and concurrent unrelated edits are
+  excluded from this improvement.
