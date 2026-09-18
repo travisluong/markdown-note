@@ -422,6 +422,8 @@ impl ToolbarRegion {
 #[serde(default)]
 pub struct ToolbarSettings {
     pub visible: bool,
+    /// Top-bar controls are independent of workspace toolbar visibility and sizing.
+    pub title_bar_sidebar: bool,
     #[serde(deserialize_with = "deserialize_toolbar_alignment")]
     pub alignment: ToolbarAlignment,
     #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
@@ -452,6 +454,7 @@ impl Default for ToolbarSettings {
     fn default() -> Self {
         Self {
             visible: true,
+            title_bar_sidebar: true,
             alignment: ToolbarAlignment::default(),
             icon_size: ToolbarIconSize::default(),
             order: ToolbarItem::DEFAULT_ORDER,

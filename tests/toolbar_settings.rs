@@ -245,3 +245,28 @@ fn legacy_toolbar_gains_terminal_without_changing_saved_choices() {
     assert_eq!(settings.order.last(), Some(&ToolbarItem::Terminal));
     assert_eq!(ToolbarItem::Terminal.region(), ToolbarRegion::ContentRight);
 }
+
+#[test]
+fn top_bar_visibility_defaults_and_saved_preferences_are_independent() {
+    let legacy: ToolbarSettings =
+        serde_json::from_str(r#"{"visible":false,"terminal":false}"#).unwrap();
+    assert!(legacy.title_bar_sidebar);
+    assert!(!legacy.terminal);
+    let directory = tempfile::tempdir().unwrap();
+    let mut book = Notebook::open(&directory.path().join("book"), true).unwrap();
+    for sidebar in [false, true] {
+        for terminal in [false, true] {
+            book.settings.toolbar = ToolbarSettings {
+                visible: false,
+                title_bar_sidebar: sidebar,
+                terminal,
+                ..ToolbarSettings::default()
+            };
+            save_book(&book).unwrap();
+            assert_eq!(
+                Notebook::open(&book.root, false).unwrap().settings.toolbar,
+                book.settings.toolbar
+            );
+        }
+    }
+}

@@ -11,7 +11,7 @@ use gpui::{
     font, prelude::*, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, Sizable, WindowExt,
+    ActiveTheme, Disableable, Selectable, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::Search,
     menu::{PopupMenu, PopupMenuItem},
@@ -242,6 +242,7 @@ struct HeaderLayout {
     widths: [Pixels; MENUS.len() + 1],
     gap: Pixels,
     visible: usize,
+    panel_buttons: [bool; 2],
 }
 impl HeaderLayout {
     fn new(
@@ -250,10 +251,11 @@ impl HeaderLayout {
         width: Pixels,
         rem: Pixels,
         widths: [Pixels; MENUS.len() + 1],
+        panel_buttons: [bool; 2],
     ) -> Self {
         let gap = rem * 0.25;
         let reserved = px(if mode.controls() { 4. } else { 8. })
-            + px(28.)
+            + px(28.) * panel_buttons.into_iter().filter(|visible| *visible).count() as f32
             + if mode.combined() { px(32.) } else { px(0.) }
             + if mode == HeaderMode::Mac {
                 px(80.)
@@ -269,8 +271,8 @@ impl HeaderLayout {
         let visible = if total <= available {
             MENUS.len()
         } else {
-            let mut count = 1;
-            let mut used = widths[0] + gap + widths[MENUS.len()];
+            let mut count = 0;
+            let mut used = widths[MENUS.len()];
             while count < MENUS.len() && used + widths[count] + gap <= available {
                 used += widths[count] + gap;
                 count += 1;
@@ -285,6 +287,7 @@ impl HeaderLayout {
             widths,
             gap,
             visible,
+            panel_buttons,
         }
     }
     fn anchor_index(&self, kind: MenuKind) -> usize {
@@ -455,7 +458,15 @@ impl Notes {
                 }
             }
         }
-        let layout = HeaderLayout::new(mode, viewport, width, rem, widths);
+        let settings = self.toolbar_settings();
+        let layout = HeaderLayout::new(
+            mode,
+            viewport,
+            width,
+            rem,
+            widths,
+            [settings.title_bar_sidebar, settings.terminal],
+        );
         if self
             .title_bar
             .layout
@@ -481,30 +492,32 @@ impl Notes {
         if mode == HeaderMode::Mac {
             bar = bar.child(div().w(px(80.)).flex_shrink_0());
         }
-        bar = bar.child(
-            Button::new("title-bar-sidebar-toggle")
-                .debug_selector(|| "title-bar-sidebar-toggle".into())
-                .cursor_default()
-                .ghost()
-                .small()
-                .w(px(28.))
-                .flex_shrink_0()
-                .icon(Icon::new(IconName::PanelLeft).size(px(16.)))
-                .tooltip(if self.sidebar_collapsed {
-                    "Show sidebar"
-                } else {
-                    "Collapse sidebar"
-                })
-                .disabled(
-                    self.notebooks.active.is_none()
-                        || self.document_interaction_blocked()
-                        || window.has_active_dialog(cx),
-                )
-                .on_click(cx.listener(|this, _, window, cx| {
-                    cx.stop_propagation();
-                    this.toggle_sidebar(window, cx);
-                })),
-        );
+        if settings.title_bar_sidebar {
+            bar = bar.child(
+                Button::new("title-bar-sidebar-toggle")
+                    .debug_selector(|| "title-bar-sidebar-toggle".into())
+                    .cursor_default()
+                    .ghost()
+                    .small()
+                    .w(px(28.))
+                    .flex_shrink_0()
+                    .icon(Icon::new(IconName::PanelLeft).size(px(16.)))
+                    .tooltip(if self.sidebar_collapsed {
+                        "Show sidebar"
+                    } else {
+                        "Collapse sidebar"
+                    })
+                    .disabled(
+                        self.notebooks.active.is_none()
+                            || self.document_interaction_blocked()
+                            || window.has_active_dialog(cx),
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.toggle_sidebar(window, cx);
+                    })),
+            );
+        }
         let mut menus = div().flex().items_center().gap(layout.gap).flex_shrink_0();
         for kind in MENUS[..layout.visible]
             .iter()
@@ -593,6 +606,31 @@ impl Notes {
                 });
             }
             bar = bar.child(drag);
+        } else {
+            bar = bar.child(div().flex_1());
+        }
+        if settings.terminal {
+            bar = bar.child(
+                Button::new("title-bar-terminal-toggle")
+                    .debug_selector(|| "title-bar-terminal-toggle".into())
+                    .cursor_default()
+                    .ghost()
+                    .small()
+                    .w(px(28.))
+                    .flex_shrink_0()
+                    .icon(Icon::new(IconName::PanelRight).size(px(16.)))
+                    .tooltip(if self.right_panel_open {
+                        "Close terminal panel"
+                    } else {
+                        "Open terminal panel"
+                    })
+                    .selected(self.right_panel_open)
+                    .disabled(self.document_interaction_blocked() || window.has_active_dialog(cx))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.toggle_right_panel(window, cx);
+                    })),
+            );
         }
         if mode.controls() {
             for (id, icon, area) in [

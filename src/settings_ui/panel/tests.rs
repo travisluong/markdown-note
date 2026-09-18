@@ -867,7 +867,15 @@ fn toolbar_preferences_persist_for_notebook_and_reject_stale_scope(cx: &mut Test
         SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sort, false),
         cx,
     );
+    intent(&form, SettingsIntent::TitleBarSidebar(false), cx);
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Terminal, false),
+        cx,
+    );
     let expected = notebook::ToolbarSettings {
+        title_bar_sidebar: false,
+        terminal: false,
         search: false,
         sort: false,
         ..notebook::ToolbarSettings::default()
@@ -893,7 +901,7 @@ fn toolbar_preferences_persist_for_notebook_and_reject_stale_scope(cx: &mut Test
             this.notebooks.active = Some(fixture.second.clone());
             this.handle_settings_intent(
                 form.entity_id(),
-                SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, false),
+                SettingsIntent::TitleBarSidebar(false),
                 window,
                 cx,
             );
@@ -922,6 +930,7 @@ fn toolbar_form_ignores_changes_while_busy(cx: &mut TestAppContext) {
         SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Search, false),
         cx,
     );
+    intent(&form, SettingsIntent::TitleBarSidebar(false), cx);
     cx.update(|_, cx| {
         assert!(events.read(cx).0.is_empty());
         assert_eq!(
@@ -1684,7 +1693,7 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
         })
     });
     cx.refresh().unwrap();
-    let last = *notebook::ToolbarItem::DEFAULT_ORDER.last().unwrap();
+    let last = notebook::ToolbarItem::TaskList;
     let last_bounds = cx
         .debug_bounds(format!("toolbar-row-{}", last as usize).leak())
         .unwrap();
@@ -1755,7 +1764,7 @@ fn modal_settings_scrollbar_pointer_and_wheel_follow_viewport(cx: &mut TestAppCo
         gpui_component::Theme::global_mut(cx).scrollbar_show =
             gpui_component::scroll::ScrollbarShow::Always;
     });
-    let last = *notebook::ToolbarItem::DEFAULT_ORDER.last().unwrap();
+    let last = notebook::ToolbarItem::TaskList;
     let last_selector: &str = format!("toolbar-row-{}", last as usize).leak();
     for viewport in [
         size(px(1000.), px(800.)),
@@ -3224,6 +3233,49 @@ fn terminal_cursor_updates_retained_hidden_terminal_and_follows_notebook(cx: &mu
         assert_eq!(
             view.read(cx).config().cursor_style,
             gpui_terminal::CursorStyle::Underline
+        )
+    });
+}
+
+#[gpui::test]
+fn top_bar_settings_apply_to_session_without_closing_panels(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            this.toggle_right_panel(window, cx);
+            this.session_toolbar.visible = false;
+            this.open_settings(window, cx);
+        })
+    });
+    let form = panel(&notes, cx);
+    toolbar_section(&form, cx);
+    intent(&form, SettingsIntent::TitleBarSidebar(false), cx);
+    intent(
+        &form,
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Terminal, false),
+        cx,
+    );
+    cx.update(|_, cx| {
+        let this = notes.read(cx);
+        assert!(!this.session_toolbar.title_bar_sidebar);
+        assert!(!this.session_toolbar.terminal);
+        assert!(!this.session_toolbar.visible);
+        assert!(this.right_panel_open);
+        assert_eq!(this.terminals.tabs.len(), 1);
+        assert_eq!(form.read(cx).values.toolbar, this.session_toolbar);
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    intent(&form, SettingsIntent::TitleBarSidebar(true), cx);
+    cx.update(|_, cx| assert!(!notes.read(cx).session_toolbar.title_bar_sidebar));
+    let reopened = panel(&notes, cx);
+    intent(&reopened, SettingsIntent::ResetToolbar, cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).session_toolbar,
+            notebook::ToolbarSettings::default()
         )
     });
 }

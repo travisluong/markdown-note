@@ -44,6 +44,7 @@ pub(super) enum SettingsIntent {
     CenteredEditorWidth(u16),
     ResetToolbar,
     ToolbarIconSize(notebook::ToolbarIconSize),
+    TitleBarSidebar(bool),
     ToolbarItemEnabled(notebook::ToolbarItem, bool),
     ToolbarItemMoved {
         item: notebook::ToolbarItem,

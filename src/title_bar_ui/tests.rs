@@ -299,13 +299,27 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         HeaderMode::Server,
         HeaderMode::Fullscreen,
     ] {
-        let narrow = HeaderLayout::new(mode, size(px(400.), px(700.)), px(400.), px(16.), widths);
+        let narrow = HeaderLayout::new(
+            mode,
+            size(px(400.), px(700.)),
+            px(400.),
+            px(16.),
+            widths,
+            [true, true],
+        );
         assert!(narrow.visible >= 1);
         assert_eq!(narrow.anchor_index(MenuKind::File), 0);
         for kind in MENUS.iter().skip(narrow.visible) {
             assert_eq!(narrow.anchor_index(*kind), MENUS.len());
         }
-        let wide = HeaderLayout::new(mode, size(px(1000.), px(700.)), px(1000.), px(16.), widths);
+        let wide = HeaderLayout::new(
+            mode,
+            size(px(1000.), px(700.)),
+            px(1000.),
+            px(16.),
+            widths,
+            [true, true],
+        );
         assert_eq!(wide.visible, MENUS.len());
     }
     let fullscreen = HeaderLayout::new(
@@ -314,6 +328,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(400.),
         px(16.),
         widths,
+        [true, true],
     );
     assert_eq!(fullscreen.visible, MENUS.len() - 2);
     assert!(!fullscreen.mode.combined());
@@ -325,6 +340,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(400.),
         px(16.),
         widths,
+        [true, true],
     );
     assert_eq!(server.visible, fullscreen.visible);
 }
@@ -656,4 +672,88 @@ fn centered_editor_view_toggle_rechecks_modal_and_busy_guards(cx: &mut TestAppCo
             assert!(!this.appearance().centered_editor);
         })
     });
+}
+
+#[gpui::test]
+fn top_bar_buttons_have_independent_visibility_and_reserved_space(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    for sidebar in [false, true] {
+        for terminal in [false, true] {
+            // Fresh windows avoid retained debug bounds from previously visible buttons.
+            let (_, view) = cx.add_window_view(|window, cx| {
+                let notes = cx.new(|cx| {
+                    let mut notes = Notes::new(window, cx);
+                    notes.session_toolbar.visible = false;
+                    notes.session_toolbar.title_bar_sidebar = sidebar;
+                    notes.session_toolbar.terminal = terminal;
+                    notes.session_toolbar.icon_size = crate::notebook::ToolbarIconSize::Large;
+                    notes
+                });
+                let root = cx.new(|cx| NotesWindow {
+                    _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),
+                    notes,
+                });
+                Root::new(root, window, cx)
+            });
+            for width in [400., 1000.] {
+                view.simulate_resize(size(px(width), px(700.)));
+                view.run_until_parked();
+                view.refresh().unwrap();
+                assert!(view.debug_bounds("content-toolbar").is_none());
+                assert!(view.debug_bounds("toolbar-terminal").is_none());
+                let left = view.debug_bounds("title-bar-sidebar-toggle");
+                let right = view.debug_bounds("title-bar-terminal-toggle");
+                assert_eq!(left.is_some(), sidebar);
+                assert_eq!(right.is_some(), terminal);
+                let file = view.debug_bounds("file-menu").unwrap();
+                let native_inset = view.update(|window, _| {
+                    if HeaderMode::current(window) == HeaderMode::Mac {
+                        px(80.)
+                    } else {
+                        px(0.)
+                    }
+                });
+                assert_eq!(
+                    file.left(),
+                    native_inset + px(if sidebar { 32. } else { 4. })
+                );
+                if let Some(right) = right {
+                    assert_eq!(right.size.width, px(28.));
+                    if let Some(minimize) = view.debug_bounds("window-minimize") {
+                        assert_eq!(right.right(), minimize.left());
+                    } else {
+                        assert_eq!(
+                            right.right(),
+                            view.debug_bounds("window-title-bar").unwrap().right() - px(4.)
+                        );
+                    }
+                    if let Some(more) = view.debug_bounds("more-menu") {
+                        assert!(more.right() <= right.left());
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[gpui::test]
+fn title_terminal_button_toggles_without_caption_commands(cx: &mut TestAppContext) {
+    let (_dir, notes, cx) = fixture(cx);
+    for open in [true, false] {
+        let button = cx.debug_bounds("title-bar-terminal-toggle").unwrap();
+        cx.simulate_mouse_down(button.center(), MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(
+            button.center() + gpui::point(px(1.), px(0.)),
+            Some(MouseButton::Left),
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_up(button.center(), MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            assert_eq!(notes.read(cx).right_panel_open, open);
+            #[cfg(target_os = "windows")]
+            assert!(notes.read(cx).title_bar.commands.is_empty());
+        });
+    }
 }

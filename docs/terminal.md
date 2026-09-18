@@ -1,6 +1,7 @@
 # Terminal trial
 
-Use the terminal toolbar button, Ctrl+backtick (including macOS), or the
+Use the right-panel icon in the top bar, immediately left of minimize,
+Ctrl+backtick (including macOS), or the
 **Terminal: Toggle terminal** command to open the right panel. The first opening
 starts one shell. The header contains a horizontally scrollable tab strip and a
 **+** button beside the tabs, kept visible when the strip overflows. Each tab
@@ -15,9 +16,13 @@ output. Closing an active tab selects its right neighbor, otherwise its left.
 Closing an inactive tab preserves the selected session. Closing the last tab hides
 the panel; reopening starts a fresh shell.
 
-The toolbar icon, Ctrl+backtick and toggle command hide or show the panel without
+The top-bar icon, Ctrl+backtick and toggle command hide or show the panel without
 stopping any shell. Shell exit or launch failure leaves the output/status visible
 until the tab is closed; use **+** to start another session.
+
+Settings → Toolbar → Top bar has separate **Show sidebar button** and
+**Show terminal button** switches. These remain independent of **Hide toolbars**
+and toolbar icon sizing. Hiding either button leaves its panel state unchanged.
 
 The Terminal settings tab offers a Windows shell dropdown with PowerShell and
 Git Bash. The choice is saved

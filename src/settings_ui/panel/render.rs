@@ -290,6 +290,41 @@ impl Render for SettingsPanel {
             .flex_col()
             .gap_3()
             .child(self.values.subtitle.clone())
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child("Top bar"),
+            )
+            .child(
+                Switch::new("title-bar-sidebar-visible")
+                    .label("Show sidebar button")
+                    .checked(self.values.toolbar.title_bar_sidebar)
+                    .disabled(self.values.busy)
+                    .on_click(cx.listener(|this, enabled, _, cx| {
+                        this.emit_intent(SettingsIntent::TitleBarSidebar(*enabled), cx)
+                    })),
+            )
+            .child(
+                Switch::new("title-bar-terminal-visible")
+                    .label("Show terminal button")
+                    .checked(self.values.toolbar.terminal)
+                    .disabled(self.values.busy)
+                    .on_click(cx.listener(|this, enabled, _, cx| {
+                        this.emit_intent(
+                            SettingsIntent::ToolbarItemEnabled(
+                                notebook::ToolbarItem::Terminal,
+                                *enabled,
+                            ),
+                            cx,
+                        )
+                    })),
+            )
+            .child("Top-bar buttons stay visible when toolbars are hidden.")
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child("Toolbars"),
+            )
             .child("Icon size")
             .child(
                 toolbar_sizes.child(
@@ -304,15 +339,19 @@ impl Render for SettingsPanel {
             )
             .child("Choose which items appear. Drag the grips to reorder within each region.");
         for (region, label) in notebook::ToolbarRegion::OPTIONS {
-            toolbar_body =
-                toolbar_body.child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(label));
-            for item in self
+            let items: Vec<_> = self
                 .values
                 .toolbar
                 .order
                 .into_iter()
-                .filter(|item| item.region() == region)
-            {
+                .filter(|item| *item != notebook::ToolbarItem::Terminal && item.region() == region)
+                .collect();
+            if items.is_empty() {
+                continue;
+            }
+            toolbar_body =
+                toolbar_body.child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(label));
+            for item in items {
                 toolbar_body = toolbar_body.child(self.render_toolbar_item(item, cx));
             }
         }

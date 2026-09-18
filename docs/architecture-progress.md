@@ -2410,3 +2410,25 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   No desktop interaction or native application launch was used. Native visual
   appearance remains available for user validation. The pre-existing Cargo.lock
   edit was left untouched.
+
+### 2026-09-18 — Top-bar panel controls
+
+- Moved the terminal toggle immediately before the caption controls, using the
+  matching right-panel icon and the sidebar button's fixed 28 px target/16 px icon.
+  Header overflow reserves only visible controls; terminal actions retain their
+  existing focus, lifecycle and modal/busy guards.
+- Settings → Toolbar → Top bar independently controls sidebar and terminal button
+  visibility. The sidebar preference defaults on; terminal reuses its existing
+  saved flag. Neither follows Hide toolbars or workspace icon size, and hiding a
+  button leaves its panel/session intact. Legacy toolbar orders remain readable;
+  the terminal no longer renders or contributes sizing in workspace toolbars.
+- Headless coverage verifies placement, all visibility combinations, narrow menu
+  layouts, caption isolation, persistence/session scope, stale/busy guards and
+  retaining terminal sessions. Updated terminal and settings scroll assertions to match the relocated control.
+- Format, locked offline check and strict all-target Clippy passed. All library,
+  application and integration suites plus doc-tests passed across the full run
+  and targeted completion. The ConPTY interrupt test required the existing
+  outside-sandbox rerun; all 10 terminal integration tests passed there.
+- Full validation used target/top-bar-validation with build.build-dir="target"
+  to reuse artifacts without replacing the running application. No desktop
+  interaction or visible application launch was used. Left Cargo.lock untouched.

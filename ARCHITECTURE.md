@@ -52,7 +52,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notes owns session-only right-panel visibility/width; TerminalTabs owns retained session identities and cleanup tasks, TerminalSession owns each view, and the terminal runtime owns PTY processes. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
-| Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow and popup anchors. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
+| Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow, popup anchors and fixed sidebar/terminal panel buttons. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
 | Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. Fixed regions read effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
@@ -333,7 +333,13 @@ and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
 marketing site's exact SVG mark. `build.rs` embeds Windows icon resource 1;
 release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
 launcher identity matches `WindowOptions::app_id` (`org.mithril.Mithril`).
-The title bar uses a sidebar icon button; native shell icons continue to use the
+The title bar owns matching left/right panel buttons: sidebar before the menus and
+terminal immediately before the caption controls (at the right edge without custom
+controls). Settings → Toolbar → Top bar independently hides each button, using
+`toolbar.title_bar_sidebar` (default true) and the existing `toolbar.terminal`
+preference. These controls ignore workspace toolbar visibility and icon sizing;
+the legacy terminal order entry remains readable but no longer renders in the
+workspace toolbar or its reorder list. Native shell icons continue to use the
 packaged brand resources.
 
 Windows distribution is owned by
@@ -469,12 +475,13 @@ are inside the workspace content column. Sidebar collapse removes its toolbar;
 content controls remain available with no notebook. Settings groups items by region.
 Legacy `alignment` values still deserialize and round-trip but no longer affect
 presentation; there is no alignment control or mutation intent.
-The default-enabled Terminal item is appended to old saved orders without changing
-other choices. It toggles a full-height right panel containing a header, close
-button and placeholder message. Notes retains open/closed state and preferred width
-for the window session (initially closed, 280 px), independently of tabs/notebooks.
-Opening retains focus; closing restores active content focus. Modal/busy guards
-apply to both controls; hiding toolbars leaves the panel's close button available.
+The default-enabled terminal toggle lives in the title bar; its legacy saved-order
+entry remains compatible without rendering a workspace toolbar button. It toggles
+a full-height right panel containing retained terminal tabs. Notes retains
+open/closed state and preferred width for the window session (initially closed,
+280 px), independently of document tabs/notebooks. Opening focuses the active
+terminal; closing restores active content focus. Modal/busy guards apply to both
+the title-bar toggle and panel close button. Hiding toolbars leaves both available.
 The terminal header matches one workspace toolbar row: 33/41/49 logical pixels
 for Small/Medium/Large, including 4 px padding per side and a 1 px bottom border.
 Its close button shares toolbar icon/target sizing. The header stays one row tall

@@ -21,6 +21,7 @@ impl Notes {
             && settings
                 .order
                 .into_iter()
+                .filter(|item| *item != ToolbarItem::Terminal)
                 .any(|item| item.region() == region && settings.enabled(item))
     }
 
@@ -50,6 +51,7 @@ impl Notes {
             let count = settings
                 .order
                 .into_iter()
+                .filter(|item| *item != ToolbarItem::Terminal)
                 .filter(|item| item.region() == region && settings.enabled(*item))
                 .count();
             count as f32 * settings.icon_size.button_pixels() + count.saturating_sub(1) as f32 * 4.
@@ -160,6 +162,7 @@ impl Notes {
                 settings
                     .order
                     .into_iter()
+                    .filter(|item| *item != ToolbarItem::Terminal)
                     .filter(|item| settings.enabled(*item) && item.region() == region)
                     .map(|item| {
                         let drag = can_reorder.then(|| WindowToolbarDrag {
@@ -198,23 +201,9 @@ impl Notes {
                                 }))
                                 .into_any_element()
                             }
-                            ToolbarItem::Terminal => toolbar_button(
-                                "toolbar-terminal",
-                                IconName::SquareTerminal,
-                                settings.icon_size,
-                                self.document_interaction_blocked() || window.has_active_dialog(cx),
-                                drag,
-                            )
-                            .tooltip(if self.right_panel_open {
-                                "Close terminal panel"
-                            } else {
-                                "Open terminal panel"
-                            })
-                            .selected(self.right_panel_open)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.toggle_right_panel(window, cx)
-                            }))
-                            .into_any_element(),
+                            ToolbarItem::Terminal => {
+                                unreachable!("terminal belongs to the top bar")
+                            }
                             ToolbarItem::Sidebar => toolbar_button(
                                 "toolbar-sidebar-toggle",
                                 IconName::PanelLeft,
@@ -346,7 +335,7 @@ impl Render for WindowToolbarDrag {
         let icon = match self.item {
             ToolbarItem::Back => Icon::new(IconName::ArrowLeft),
             ToolbarItem::Forward => Icon::new(IconName::ArrowRight),
-            ToolbarItem::Terminal => Icon::new(IconName::SquareTerminal),
+            ToolbarItem::Terminal => Icon::new(IconName::PanelRight),
             ToolbarItem::Sidebar => Icon::new(IconName::PanelLeft),
             ToolbarItem::Explorer => Icon::new(IconName::Folder),
             ToolbarItem::Search => Icon::new(IconName::Search),

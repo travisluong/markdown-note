@@ -1062,7 +1062,7 @@ fn right_panel_toggle_focuses_terminal_and_retains_document_selection_and_histor
     });
     click("toolbar-bold", cx);
     let selection = cx.update(|_, cx| notes.read(cx).editor.selection(cx));
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     settle_layout(cx);
     cx.update(|window, cx| {
         let this = notes.read(cx);
@@ -1088,10 +1088,13 @@ fn right_panel_toggle_focuses_terminal_and_retains_document_selection_and_histor
     assert_eq!(panel.top(), toolbar.top());
     assert_eq!(panel.left(), toolbar.right());
     assert_eq!(
-        cx.debug_bounds("toolbar-terminal").unwrap().right(),
-        toolbar.right() - px(4.)
+        cx.debug_bounds("title-bar-terminal-toggle")
+            .unwrap()
+            .size
+            .width,
+        px(28.)
     );
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     cx.update(|window, cx| {
         assert!(!notes.read(cx).right_panel_open);
         assert!(notes.read(cx).editor.is_focused(window, cx));
@@ -1100,8 +1103,8 @@ fn right_panel_toggle_focuses_terminal_and_retains_document_selection_and_histor
     cx.dispatch_action(Undo);
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(notes.read(cx).editor.text(cx).as_ref(), "café\n茶"));
-    click("toolbar-terminal", cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
+    click("title-bar-terminal-toggle", cx);
     cx.update(|_, cx| assert!(!notes.read(cx).right_panel_open));
 }
 
@@ -1177,8 +1180,8 @@ fn right_panel_resize_and_workspace_changes_preserve_preferred_widths(cx: &mut T
         });
     }
     assert!((cx.debug_bounds("right-panel").unwrap().size.width - px(preferred)).abs() <= px(1.));
-    click("toolbar-terminal", cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
+    click("title-bar-terminal-toggle", cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             this.new_tab(window, cx);
@@ -1208,7 +1211,7 @@ fn right_panel_rechecks_modal_and_busy_guards_and_toggles_when_toolbar_hidden(
         })
     });
     cx.run_until_parked();
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     cx.update(|window, cx| notes.update(cx, |this, cx| this.toggle_toolbar(window, cx)));
     settle_layout(cx);
     cx.dispatch_action(crate::ToggleTerminal);
@@ -1238,10 +1241,11 @@ fn toolbar_geometry_uses_logical_pixels_with_large_interface_text(cx: &mut TestA
     settle_layout(cx);
     let toolbar = cx.debug_bounds("content-toolbar").unwrap();
     let back = cx.debug_bounds("toolbar-back").unwrap();
-    let terminal = cx.debug_bounds("toolbar-terminal").unwrap();
-    assert_eq!(back.top(), terminal.top());
+    let terminal = cx.debug_bounds("title-bar-terminal-toggle").unwrap();
+    assert!(terminal.bottom() <= toolbar.top());
+    assert_eq!(terminal.size.width, px(28.));
     assert_eq!(back.left(), toolbar.left() + px(4.));
-    assert_eq!(terminal.right(), toolbar.right() - px(4.));
+    assert!(terminal.right() <= cx.debug_bounds("window-title-bar").unwrap().right());
     for item in ToolbarItem::DEFAULT_ORDER
         .into_iter()
         .filter(|item| item.region() == ToolbarRegion::ContentCenter)
@@ -1257,7 +1261,7 @@ fn toolbar_geometry_uses_logical_pixels_with_large_interface_text(cx: &mut TestA
 fn right_panel_explicit_narrow_resize_is_retained(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
     cx.simulate_resize(gpui::size(px(400.), px(800.)));
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     settle_layout(cx);
     let panel = cx.debug_bounds("right-panel").unwrap();
     assert_eq!(panel.size.width, px(200.));
@@ -1277,8 +1281,8 @@ fn right_panel_explicit_narrow_resize_is_retained(cx: &mut TestAppContext) {
     cx.simulate_mouse_up(end, gpui::MouseButton::Left, Modifiers::default());
     settle_layout(cx);
     cx.update(|_, cx| assert_eq!(notes.read(cx).right_panel_width, 180.));
-    click("toolbar-terminal", cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
+    click("title-bar-terminal-toggle", cx);
     settle_layout(cx);
     assert_eq!(cx.debug_bounds("right-panel").unwrap().size.width, px(180.));
 }
@@ -1378,7 +1382,7 @@ fn terminal_new_tab_uses_current_notebook_and_preserves_existing_session(cx: &mu
 #[gpui::test]
 fn terminal_input_rechecks_modal_authority(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     let panel = cx.update(|_, cx| notes.read(cx).terminals.active_session().cloned().unwrap());
     cx.update(|window, cx| {
         window.open_dialog(cx, |dialog, _, _| dialog.title("Test modal"));
@@ -1394,7 +1398,7 @@ fn terminal_input_rechecks_modal_authority(cx: &mut TestAppContext) {
 #[gpui::test]
 fn terminal_tab_completion_keeps_focus_and_reaches_the_shell(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     let (panel, view) = cx.update(|_, cx| {
         let panel = notes.read(cx).terminals.active_session().cloned().unwrap();
         let view = panel.read(cx).view.clone().unwrap();
@@ -1443,7 +1447,7 @@ fn terminal_tab_completion_keeps_focus_and_reaches_the_shell(cx: &mut TestAppCon
 #[gpui::test]
 fn terminal_shift_enter_is_distinct_from_submit(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     let (panel, view) = cx.update(|_, cx| {
         let panel = notes.read(cx).terminals.active_session().cloned().unwrap();
         let view = panel.read(cx).view.clone().unwrap();
@@ -1473,7 +1477,7 @@ fn terminal_tabs_select_close_neighbors_and_reopen_with_stable_ids(cx: &mut Test
         })
     });
     settle_layout(cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     for selector in ["terminal-restart", "terminal-stop", "right-panel-close"] {
         assert!(cx.debug_bounds(selector).is_none());
     }
@@ -1535,7 +1539,7 @@ fn terminal_tabs_select_close_neighbors_and_reopen_with_stable_ids(cx: &mut Test
         assert!(notes.editor.is_focused(window, cx));
     });
     cx.update(|_, cx| assert!(notes.read(cx).terminals.cleanup.is_empty()));
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     cx.update(|_, cx| {
         assert_eq!(notes.read(cx).terminals.active, Some(TerminalTabId(5)));
         assert_ne!(notes.read(cx).terminals.active_session(), Some(&first));
@@ -1546,7 +1550,7 @@ fn terminal_tabs_select_close_neighbors_and_reopen_with_stable_ids(cx: &mut Test
 fn terminal_tabs_overflow_reveals_selection_and_keeps_add_visible(cx: &mut TestAppContext) {
     use crate::terminal_ui::TerminalTabId;
     let (_dir, notes, cx) = fixture(cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     settle_layout(cx);
     let tab = cx.debug_bounds("terminal-tab-1").unwrap();
     let add = cx.debug_bounds("terminal-tab-add").unwrap();
@@ -1605,7 +1609,7 @@ fn terminal_tabs_overflow_reveals_selection_and_keeps_add_visible(cx: &mut TestA
 fn terminal_tab_actions_recheck_modal_and_busy_guards(cx: &mut TestAppContext) {
     use crate::terminal_ui::TerminalTabId;
     let (_dir, notes, cx) = fixture(cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     click("terminal-tab-add", cx);
     cx.update(|window, cx| {
         window.open_dialog(cx, |dialog, _, _| dialog.title("Blocked"));
@@ -1635,7 +1639,7 @@ fn terminal_tab_actions_recheck_modal_and_busy_guards(cx: &mut TestAppContext) {
 fn terminal_tabs_survive_cancelled_document_window_close(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
     click("toolbar-bold", cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     click("terminal-tab-add", cx);
     let sessions = cx.update(|_, cx| {
         notes
@@ -1747,7 +1751,7 @@ fn workspace_dividers_stop_at_neighbors_and_save_only_the_dragged_side(cx: &mut 
 #[gpui::test]
 fn terminal_long_titles_keep_close_and_add_controls_visible(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
-    click("toolbar-terminal", cx);
+    click("title-bar-terminal-toggle", cx);
     cx.update(|_, cx| {
         notes.update(cx, |this, cx| {
             this.terminals.tabs[0].title = "a very long Claude session title ".repeat(50);
