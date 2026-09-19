@@ -413,7 +413,8 @@ impl Render for SettingsPanel {
                         })),
                 ),
             )
-            .child("Choose which items appear. Drag the grips to reorder within each region.");
+            .child("Choose which items appear. Drag the grips to reorder within each region.")
+            .child("The sidebar button moves to the editor toolbar when the sidebar is collapsed.");
         for (region, label) in notebook::ToolbarRegion::OPTIONS {
             let items: Vec<_> = self
                 .values

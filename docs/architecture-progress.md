@@ -2585,6 +2585,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   in a headless outside-sandbox rerun.
 - Validation used target/agent-validation. No desktop input or native application
   harness was used; native visual validation remains manual.
+
 ### 2026-09-19 — Optional top-bar panel controls
 
 - Restored the top-bar terminal button with an independent, default-off
@@ -2595,3 +2596,24 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
 - Headless application validation passed all 364 tests, including title-bar
   geometry, retained terminal toggles, modal/busy guards, settings persistence,
   reset and stale-form regressions. Native desktop interaction was not used.
+
+### 2026-09-19 — Sidebar opener follows collapsed state
+
+- The enabled sidebar toolbar button moves to the editor toolbar's fixed left
+  edge before navigation when an active notebook sidebar is collapsed. Reopening
+  restores its saved sidebar order and Explorer/Search focus without losing the
+  query or results. Toolbar visibility and icon sizing still apply.
+- Shared effective item selection drives region visibility, width and rendering,
+  including when the sidebar opener is the only enabled editor control. Collapsed
+  openers cannot start or accept reordering; stale sidebar drags are rejected.
+- Headless regressions cover hidden/disabled controls, missing notebooks, an
+  otherwise empty editor toolbar, narrow/wide layouts at every icon size, saved
+  order, drag rejection and retained search state. Settings help and ownership
+  documentation describe the new placement.
+- Locked offline check, format check, strict all-target diagnostics Clippy and
+  whitespace checks passed. Validation passed 101 library tests, 366 application
+  tests, every integration suite and doc-tests. The known Windows PTY sandbox
+  timeout affected one terminal integration test; all 15 terminal tests passed
+  on the headless outside-sandbox retry, and the remaining suites passed.
+- Validation used target/agent-validation. No native application harness or
+  desktop input was used; native visual validation remains manual.

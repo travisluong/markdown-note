@@ -2006,3 +2006,166 @@ fn terminal_buttons_follow_visibility_settings_and_preserve_sessions(cx: &mut Te
         }
     }
 }
+
+#[gpui::test]
+fn sidebar_button_alone_controls_toolbar_visibility(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let dir = tempfile::tempdir().unwrap();
+    let book = notebook::Notebook::open(&dir.path().join("book"), true).unwrap();
+    for mask in 0..16 {
+        let visible = mask & 1 != 0;
+        let enabled = mask & 2 != 0;
+        let collapsed = mask & 4 != 0;
+        let has_notebook = mask & 8 != 0;
+        // Fresh windows avoid retained debug bounds for removed elements.
+        let (_, view) = cx.add_window_view(|window, cx| {
+            let notes = cx.new(|cx| {
+                let mut notes = Notes::new(window, cx);
+                let mut settings = notebook::ToolbarSettings::default();
+                for item in ToolbarItem::DEFAULT_ORDER {
+                    settings.set_enabled(item, false);
+                }
+                settings.visible = visible;
+                settings.sidebar = enabled;
+                notes.session_toolbar = settings;
+                if has_notebook {
+                    let mut book = book.clone();
+                    book.settings.toolbar = settings;
+                    notes.notebooks.active = Some(book);
+                }
+                notes.sidebar_collapsed = collapsed;
+                notes
+            });
+            let root = cx.new(|cx| NotesWindow {
+                _subscription: cx.observe(&notes, |_, _, cx| cx.notify()),
+                notes,
+            });
+            Root::new(root, window, cx)
+        });
+        view.simulate_resize(gpui::size(px(400.), px(700.)));
+        settle_layout(view);
+        let show = visible && enabled && has_notebook;
+        assert_eq!(
+            view.debug_bounds("toolbar-sidebar-toggle").is_some(),
+            show,
+            "mask={mask}"
+        );
+        assert_eq!(
+            view.debug_bounds("content-toolbar").is_some(),
+            show && collapsed,
+            "mask={mask}"
+        );
+        assert_eq!(
+            view.debug_bounds("sidebar-toolbar").is_some(),
+            show && !collapsed,
+            "mask={mask}"
+        );
+        assert!(view.debug_bounds("title-bar-sidebar-toggle").is_none());
+        if show && collapsed {
+            let button = view.debug_bounds("toolbar-sidebar-toggle").unwrap();
+            let toolbar = view.debug_bounds("content-toolbar").unwrap();
+            assert_eq!(button.left(), toolbar.left() + px(4.));
+            click("toolbar-sidebar-toggle", view);
+            settle_layout(view);
+            assert!(view.debug_bounds("sidebar-toolbar").is_some());
+        }
+    }
+}
+
+#[gpui::test]
+fn sidebar_button_moves_before_navigation_and_restores_saved_order_at_every_size(
+    cx: &mut TestAppContext,
+) {
+    let (dir, notes, cx) = fixture(cx);
+    let mut book = notebook::Notebook::open(dir.path(), false).unwrap();
+    assert!(
+        book.settings
+            .toolbar
+            .move_item(ToolbarItem::Sidebar, ToolbarItem::Sort, true)
+    );
+    let order = book.settings.toolbar.order;
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks.active = Some(book);
+            cx.notify();
+        })
+    });
+    for (size, _) in ToolbarIconSize::OPTIONS {
+        cx.update(|_, cx| {
+            notes.update(cx, |this, cx| {
+                this.notebooks
+                    .active
+                    .as_mut()
+                    .unwrap()
+                    .settings
+                    .toolbar
+                    .icon_size = size;
+                cx.notify();
+            })
+        });
+        for width in [400., 1000.] {
+            cx.simulate_resize(gpui::size(px(width), px(700.)));
+            settle_layout(cx);
+            let button = cx.debug_bounds("toolbar-sidebar-toggle").unwrap();
+            let sidebar = cx.debug_bounds("sidebar-toolbar").unwrap();
+            assert!(button.left() >= sidebar.left() && button.right() <= sidebar.right());
+            assert!(button.left() > cx.debug_bounds("sidebar-sort").unwrap().left());
+            click("toolbar-sidebar-toggle", cx);
+            settle_layout(cx);
+            let button = cx.debug_bounds("toolbar-sidebar-toggle").unwrap();
+            let content = cx.debug_bounds("content-toolbar").unwrap();
+            assert_eq!(button.left(), content.left() + px(4.));
+            assert_eq!(
+                button.size,
+                gpui::size(px(size.button_pixels()), px(size.button_pixels()))
+            );
+            assert!(button.right() < cx.debug_bounds("toolbar-back").unwrap().left());
+            assert!(button.bottom() <= content.bottom());
+            cx.update(|window, cx| {
+                notes.update(cx, |this, cx| {
+                    assert!(this.sidebar_collapsed);
+                    assert_eq!(this.toolbar_settings().order, order);
+                    let drag = WindowToolbarDrag {
+                        owner: cx.entity_id(),
+                        scope: Some(dir.path().to_path_buf()),
+                        item: ToolbarItem::Sidebar,
+                        size,
+                    };
+                    assert!(!this.accepts_toolbar_drag(&drag, ToolbarItem::Sort, window, cx));
+                    let incoming = WindowToolbarDrag {
+                        item: ToolbarItem::Sort,
+                        ..drag
+                    };
+                    assert!(!this.accepts_toolbar_drag(
+                        &incoming,
+                        ToolbarItem::Sidebar,
+                        window,
+                        cx
+                    ));
+                })
+            });
+            let start = button.center();
+            cx.simulate_mouse_down(start, gpui::MouseButton::Left, Modifiers::default());
+            cx.simulate_mouse_move(
+                start + gpui::point(px(12.), px(0.)),
+                gpui::MouseButton::Left,
+                Modifiers::default(),
+            );
+            cx.update(|_, cx| assert!(!cx.has_active_drag()));
+            // Release outside the button, then reopen with an ordinary click.
+            cx.simulate_mouse_up(
+                gpui::point(px(2.), px(2.)),
+                gpui::MouseButton::Left,
+                Modifiers::default(),
+            );
+            click("toolbar-sidebar-toggle", cx);
+            settle_layout(cx);
+            cx.update(|window, cx| {
+                let this = notes.read(cx);
+                assert!(!this.sidebar_collapsed);
+                assert_eq!(this.toolbar_settings().order, order);
+                assert!(this.notebooks.tree_focus.is_focused(window));
+            });
+        }
+    }
+}

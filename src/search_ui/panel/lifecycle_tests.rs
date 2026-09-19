@@ -676,7 +676,7 @@ fn settings_pause_preserves_search_and_blocks_result_navigation(cx: &mut TestApp
 }
 
 #[gpui::test]
-fn title_sidebar_button_retains_search_results_and_query_focus(cx: &mut TestAppContext) {
+fn sidebar_buttons_retain_search_results_and_query_focus(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.md"), "hit hit").unwrap();
     let (notes, cx) = fixture(cx, dir.path());
@@ -699,24 +699,26 @@ fn title_sidebar_button_retains_search_results_and_query_focus(cx: &mut TestAppC
         assert_eq!(panel.hits.len(), 2);
         (panel.query.clone(), panel.cancelled.clone())
     });
-    for collapsed in [true, false] {
-        cx.refresh().unwrap();
-        let button = cx.debug_bounds("title-bar-sidebar-toggle").unwrap();
-        cx.simulate_click(button.center(), gpui::Modifiers::default());
-        cx.run_until_parked();
-        cx.update(|window, cx| {
-            let this = notes.read(cx);
-            assert_eq!(this.sidebar_collapsed, collapsed);
-            let panel = this.search.as_ref().unwrap().read(cx);
-            assert!(panel.visible);
-            assert_eq!(panel.query, query);
-            assert_eq!(query.read(cx).value().as_ref(), "hit");
-            assert_eq!(panel.hits.len(), 2);
-            assert!(Arc::ptr_eq(&panel.cancelled, &cancelled));
-            if !collapsed {
-                assert!(query.focus_handle(cx).is_focused(window));
-            }
-        });
+    for selector in ["title-bar-sidebar-toggle", "toolbar-sidebar-toggle"] {
+        for collapsed in [true, false] {
+            cx.refresh().unwrap();
+            let button = cx.debug_bounds(selector).unwrap();
+            cx.simulate_click(button.center(), gpui::Modifiers::default());
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                let this = notes.read(cx);
+                assert_eq!(this.sidebar_collapsed, collapsed);
+                let panel = this.search.as_ref().unwrap().read(cx);
+                assert!(panel.visible);
+                assert_eq!(panel.query, query);
+                assert_eq!(query.read(cx).value().as_ref(), "hit");
+                assert_eq!(panel.hits.len(), 2);
+                assert!(Arc::ptr_eq(&panel.cancelled, &cancelled));
+                if !collapsed {
+                    assert!(query.focus_handle(cx).is_focused(window));
+                }
+            });
+        }
     }
 }
 

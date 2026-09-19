@@ -15,14 +15,37 @@ use mithril::{
 };
 
 impl Notes {
-    pub(super) fn toolbar_region_visible(&self, region: ToolbarRegion) -> bool {
+    /// Resolve panel-dependent placement once for rendering, sizing and visibility.
+    fn toolbar_items(&self, region: ToolbarRegion) -> Vec<ToolbarItem> {
         let settings = self.toolbar_settings();
-        settings.visible
-            && settings
-                .order
-                .into_iter()
-                .filter(|item| *item != ToolbarItem::Terminal || !self.right_panel_open)
-                .any(|item| item.region() == region && settings.enabled(item))
+        if !settings.visible {
+            return Vec::new();
+        }
+        let mut items: Vec<_> = settings
+            .order
+            .into_iter()
+            .filter(|item| {
+                if !settings.enabled(*item) {
+                    return false;
+                }
+                let placement = match item {
+                    ToolbarItem::Terminal if self.right_panel_open => return false,
+                    ToolbarItem::Sidebar if self.notebooks.active.is_none() => return false,
+                    ToolbarItem::Sidebar if self.sidebar_collapsed => ToolbarRegion::ContentLeft,
+                    _ => item.region(),
+                };
+                placement == region
+            })
+            .collect();
+        if region == ToolbarRegion::ContentLeft {
+            // The collapsed opener is fixed before navigation, regardless of its saved sidebar order.
+            items.sort_by_key(|item| *item != ToolbarItem::Sidebar);
+        }
+        items
+    }
+
+    pub(super) fn toolbar_region_visible(&self, region: ToolbarRegion) -> bool {
+        !self.toolbar_items(region).is_empty()
     }
 
     pub(super) fn render_sidebar_toolbar(
@@ -48,12 +71,7 @@ impl Notes {
     ) -> impl IntoElement + use<> {
         let settings = self.toolbar_settings();
         let width = |region| {
-            let count = settings
-                .order
-                .into_iter()
-                .filter(|item| *item != ToolbarItem::Terminal || !self.right_panel_open)
-                .filter(|item| item.region() == region && settings.enabled(*item))
-                .count();
+            let count = self.toolbar_items(region).len();
             count as f32 * settings.icon_size.button_pixels() + count.saturating_sub(1) as f32 * 4.
         };
         let side = width(ToolbarRegion::ContentLeft).max(width(ToolbarRegion::ContentRight));
@@ -158,174 +176,161 @@ impl Notes {
             .when(region == ToolbarRegion::ContentRight, |view| {
                 view.justify_end()
             })
-            .children(
-                settings
-                    .order
-                    .into_iter()
-                    .filter(|item| *item != ToolbarItem::Terminal || !self.right_panel_open)
-                    .filter(|item| settings.enabled(*item) && item.region() == region)
-                    .map(|item| {
-                        let drag = can_reorder.then(|| WindowToolbarDrag {
-                            owner: cx.entity_id(),
-                            scope: self.notebooks.active.as_ref().map(|book| book.root.clone()),
-                            item,
-                            size: settings.icon_size,
-                        });
-                        let button = match item {
-                            ToolbarItem::Back | ToolbarItem::Forward => {
-                                let (id, icon, direction) = if item == ToolbarItem::Back {
-                                    (
-                                        "toolbar-back",
-                                        IconName::ArrowLeft,
-                                        crate::app::navigation::Direction::Back,
-                                    )
-                                } else {
-                                    (
-                                        "toolbar-forward",
-                                        IconName::ArrowRight,
-                                        crate::app::navigation::Direction::Forward,
-                                    )
-                                };
-                                toolbar_button(
-                                    id,
-                                    icon,
-                                    settings.icon_size,
-                                    self.document_interaction_blocked()
-                                        || window.has_active_dialog(cx)
-                                        || self.tabs.active.navigation.target(direction).is_none(),
-                                    drag,
-                                )
-                                .tooltip(item.label())
+            .children(self.toolbar_items(region).into_iter().map(|item| {
+                let can_reorder =
+                    can_reorder && !(item == ToolbarItem::Sidebar && self.sidebar_collapsed);
+                let drag = can_reorder.then(|| WindowToolbarDrag {
+                    owner: cx.entity_id(),
+                    scope: self.notebooks.active.as_ref().map(|book| book.root.clone()),
+                    item,
+                    size: settings.icon_size,
+                });
+                let button = match item {
+                    ToolbarItem::Back | ToolbarItem::Forward => {
+                        let (id, icon, direction) = if item == ToolbarItem::Back {
+                            (
+                                "toolbar-back",
+                                IconName::ArrowLeft,
+                                crate::app::navigation::Direction::Back,
+                            )
+                        } else {
+                            (
+                                "toolbar-forward",
+                                IconName::ArrowRight,
+                                crate::app::navigation::Direction::Forward,
+                            )
+                        };
+                        toolbar_button(
+                            id,
+                            icon,
+                            settings.icon_size,
+                            self.document_interaction_blocked()
+                                || window.has_active_dialog(cx)
+                                || self.tabs.active.navigation.target(direction).is_none(),
+                            drag,
+                        )
+                        .tooltip(item.label())
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.navigate_history(direction, window, cx)
+                        }))
+                        .into_any_element()
+                    }
+                    ToolbarItem::Terminal => toolbar_icon_button(
+                        "toolbar-terminal",
+                        IconName::PanelRight,
+                        settings.icon_size,
+                        self.document_interaction_blocked() || window.has_active_dialog(cx),
+                    )
+                    .tooltip("Open terminal panel")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.toggle_right_panel(window, cx);
+                    }))
+                    .into_any_element(),
+                    ToolbarItem::Sidebar => toolbar_button(
+                        "toolbar-sidebar-toggle",
+                        IconName::PanelLeft,
+                        settings.icon_size,
+                        self.document_interaction_blocked()
+                            || window.has_active_dialog(cx)
+                            || !has_notebook,
+                        drag,
+                    )
+                    .tooltip(if sidebar_visible {
+                        "Collapse sidebar"
+                    } else {
+                        "Show sidebar"
+                    })
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)))
+                    .into_any_element(),
+                    ToolbarItem::Explorer => toolbar_button(
+                        "sidebar-explorer",
+                        IconName::Folder,
+                        settings.icon_size,
+                        disabled,
+                        drag,
+                    )
+                    .tooltip(if cfg!(target_os = "macos") {
+                        "Explorer (Cmd+Shift+E)"
+                    } else {
+                        "Explorer (Ctrl+Shift+E)"
+                    })
+                    .selected(sidebar_visible && !searching)
+                    .on_click(cx.listener(|this, _, window, cx| this.show_explorer(window, cx)))
+                    .into_any_element(),
+                    ToolbarItem::Search => toolbar_button(
+                        "sidebar-search",
+                        IconName::Search,
+                        settings.icon_size,
+                        disabled,
+                        drag,
+                    )
+                    .tooltip(if cfg!(target_os = "macos") {
+                        "Search all files (Cmd+Shift+F)"
+                    } else {
+                        "Search all files (Ctrl+Shift+F)"
+                    })
+                    .selected(sidebar_visible && searching)
+                    .on_click(cx.listener(|this, _, window, cx| this.open_search_all(window, cx)))
+                    .into_any_element(),
+                    ToolbarItem::Sort => toolbar_button(
+                        "sidebar-sort",
+                        Icon::default().path("toolbar/sort.svg"),
+                        settings.icon_size,
+                        disabled,
+                        drag,
+                    )
+                    .tooltip("Sort files")
+                    .dropdown_menu({
+                        let owner = owner.clone();
+                        move |menu, _, cx| {
+                            if let Some(entity) = owner.upgrade() {
+                                entity.read(cx).file_sort_menu(menu, owner.clone())
+                            } else {
+                                menu
+                            }
+                        }
+                    })
+                    .trigger_on_click(true)
+                    .into_any_element(),
+                    item => {
+                        let (id, path, format) = formatting_item(item);
+                        let button = toolbar_button(
+                            id,
+                            Icon::default().path(path),
+                            settings.icon_size,
+                            !self.can_edit_markdown(),
+                            drag,
+                        )
+                        .tooltip(item.label());
+                        if item == ToolbarItem::Heading {
+                            button
+                                .dropdown_menu({
+                                    let owner = owner.clone();
+                                    move |menu, _, cx| {
+                                        if let Some(entity) = owner.upgrade() {
+                                            entity.read(cx).heading_menu(menu, owner.clone(), cx)
+                                        } else {
+                                            menu
+                                        }
+                                    }
+                                })
+                                .trigger_on_click(true)
+                                .into_any_element()
+                        } else {
+                            button
                                 .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.navigate_history(direction, window, cx)
+                                    if item == ToolbarItem::Link {
+                                        this.edit_link(window, cx);
+                                    } else if let Some(format) = format {
+                                        this.apply_markdown_format(format, window, cx);
+                                    }
                                 }))
                                 .into_any_element()
-                            }
-                            ToolbarItem::Terminal => toolbar_icon_button(
-                                "toolbar-terminal",
-                                IconName::PanelRight,
-                                settings.icon_size,
-                                self.document_interaction_blocked() || window.has_active_dialog(cx),
-                            )
-                            .tooltip("Open terminal panel")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.toggle_right_panel(window, cx);
-                            }))
-                            .into_any_element(),
-                            ToolbarItem::Sidebar => toolbar_button(
-                                "toolbar-sidebar-toggle",
-                                IconName::PanelLeft,
-                                settings.icon_size,
-                                self.is_busy() || !has_notebook,
-                                drag,
-                            )
-                            .tooltip(if sidebar_visible {
-                                "Collapse sidebar"
-                            } else {
-                                "Show sidebar"
-                            })
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)),
-                            )
-                            .into_any_element(),
-                            ToolbarItem::Explorer => toolbar_button(
-                                "sidebar-explorer",
-                                IconName::Folder,
-                                settings.icon_size,
-                                disabled,
-                                drag,
-                            )
-                            .tooltip(if cfg!(target_os = "macos") {
-                                "Explorer (Cmd+Shift+E)"
-                            } else {
-                                "Explorer (Ctrl+Shift+E)"
-                            })
-                            .selected(sidebar_visible && !searching)
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.show_explorer(window, cx)),
-                            )
-                            .into_any_element(),
-                            ToolbarItem::Search => toolbar_button(
-                                "sidebar-search",
-                                IconName::Search,
-                                settings.icon_size,
-                                disabled,
-                                drag,
-                            )
-                            .tooltip(if cfg!(target_os = "macos") {
-                                "Search all files (Cmd+Shift+F)"
-                            } else {
-                                "Search all files (Ctrl+Shift+F)"
-                            })
-                            .selected(sidebar_visible && searching)
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.open_search_all(window, cx)),
-                            )
-                            .into_any_element(),
-                            ToolbarItem::Sort => toolbar_button(
-                                "sidebar-sort",
-                                Icon::default().path("toolbar/sort.svg"),
-                                settings.icon_size,
-                                disabled,
-                                drag,
-                            )
-                            .tooltip("Sort files")
-                            .dropdown_menu({
-                                let owner = owner.clone();
-                                move |menu, _, cx| {
-                                    if let Some(entity) = owner.upgrade() {
-                                        entity.read(cx).file_sort_menu(menu, owner.clone())
-                                    } else {
-                                        menu
-                                    }
-                                }
-                            })
-                            .trigger_on_click(true)
-                            .into_any_element(),
-                            item => {
-                                let (id, path, format) = formatting_item(item);
-                                let button = toolbar_button(
-                                    id,
-                                    Icon::default().path(path),
-                                    settings.icon_size,
-                                    !self.can_edit_markdown(),
-                                    drag,
-                                )
-                                .tooltip(item.label());
-                                if item == ToolbarItem::Heading {
-                                    button
-                                        .dropdown_menu({
-                                            let owner = owner.clone();
-                                            move |menu, _, cx| {
-                                                if let Some(entity) = owner.upgrade() {
-                                                    entity.read(cx).heading_menu(
-                                                        menu,
-                                                        owner.clone(),
-                                                        cx,
-                                                    )
-                                                } else {
-                                                    menu
-                                                }
-                                            }
-                                        })
-                                        .trigger_on_click(true)
-                                        .into_any_element()
-                                } else {
-                                    button
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            if item == ToolbarItem::Link {
-                                                this.edit_link(window, cx);
-                                            } else if let Some(format) = format {
-                                                this.apply_markdown_format(format, window, cx);
-                                            }
-                                        }))
-                                        .into_any_element()
-                                }
-                            }
-                        };
-                        self.toolbar_drop_target(item, settings.icon_size, button, can_reorder, cx)
-                    }),
-            )
+                        }
+                    }
+                };
+                self.toolbar_drop_target(item, settings.icon_size, button, can_reorder, cx)
+            }))
     }
 }
 
@@ -378,6 +383,8 @@ impl Notes {
             && !self.document_interaction_blocked()
             && !window.has_active_dialog(cx)
             && drag.item.region() == target.region()
+            && !(self.sidebar_collapsed
+                && (drag.item == ToolbarItem::Sidebar || target == ToolbarItem::Sidebar))
             && settings.visible
             && settings.enabled(drag.item)
             && settings.enabled(target)
