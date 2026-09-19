@@ -51,7 +51,7 @@ impl PaletteEntry {
         match self {
             Self::Command(command) => command.description().into(),
             Self::FileSort { .. } => "Sort files in the active notebook".into(),
-            Self::Notebook { path, .. } => path.display().to_string(),
+            Self::Notebook { path, .. } => notebook::display_path(path),
             Self::File(entry) => entry.relative.display().to_string(),
         }
     }
