@@ -655,6 +655,11 @@ impl Render for Notes {
                     .into_any_element()
             }
         } else {
+            let modifier = if cfg!(target_os = "macos") {
+                "Cmd"
+            } else {
+                "Ctrl"
+            };
             div()
                 .debug_selector(|| "empty-content".into())
                 .size_full()
@@ -662,11 +667,15 @@ impl Render for Notes {
                 .items_center()
                 .justify_center()
                 .text_color(cx.theme().muted_foreground)
-                .child(if self.notebooks.active.is_some() {
-                    "Select a Markdown file or image from the notebook sidebar."
-                } else {
-                    "Open a Markdown file with File → Open… (Ctrl+O)"
-                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(format!("Create new note ({modifier} + N)"))
+                        .child(format!("Go to file ({modifier} + O)"))
+                        .child(format!("Show commands ({modifier} + P)")),
+                )
                 .into_any_element()
         };
         let content = div()
