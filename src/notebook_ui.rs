@@ -63,6 +63,8 @@ mod explorer_tests;
 #[cfg(test)]
 mod session_tests;
 #[cfg(test)]
+mod tab_groups_tests;
+#[cfg(test)]
 mod tabs_tests;
 
 #[cfg(test)]
@@ -633,32 +635,26 @@ impl Notes {
             .as_ref()
             .is_some_and(|book| book.root == path)
         {
-            let effects = self
-                .tabs
-                .active
-                .session
-                .dispatch(operation, app::session::Stage::Load);
+            let observed = self.observed_document(cx);
+            let effects = self.tabs.active.session.continued(operation, observed);
             if effects.is_empty() {
                 return;
             }
-            for effect in effects {
-                if let app::session::Effect::Load(operation) = effect {
-                    self.notebooks.active = None;
-                    self.notebooks.reload_exclusions();
-                    self.search = None;
-                    self.search_subscription = None;
-                    self.apply_appearance(window, cx);
-                    self.notebooks.explorer.clear();
-                    self.complete_content_load(
-                        operation,
-                        Ok(app::session::Loaded::Empty),
-                        window,
-                        cx,
-                    );
-                } else {
-                    self.apply_session_effects(vec![effect], window, cx);
-                }
+            self.apply_session_effects(effects, window, cx);
+            self.tabs.active.editor.break_undo_group(cx);
+            self.notebooks.active = None;
+            self.tabs.switch_group(None, window, cx);
+            self.notebooks.reload_exclusions();
+            self.search = None;
+            self.search_subscription = None;
+            self.reset_sidebar_resize(cx);
+            self.apply_appearance(window, cx);
+            self.notebooks.explorer.clear();
+            for id in self.tabs.ids() {
+                self.schedule_tab_autosave(id, window, cx);
             }
+            self.tabs.active.editor.break_undo_group(cx);
+            self.focus_active_tab(false, window, cx);
         } else {
             let observed = self.observed_document(cx);
             let effects = self.tabs.active.session.continued(operation, observed);
@@ -871,6 +867,7 @@ impl Notes {
     ) {
         #[cfg(test)]
         let install_delay = std::mem::take(&mut self.notebooks.activation_install_delay);
+        let restore_tabs = self.tabs.has_group(&path);
         let retained = self
             .documents
             .iter()
@@ -882,7 +879,8 @@ impl Notes {
                 .background_executor()
                 .spawn(async move {
                     let book = notebook::Notebook::open(&path, create)?;
-                    let document = match &book.settings.last_file {
+                    let document = match book.settings.last_file.as_ref().filter(|_| !restore_tabs)
+                    {
                         Some(relative) => {
                             match notebook::resolve(&book.root, relative).and_then(|path| {
                                 let canonical = fs::canonicalize(&path)?;

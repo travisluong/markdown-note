@@ -2514,3 +2514,28 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
 - Full-suite validation was attempted but Windows LNK1104 executable locks blocked
   linking. Repository-wide formatting reported concurrent unrelated session and
   notebook edits. No desktop input or native application harness was used.
+
+### 2026-09-19 — Notebook-scoped document tabs
+
+- TabSet now retains separate canonical-notebook and standalone groups, each with
+  tab order, selection and strip scrolling. Rendering and select/close controls
+  only expose the current group; stable IDs and global traversal continue to
+  serve shared documents, background saves, window close and move/delete.
+- Accepted notebook activation restores existing editors and navigation instead
+  of appending a last-file view. Only first activation loads the saved last file.
+  Failed/stale loads preserve the current group, and removing notebook index
+  entries parks their tabs without discarding drafts.
+- Added eight TestPlatform regressions for repeated/same-notebook activation,
+  editor identity, selection, modes, undo/redo, history, empty tabs, scroll
+  restoration, unreadable last files, stale results, removal/standalone restore,
+  hidden close/save decisions and shared move/delete. Updated earlier tests
+  that intentionally relied on cross-notebook tab selection or last-file reload.
+- All 101 library and 361 application tests passed across the full and focused
+  runs, as did every integration suite and doc-tests. The full run encountered
+  the previously documented Windows PTY interrupt timeout; all 12 terminal
+  integration tests passed in a headless outside-sandbox rerun. Transient Windows
+  executable linker locks also cleared on retry, without source workarounds.
+- Locked offline check, strict all-target diagnostics Clippy, formatting and
+  diff whitespace checks passed. No desktop input or native application harness
+  was used. Existing autosave policy, terminal tabs and settings schemas remain
+  unchanged.

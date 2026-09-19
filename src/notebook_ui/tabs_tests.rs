@@ -215,16 +215,13 @@ fn inactive_autosave_uses_tab_identity_even_when_document_and_write_ids_collide(
 }
 
 #[gpui::test]
-fn notebook_switch_retains_drafts_and_owning_notebook_autosave_preferences(
+fn notebook_switch_restores_drafts_and_owning_notebook_autosave_preferences(
     cx: &mut TestAppContext,
 ) {
     let (fixture, notes, cx) = fixture(cx);
     let first = cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.tabs
-                .active
-                .editor
-                .replace_selection(" draft", window, cx);
+            this.editor.replace_selection(" draft", window, cx);
             let id = this.tabs.active.id;
             this.request(
                 Next::Notebook {
@@ -242,29 +239,13 @@ fn notebook_switch_retains_drafts_and_owning_notebook_autosave_preferences(
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             assert_eq!(this.tabs.ids().len(), 2);
-            assert_eq!(this.document().unwrap().path, fixture.other.join("note.md"));
+            let second = this.tabs.active.id;
+            assert_eq!(this.tabs.visible_ids(), &[second]);
             this.select_tab(first, window, cx);
-            assert!(this.dirty(cx));
-            assert_eq!(this.notebooks.active.as_ref().unwrap().root, fixture.other);
-            assert_eq!(this.autosave_root(), Some(fixture.root.clone()));
-            this.update_autosave(
-                notebook::Autosave {
-                    enabled: true,
-                    delay_ms: 100,
-                },
-                window,
-                cx,
-            );
-            assert!(
-                !this
-                    .notebooks
-                    .active
-                    .as_ref()
-                    .unwrap()
-                    .settings
-                    .autosave
-                    .enabled
-            );
+            this.close_tab(first, window, cx);
+            assert_eq!(this.tabs.active.id, second);
+            assert!(this.tabs.get(first).unwrap().observed(cx).dirty);
+            assert!(this.workspace.is_none());
             this.request(
                 Next::Notebook {
                     path: fixture.root.clone(),
@@ -276,15 +257,22 @@ fn notebook_switch_retains_drafts_and_owning_notebook_autosave_preferences(
         })
     });
     cx.run_until_parked();
-    cx.update(|_, cx| {
-        let n = notes.read(cx);
-        assert_ne!(n.tabs.active.id, first);
-        assert_eq!(n.tabs.ids().len(), 3);
-        assert_eq!(
-            n.tabs.active.document().unwrap().id,
-            n.tabs.get(first).unwrap().document().unwrap().id
-        );
-        assert!(n.autosave_settings().enabled);
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.tabs.active.id, first);
+            assert_eq!(this.tabs.ids().len(), 2);
+            assert_eq!(this.tabs.visible_ids(), &[first]);
+            assert!(this.dirty(cx));
+            assert_eq!(this.autosave_root(), Some(fixture.root.clone()));
+            this.update_autosave(
+                notebook::Autosave {
+                    enabled: true,
+                    delay_ms: 100,
+                },
+                window,
+                cx,
+            );
+        })
     });
     cx.executor().advance_clock(Duration::from_millis(150));
     cx.run_until_parked();
@@ -1561,27 +1549,34 @@ fn external_file_badges_follow_current_notebook_membership(cx: &mut TestAppConte
                 .is_external_to(Some(&fixture.other))
         );
     });
-    // GPUI retains old debug selectors; measure the live button to prove badge removal.
-    assert!(cx.debug_bounds(select_selector).unwrap().size.width < external_width);
-    assert!(cx.debug_bounds(inside_selector).is_some());
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.notebooks.active = None;
-            this.select_tab(outside, window, cx);
+            assert!(!this.tabs.visible_ids().contains(&inside));
+            assert!(!this.tabs.visible_ids().contains(&outside));
             assert!(
                 this.tabs
-                    .active
+                    .get(outside)
+                    .unwrap()
                     .file_tooltip(None)
                     .contains("No notebook is open.")
             );
-            this.new_tab(window, cx);
-            assert!(!this.tabs.active.is_external_to(None));
-            assert_eq!(this.tabs.active.file_tooltip(None), "New tab");
-            cx.notify();
+            this.request(
+                Next::Notebook {
+                    path: fixture.root.clone(),
+                    create: false,
+                },
+                window,
+                cx,
+            );
         })
     });
     cx.run_until_parked();
     cx.refresh().unwrap();
+    // External files remain in the group where they were opened.
+    assert_eq!(
+        cx.debug_bounds(select_selector).unwrap().size.width,
+        external_width
+    );
     assert!(cx.debug_bounds(outside_selector).is_some());
 }
 
@@ -1786,16 +1781,20 @@ fn external_autosave_notebook_preferences_are_independent_across_switches(cx: &m
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             assert!(!this.external_autosave_enabled());
+            let active = this.tabs.active.id;
             this.select_tab(id, window, cx);
+            assert_eq!(this.tabs.active.id, active);
+            this.request(Next::FileFromPicker(external.clone()), window, cx);
         })
     });
     cx.run_until_parked();
     cx.refresh().unwrap();
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
-            this.editor.select(0..8, window, cx);
-            this.editor.replace_selection("edited under B", window, cx);
-            assert_eq!(this.editor.text(cx).as_ref(), "edited under B");
+            let tab = &mut this.tabs.active;
+            tab.editor.select(0..8, window, cx);
+            tab.editor.replace_selection("edited under B", window, cx);
+            assert_eq!(tab.editor.text(cx).as_ref(), "edited under B");
         })
     });
     cx.run_until_parked();

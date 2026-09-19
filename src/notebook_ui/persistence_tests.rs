@@ -38,6 +38,7 @@ pub(super) fn fixture(cx: &mut TestAppContext) -> (Fixture, Entity<Notes>, &mut 
     let (_, cx) = cx.add_window_view(|window, cx| {
         let entity = cx.new(|cx| {
             let mut notes = Notes::new(window, cx);
+            notes.tabs.set_initial_notebook(first.root.clone());
             notes.notebooks.active = Some(first);
             notes.notebooks.index = index;
             notes.notebooks.index_path = Some(fixture.index.clone());
@@ -389,7 +390,7 @@ fn assert_startup_tab(fixture: &Fixture, expected: Option<&str>, cx: &mut Visual
         let notes = restored.read(cx);
         assert!(!notes.is_busy());
         assert_eq!(notes.notebooks.active.as_ref().unwrap().root, fixture.root);
-        assert_eq!(notes.tabs.ids().len(), 1);
+        assert_eq!(notes.tabs.visible_ids().len(), 1);
         assert_eq!(
             notes.document().map(|document| document.path.clone()),
             expected.map(|relative| fixture.root.join(relative))

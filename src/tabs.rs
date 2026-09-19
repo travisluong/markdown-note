@@ -103,12 +103,20 @@ impl Tab {
     }
 }
 
+struct TabGroup {
+    order: Vec<TabId>,
+    selected: TabId,
+    scroll: ScrollHandle,
+}
+
 pub(crate) struct TabSet {
     pub(crate) active: Tab,
     inactive: Vec<Tab>,
     order: Vec<TabId>,
     serial: u64,
-    scroll: ScrollHandle,
+    scope: Option<PathBuf>,
+    group: TabGroup,
+    parked: std::collections::HashMap<Option<PathBuf>, TabGroup>,
 }
 impl TabSet {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Notes>) -> Self {
@@ -117,7 +125,13 @@ impl TabSet {
             inactive: vec![],
             order: vec![TabId(1)],
             serial: 1,
-            scroll: ScrollHandle::new(),
+            scope: None,
+            group: TabGroup {
+                order: vec![TabId(1)],
+                selected: TabId(1),
+                scroll: ScrollHandle::new(),
+            },
+            parked: Default::default(),
         }
     }
     pub(crate) fn get(&self, id: TabId) -> Option<&Tab> {
@@ -140,16 +154,68 @@ impl TabSet {
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Tab> {
         self.order.iter().filter_map(|id| self.get(*id))
     }
+    pub(crate) fn visible_ids(&self) -> &[TabId] {
+        &self.group.order
+    }
+    pub(crate) fn scroll_handle(&self) -> &ScrollHandle {
+        &self.group.scroll
+    }
+    fn visible_tabs(&self) -> impl Iterator<Item = &Tab> {
+        self.group.order.iter().filter_map(|id| self.get(*id))
+    }
+    pub(crate) fn has_group(&self, root: &Path) -> bool {
+        self.scope.as_deref() == Some(root) || self.parked.contains_key(&Some(root.to_path_buf()))
+    }
+    /// Used by fixtures that install their initial notebook synchronously.
+    #[cfg(test)]
+    pub(crate) fn set_initial_notebook(&mut self, root: PathBuf) {
+        assert_eq!(self.order.len(), 1);
+        assert!(self.parked.is_empty());
+        assert!(self.active.path().is_none());
+        self.scope = Some(root);
+    }
+    /// Returns true only when the destination needs its initial content installed.
+    pub(crate) fn switch_group(
+        &mut self,
+        scope: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Notes>,
+    ) -> bool {
+        if self.scope == scope {
+            return false;
+        }
+        let retained = self.parked.remove(&scope);
+        let fresh = retained.is_none();
+        let group = retained.unwrap_or_else(|| TabGroup {
+            order: vec![],
+            selected: self.active.id,
+            scroll: ScrollHandle::new(),
+        });
+        let previous = std::mem::replace(&mut self.group, group);
+        let previous_scope = std::mem::replace(&mut self.scope, scope);
+        self.parked.insert(previous_scope, previous);
+        if fresh {
+            self.add(window, cx);
+        } else {
+            self.select(self.group.selected);
+        }
+        fresh
+    }
     fn select(&mut self, id: TabId) {
+        if !self.group.order.contains(&id) {
+            return;
+        }
         if let Some(index) = self.inactive.iter().position(|t| t.id == id) {
             std::mem::swap(&mut self.active, &mut self.inactive[index]);
         }
+        self.group.selected = id;
     }
     fn add(&mut self, window: &mut Window, cx: &mut Context<Notes>) -> TabId {
         self.serial = self.serial.checked_add(1).expect("tab identity exhausted");
         let id = TabId(self.serial);
         self.inactive.push(Tab::new(id, window, cx));
         self.order.push(id);
+        self.group.order.push(id);
         self.select(id);
         id
     }
@@ -198,16 +264,6 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tabs.active.path().is_none() {
-            self.tabs.active.mode = mode;
-            self.complete_content_load(
-                operation,
-                Ok(document.map_or(app::session::Loaded::Empty, app::session::Loaded::Document)),
-                window,
-                cx,
-            );
-            return;
-        }
         let observed = self.observed_document(cx);
         let effects = self
             .tabs
@@ -218,7 +274,16 @@ impl Notes {
             return;
         }
         self.apply_session_effects(effects, window, cx);
-        self.tabs.add(window, cx);
+        self.tabs.active.editor.break_undo_group(cx);
+        let root = self.notebooks.active.as_ref().map(|book| book.root.clone());
+        if !self.tabs.switch_group(root, window, cx) {
+            for id in self.tabs.ids() {
+                self.schedule_tab_autosave(id, window, cx);
+            }
+            self.tabs.active.editor.break_undo_group(cx);
+            self.focus_active_tab(false, window, cx);
+            return;
+        }
         self.tabs.active.mode = mode;
         let observed = self.observed_document(cx);
         let effects = self.tabs.active.session.request(Next::Nothing, observed);
@@ -301,15 +366,23 @@ impl Notes {
         }
     }
     pub(crate) fn select_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
-        if self.document_interaction_blocked() || window.has_active_dialog(cx) {
+        if self.document_interaction_blocked()
+            || window.has_active_dialog(cx)
+            || !self.tabs.visible_ids().contains(&id)
+        {
             return;
         }
         self.tabs.active.editor.break_undo_group(cx);
         self.tabs.select(id);
         self.tabs.active.editor.break_undo_group(cx);
-        self.focus_active_tab(window, cx);
+        self.focus_active_tab(true, window, cx);
     }
-    fn focus_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus_active_tab(
+        &mut self,
+        scroll_to_selection: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.focus_settings(window, cx) {
             return;
         }
@@ -320,11 +393,13 @@ impl Notes {
         }
         if let Some(index) = self
             .tabs
+            .group
             .order
             .iter()
             .position(|id| *id == self.tabs.active.id)
+            && scroll_to_selection
         {
-            self.tabs.scroll.scroll_to_item(index);
+            self.tabs.scroll_handle().scroll_to_item(index);
         }
         if matches!(
             self.tabs.active.session.content(),
@@ -346,7 +421,7 @@ impl Notes {
         if let Some(book) = &self.notebooks.active {
             self.tabs.active.mode = book.settings.view_mode;
         }
-        self.focus_active_tab(window, cx);
+        self.focus_active_tab(true, window, cx);
     }
     pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let root = self
@@ -367,8 +442,8 @@ impl Notes {
             .py_1()
             .bg(cx.theme().background)
             .overflow_x_scroll()
-            .track_scroll(&self.tabs.scroll)
-            .children(self.tabs.iter().map(|tab| {
+            .track_scroll(self.tabs.scroll_handle())
+            .children(self.tabs.visible_tabs().map(|tab| {
                 let id = tab.id;
                 let title = tab
                     .path()
@@ -444,7 +519,7 @@ impl Notes {
     pub(crate) fn close_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
         if self.document_interaction_blocked()
             || window.has_active_dialog(cx)
-            || self.tabs.get(id).is_none()
+            || !self.tabs.visible_ids().contains(&id)
         {
             return;
         }
@@ -595,24 +670,25 @@ impl Notes {
         match workspace.kind.clone() {
             WorkspaceKind::CloseTab(id) => {
                 let previous = self.tabs.get(id).and_then(Tab::path).map(Path::to_path_buf);
-                if self.tabs.order.len() == 1 {
+                if self.tabs.group.order.len() == 1 {
                     self.tabs.add(window, cx);
                 }
                 if self.tabs.active.id == id {
-                    let index = self.tabs.order.iter().position(|t| *t == id).unwrap();
+                    let index = self.tabs.group.order.iter().position(|t| *t == id).unwrap();
                     let other = if index > 0 {
-                        self.tabs.order[index - 1]
+                        self.tabs.group.order[index - 1]
                     } else {
-                        self.tabs.order[1]
+                        self.tabs.group.order[1]
                     };
                     self.tabs.select(other);
                 }
                 self.tabs.inactive.retain(|tab| tab.id != id);
                 self.tabs.order.retain(|t| *t != id);
+                self.tabs.group.order.retain(|t| *t != id);
                 self.reconcile_documents();
                 self.cancel_workspace(window, cx);
                 self.search_document_installed(previous.as_deref(), window, cx);
-                self.focus_active_tab(window, cx);
+                self.focus_active_tab(true, window, cx);
             }
             WorkspaceKind::Close => {
                 let observed = self.observed_document(cx);

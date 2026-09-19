@@ -234,7 +234,7 @@ fn standalone_document_autosave_choices_remain_session_scoped_during_reload(
             notes.notebooks.active.as_ref().unwrap().settings.autosave,
             original
         );
-        assert_eq!(notes.editor.text(cx).as_ref(), "original A");
+        assert_eq!(notes.editor.text(cx).as_ref(), "outside the notebook");
     });
     assert_eq!(
         notebook::Notebook::open(&fixture.root, false)

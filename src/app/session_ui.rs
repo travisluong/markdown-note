@@ -151,7 +151,9 @@ impl Notes {
             return;
         }
         let observed = self.observed_document(cx);
-        let effects = if matches!(next, Next::Notebook { .. }) || self.retains_active_document() {
+        let effects = if matches!(next, Next::Notebook { .. } | Next::RemoveNotebook(_))
+            || self.retains_active_document()
+        {
             self.tabs.active.session.request_retaining(next, observed)
         } else {
             self.tabs.active.session.request(next, observed)
@@ -514,7 +516,9 @@ impl Notes {
             return;
         }
         let observed = self.observed_document(cx);
-        let effects = if matches!(next, Next::Notebook { .. }) || self.retains_active_document() {
+        let effects = if matches!(next, Next::Notebook { .. } | Next::RemoveNotebook(_))
+            || self.retains_active_document()
+        {
             self.tabs.active.session.request_retaining(next, observed)
         } else {
             self.tabs.active.session.request(next, observed)

@@ -98,8 +98,18 @@ available from File, palette and Mod+N. New tab creates an empty session without
 a disk file. Explorer,
 links, search, Go to File, picker and history navigation install in the current
 tab, attaching to retained in-memory text when the canonical note is already open.
-Notebook activation preserves occupied tabs and uses an empty active tab or appends
-a view. Tabs are session-only; selection does not change the notebook sidebar.
+TabSet retains document tabs in groups keyed by canonical notebook root, plus a
+standalone group. Each group owns order, selected TabId and tab-strip scrolling;
+all groups share window-wide tab identities and global document/save lookup.
+Tabs, including empty tabs and external files, stay in the group where created.
+The tab strip and select/close controls only expose the active group; global
+iteration still includes hidden views for saves, close prompts and move/delete.
+Successful notebook activation restores an existing group's views without loading
+its last file or replacing editors. First activation loads one saved last file or
+an empty tab. Failed or stale activation leaves the previous group intact.
+Removing an index entry retains its group; removing the active notebook switches
+to the standalone group without discarding drafts. Reopening restores that group.
+Tabs remain session-only; startup still restores only the saved last file.
 Selecting or creating an empty tab, including one left active after closing a tab,
 clears the active notebook's persisted last file. Startup restores that notebook
 with one empty tab; selecting a notebook document records it for startup again.
