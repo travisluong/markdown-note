@@ -58,10 +58,19 @@ While terminal focus is active, keys go to the shell. Tab and Shift+Tab stay in
 the terminal for shell completion and reverse completion (when supported by the
 shell). Shift+Enter sends a distinct modified-Enter sequence (CSI-u) for multiline
 prompts in applications that recognize it; ordinary Enter still sends carriage
-return. Ctrl+C interrupts a
-foreground command. Paste uses Ctrl+Shift+V on Windows/Linux and Cmd+V on macOS,
-respecting bracketed-paste mode. Pasting is limited to 1 MiB; a stalled input
+return. On Windows/Linux, Ctrl+C copies selected text and interrupts the foreground
+command when nothing is selected; Ctrl+V pastes. Ctrl+Shift+C/V explicitly copy
+and paste. On macOS, Cmd+C/V copy and paste, while Ctrl+C always interrupts.
+Paste respects bracketed-paste mode. Pasting is limited to 1 MiB; a stalled input
 queue reports an error. Modal dialogs block input but output continues.
+Drag with the left mouse button to select visible terminal text. A click clears
+the selection. Copy places plain text on the system clipboard and clears the
+selection; wrapped lines and Unicode characters retain their text. Right-click
+opens Copy/Paste without clearing the selection. Copy requires selected text;
+Paste requires clipboard text and a running shell. Exited sessions still support
+selection and copy. Dragging outside the grid stops at its edge; automatic
+scrolling and word/line selection gestures are not supported.
+
 The theme follows notebook appearance. In **Settings → Terminal**, **Terminal
 font** defaults to **Follow editor monospace font**. Choose an installed font to
 override it; choose the follow-editor option to reset it. An unavailable saved
@@ -75,7 +84,7 @@ without restarting shells or clearing output. Preferences belong to the active
 notebook; without a notebook they last for the current app session. Switching
 notebooks updates terminal typography while preserving existing shell directories.
 
-The trial does not provide selection/copy, scrollback navigation, terminal
+The trial does not provide scrollback navigation, terminal
 search, mouse reporting, shell integration, splits, custom
 shell paths or session restoration across app restarts. Full advanced keyboard
 protocols and IME composition are not supported by this component.

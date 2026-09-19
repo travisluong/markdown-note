@@ -4256,6 +4256,7 @@ dependencies = [
 name = "mithril"
 version = "0.1.0"
 dependencies = [
+ "alacritty_terminal",
  "chrono",
  "embed-resource",
  "flume 0.12.0",

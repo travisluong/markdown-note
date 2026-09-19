@@ -424,6 +424,8 @@ pub struct TerminalView {
     input_enabled: bool,
     input_guard: Option<Box<dyn Fn(&mut Window, &mut App) -> bool>>,
     input_error: Option<String>,
+    geometry: std::rc::Rc<std::cell::Cell<Option<crate::render::GridGeometry>>>,
+    selecting: bool,
 }
 
 impl TerminalView {
@@ -567,6 +569,8 @@ impl TerminalView {
             input_enabled: true,
             input_guard: None,
             input_error: None,
+            geometry: Default::default(),
+            selecting: false,
         }
     }
 
@@ -756,12 +760,7 @@ impl TerminalView {
             return;
         }
         cx.stop_propagation();
-        if !self.input_enabled
-            || self
-                .input_guard
-                .as_ref()
-                .is_some_and(|guard| !guard(window, cx))
-        {
+        if !self.interaction_allowed(window, cx) {
             return;
         }
         if self
@@ -772,20 +771,82 @@ impl TerminalView {
             return;
         }
         let key = &event.keystroke;
-        let paste = key.key == "v"
+        let clipboard_modifier = !key.modifiers.alt
             && if cfg!(target_os = "macos") {
-                key.modifiers.platform
+                key.modifiers.platform && !key.modifiers.control && !key.modifiers.shift
             } else {
-                key.modifiers.control && key.modifiers.shift
+                key.modifiers.control && !key.modifiers.platform
             };
-        if paste {
-            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                self.paste(&text, cx);
-            }
-        } else if let Some(bytes) = keystroke_to_bytes(key, self.state.mode()) {
+        if clipboard_modifier
+            && key.key == "c"
+            && (cfg!(target_os = "macos") || key.modifiers.shift || self.has_selection())
+        {
+            self.copy_selection(window, cx);
+            return;
+        }
+        if clipboard_modifier && key.key == "v" {
+            self.paste_from_clipboard(window, cx);
+            return;
+        }
+        if !self.input_enabled {
+            return;
+        }
+        if let Some(bytes) = keystroke_to_bytes(key, self.state.mode()) {
+            self.clear_selection();
             self.write_input(&bytes);
             cx.notify();
         }
+    }
+
+    /// Authority to interact with retained output, including after shell exit.
+    pub fn interaction_allowed(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.input_guard
+            .as_ref()
+            .is_none_or(|guard| guard(window, cx))
+    }
+
+    pub fn can_paste(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.input_enabled && self.interaction_allowed(window, cx)
+    }
+
+    pub fn selected_text(&self) -> Option<String> {
+        self.state
+            .with_term(|term| term.selection_to_string())
+            .filter(|text| !text.is_empty())
+    }
+
+    pub fn has_selection(&self) -> bool {
+        self.selected_text().is_some()
+    }
+
+    fn clear_selection(&mut self) {
+        self.selecting = false;
+        self.state.with_term_mut(|term| term.selection = None);
+    }
+
+    pub fn copy_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.interaction_allowed(window, cx) {
+            return;
+        }
+        if let Some(text) = self.selected_text() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            self.clear_selection();
+            cx.notify();
+        }
+    }
+
+    pub fn paste_from_clipboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.can_paste(window, cx)
+            && let Some(text) = cx.read_from_clipboard().and_then(|item| item.text())
+            && !text.is_empty()
+        {
+            self.paste(&text, cx);
+        }
+    }
+
+    /// Geometry of the last painted grid, shared with pointer hit testing.
+    pub fn grid_geometry(&self) -> Option<crate::render::GridGeometry> {
+        self.geometry.get()
     }
 
     fn write_input(&mut self, bytes: &[u8]) {
@@ -798,6 +859,7 @@ impl TerminalView {
         if !self.input_enabled {
             return;
         }
+        self.clear_selection();
         let text = text
             .replace("\r\n", "\n")
             .replace('\r', "\n")
@@ -825,6 +887,9 @@ impl TerminalView {
     }
 
     pub fn set_input_enabled(&mut self, enabled: bool) {
+        if self.input_enabled && !enabled {
+            self.selecting = false;
+        }
         self.input_enabled = enabled;
     }
     pub fn input_error(&self) -> Option<&str> {
@@ -848,49 +913,76 @@ impl TerminalView {
     }
     /// Handle mouse down events.
     ///
-    /// Currently a placeholder for future mouse selection and interaction support.
     fn on_mouse_down(
         &mut self,
-        _event: &MouseDownEvent,
+        event: &MouseDownEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Request focus when clicking the terminal
+        if !self.interaction_allowed(window, cx) {
+            return;
+        }
+        cx.stop_propagation();
         window.focus(&self.focus_handle);
+        self.clear_selection();
+        if let Some(geometry) = self.geometry.get() {
+            let (point, side) = geometry.hit_test(event.position);
+            self.state.with_term_mut(|term| {
+                term.selection = Some(alacritty_terminal::selection::Selection::new(
+                    alacritty_terminal::selection::SelectionType::Simple,
+                    point,
+                    side,
+                ));
+            });
+            self.selecting = true;
+        }
         cx.notify();
-
-        // TODO: Implement mouse selection
-        // - Convert pixel coordinates to cell coordinates
-        // - Start selection at clicked cell
-        // - Send mouse reports if mouse tracking is enabled
     }
 
     /// Handle mouse up events.
     ///
-    /// Currently a placeholder for future mouse selection support.
-    fn on_mouse_up(
-        &mut self,
-        _event: &MouseUpEvent,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        // TODO: Implement mouse selection
-        // - End selection at released cell
-        // - Copy selection to clipboard if configured
+    fn on_mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.update_selection(event.position, window, cx);
+        self.selecting = false;
     }
 
     /// Handle mouse move events.
     ///
-    /// Currently a placeholder for future mouse selection support.
     fn on_mouse_move(
         &mut self,
-        _event: &MouseMoveEvent,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
+        event: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) {
-        // TODO: Implement mouse selection
-        // - Update selection range while dragging
-        // - Send mouse motion reports if mouse tracking is enabled
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.selecting = false;
+        }
+        self.update_selection(event.position, window, cx);
+    }
+
+    fn update_selection(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.selecting {
+            return;
+        }
+        if !self.interaction_allowed(window, cx) {
+            self.selecting = false;
+            return;
+        }
+        if let Some(geometry) = self.geometry.get() {
+            let (point, side) = geometry.hit_test(position);
+            self.state.with_term_mut(|term| {
+                if let Some(selection) = &mut term.selection {
+                    selection.update(point, side);
+                }
+            });
+            cx.stop_propagation();
+            cx.notify();
+        }
     }
 
     /// Handle scroll events.
@@ -1052,6 +1144,9 @@ impl Render for TerminalView {
         let renderer = self.renderer.clone();
         let resize_callback = self.resize_callback.clone();
         let padding = self.config.padding;
+        let geometry = self.geometry.clone();
+        // Window listeners keep dragging/release working outside the terminal.
+        let view = cx.entity().downgrade();
 
         div()
             .size_full()
@@ -1062,14 +1157,26 @@ impl Render for TerminalView {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
             .child(
                 canvas(
                     move |bounds, _window, _cx| bounds,
                     move |bounds, _, window, cx| {
                         use alacritty_terminal::grid::Dimensions;
+                        let moving = view.clone();
+                        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                            if phase == DispatchPhase::Bubble {
+                                let _ = moving
+                                    .update(cx, |view, cx| view.on_mouse_move(event, window, cx));
+                            }
+                        });
+                        let releasing = view.clone();
+                        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                            if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+                                let _ = releasing
+                                    .update(cx, |view, cx| view.on_mouse_up(event, window, cx));
+                            }
+                        });
 
                         // Measure actual cell dimensions from the font
                         let mut measured_renderer = renderer.clone();
@@ -1088,10 +1195,21 @@ impl Render for TerminalView {
                             || cell_width_f32 <= 0.
                             || cell_height_f32 <= 0.
                         {
+                            geometry.set(None);
                             return;
                         }
                         let cols = ((available_width / cell_width_f32) as usize).max(1);
                         let rows = ((available_height / cell_height_f32) as usize).max(1);
+                        geometry.set(Some(crate::render::GridGeometry {
+                            origin: point(
+                                bounds.origin.x + padding.left,
+                                bounds.origin.y + padding.top,
+                            ),
+                            cell_width: measured_renderer.cell_width,
+                            cell_height: measured_renderer.cell_height,
+                            columns: cols,
+                            rows,
+                        }));
 
                         // Helper struct implementing Dimensions for resize
                         struct TermSize {

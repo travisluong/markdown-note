@@ -81,6 +81,43 @@ pub enum CursorStyle {
     Underline,
 }
 
+/// The actual painted cell geometry, also used for selection hit testing.
+#[derive(Clone, Copy, Debug)]
+pub struct GridGeometry {
+    pub origin: Point<Pixels>,
+    pub cell_width: Pixels,
+    pub cell_height: Pixels,
+    pub columns: usize,
+    pub rows: usize,
+}
+
+impl GridGeometry {
+    pub fn hit_test(
+        &self,
+        position: Point<Pixels>,
+    ) -> (AlacPoint, alacritty_terminal::index::Side) {
+        use alacritty_terminal::index::Side;
+        let x = f32::from(position.x - self.origin.x) / f32::from(self.cell_width);
+        let y = f32::from(position.y - self.origin.y) / f32::from(self.cell_height);
+        let column = x.floor().max(0.) as usize;
+        let row = (y.floor().max(0.) as usize).min(self.rows.saturating_sub(1));
+        let side = if x < 0. {
+            Side::Left
+        } else if column >= self.columns || x.fract() >= 0.5 {
+            Side::Right
+        } else {
+            Side::Left
+        };
+        (
+            AlacPoint::new(
+                Line(row as i32),
+                Column(column.min(self.columns.saturating_sub(1))),
+            ),
+            side,
+        )
+    }
+}
+
 /// A batched run of text with consistent styling.
 ///
 /// This struct groups adjacent terminal cells with identical visual attributes
@@ -495,6 +532,11 @@ impl TerminalRenderer {
             x: bounds.origin.x + padding.left,
             y: bounds.origin.y + padding.top,
         };
+        let selection = term
+            .selection
+            .as_ref()
+            .and_then(|selection| selection.to_range(term));
+        let selection_bounds = self.selection_bounds(origin, term);
 
         // Iterate over visible lines
         for line_idx in 0..num_lines {
@@ -540,6 +582,20 @@ impl TerminalRenderer {
                 ));
             }
 
+            for bounds in selection_bounds
+                .iter()
+                .filter(|bounds| bounds.origin.y == origin.y + self.cell_height * line_idx as f32)
+            {
+                window.paint_quad(quad(
+                    *bounds,
+                    px(0.),
+                    self.palette.foreground(),
+                    Edges::default(),
+                    transparent_black(),
+                    Default::default(),
+                ));
+            }
+
             // Calculate vertical offset to center text in cell
             // The multiplier adds extra height; we want to distribute it evenly top/bottom
             let base_height = self.cell_height / self.line_height_multiplier;
@@ -572,6 +628,14 @@ impl TerminalRenderer {
                     },
                     colors,
                 );
+
+                let fg_color = if selection
+                    .is_some_and(|range| range.contains(AlacPoint::new(line, Column(col_idx))))
+                {
+                    self.palette.background()
+                } else {
+                    fg_color
+                };
 
                 // Get cell flags for styling
                 let flags = cell.flags;
@@ -633,6 +697,50 @@ impl TerminalRenderer {
         if let Some(cursor) = self.cursor_quad(origin, term) {
             window.paint_quad(cursor);
         }
+    }
+
+    /// Visible selection rectangles used by paint and headless geometry checks.
+    pub fn selection_bounds(
+        &self,
+        origin: Point<Pixels>,
+        term: &Term<GpuiEventProxy>,
+    ) -> Vec<Bounds<Pixels>> {
+        let Some(range) = term
+            .selection
+            .as_ref()
+            .and_then(|selection| selection.to_range(term))
+        else {
+            return Vec::new();
+        };
+        (0..term.screen_lines())
+            .filter_map(|row| {
+                let line = Line(row as i32);
+                if line < range.start.line || line > range.end.line {
+                    return None;
+                }
+                let start = if line == range.start.line {
+                    range.start.column.0
+                } else {
+                    0
+                };
+                let end = if line == range.end.line {
+                    range.end.column.0 + 1
+                } else {
+                    term.columns()
+                }
+                .min(term.columns());
+                (start < end).then(|| Bounds {
+                    origin: Point {
+                        x: origin.x + self.cell_width * start as f32,
+                        y: origin.y + self.cell_height * row as f32,
+                    },
+                    size: Size {
+                        width: self.cell_width * (end - start) as f32,
+                        height: self.cell_height,
+                    },
+                })
+            })
+            .collect()
     }
 
     /// Build the cursor paint primitive independently of a window or text layout.

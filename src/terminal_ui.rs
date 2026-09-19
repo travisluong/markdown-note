@@ -1,6 +1,9 @@
 //! Retained terminal tabs and generation-guarded per-session process installation.
 use gpui::{prelude::*, *};
-use gpui_component::{ActiveTheme, WindowExt};
+use gpui_component::{
+    ActiveTheme, WindowExt,
+    menu::{PopupMenu, PopupMenuItem},
+};
 use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
 use mithril::terminal::{ProcessExit, TerminalProcess, TerminalSettings};
 use std::path::PathBuf;
@@ -98,6 +101,8 @@ pub(super) struct TerminalSession {
     task: Option<Task<()>>,
     title_subscription: Option<Subscription>,
     focus: FocusHandle,
+    context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>,
+    context_subscription: Option<Subscription>,
     #[cfg(test)]
     fixture_output: Option<flume::Sender<Vec<u8>>>,
     #[cfg(test)]
@@ -122,6 +127,8 @@ impl TerminalSession {
             task: None,
             title_subscription: None,
             focus: cx.focus_handle(),
+            context_menu: None,
+            context_subscription: None,
             #[cfg(test)]
             fixture_output: None,
             #[cfg(test)]
@@ -257,6 +264,9 @@ impl TerminalSession {
                     let _ = this.update(cx, |panel, cx| {
                         if panel.generation == generation {
                             panel.status = Status::Finished(result);
+                            if let Some(view) = &panel.view {
+                                view.update(cx, |view, _| view.set_input_enabled(false));
+                            }
                             panel.process = None;
                             cx.notify();
                         }
@@ -311,6 +321,8 @@ impl TerminalSession {
     /// The accepted close barrier awaits process cleanup before removing the window.
     pub fn shutdown(&mut self, cx: &mut Context<Self>) -> TerminalCleanup {
         self.generation += 1;
+        self.context_menu = None;
+        self.context_subscription = None;
         self.title_subscription = None;
         self.status = Status::Finished(ProcessExit::Stopped);
         if let Some(view) = &self.view {
@@ -335,6 +347,10 @@ impl TerminalSession {
         cx: &mut Context<Self>,
     ) {
         let palette = appearance.palette(startup_dark);
+        if !enabled {
+            self.context_menu = None;
+            self.context_subscription = None;
+        }
         let rgb = |value: u32| ((value >> 16) as u8, (value >> 8) as u8, value as u8);
         let (br, bg, bb) = rgb(palette.background);
         let (fr, fg, fb) = rgb(palette.font);
@@ -380,6 +396,96 @@ impl TerminalSession {
             Status::Finished(ProcessExit::Failed(error)) => Some(format!("Terminal: {error}")),
         }
     }
+
+    fn open_context_menu(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !input_allowed(&self.owner, self.id, window, cx) {
+            return;
+        }
+        let Some(view) = self.view.clone() else {
+            return;
+        };
+        let copy = view.read(cx).has_selection();
+        let paste = self.status == Status::Running
+            && cx
+                .read_from_clipboard()
+                .and_then(|item| item.text())
+                .is_some_and(|text| !text.is_empty());
+        let generation = self.generation;
+        let owner = cx.weak_entity();
+        let menu = PopupMenu::build(window, cx, move |mut menu, _, cx| {
+            let menu_id = cx.entity_id();
+            for (label, copying, enabled) in [("Copy", true, copy), ("Paste", false, paste)] {
+                let owner = owner.clone();
+                let view = view.clone();
+                menu = menu.item(PopupMenuItem::new(label).disabled(!enabled).on_click(
+                    move |_, window, cx| {
+                        let _ = owner.update(cx, |this, cx| {
+                            this.clipboard_action(
+                                &view,
+                                (generation, menu_id),
+                                copying,
+                                window,
+                                cx,
+                            );
+                        });
+                    },
+                ));
+            }
+            menu
+        });
+        self.context_subscription =
+            Some(
+                cx.subscribe_in(&menu, window, |this, menu, _: &DismissEvent, window, cx| {
+                    if this
+                        .context_menu
+                        .as_ref()
+                        .is_some_and(|(_, current)| current == menu)
+                    {
+                        this.context_menu = None;
+                        if input_allowed(&this.owner, this.id, window, cx) {
+                            this.focus(window, cx);
+                        }
+                        cx.notify();
+                    }
+                }),
+            );
+        menu.focus_handle(cx).focus(window);
+        self.context_menu = Some((position, menu));
+        cx.notify();
+    }
+
+    fn clipboard_action(
+        &mut self,
+        view: &Entity<TerminalView>,
+        target: (u64, EntityId),
+        copying: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .context_menu
+            .as_ref()
+            .is_none_or(|(_, menu)| menu.entity_id() != target.1)
+            || self.generation != target.0
+            || self.view.as_ref() != Some(view)
+            || !input_allowed(&self.owner, self.id, window, cx)
+        {
+            return;
+        }
+        if copying {
+            view.update(cx, |view, cx| view.copy_selection(window, cx));
+        } else if self.status == Status::Running {
+            view.update(cx, |view, cx| view.paste_from_clipboard(window, cx));
+        }
+        self.context_menu = None;
+        self.focus(window, cx);
+        cx.notify();
+    }
 }
 
 impl Render for TerminalSession {
@@ -394,11 +500,32 @@ impl Render for TerminalSession {
             .flex_col()
             .overflow_hidden()
             .track_focus(&self.focus)
-            .children(
-                self.view
-                    .clone()
-                    .map(|view| div().flex_1().min_h_0().overflow_hidden().child(view)),
-            )
+            .children(self.view.clone().map(|view| {
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.open_context_menu(event.position, window, cx);
+                        }),
+                    )
+                    .child(view)
+            }))
+            .children(self.context_menu.as_ref().map(|(position, menu)| {
+                deferred(
+                    anchored()
+                        .position(*position)
+                        .snap_to_window_with_margin(px(4.))
+                        .child(
+                            div()
+                                .debug_selector(|| "terminal-context-menu".into())
+                                .child(menu.clone()),
+                        ),
+                )
+            }))
             .when_some(self.message(), |div, message| {
                 div.child(div_message(message, cx))
             })
@@ -887,5 +1014,143 @@ mod tab_lifecycle_tests {
                 Status::Finished(ProcessExit::Exited(7))
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::{ProcessExit, Status};
+    use gpui::{
+        AppContext, Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px, size,
+    };
+    use gpui_component::WindowExt;
+
+    #[gpui::test]
+    fn terminal_context_menu_copy_paste_and_stale_authority(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let mut owner = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let notes = cx.new(|cx| crate::Notes::new(window, cx));
+            owner = Some(notes.clone());
+            gpui_component::Root::new(notes, window, cx)
+        });
+        let owner = owner.unwrap();
+        cx.simulate_resize(size(px(1200.), px(800.)));
+        let (session, view, tx, input, document) = cx.update(|window, cx| {
+            owner.update(cx, |notes, cx| notes.toggle_right_panel(window, cx));
+            let session = owner.read(cx).terminals.active_session().unwrap().clone();
+            let panel = session.read(cx);
+            (
+                session.clone(),
+                panel.view.clone().unwrap(),
+                panel.fixture_output.clone().unwrap(),
+                panel.fixture_input.clone(),
+                owner.read(cx).tabs.active.editor.text(cx),
+            )
+        });
+        tx.send(b"terminal text".to_vec()).unwrap();
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        let geometry = cx.update(|_, cx| view.read(cx).grid_geometry().unwrap());
+        let start = geometry.origin + point(geometry.cell_width * 0.1, geometry.cell_height * 0.5);
+        let end = geometry.origin + point(geometry.cell_width * 7.9, geometry.cell_height * 0.5);
+        cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(end, Some(MouseButton::Left), Modifiers::default());
+        cx.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+        cx.update(|_, cx| assert_eq!(view.read(cx).selected_text().as_deref(), Some("terminal")));
+        // Open through the actual pointer handler and invoke Copy through menu navigation.
+        cx.simulate_mouse_down(end, MouseButton::Right, Modifiers::default());
+        cx.simulate_mouse_up(end, MouseButton::Right, Modifiers::default());
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("terminal-context-menu").is_some());
+        cx.simulate_keystrokes("down enter");
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert_eq!(
+                cx.read_from_clipboard().unwrap().text().as_deref(),
+                Some("terminal")
+            );
+            assert!(!view.read(cx).has_selection());
+            assert!(view.read(cx).focus_handle().is_focused(window));
+        });
+        assert!(input.lock().unwrap().is_empty());
+        // Copy is now disabled; selecting the final menu item pastes into this session.
+        cx.simulate_mouse_down(end, MouseButton::Right, Modifiers::default());
+        cx.simulate_mouse_up(end, MouseButton::Right, Modifiers::default());
+        cx.simulate_keystrokes("up enter");
+        cx.run_until_parked();
+        assert_eq!(*input.lock().unwrap(), b"terminal");
+        input.lock().unwrap().clear();
+
+        let open = |cx: &mut VisualTestContext| {
+            cx.update(|window, cx| {
+                session.update(cx, |panel, cx| {
+                    panel.open_context_menu(end, window, cx);
+                    (
+                        panel.generation,
+                        panel.context_menu.as_ref().unwrap().1.entity_id(),
+                    )
+                })
+            })
+        };
+        let first = open(cx);
+        let current = open(cx);
+        // A callback from a replaced menu cannot act through the newer popup.
+        cx.update(|window, cx| {
+            session.update(cx, |panel, cx| {
+                panel.clipboard_action(&view, first, false, window, cx)
+            })
+        });
+        assert!(input.lock().unwrap().is_empty());
+        // Switching tabs invalidates the old target immediately, before repaint.
+        cx.update(|window, cx| owner.update(cx, |notes, cx| notes.new_terminal_tab(window, cx)));
+        cx.update(|window, cx| {
+            session.update(cx, |panel, cx| {
+                panel.clipboard_action(&view, current, false, window, cx)
+            })
+        });
+        assert!(input.lock().unwrap().is_empty());
+        let id = cx.update(|_, cx| session.read(cx).id);
+        cx.update(|window, cx| {
+            owner.update(cx, |notes, cx| notes.select_terminal_tab(id, window, cx))
+        });
+        let current = open(cx);
+        cx.update(|window, cx| owner.update(cx, |notes, cx| notes.open_settings(window, cx)));
+        cx.update(|window, cx| {
+            session.update(cx, |panel, cx| {
+                panel.clipboard_action(&view, current, false, window, cx);
+                view.update(cx, |view, cx| {
+                    view.copy_selection(window, cx);
+                    view.paste_from_clipboard(window, cx);
+                });
+            })
+        });
+        assert!(input.lock().unwrap().is_empty());
+        cx.update(|window, cx| window.close_dialog(cx));
+        cx.run_until_parked();
+        let current = open(cx);
+        cx.update(|_, cx| {
+            session.update(cx, |panel, cx| {
+                panel.status = Status::Finished(ProcessExit::Stopped);
+                view.update(cx, |view, _| view.set_input_enabled(false));
+            })
+        });
+        cx.update(|window, cx| {
+            session.update(cx, |panel, cx| {
+                panel.clipboard_action(&view, current, false, window, cx)
+            })
+        });
+        assert!(input.lock().unwrap().is_empty());
+        let current = open(cx);
+        cx.update(|window, cx| {
+            owner.update(cx, |notes, cx| notes.close_terminal_tab(id, window, cx))
+        });
+        cx.update(|window, cx| {
+            session.update(cx, |panel, cx| {
+                panel.clipboard_action(&view, current, false, window, cx)
+            })
+        });
+        assert!(input.lock().unwrap().is_empty());
+        cx.update(|_, cx| assert_eq!(owner.read(cx).tabs.active.editor.text(cx), document));
     }
 }

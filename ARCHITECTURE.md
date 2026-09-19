@@ -796,6 +796,13 @@ preserve the PTY, terminal grid and output. The vendored renderer honors applica
 cursor visibility while the host configuration determines the shape.
 Terminal focus consumes shell keys independently of document commands; the host
 retains Ctrl+backtick, and modal/busy input guards are checked at dispatch time.
+TerminalView owns Alacritty selection, plain-text extraction and GPUI clipboard
+operations. Its measured grid geometry is shared by hit testing and selection
+painting. Host interaction authority protects copy and selection independently
+of running-shell write permission, allowing copy from exited output. TerminalSession
+owns the Copy/Paste popup with menu/view/generation identity and dispatch-time
+active-tab, visibility, modal and busy guards. Hidden/blocked sessions discard
+menus; keyboard clipboard shortcuts are consumed before shell encoding.
 The terminal context unbinds Root's Tab/Shift+Tab focus actions so the guarded
 raw key handler sends shell completion bytes while retaining terminal focus.
 Shift+Enter has an explicit CSI-u mapping (ESC [ 13 ; 2 u) so prompt editors can

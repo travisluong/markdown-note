@@ -2539,3 +2539,28 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   diff whitespace checks passed. No desktop input or native application harness
   was used. Existing autosave policy, terminal tabs and settings schemas remain
   unchanged.
+
+### 2026-09-19 — Terminal selection, copy and paste
+
+- Added visible-grid drag selection using Alacritty text extraction and shared
+  paint/hit-test geometry. Copy preserves wrapped and Unicode text, writes plain
+  text through GPUI and clears the selection; exited output remains selectable.
+- Windows/Linux Ctrl+C copies a selection or interrupts, Ctrl+V pastes, and
+  Ctrl+Shift+C/V remain explicit alternatives. macOS uses Cmd+C/V. Existing paste
+  normalization, bracketed-paste framing, input limits and errors are retained.
+- TerminalSession owns a Copy/Paste popup, checking menu/view/generation identity
+  and current host authority at execution. Hidden/blocked sessions discard menus;
+  shell exit disables writes immediately without disabling selection or copy.
+- Added three terminal integration regressions and an application TestPlatform
+  regression for pointer selection, Unicode/wrapping, geometry/font changes,
+  clipboard bytes, disabled/exited sessions, menus, stale targets and modal guards.
+  Repeated synchronization of an exited session preserves an in-progress drag.
+- Locked offline check, strict all-target diagnostics Clippy, formatting and
+  whitespace checks passed. Across the full and focused runs, all 101 library
+  tests, 362 application tests, integration suites and doc-tests passed; 27 terminal
+  application tests were rerun after the final lifecycle adjustment.
+- The full run encountered the documented Windows PTY interrupt sandbox timeout;
+  all 15 terminal tests passed in a headless outside-sandbox rerun. Validation used
+  target/agent-validation to avoid the running application's locked executable;
+  a transient test-executable linker lock cleared on retry. No desktop input or
+  native application harness was used. Native visual validation remains manual.

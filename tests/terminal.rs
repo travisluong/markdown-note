@@ -1,4 +1,5 @@
 //! Real PTYs, never native application windows.
+use gpui::AppContext;
 use gpui_terminal::{
     event::{GpuiEventProxy, TerminalEvent},
     terminal::TerminalState,
@@ -281,7 +282,6 @@ impl Write for RecordedInput {
 
 #[gpui::test]
 fn terminal_view_paste_modes_unicode_input_and_disabled_input(cx: &mut gpui::TestAppContext) {
-    use gpui::AppContext;
     use gpui_terminal::{TerminalConfig, TerminalView};
     cx.update(gpui_component::init);
     let recorded = RecordedInput(Default::default());
@@ -502,7 +502,6 @@ fn terminal_font_settings_inherit_round_trip_and_clamp() {
 
 #[gpui::test]
 fn terminal_font_resize_updates_grid_and_pty_callback(cx: &mut gpui::TestAppContext) {
-    use gpui::AppContext;
     use gpui_terminal::{TerminalConfig, TerminalView};
     cx.update(gpui_component::init);
     let recorded = RecordedInput(Default::default());
@@ -550,4 +549,238 @@ fn terminal_font_resize_updates_grid_and_pty_callback(cx: &mut gpui::TestAppCont
             .iter()
             .any(|&(cols, rows)| (cols, rows) == after)
     );
+}
+
+fn clipboard_fixture(
+    cx: &mut gpui::TestAppContext,
+) -> (
+    gpui::Entity<gpui_terminal::TerminalView>,
+    flume::Sender<Vec<u8>>,
+    RecordedInput,
+    &mut gpui::VisualTestContext,
+) {
+    cx.update(gpui_component::init);
+    let recorded = RecordedInput(Default::default());
+    let (tx, rx) = flume::bounded(64);
+    let mut view = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let terminal = cx.new(|cx| {
+            gpui_terminal::TerminalView::from_receiver(
+                recorded.clone(),
+                rx,
+                gpui_terminal::TerminalConfig::default(),
+                cx,
+            )
+        });
+        terminal.read(cx).focus_handle().focus(window);
+        view = Some(terminal.clone());
+        gpui_component::Root::new(terminal, window, cx)
+    });
+    cx.simulate_resize(gpui::size(gpui::px(600.), gpui::px(300.)));
+    cx.refresh().unwrap();
+    (view.unwrap(), tx, recorded, cx)
+}
+
+fn drag_terminal(
+    cx: &mut gpui::VisualTestContext,
+    from: gpui::Point<gpui::Pixels>,
+    to: gpui::Point<gpui::Pixels>,
+) {
+    cx.simulate_mouse_move(from, None, gpui::Modifiers::default());
+    cx.simulate_mouse_down(from, gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.simulate_mouse_move(
+        to,
+        Some(gpui::MouseButton::Left),
+        gpui::Modifiers::default(),
+    );
+    cx.simulate_mouse_up(to, gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn terminal_clipboard_selection_shortcuts_and_exited_output(cx: &mut gpui::TestAppContext) {
+    let (view, tx, input, cx) = clipboard_fixture(cx);
+    tx.send(b"abc\r\ndef".to_vec()).unwrap();
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let geometry = cx.update(|_, cx| view.read(cx).grid_geometry().unwrap());
+    let from = geometry.origin + gpui::point(geometry.cell_width * 0.1, geometry.cell_height * 0.5);
+    let to = geometry.origin + gpui::point(geometry.cell_width * 2.9, geometry.cell_height * 1.5);
+    for (start, end) in [(from, to), (to, from)] {
+        drag_terminal(cx, start, end);
+        cx.update(|_, cx| assert_eq!(view.read(cx).selected_text().as_deref(), Some("abc\ndef")));
+        cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+            "cmd-c"
+        } else {
+            "ctrl-c"
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard().unwrap().text().as_deref(),
+                Some("abc\ndef")
+            );
+            assert!(!view.read(cx).has_selection());
+        });
+        assert!(input.0.lock().unwrap().is_empty());
+    }
+    cx.simulate_keystrokes("ctrl-c");
+    assert_eq!(*input.0.lock().unwrap(), b"\x03");
+    input.0.lock().unwrap().clear();
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-c"
+    } else {
+        "ctrl-shift-c"
+    });
+    assert!(input.0.lock().unwrap().is_empty());
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("abc\ndef")
+        )
+    });
+    drag_terminal(cx, from, to);
+    drag_terminal(cx, from, from);
+    cx.update(|_, cx| assert!(!view.read(cx).has_selection()));
+    // Repeated host synchronization after exit must not cancel a new selection.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| view.set_input_enabled(false));
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("before exited copy".into()));
+    });
+    cx.simulate_mouse_down(from, gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.update(|_, cx| view.update(cx, |view, _| view.set_input_enabled(false)));
+    cx.simulate_mouse_move(
+        to,
+        Some(gpui::MouseButton::Left),
+        gpui::Modifiers::default(),
+    );
+    cx.simulate_mouse_up(to, gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.update(|_, cx| assert_eq!(view.read(cx).selected_text().as_deref(), Some("abc\ndef")));
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-c cmd-v"
+    } else {
+        "ctrl-shift-c ctrl-v"
+    });
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("abc\ndef")
+        )
+    });
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[gpui::test]
+fn terminal_clipboard_paste_aliases_guard_and_measured_geometry(cx: &mut gpui::TestAppContext) {
+    let (view, tx, input, cx) = clipboard_fixture(cx);
+    tx.send(b"\x1b[?2004hhello".to_vec()).unwrap();
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("茶\r\nx\x1b[201~".into()))
+    });
+    for key in if cfg!(target_os = "macos") {
+        vec!["cmd-v"]
+    } else {
+        vec!["ctrl-v", "ctrl-shift-v"]
+    } {
+        cx.simulate_keystrokes(key);
+        assert_eq!(
+            *input.0.lock().unwrap(),
+            "\x1b[200~茶\nx[201~\x1b[201~".as_bytes()
+        );
+        input.0.lock().unwrap().clear();
+    }
+    for size in [14., 24.] {
+        cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                let mut config = view.config().clone();
+                config.font_size = gpui::px(size);
+                config.padding = gpui::Edges::all(gpui::px(7.));
+                view.update_config(config, cx);
+            })
+        });
+        cx.simulate_resize(gpui::size(gpui::px(600. + size), gpui::px(300.)));
+        cx.refresh().unwrap();
+        let geometry = cx.update(|_, cx| view.read(cx).grid_geometry().unwrap());
+        let from =
+            geometry.origin + gpui::point(geometry.cell_width * 0.1, geometry.cell_height * 0.5);
+        let to =
+            geometry.origin + gpui::point(geometry.cell_width * 4.9, geometry.cell_height * 0.5);
+        drag_terminal(cx, from, to);
+        cx.update(|_, cx| assert_eq!(view.read(cx).selected_text().as_deref(), Some("hello")));
+        // Releasing outside the grid must end dragging and clamp to the final cell.
+        drag_terminal(cx, from, gpui::point(gpui::px(900.), gpui::px(900.)));
+        cx.update(|_, cx| assert!(view.read(cx).selected_text().unwrap().starts_with("hello")));
+        cx.simulate_mouse_move(from, None, gpui::Modifiers::default());
+    }
+    // Host authority is checked by both explicit clipboard entry points.
+    cx.update(|window, cx| {
+        let blocked = cx.new(|cx| {
+            gpui_terminal::TerminalView::from_receiver(
+                input.clone(),
+                flume::bounded(1).1,
+                Default::default(),
+                cx,
+            )
+            .with_input_guard(|_, _| false)
+        });
+        blocked.update(cx, |view, cx| {
+            assert!(!view.interaction_allowed(window, cx));
+            view.paste_from_clipboard(window, cx);
+            view.copy_selection(window, cx);
+        });
+    });
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[test]
+fn terminal_selection_extracts_wrapped_unicode_and_highlight_bounds() {
+    use alacritty_terminal::{
+        index::{Column, Line, Point, Side},
+        selection::{Selection, SelectionType},
+    };
+    use gpui_terminal::render::{GridGeometry, TerminalRenderer};
+    let (tx, _) = std::sync::mpsc::channel();
+    let mut state = TerminalState::new(5, 3, GpuiEventProxy::new(tx));
+    state.process_bytes("abcde茶e\u{301}".as_bytes());
+    state.with_term_mut(|term| {
+        let mut selection = Selection::new(
+            SelectionType::Simple,
+            Point::new(Line(0), Column(0)),
+            Side::Left,
+        );
+        selection.update(Point::new(Line(1), Column(2)), Side::Right);
+        term.selection = Some(selection);
+        assert_eq!(
+            term.selection_to_string().as_deref(),
+            Some("abcde茶e\u{301}")
+        );
+        let mut renderer =
+            TerminalRenderer::new("monospace".into(), gpui::px(14.), 1.2, Default::default());
+        for cell_size in [10., 20.] {
+            renderer.cell_width = gpui::px(cell_size);
+            renderer.cell_height = gpui::px(cell_size * 2.);
+            let origin = gpui::point(gpui::px(7.), gpui::px(9.));
+            let rects = renderer.selection_bounds(origin, term);
+            assert_eq!(rects.len(), 2);
+            assert_eq!(rects[0].origin, origin);
+            assert_eq!(rects[0].size.width, gpui::px(cell_size * 5.));
+            assert_eq!(rects[1].origin.y, origin.y + renderer.cell_height);
+            assert_eq!(rects[1].size.width, gpui::px(cell_size * 3.));
+            let geometry = GridGeometry {
+                origin,
+                cell_width: renderer.cell_width,
+                cell_height: renderer.cell_height,
+                columns: 5,
+                rows: 3,
+            };
+            assert_eq!(
+                geometry.hit_test(gpui::point(gpui::px(-100.), gpui::px(-100.))),
+                (Point::new(Line(0), Column(0)), Side::Left)
+            );
+            assert_eq!(
+                geometry.hit_test(gpui::point(gpui::px(1000.), gpui::px(1000.))),
+                (Point::new(Line(2), Column(4)), Side::Right)
+            );
+        }
+    });
 }

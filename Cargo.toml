@@ -33,6 +33,7 @@ gpui-terminal = { path = "vendor/gpui-terminal" }
 
 
 [dev-dependencies]
+alacritty_terminal = "=0.25.1"
 gpui-component = { version = "=0.5.1", features = ["editor-diagnostics"] }
 gpui = { version = "=0.2.2", features = ["test-support"] }
 smallvec = "1"

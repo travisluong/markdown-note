@@ -32,7 +32,7 @@ The application owns shell selection, launch errors, stop/restart/exit status,
 background reader/writer/controller threads, bounds on I/O and process reaping.
 The view never quits the application on shell exit.
 
-Deferred upstream gaps: mouse selection/copy, scrollback navigation, mouse
+Deferred upstream gaps: scrollback navigation, mouse
 reporting, terminal search and advanced keyboard/IME protocols. This remains a
 single-terminal trial, not a claim of VS Code feature parity.
 
@@ -66,3 +66,21 @@ Multiline prompt key:
 - Encoding follows https://sw.kovidgoyal.net/kitty/keyboard-protocol/ (Enter=13,
   Shift modifier=2). TestPlatform verifies exact bytes, focus, unchanged document
   contents, and modal/disabled-input guards.
+
+Terminal selection and clipboard:
+- Use Alacritty simple selections and selection_to_string for visible-grid drag
+  selection, wrapped-line extraction, wide characters and combining characters.
+  Hit testing shares the last painted cell geometry, including padding and font
+  changes. Window pointer listeners finish drags outside the clipped grid.
+- Paint selection backgrounds and contrasting glyphs. Copy clears selection only
+  after writing text through GPUI; empty selections preserve the clipboard.
+- Windows/Linux Ctrl+C copies a selection or sends interrupt, Ctrl+V pastes, and
+  Ctrl+Shift+C/V are explicit alternatives. macOS uses Cmd+C/V and retains Ctrl+C.
+  Terminal-scoped NoAction bindings prevent ancestor shortcuts taking these keys.
+- Expose guarded clipboard methods and selection availability for host menus.
+  The host interaction guard remains effective after exit, independently of the
+  input-enabled flag, so retained output supports copy while writes are disabled.
+  Mithril owns popup presentation and stale session/menu validation. Existing
+  paste normalization, bracketed-paste framing, limits and error handling remain.
+- Root terminal integration and application TestPlatform tests exercise pointer
+  selection, clipboard shortcuts, geometry, menus and stale/modal authority.

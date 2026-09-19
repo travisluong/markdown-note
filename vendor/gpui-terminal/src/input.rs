@@ -99,6 +99,15 @@ pub(crate) fn init(cx: &mut gpui::App) {
     cx.bind_keys([
         gpui::KeyBinding::new("tab", gpui::NoAction, Some("Terminal")),
         gpui::KeyBinding::new("shift-tab", gpui::NoAction, Some("Terminal")),
+        gpui::KeyBinding::new("ctrl-c", gpui::NoAction, Some("Terminal")),
+        gpui::KeyBinding::new("ctrl-v", gpui::NoAction, Some("Terminal")),
+        gpui::KeyBinding::new("ctrl-shift-c", gpui::NoAction, Some("Terminal")),
+        gpui::KeyBinding::new("ctrl-shift-v", gpui::NoAction, Some("Terminal")),
+    ]);
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([
+        gpui::KeyBinding::new("cmd-c", gpui::NoAction, Some("Terminal")),
+        gpui::KeyBinding::new("cmd-v", gpui::NoAction, Some("Terminal")),
     ]);
     cx.set_global(TerminalBindings);
 }
