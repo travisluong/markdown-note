@@ -2564,3 +2564,24 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   target/agent-validation to avoid the running application's locked executable;
   a transient test-executable linker lock cleared on retry. No desktop input or
   native application harness was used. Native visual validation remains manual.
+
+### 2026-09-19 — Terminal controls in workspace toolbars
+
+- Moved the terminal opener from the title bar into Content right in the editor
+  toolbar. It follows toolbar visibility, the existing terminal preference and
+  icon sizing, and disappears while the panel is open. Removed title-bar space
+  reserved for the terminal and moved its Settings row into Content right.
+- Added the matching, fixed collapse button at the right edge of the terminal
+  header, outside scrolling tabs. It remains available when toolbar controls are
+  hidden. Both buttons use the existing guarded toggle and retain sessions/focus
+  behavior. Long tab titles shrink to keep tab close and header controls reachable.
+- Updated headless GPUI regressions for placement, narrow/wrapped layouts, all
+  icon sizes, scrolling tabs, settings visibility, retained sessions and caption
+  isolation. Updated Settings scrolling tests for the new final terminal row.
+- Locked offline check, formatting, strict all-target diagnostics Clippy and
+  whitespace checks passed. The serial diagnostics run passed all 101 library
+  tests, 363 application tests, other integration suites and doc-tests. The Windows shell integration test hit
+  the documented sandbox PTY timeout; all 15 terminal integration tests passed
+  in a headless outside-sandbox rerun.
+- Validation used target/agent-validation. No desktop input or native application
+  harness was used; native visual validation remains manual.

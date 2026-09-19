@@ -1693,7 +1693,7 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
         })
     });
     cx.refresh().unwrap();
-    let last = notebook::ToolbarItem::TaskList;
+    let last = notebook::ToolbarItem::Terminal;
     let last_bounds = cx
         .debug_bounds(format!("toolbar-row-{}", last as usize).leak())
         .unwrap();
@@ -1764,7 +1764,7 @@ fn modal_settings_scrollbar_pointer_and_wheel_follow_viewport(cx: &mut TestAppCo
         gpui_component::Theme::global_mut(cx).scrollbar_show =
             gpui_component::scroll::ScrollbarShow::Always;
     });
-    let last = notebook::ToolbarItem::TaskList;
+    let last = notebook::ToolbarItem::Terminal;
     let last_selector: &str = format!("toolbar-row-{}", last as usize).leak();
     for viewport in [
         size(px(1000.), px(800.)),
@@ -3238,7 +3238,7 @@ fn terminal_cursor_updates_retained_hidden_terminal_and_follows_notebook(cx: &mu
 }
 
 #[gpui::test]
-fn top_bar_settings_apply_to_session_without_closing_panels(cx: &mut TestAppContext) {
+fn panel_button_settings_apply_to_session_without_closing_panels(cx: &mut TestAppContext) {
     let (_fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
     intent(&form, SettingsIntent::Close, cx);

@@ -11,7 +11,7 @@ use gpui::{
     font, prelude::*, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, Selectable, Sizable, WindowExt,
+    ActiveTheme, Disableable, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     input::Search,
     menu::{PopupMenu, PopupMenuItem},
@@ -241,9 +241,8 @@ struct HeaderLayout {
     height: Pixels,
     widths: [Pixels; MENUS.len() + 1],
     gap: Pixels,
-    terminal_gap: Pixels,
     visible: usize,
-    panel_buttons: [bool; 2],
+    sidebar_button: bool,
 }
 impl HeaderLayout {
     fn new(
@@ -252,17 +251,11 @@ impl HeaderLayout {
         width: Pixels,
         rem: Pixels,
         widths: [Pixels; MENUS.len() + 1],
-        panel_buttons: [bool; 2],
+        sidebar_button: bool,
     ) -> Self {
         let gap = rem * 0.25;
-        let terminal_gap = if mode.controls() && panel_buttons[1] {
-            px(4.)
-        } else {
-            px(0.)
-        };
         let reserved = px(if mode.controls() { 4. } else { 8. })
-            + terminal_gap
-            + px(28.) * panel_buttons.into_iter().filter(|visible| *visible).count() as f32
+            + px(if sidebar_button { 28. } else { 0. })
             + if mode.combined() { px(32.) } else { px(0.) }
             + if mode == HeaderMode::Mac {
                 px(80.)
@@ -293,9 +286,8 @@ impl HeaderLayout {
             height: px(34.).max(rem * 1.5 + px(8.)),
             widths,
             gap,
-            terminal_gap,
             visible,
-            panel_buttons,
+            sidebar_button,
         }
     }
     fn anchor_index(&self, kind: MenuKind) -> usize {
@@ -473,7 +465,7 @@ impl Notes {
             width,
             rem,
             widths,
-            [settings.title_bar_sidebar, settings.terminal],
+            settings.title_bar_sidebar,
         );
         if self
             .title_bar
@@ -616,30 +608,6 @@ impl Notes {
             bar = bar.child(drag);
         } else {
             bar = bar.child(div().flex_1());
-        }
-        if settings.terminal {
-            bar = bar.child(
-                Button::new("title-bar-terminal-toggle")
-                    .debug_selector(|| "title-bar-terminal-toggle".into())
-                    .cursor_default()
-                    .ghost()
-                    .small()
-                    .w(px(28.))
-                    .mr(layout.terminal_gap)
-                    .flex_shrink_0()
-                    .icon(Icon::new(IconName::PanelRight).size(px(16.)))
-                    .tooltip(if self.right_panel_open {
-                        "Close terminal panel"
-                    } else {
-                        "Open terminal panel"
-                    })
-                    .selected(self.right_panel_open)
-                    .disabled(self.document_interaction_blocked() || window.has_active_dialog(cx))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        cx.stop_propagation();
-                        this.toggle_right_panel(window, cx);
-                    })),
-            );
         }
         if mode.controls() {
             for (id, icon, area) in [

@@ -246,6 +246,8 @@ impl Notes {
                                 div()
                                     .id(("terminal-tab", id.0))
                                     .debug_selector(move || format!("terminal-tab-{}", id.0))
+                                    .max_w_full()
+                                    .min_w_0()
                                     .flex()
                                     .items_center()
                                     .flex_shrink_0()
@@ -267,6 +269,9 @@ impl Notes {
                                                     .truncate()
                                                     .child(tab.title.clone()),
                                             )
+                                            .min_w_0()
+                                            .flex_shrink()
+                                            .overflow_hidden()
                                             .tooltip(tab.title.clone())
                                             .disabled(blocked)
                                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -303,6 +308,23 @@ impl Notes {
                                     this.new_terminal_tab(window, cx)
                                 }),
                             ),
+                        ),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div().flex_shrink_0().child(
+                            toolbar_icon_button(
+                                "terminal-panel-collapse",
+                                IconName::PanelRight,
+                                icon_size,
+                                blocked,
+                            )
+                            .tooltip("Collapse terminal panel")
+                            .on_click(cx.listener(
+                                |this, _, window, cx| {
+                                    this.toggle_right_panel(window, cx);
+                                },
+                            )),
                         ),
                     ),
             )

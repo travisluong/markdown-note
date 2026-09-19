@@ -386,22 +386,7 @@ impl Render for SettingsPanel {
                         this.emit_intent(SettingsIntent::TitleBarSidebar(*enabled), cx)
                     })),
             )
-            .child(
-                Switch::new("title-bar-terminal-visible")
-                    .label("Show terminal button")
-                    .checked(self.values.toolbar.terminal)
-                    .disabled(self.values.busy)
-                    .on_click(cx.listener(|this, enabled, _, cx| {
-                        this.emit_intent(
-                            SettingsIntent::ToolbarItemEnabled(
-                                notebook::ToolbarItem::Terminal,
-                                *enabled,
-                            ),
-                            cx,
-                        )
-                    })),
-            )
-            .child("Top-bar buttons stay visible when toolbars are hidden.")
+            .child("The top-bar sidebar button stays visible when toolbars are hidden.")
             .child(
                 div()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -426,7 +411,7 @@ impl Render for SettingsPanel {
                 .toolbar
                 .order
                 .into_iter()
-                .filter(|item| *item != notebook::ToolbarItem::Terminal && item.region() == region)
+                .filter(|item| item.region() == region)
                 .collect();
             if items.is_empty() {
                 continue;

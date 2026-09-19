@@ -305,7 +305,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
             px(400.),
             px(16.),
             widths,
-            [true, true],
+            true,
         );
         assert!(narrow.visible >= 1);
         assert_eq!(narrow.anchor_index(MenuKind::File), 0);
@@ -318,7 +318,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
             px(1000.),
             px(16.),
             widths,
-            [true, true],
+            true,
         );
         assert_eq!(wide.visible, MENUS.len());
     }
@@ -328,7 +328,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(400.),
         px(16.),
         widths,
-        [true, true],
+        true,
     );
     assert_eq!(fullscreen.visible, MENUS.len() - 2);
     assert!(!fullscreen.mode.combined());
@@ -340,7 +340,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(400.),
         px(16.),
         widths,
-        [true, true],
+        true,
     );
     assert_eq!(server.visible, fullscreen.visible);
 }
@@ -675,7 +675,7 @@ fn centered_editor_view_toggle_rechecks_modal_and_busy_guards(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn top_bar_buttons_have_independent_visibility_and_reserved_space(cx: &mut TestAppContext) {
+fn top_bar_reserves_only_sidebar_space_independent_of_terminal_setting(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     for sidebar in [false, true] {
         for terminal in [false, true] {
@@ -704,7 +704,7 @@ fn top_bar_buttons_have_independent_visibility_and_reserved_space(cx: &mut TestA
                 let left = view.debug_bounds("title-bar-sidebar-toggle");
                 let right = view.debug_bounds("title-bar-terminal-toggle");
                 assert_eq!(left.is_some(), sidebar);
-                assert_eq!(right.is_some(), terminal);
+                assert!(right.is_none());
                 let file = view.debug_bounds("file-menu").unwrap();
                 let native_inset = view.update(|window, _| {
                     if HeaderMode::current(window) == HeaderMode::Mac {
@@ -717,30 +717,22 @@ fn top_bar_buttons_have_independent_visibility_and_reserved_space(cx: &mut TestA
                     file.left(),
                     native_inset + px(if sidebar { 32. } else { 4. })
                 );
-                if let Some(right) = right {
-                    assert_eq!(right.size.width, px(28.));
-                    if let Some(minimize) = view.debug_bounds("window-minimize") {
-                        assert_eq!(right.right() + px(4.), minimize.left());
-                    } else {
-                        assert_eq!(
-                            right.right(),
-                            view.debug_bounds("window-title-bar").unwrap().right() - px(4.)
-                        );
-                    }
-                    if let Some(more) = view.debug_bounds("more-menu") {
-                        assert!(more.right() <= right.left());
-                    }
-                }
             }
         }
     }
 }
 
 #[gpui::test]
-fn title_terminal_button_toggles_without_caption_commands(cx: &mut TestAppContext) {
+fn workspace_terminal_buttons_toggle_without_caption_commands(cx: &mut TestAppContext) {
     let (_dir, notes, cx) = fixture(cx);
     for open in [true, false] {
-        let button = cx.debug_bounds("title-bar-terminal-toggle").unwrap();
+        let button = cx
+            .debug_bounds(if open {
+                "toolbar-terminal"
+            } else {
+                "terminal-panel-collapse"
+            })
+            .unwrap();
         cx.simulate_mouse_down(button.center(), MouseButton::Left, Modifiers::default());
         cx.simulate_mouse_move(
             button.center() + gpui::point(px(1.), px(0.)),
