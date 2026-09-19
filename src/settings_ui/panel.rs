@@ -50,11 +50,6 @@ pub(super) enum SettingsIntent {
     TitleBarSidebar(bool),
     TitleBarTerminal(bool),
     ToolbarItemEnabled(notebook::ToolbarItem, bool),
-    ToolbarItemMoved {
-        item: notebook::ToolbarItem,
-        target: notebook::ToolbarItem,
-        after: bool,
-    },
     AutosaveEnabled(bool),
     ExternalAutosaveEnabled(bool),
     AutosaveDelay(u64),

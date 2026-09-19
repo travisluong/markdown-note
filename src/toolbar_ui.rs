@@ -1,8 +1,6 @@
 //! Region-based toolbar presentation; actions retain their existing owners.
 use crate::Notes;
-use gpui::{
-    AppContext, Context, EntityId, IntoElement, Render, WeakEntity, Window, div, prelude::*, px,
-};
+use gpui::{Context, IntoElement, WeakEntity, Window, div, prelude::*, px};
 use gpui_component::WindowExt;
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable,
@@ -21,8 +19,7 @@ impl Notes {
         if !settings.visible {
             return Vec::new();
         }
-        let mut items: Vec<_> = settings
-            .order
+        ToolbarItem::DEFAULT_ORDER
             .into_iter()
             .filter(|item| {
                 if !settings.enabled(*item) {
@@ -36,12 +33,7 @@ impl Notes {
                 };
                 placement == region
             })
-            .collect();
-        if region == ToolbarRegion::ContentLeft {
-            // The collapsed opener is fixed before navigation, regardless of its saved sidebar order.
-            items.sort_by_key(|item| *item != ToolbarItem::Sidebar);
-        }
-        items
+            .collect()
     }
 
     pub(super) fn toolbar_region_visible(&self, region: ToolbarRegion) -> bool {
@@ -161,7 +153,6 @@ impl Notes {
         let sidebar_visible = has_notebook && !self.sidebar_collapsed;
         let searching = self.search_visible(cx);
         let owner = cx.weak_entity();
-        let can_reorder = !self.document_interaction_blocked() && !window.has_active_dialog(cx);
 
         div()
             .flex()
@@ -177,15 +168,7 @@ impl Notes {
                 view.justify_end()
             })
             .children(self.toolbar_items(region).into_iter().map(|item| {
-                let can_reorder =
-                    can_reorder && !(item == ToolbarItem::Sidebar && self.sidebar_collapsed);
-                let drag = can_reorder.then(|| WindowToolbarDrag {
-                    owner: cx.entity_id(),
-                    scope: self.notebooks.active.as_ref().map(|book| book.root.clone()),
-                    item,
-                    size: settings.icon_size,
-                });
-                let button = match item {
+                match item {
                     ToolbarItem::Back | ToolbarItem::Forward => {
                         let (id, icon, direction) = if item == ToolbarItem::Back {
                             (
@@ -200,14 +183,13 @@ impl Notes {
                                 crate::app::navigation::Direction::Forward,
                             )
                         };
-                        toolbar_button(
+                        toolbar_icon_button(
                             id,
                             icon,
                             settings.icon_size,
                             self.document_interaction_blocked()
                                 || window.has_active_dialog(cx)
                                 || self.tabs.active.navigation.target(direction).is_none(),
-                            drag,
                         )
                         .tooltip(item.label())
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -226,14 +208,13 @@ impl Notes {
                         this.toggle_right_panel(window, cx);
                     }))
                     .into_any_element(),
-                    ToolbarItem::Sidebar => toolbar_button(
+                    ToolbarItem::Sidebar => toolbar_icon_button(
                         "toolbar-sidebar-toggle",
                         IconName::PanelLeft,
                         settings.icon_size,
                         self.document_interaction_blocked()
                             || window.has_active_dialog(cx)
                             || !has_notebook,
-                        drag,
                     )
                     .tooltip(if sidebar_visible {
                         "Collapse sidebar"
@@ -242,12 +223,11 @@ impl Notes {
                     })
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)))
                     .into_any_element(),
-                    ToolbarItem::Explorer => toolbar_button(
+                    ToolbarItem::Explorer => toolbar_icon_button(
                         "sidebar-explorer",
                         IconName::Folder,
                         settings.icon_size,
                         disabled,
-                        drag,
                     )
                     .tooltip(if cfg!(target_os = "macos") {
                         "Explorer (Cmd+Shift+E)"
@@ -257,12 +237,11 @@ impl Notes {
                     .selected(sidebar_visible && !searching)
                     .on_click(cx.listener(|this, _, window, cx| this.show_explorer(window, cx)))
                     .into_any_element(),
-                    ToolbarItem::Search => toolbar_button(
+                    ToolbarItem::Search => toolbar_icon_button(
                         "sidebar-search",
                         IconName::Search,
                         settings.icon_size,
                         disabled,
-                        drag,
                     )
                     .tooltip(if cfg!(target_os = "macos") {
                         "Search all files (Cmd+Shift+F)"
@@ -272,12 +251,11 @@ impl Notes {
                     .selected(sidebar_visible && searching)
                     .on_click(cx.listener(|this, _, window, cx| this.open_search_all(window, cx)))
                     .into_any_element(),
-                    ToolbarItem::Sort => toolbar_button(
+                    ToolbarItem::Sort => toolbar_icon_button(
                         "sidebar-sort",
                         Icon::default().path("toolbar/sort.svg"),
                         settings.icon_size,
                         disabled,
-                        drag,
                     )
                     .tooltip("Sort files")
                     .dropdown_menu({
@@ -294,12 +272,11 @@ impl Notes {
                     .into_any_element(),
                     item => {
                         let (id, path, format) = formatting_item(item);
-                        let button = toolbar_button(
+                        let button = toolbar_icon_button(
                             id,
                             Icon::default().path(path),
                             settings.icon_size,
                             !self.can_edit_markdown(),
-                            drag,
                         )
                         .tooltip(item.label());
                         if item == ToolbarItem::Heading {
@@ -328,165 +305,9 @@ impl Notes {
                                 .into_any_element()
                         }
                     }
-                };
-                self.toolbar_drop_target(item, settings.icon_size, button, can_reorder, cx)
+                }
             }))
     }
-}
-
-/// A window-toolbar gesture has separate authority from Settings list drags.
-#[derive(Clone)]
-struct WindowToolbarDrag {
-    owner: EntityId,
-    scope: Option<std::path::PathBuf>,
-    item: ToolbarItem,
-    size: ToolbarIconSize,
-}
-
-impl Render for WindowToolbarDrag {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let icon = match self.item {
-            ToolbarItem::Back => Icon::new(IconName::ArrowLeft),
-            ToolbarItem::Forward => Icon::new(IconName::ArrowRight),
-            ToolbarItem::Terminal => Icon::new(IconName::PanelRight),
-            ToolbarItem::Sidebar => Icon::new(IconName::PanelLeft),
-            ToolbarItem::Explorer => Icon::new(IconName::Folder),
-            ToolbarItem::Search => Icon::new(IconName::Search),
-            ToolbarItem::Sort => Icon::default().path("toolbar/sort.svg"),
-            item => Icon::default().path(formatting_item(item).1),
-        };
-        div()
-            .size(px(self.size.button_pixels()))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .bg(cx.theme().accent)
-            .child(
-                icon.themed_color(true)
-                    .with_size(px(self.size.icon_pixels())),
-            )
-    }
-}
-
-impl Notes {
-    fn accepts_toolbar_drag(
-        &self,
-        drag: &WindowToolbarDrag,
-        target: ToolbarItem,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let settings = self.toolbar_settings();
-        drag.owner == cx.entity_id()
-            && drag.scope == self.notebooks.active.as_ref().map(|book| book.root.clone())
-            && !self.document_interaction_blocked()
-            && !window.has_active_dialog(cx)
-            && drag.item.region() == target.region()
-            && !(self.sidebar_collapsed
-                && (drag.item == ToolbarItem::Sidebar || target == ToolbarItem::Sidebar))
-            && settings.visible
-            && settings.enabled(drag.item)
-            && settings.enabled(target)
-    }
-
-    fn drop_window_toolbar_item(
-        &mut self,
-        drag: &WindowToolbarDrag,
-        target: ToolbarItem,
-        after: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.accepts_toolbar_drag(drag, target, window, cx) {
-            self.move_toolbar_item(drag.item, target, after, window, cx);
-        }
-    }
-
-    fn toolbar_drop_target(
-        &self,
-        item: ToolbarItem,
-        size: ToolbarIconSize,
-        button: gpui::AnyElement,
-        can_reorder: bool,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let id = item as usize;
-        let owner = cx.weak_entity();
-        div()
-            .id(("window-toolbar-item", id))
-            .debug_selector(move || format!("window-toolbar-item-{id}"))
-            .relative()
-            .flex_shrink_0()
-            .size(px(size.button_pixels()))
-            .child(button)
-            // Absolute halves preserve wrapping and icon geometry during hover.
-            .when(can_reorder && cx.has_active_drag(), |view| {
-                view.children([false, true].map(|after| {
-                    let can_drop_owner = owner.clone();
-                    let hover_owner = owner.clone();
-                    div()
-                        .id(("window-toolbar-drop", id * 2 + usize::from(after)))
-                        .debug_selector(move || format!("window-toolbar-drop-{id}-{after}"))
-                        .absolute()
-                        .top_0()
-                        .bottom_0()
-                        .w_1_2()
-                        .when(after, |view| view.right_0())
-                        .when(!after, |view| view.left_0())
-                        .can_drop(move |value, window, cx| {
-                            value
-                                .downcast_ref::<WindowToolbarDrag>()
-                                .is_some_and(|drag| {
-                                    can_drop_owner
-                                        .update(cx, |this, cx| {
-                                            this.accepts_toolbar_drag(drag, item, window, cx)
-                                        })
-                                        .unwrap_or(false)
-                                })
-                        })
-                        .drag_over::<WindowToolbarDrag>(move |style, drag, window, cx| {
-                            let accepted = hover_owner
-                                .update(cx, |this, cx| {
-                                    this.accepts_toolbar_drag(drag, item, window, cx)
-                                })
-                                .unwrap_or(false);
-                            if !accepted || drag.item == item {
-                                return style;
-                            }
-                            let style = style.border_color(cx.theme().primary);
-                            if after {
-                                style.border_r_2()
-                            } else {
-                                style.border_l_2()
-                            }
-                        })
-                        .on_drop(
-                            cx.listener(move |this, drag: &WindowToolbarDrag, window, cx| {
-                                cx.stop_propagation();
-                                this.drop_window_toolbar_item(drag, item, after, window, cx);
-                            }),
-                        )
-                }))
-            })
-            .into_any_element()
-    }
-}
-
-fn toolbar_button(
-    id: &'static str,
-    icon: impl Into<Icon>,
-    size: ToolbarIconSize,
-    disabled: bool,
-    drag: Option<WindowToolbarDrag>,
-) -> Button {
-    toolbar_icon_button(id, icon, size, disabled).when_some(drag, |mut button, drag| {
-        button.interactivity().on_drag(drag, |drag, _, _, cx| {
-            cx.stop_propagation();
-            cx.new(|_| drag.clone())
-        });
-        button
-    })
 }
 
 /// Keep icon geometry independent of Button's built-in icon-to-target ratio.
@@ -499,6 +320,7 @@ pub(super) fn toolbar_icon_button(
     Button::new(id)
         .debug_selector(move || id.into())
         .ghost()
+        .flex_shrink_0()
         .disabled(disabled)
         .with_size(px(size.button_pixels()))
         .size(px(size.button_pixels()))

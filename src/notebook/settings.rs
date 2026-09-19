@@ -400,7 +400,7 @@ impl ToolbarItem {
     ];
 }
 
-/// Placement is fixed; customization only changes order inside a region.
+/// Fixed placement for toolbar controls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolbarRegion {
     Sidebar,
@@ -429,8 +429,6 @@ pub struct ToolbarSettings {
     pub alignment: ToolbarAlignment,
     #[serde(deserialize_with = "deserialize_toolbar_icon_size")]
     pub icon_size: ToolbarIconSize,
-    #[serde(deserialize_with = "deserialize_toolbar_order")]
-    pub order: [ToolbarItem; 18],
     pub back: bool,
     pub forward: bool,
     pub sidebar: bool,
@@ -459,7 +457,6 @@ impl Default for ToolbarSettings {
             title_bar_terminal: false,
             alignment: ToolbarAlignment::default(),
             icon_size: ToolbarIconSize::default(),
-            order: ToolbarItem::DEFAULT_ORDER,
             back: true,
             forward: true,
             sidebar: true,
@@ -483,31 +480,6 @@ impl Default for ToolbarSettings {
 }
 
 impl ToolbarSettings {
-    /// Insert an item on either side of a target without changing visibility.
-    /// Returns false when the item already occupies that insertion position.
-    pub fn move_item(&mut self, item: ToolbarItem, target: ToolbarItem, after: bool) -> bool {
-        if item == target || item.region() != target.region() {
-            return false;
-        }
-        let Some(from) = self.order.iter().position(|entry| *entry == item) else {
-            return false;
-        };
-        let Some(target) = self.order.iter().position(|entry| *entry == target) else {
-            return false;
-        };
-        let insertion = target + usize::from(after);
-        let to = insertion - usize::from(from < insertion);
-        if from == to {
-            return false;
-        }
-        if from < to {
-            self.order[from..=to].rotate_left(1);
-        } else {
-            self.order[to..=from].rotate_right(1);
-        }
-        true
-    }
-
     pub fn enabled(self, item: ToolbarItem) -> bool {
         match item {
             ToolbarItem::Back => self.back,
@@ -559,29 +531,6 @@ impl ToolbarSettings {
             .into_iter()
             .any(|item| self.enabled(item))
     }
-}
-
-fn deserialize_toolbar_order<'de, D>(deserializer: D) -> Result<[ToolbarItem; 18], D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    let mut order = Vec::new();
-    if let Some(items) = value.as_array() {
-        for value in items {
-            if let Ok(item) = serde_json::from_value::<ToolbarItem>(value.clone())
-                && !order.contains(&item)
-            {
-                order.push(item);
-            }
-        }
-    }
-    for item in ToolbarItem::DEFAULT_ORDER {
-        if !order.contains(&item) {
-            order.push(item);
-        }
-    }
-    Ok(order.try_into().unwrap())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

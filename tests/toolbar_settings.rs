@@ -47,7 +47,6 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
         for (index, (item, _)) in ToolbarItem::OPTIONS.into_iter().enumerate() {
             toolbar.set_enabled(item, mask & (1 << index) != 0);
         }
-        toolbar.order.rotate_left(mask % 4);
         assert_eq!(toolbar.any_enabled(), mask != 0);
         book.settings.toolbar = toolbar;
         save_book(&book).unwrap();
@@ -64,86 +63,63 @@ fn toolbar_combinations_round_trip_and_persist_without_changing_other_preference
 }
 
 #[test]
-fn toolbar_order_migrates_partial_duplicate_unknown_and_legacy_entries() {
-    use ToolbarItem::*;
-    let mut previous_default = ToolbarItem::DEFAULT_ORDER;
-    previous_default[..3].copy_from_slice(&[Back, Forward, Sidebar]);
-    for (order, prefix) in [
-        (
-            serde_json::json!(previous_default),
-            previous_default.to_vec(),
-        ),
-        (serde_json::json!(null), vec![]),
-        (serde_json::json!([]), vec![]),
-        (serde_json::json!(false), vec![]),
-        (
-            serde_json::json!(["sidebar", "sidebar", "search", "sort"]),
-            vec![Sidebar, Search, Sort],
-        ),
-        (
-            serde_json::json!(["sort", "unknown", "bold", 4, "sort"]),
-            vec![Sort, Bold],
-        ),
-        (
-            serde_json::json!(["sort", "search", "explorer", "sidebar"]),
-            vec![Sort, Search, Explorer, Sidebar],
-        ),
+fn legacy_toolbar_orders_are_ignored_and_omitted_on_save() {
+    let mut reversed = ToolbarItem::DEFAULT_ORDER;
+    reversed.reverse();
+    for order in [
+        serde_json::json!(reversed),
+        serde_json::json!(null),
+        serde_json::json!([]),
+        serde_json::json!(false),
+        serde_json::json!(["sidebar", "sidebar", "search", "sort"]),
+        serde_json::json!(["sort", "unknown", "bold", 4, "sort"]),
+        serde_json::json!(["sort", "search", "explorer", "sidebar"]),
     ] {
-        let settings: ToolbarSettings =
-            serde_json::from_value(serde_json::json!({ "order": order, "search": false })).unwrap();
-        let mut expected = prefix;
-        for item in ToolbarItem::DEFAULT_ORDER {
-            if !expected.contains(&item) {
-                expected.push(item);
+        let settings: ToolbarSettings = serde_json::from_value(serde_json::json!({
+            "order": order, "search": false, "icon_size": "large", "alignment": "right"
+        }))
+        .unwrap();
+        assert_eq!(
+            settings,
+            ToolbarSettings {
+                search: false,
+                icon_size: mithril::notebook::ToolbarIconSize::Large,
+                alignment: mithril::notebook::ToolbarAlignment::Right,
+                ..ToolbarSettings::default()
             }
-        }
-        assert_eq!(settings.order.as_slice(), expected);
-        assert!(!settings.search);
-        for item in ToolbarItem::DEFAULT_ORDER.into_iter().skip(6) {
-            assert!(settings.enabled(item));
-        }
+        );
         let json = serde_json::to_value(settings).unwrap();
-        assert_eq!(json["order"].as_array().unwrap().len(), 18);
+        assert!(json.get("order").is_none());
         assert_eq!(
             serde_json::from_value::<ToolbarSettings>(json).unwrap(),
             settings
         );
     }
+
+    let directory = tempfile::tempdir().unwrap();
+    let book = Notebook::open(&directory.path().join("book"), true).unwrap();
+    let path = book.root.join(".mithril/settings.json");
+    let mut legacy = serde_json::to_value(&book.settings).unwrap();
+    legacy["toolbar"]["order"] = serde_json::json!(reversed);
+    legacy["toolbar"]["bold"] = serde_json::json!(false);
+    let bytes = serde_json::to_vec_pretty(&legacy).unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    let loaded = Notebook::open(&book.root, false).unwrap();
+    assert!(!loaded.settings.toolbar.bold);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        bytes,
+        "loading must not force a migration write"
+    );
+    save_book(&loaded).unwrap();
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    assert!(saved["toolbar"].get("order").is_none());
+    assert_eq!(
+        Notebook::open(&book.root, false).unwrap().settings.toolbar,
+        loaded.settings.toolbar
+    );
 }
 
-#[test]
-fn toolbar_moves_match_insertion_for_all_items_and_representative_orders() {
-    let items = ToolbarItem::DEFAULT_ORDER;
-    for rotation in 0..items.len() {
-        let mut initial = ToolbarSettings::default();
-        initial.order.rotate_left(rotation);
-        for (i, entry) in items.into_iter().enumerate() {
-            initial.set_enabled(entry, i % 2 == rotation % 2);
-        }
-        for item in items {
-            for target in items {
-                for after in [false, true] {
-                    let mut expected = initial.order.to_vec();
-                    if item != target && item.region() == target.region() {
-                        expected.retain(|entry| *entry != item);
-                        let insertion = expected.iter().position(|entry| *entry == target).unwrap()
-                            + usize::from(after);
-                        expected.insert(insertion, item);
-                    }
-                    let mut actual = initial;
-                    assert_eq!(
-                        actual.move_item(item, target, after),
-                        expected != initial.order
-                    );
-                    assert_eq!(actual.order.as_slice(), expected);
-                    for entry in items {
-                        assert_eq!(actual.enabled(entry), initial.enabled(entry));
-                    }
-                }
-            }
-        }
-    }
-}
 #[test]
 fn toolbar_icon_sizes_default_normalize_and_persist() {
     use mithril::notebook::ToolbarIconSize;
@@ -211,7 +187,6 @@ fn toolbar_alignments_default_normalize_and_persist() {
     let directory = tempfile::tempdir().unwrap();
     let mut book = Notebook::open(&directory.path().join("book"), true).unwrap();
     book.settings.toolbar.search = false;
-    book.settings.toolbar.order.rotate_left(3);
     for (alignment, label) in ToolbarAlignment::OPTIONS {
         book.settings.toolbar.alignment = alignment;
         save_book(&book).unwrap();
@@ -234,15 +209,9 @@ fn legacy_toolbar_gains_terminal_without_changing_saved_choices() {
     assert!(settings.terminal);
     assert!(!settings.bold);
     assert_eq!(
-        &settings.order[..4],
-        &[
-            ToolbarItem::Italic,
-            ToolbarItem::Bold,
-            ToolbarItem::Forward,
-            ToolbarItem::Back
-        ]
+        settings.alignment,
+        mithril::notebook::ToolbarAlignment::Right
     );
-    assert_eq!(settings.order.last(), Some(&ToolbarItem::Terminal));
     assert_eq!(ToolbarItem::Terminal.region(), ToolbarRegion::ContentRight);
 }
 

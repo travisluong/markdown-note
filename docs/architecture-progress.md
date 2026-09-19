@@ -2617,3 +2617,23 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   on the headless outside-sandbox retry, and the remaining suites passed.
 - Validation used target/agent-validation. No native application harness or
   desktop input was used; native visual validation remains manual.
+
+### 2026-09-19 — Fixed toolbar icon order
+
+- Removed drag-and-drop reordering from workspace toolbar icons and Settings,
+  including grips, previews, insertion targets, move intents and the pure mutation.
+  Both surfaces now use the built-in order; visibility switches, icon sizes,
+  reset, command clicks and panel-dependent placement retain their behavior.
+- Removed the persisted order preference. Legacy order values are ignored without
+  a migration write and omitted on the next settings save; other preferences survive.
+- Headless regressions cover fixed order after loading legacy preferences, absent
+  drag operations, row switches, disabled commands, wrapping at every size,
+  sidebar collapse/reopen placement and settings serialization.
+- Locked offline check, format check, strict all-target diagnostics Clippy and
+  whitespace checks passed. Validation passed 101 library tests, 358 application
+  tests, all integration suites and doc-tests. An initial concurrent link failure
+  cleared with a single-job build. The known Windows PTY sandbox timeout affected
+  one terminal test; all 15 terminal tests passed outside the sandbox, and the
+  remaining integration suites and doc-tests passed.
+- Validation used target/agent-validation and GPUI TestPlatform. No desktop input
+  or native application harness was used; native visual validation remains manual.

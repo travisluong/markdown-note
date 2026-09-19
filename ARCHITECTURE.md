@@ -53,7 +53,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notebook settings own persisted sidebar/terminal widths; Notes owns session-only right-panel visibility and the terminal width fallback without a notebook; TerminalTabs owns retained session identities and cleanup tasks, TerminalSession owns each view, and the terminal runtime owns PTY processes. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
 | Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow, popup anchors and optional sidebar/terminal panel buttons. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
-| Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. When an active notebook sidebar is collapsed, its enabled toolbar button moves to the fixed left edge before navigation; reopening restores its saved sidebar order. The opener follows workspace toolbar visibility and sizing, and cannot be dragged while collapsed. A shared effective item list drives region visibility, widths and rendering. The terminal opener sits at the right edge of the editor toolbar while collapsed; the terminal header owns its always-available collapse button. Both use the existing retained-session toggle action. Fixed regions read effective visibility/order/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
+| Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. When an active notebook sidebar is collapsed, its enabled toolbar button moves to the fixed left edge before navigation; reopening restores its fixed sidebar position. The opener follows workspace toolbar visibility and sizing. Toolbar icons and Settings rows cannot be reordered. A shared effective item list drives region visibility, widths and rendering. The terminal opener sits at the right edge of the editor toolbar while collapsed; the terminal header owns its always-available collapse button. Both use the existing retained-session toggle action. Fixed regions use the built-in item order and read effective visibility/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
@@ -353,7 +353,7 @@ launcher identity matches `WindowOptions::app_id` (`org.mithril.Mithril`).
 The title bar owns the sidebar button before the menus. Settings → Toolbar → Top
 bar controls `toolbar.title_bar_sidebar` and `toolbar.title_bar_terminal` (both
 default false), independently of workspace toolbar visibility and icon sizing.
-The existing `toolbar.terminal` preference and order entry control the editor
+The existing `toolbar.terminal` preference controls the editor
 toolbar opener in Content right. The sidebar toolbar button defaults to enabled.
 Explicit saved choices are preserved; reset applies the new defaults. The optional
 top-bar terminal button sits before caption controls and toggles the retained
@@ -450,8 +450,8 @@ Visibility defaults to true for new and existing settings. Hiding removes both t
 and borders without changing item preferences; resetting toolbar defaults restores
 visibility. The toggle follows the existing busy/modal guards.
 
-The optional toolbar sidebar button defaults off; explicit saved visibility is retained.
-Resetting toolbar defaults turns that item off again.
+The toolbar sidebar button defaults on; explicit saved visibility is retained.
+Resetting toolbar defaults turns that item on again.
 The workspace toolbars use `ToolbarSettings` in `notebook/settings.rs` for independent
 sidebar, Explorer, Search and Sort visibility plus eleven Markdown formatting
 controls (bold, italic, strikethrough, heading, inline code, code block, link,
@@ -460,30 +460,19 @@ SettingsPanel's
 Toolbar tab emits typed item intents; the settings adapter applies them immediately
 to the active notebook through SettingsWriter, or to session defaults without a
 notebook. Missing settings and missing item fields preserve enabled defaults.
-ToolbarSettings owns a complete 18-item order, serialized as lowercase item
-names. Loading preserves valid known entries, skips duplicates and unknown entries,
-and appends missing items in default order without changing visibility. Legacy
-four-item orders retain their order and gain missing enabled controls. Back and
-Forward follow Sidebar in the default order; saved orders retain their positions.
-Toolbar-tab grips emit typed relative move intents
-only on drop; the adapter updates current preferences and skips unchanged writes.
-The panel owns drag presentation and validates the originating panel identity;
-the adapter retains dialog lifetime, notebook scope and busy guards. Both the
-settings list and toolbars filter the saved order by `ToolbarItem::region`, retaining
-positions for hidden items. Cross-region moves are rejected by both drag adapters
-and the pure reorder method. Disabling all items in a toolbar removes its row and border.
-Direct toolbar icon drags use the same settings-adapter move boundary. Every visible
-icon can move, including unavailable commands; the button retains GPUI's drag
-threshold and suppresses command clicks during a drag. Absolute before/after
-insertion targets preserve wrapping and only commit on drop. Window-owner and
-captured notebook/session scope, current item visibility, busy and modal guards
-reject stale gestures. The drag preview owns no preferences or editor state.
-Heading and Sort opt into the vendored dropdown/popover completed-click trigger;
+Both the settings list and workspace toolbars use the fixed 18-item
+ToolbarItem::DEFAULT_ORDER, grouped by region. Workspace toolbars also filter by
+visibility; hidden items return to their built-in positions when enabled.
+Legacy toolbar.order values are ignored
+on load and omitted on subsequent saves; loading alone does not rewrite settings.
+No order preference, move intent, drag handle, preview or insertion target remains.
+Disabling all items in a toolbar removes its row and border.
+Heading and Sort retain the vendored dropdown/popover completed-click trigger;
 other popovers retain mouse-down activation. Headless toolbar interaction tests
-cover reordering, cancellation, disabled commands, focus, persistence and Settings
-synchronization.
+cover fixed ordering, absence of drag operations, disabled commands, focus,
+persistence and Settings synchronization.
 The workspace starts directly below the menu bar. The sidebar toolbar contains
-Explorer, Search and Sort by default; its optional sidebar toggle remains off.
+Sidebar, Explorer, Search and Sort by default.
 Content has fixed left navigation, centered formatting and a right Terminal action,
 above the retained tab strip. Equal side reservations center formatting within the
 content column. Its measured width selects one row or a top navigation/action row

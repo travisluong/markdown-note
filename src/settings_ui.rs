@@ -27,31 +27,6 @@ impl Notes {
             .map_or(self.session_toolbar, |book| book.settings.toolbar)
     }
 
-    /// Shared mutation for the Settings list and direct toolbar drops. Callers
-    /// validate their own interaction authority before crossing this boundary.
-    pub(super) fn move_toolbar_item(
-        &mut self,
-        item: notebook::ToolbarItem,
-        target: notebook::ToolbarItem,
-        after: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let changed = if let Some(book) = &mut self.notebooks.active {
-            let changed = book.settings.toolbar.move_item(item, target, after);
-            if changed {
-                self.persist_notebooks(cx);
-            }
-            changed
-        } else {
-            self.session_toolbar.move_item(item, target, after)
-        };
-        if changed {
-            self.sync_settings_panel(window, cx);
-            cx.notify();
-        }
-    }
-
     pub(super) fn toggle_toolbar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.document_interaction_blocked() || window.has_active_dialog(cx) {
             return;
@@ -560,14 +535,6 @@ impl Notes {
                     self.session_toolbar.icon_size = size;
                 }
                 false
-            }
-            SettingsIntent::ToolbarItemMoved {
-                item,
-                target,
-                after,
-            } => {
-                self.move_toolbar_item(item, target, after, window, cx);
-                return;
             }
             SettingsIntent::ToolbarItemEnabled(item, enabled) => {
                 if let Some(book) = &mut self.notebooks.active {
