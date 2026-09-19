@@ -427,8 +427,7 @@ impl Notes {
             } else {
                 body = body
                     .child("Mithril")
-                    .child(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                    .child("A Markdown notebook built with GPUI. More information coming soon.");
+                    .child(format!("Version {}", env!("CARGO_PKG_VERSION")));
             }
             let restore = previous.clone();
             let close_focus = previous.clone();
