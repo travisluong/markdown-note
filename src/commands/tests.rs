@@ -445,6 +445,39 @@ fn recursive_duplicates_and_settings() {
 }
 
 #[test]
+fn palette_navigation_wraps_within_filtered_results() {
+    let mut model = PaletteModel::new(
+        ["alpha.md", "beta.md", "gamma.md", "other.txt"]
+            .into_iter()
+            .map(|name| PaletteEntry::Notebook {
+                path: name.into(),
+                active: false,
+            })
+            .collect(),
+    );
+    model.filter(".md");
+    assert_eq!(model.results().len(), 3);
+    assert_eq!(model.move_selection(false), 2);
+    assert_eq!(model.move_selection(true), 0);
+    assert_eq!(model.move_selection(true), 1);
+    assert_eq!(model.move_selection(true), 2);
+    assert_eq!(model.move_selection(false), 1);
+    assert_eq!(model.move_selection(false), 0);
+    assert_eq!(model.move_selection(false), 2);
+
+    model.filter("alpha");
+    assert_eq!(model.results().len(), 1);
+    assert_eq!(model.move_selection(false), 0);
+    assert_eq!(model.move_selection(true), 0);
+
+    model.filter("missing");
+    assert!(model.results().is_empty());
+    assert_eq!(model.move_selection(false), 0);
+    assert_eq!(model.move_selection(true), 0);
+    assert!(model.selected_entry().is_none());
+}
+
+#[test]
 fn selection_and_replacement_follow_the_current_filtered_results() {
     let mut model = PaletteModel::new(
         Command::ALL

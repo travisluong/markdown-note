@@ -133,13 +133,17 @@ impl PaletteModel {
         self.entries = entries;
         self.filter(query);
     }
+    /// Move through the current results, wrapping at either end.
     pub fn move_selection(&mut self, down: bool) -> usize {
-        self.selected = if down {
-            self.selected
-                .saturating_add(1)
-                .min(self.results.len().saturating_sub(1))
+        let count = self.results.len();
+        self.selected = if count == 0 {
+            0
+        } else if down {
+            (self.selected + 1) % count
+        } else if self.selected == 0 {
+            count - 1
         } else {
-            self.selected.saturating_sub(1)
+            self.selected - 1
         };
         self.selected
     }

@@ -76,6 +76,8 @@ The shared palette dialog in `goto.rs` uses `Dialog::overlay_color` with a trans
 backdrop for Commands, Go To, Change Notebook and Sort Files. Opening these palettes
 preserves the workspace colors while retaining modal input blocking, outside-click
 dismissal and focus restoration. Other dialogs retain the theme's overlay color.
+`PaletteModel` wraps Up/Down selection within the current filtered results for all
+four palettes; the adapter scrolls the selected row into view and retains query focus.
 
 Navigation history is a pure, session-only owner in `app/navigation.rs`, held by
 each Tab. The session adapter proposes a revision-tagged history visit through Next;

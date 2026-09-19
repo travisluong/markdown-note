@@ -42,6 +42,65 @@ fn fixture<'a>(
 }
 
 #[gpui::test]
+fn palette_arrow_keys_wrap_and_keep_query_focus(cx: &mut TestAppContext) {
+    use super::PaletteMode;
+
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("note.md"), "text").unwrap();
+    let (notes, cx) = fixture(cx, directory.path());
+    for mode in [
+        PaletteMode::Commands,
+        PaletteMode::Files,
+        PaletteMode::Notebooks,
+        PaletteMode::Sort,
+    ] {
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.open_palette(
+                    mode,
+                    Command::ALL
+                        .iter()
+                        .copied()
+                        .map(PaletteEntry::Command)
+                        .collect(),
+                    None,
+                    window,
+                    cx,
+                );
+            });
+        });
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        let last = cx.update(|_, cx| {
+            notes
+                .read(cx)
+                .palette
+                .as_ref()
+                .unwrap()
+                .model
+                .results()
+                .len()
+                - 1
+        });
+        for (key, expected) in [("up", last), ("down", 0), ("down", 1), ("up", 0)] {
+            cx.simulate_keystrokes(key);
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.update(|window, cx| {
+                let palette = notes.read(cx).palette.as_ref().unwrap();
+                assert_eq!(palette.model.selected_index(), expected);
+                assert!(palette.query.focus_handle(cx).is_focused(window));
+            });
+        }
+        cx.update(|window, cx| {
+            window.close_dialog(cx);
+            notes.update(cx, |this, cx| this.close_palette(window, cx));
+        });
+        cx.run_until_parked();
+    }
+}
+
+#[gpui::test]
 fn palette_overlays_preserve_colors_and_outside_click_focus(cx: &mut TestAppContext) {
     use super::PaletteMode;
     use gpui::{Modifiers, MouseButton, point, px, transparent_black};

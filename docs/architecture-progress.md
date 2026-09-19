@@ -2500,3 +2500,17 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   all other integration suites/doc-tests. The existing Windows PTY interrupt
   test timed out in the sandbox; rerunning all 12 terminal integration tests
   outside the sandbox passed without code changes.
+
+### 2026-09-19 — Palette arrow-key wraparound
+
+- Shared palette selection now wraps Up from the first filtered result to the last,
+  and Down from the last to the first. Commands, Go To, Change Notebook and Sort
+  Files retain query focus and use the existing selected-row scroll handling.
+- Added regression coverage for both boundaries, ordinary movement, filtered,
+  empty and singleton results, plus TestPlatform arrow-key dispatch in all modes.
+- All 18 command-model tests passed; the focused palette run passed 3 library and
+  22 application tests. Locked offline check, strict all-target diagnostics Clippy
+  and formatting of the three changed Rust files passed.
+- Full-suite validation was attempted but Windows LNK1104 executable locks blocked
+  linking. Repository-wide formatting reported concurrent unrelated session and
+  notebook edits. No desktop input or native application harness was used.
