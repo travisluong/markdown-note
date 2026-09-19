@@ -15,6 +15,7 @@ fn fixture(cx: &mut TestAppContext) -> (tempfile::TempDir, Entity<Notes>, &mut V
         let entity = cx.new(|cx| Notes::new(window, cx));
         entity.update(cx, |this, cx| {
             this.session_autosave.enabled = false;
+            this.session_toolbar.title_bar_sidebar = true;
             this.install_document(Some(Document::open(path).unwrap()), window, cx);
         });
         notes = Some(entity.clone());
@@ -59,6 +60,13 @@ fn title_sidebar_button_toggles_without_dragging_and_rechecks_guards(cx: &mut Te
         notes.update(cx, |this, cx| {
             this.notebooks.active =
                 Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.notebooks
+                .active
+                .as_mut()
+                .unwrap()
+                .settings
+                .toolbar
+                .title_bar_sidebar = true;
             this.editor.focus(window, cx);
             cx.notify();
         })
@@ -305,7 +313,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
             px(400.),
             px(16.),
             widths,
-            true,
+            [true, false],
         );
         assert!(narrow.visible >= 1);
         assert_eq!(narrow.anchor_index(MenuKind::File), 0);
@@ -318,7 +326,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
             px(1000.),
             px(16.),
             widths,
-            true,
+            [true, false],
         );
         assert_eq!(wide.visible, MENUS.len());
     }
@@ -328,7 +336,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(400.),
         px(16.),
         widths,
-        true,
+        [true, false],
     );
     assert_eq!(fullscreen.visible, MENUS.len() - 2);
     assert!(!fullscreen.mode.combined());
@@ -340,7 +348,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         px(400.),
         px(16.),
         widths,
-        true,
+        [true, false],
     );
     assert_eq!(server.visible, fullscreen.visible);
 }
@@ -447,6 +455,13 @@ fn sidebar_menu_actions_restore_destination_focus_after_dismissal(cx: &mut TestA
         notes.update(cx, |this, cx| {
             this.notebooks.active =
                 Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.notebooks
+                .active
+                .as_mut()
+                .unwrap()
+                .settings
+                .toolbar
+                .title_bar_sidebar = true;
             this.editor.focus(window, cx);
             cx.notify();
         })
@@ -481,6 +496,13 @@ fn discovery_menu_entries_open_focused_palettes(cx: &mut TestAppContext) {
         notes.update(cx, |this, cx| {
             this.notebooks.active =
                 Some(crate::notebook::Notebook::open(dir.path(), false).unwrap());
+            this.notebooks
+                .active
+                .as_mut()
+                .unwrap()
+                .settings
+                .toolbar
+                .title_bar_sidebar = true;
             this.editor.focus(window, cx);
             cx.notify();
         })
@@ -675,7 +697,7 @@ fn centered_editor_view_toggle_rechecks_modal_and_busy_guards(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn top_bar_reserves_only_sidebar_space_independent_of_terminal_setting(cx: &mut TestAppContext) {
+fn top_bar_reserves_panel_buttons_independently_of_workspace_toolbars(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     for sidebar in [false, true] {
         for terminal in [false, true] {
@@ -685,7 +707,8 @@ fn top_bar_reserves_only_sidebar_space_independent_of_terminal_setting(cx: &mut 
                     let mut notes = Notes::new(window, cx);
                     notes.session_toolbar.visible = false;
                     notes.session_toolbar.title_bar_sidebar = sidebar;
-                    notes.session_toolbar.terminal = terminal;
+                    notes.session_toolbar.title_bar_terminal = terminal;
+                    notes.session_toolbar.terminal = !terminal;
                     notes.session_toolbar.icon_size = crate::notebook::ToolbarIconSize::Large;
                     notes
                 });
@@ -704,7 +727,18 @@ fn top_bar_reserves_only_sidebar_space_independent_of_terminal_setting(cx: &mut 
                 let left = view.debug_bounds("title-bar-sidebar-toggle");
                 let right = view.debug_bounds("title-bar-terminal-toggle");
                 assert_eq!(left.is_some(), sidebar);
-                assert!(right.is_none());
+                assert_eq!(right.is_some(), terminal);
+                if let Some(right) = right {
+                    assert_eq!(right.size.width, px(28.));
+                    if let Some(controls) = view.debug_bounds("window-minimize") {
+                        assert!(right.right() + px(4.) <= controls.left());
+                    }
+                    let last_menu = view
+                        .debug_bounds("more-menu")
+                        .or_else(|| view.debug_bounds("help-menu"))
+                        .unwrap();
+                    assert!(last_menu.right() <= right.left());
+                }
                 let file = view.debug_bounds("file-menu").unwrap();
                 let native_inset = view.update(|window, _| {
                     if HeaderMode::current(window) == HeaderMode::Mac {
@@ -748,4 +782,61 @@ fn workspace_terminal_buttons_toggle_without_caption_commands(cx: &mut TestAppCo
             assert!(notes.read(cx).title_bar.commands.is_empty());
         });
     }
+}
+
+#[gpui::test]
+fn top_bar_terminal_toggles_retained_panel_without_dragging_and_rechecks_guards(
+    cx: &mut TestAppContext,
+) {
+    let (_dir, notes, cx) = fixture(cx);
+    assert!(cx.debug_bounds("title-bar-terminal-toggle").is_none());
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.session_toolbar.title_bar_terminal = true;
+            this.session_toolbar.visible = false;
+            cx.notify();
+        })
+    });
+    cx.refresh().unwrap();
+    for open in [true, false, true, false] {
+        let button = cx.debug_bounds("title-bar-terminal-toggle").unwrap();
+        cx.simulate_mouse_down(button.center(), MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(
+            button.center() + gpui::point(px(1.), px(0.)),
+            Some(MouseButton::Left),
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_up(button.center(), MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.update(|_, cx| {
+            let this = notes.read(cx);
+            assert_eq!(this.right_panel_open, open);
+            assert_eq!(this.terminals.tabs.len(), 1);
+            #[cfg(target_os = "windows")]
+            assert!(this.title_bar.commands.is_empty());
+        });
+    }
+    cx.update(|window, cx| {
+        window.open_dialog(cx, |dialog, _, _| dialog.title("Modal"));
+        notes.update(cx, |this, cx| this.toggle_right_panel(window, cx));
+        assert!(!notes.read(cx).right_panel_open);
+    });
+    cx.refresh().unwrap();
+    let button = cx.debug_bounds("title-bar-terminal-toggle").unwrap();
+    cx.simulate_click(button.center(), Modifiers::default());
+    cx.update(|window, cx| {
+        assert!(!notes.read(cx).right_panel_open);
+        window.close_dialog(cx);
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            this.toggle_right_panel(window, cx);
+            assert!(!this.right_panel_open);
+            cx.notify();
+        });
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.simulate_click(button.center(), Modifiers::default());
+    cx.update(|_, cx| assert!(!notes.read(cx).right_panel_open));
 }

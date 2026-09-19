@@ -2585,3 +2585,13 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   in a headless outside-sandbox rerun.
 - Validation used target/agent-validation. No desktop input or native application
   harness was used; native visual validation remains manual.
+### 2026-09-19 — Optional top-bar panel controls
+
+- Restored the top-bar terminal button with an independent, default-off
+  `title_bar_terminal` preference in Settings → Toolbar → Top bar. Retained the
+  existing workspace terminal preference, session lifecycle and interaction guards.
+- Both top-bar panel buttons now default off; the sidebar toolbar button defaults
+  on. Missing settings and reset use these defaults; explicit saved values survive.
+- Headless application validation passed all 364 tests, including title-bar
+  geometry, retained terminal toggles, modal/busy guards, settings persistence,
+  reset and stale-form regressions. Native desktop interaction was not used.

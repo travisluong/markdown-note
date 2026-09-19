@@ -386,7 +386,16 @@ impl Render for SettingsPanel {
                         this.emit_intent(SettingsIntent::TitleBarSidebar(*enabled), cx)
                     })),
             )
-            .child("The top-bar sidebar button stays visible when toolbars are hidden.")
+            .child(
+                Switch::new("title-bar-terminal-visible")
+                    .label("Show terminal button")
+                    .checked(self.values.toolbar.title_bar_terminal)
+                    .disabled(self.values.busy)
+                    .on_click(cx.listener(|this, enabled, _, cx| {
+                        this.emit_intent(SettingsIntent::TitleBarTerminal(*enabled), cx)
+                    })),
+            )
+            .child("Enabled top-bar buttons stay visible when toolbars are hidden.")
             .child(
                 div()
                     .font_weight(gpui::FontWeight::SEMIBOLD)

@@ -816,12 +816,6 @@ fn toolbar_switches_update_rendering_and_restore_an_empty_toolbar(cx: &mut TestA
     for (item, _) in notebook::ToolbarItem::OPTIONS {
         intent(&form, SettingsIntent::ToolbarItemEnabled(item, true), cx);
     }
-    // Restore the default-off item before checking the reopened defaults.
-    intent(
-        &form,
-        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, false),
-        cx,
-    );
     for width in [800., 480.] {
         cx.simulate_resize(gpui::size(gpui::px(width), gpui::px(800.)));
         cx.refresh().unwrap();
@@ -867,14 +861,16 @@ fn toolbar_preferences_persist_for_notebook_and_reject_stale_scope(cx: &mut Test
         SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sort, false),
         cx,
     );
-    intent(&form, SettingsIntent::TitleBarSidebar(false), cx);
+    intent(&form, SettingsIntent::TitleBarSidebar(true), cx);
     intent(
         &form,
         SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Terminal, false),
         cx,
     );
+    intent(&form, SettingsIntent::TitleBarTerminal(true), cx);
     let expected = notebook::ToolbarSettings {
-        title_bar_sidebar: false,
+        title_bar_sidebar: true,
+        title_bar_terminal: true,
         terminal: false,
         search: false,
         sort: false,
@@ -901,7 +897,7 @@ fn toolbar_preferences_persist_for_notebook_and_reject_stale_scope(cx: &mut Test
             this.notebooks.active = Some(fixture.second.clone());
             this.handle_settings_intent(
                 form.entity_id(),
-                SettingsIntent::TitleBarSidebar(false),
+                SettingsIntent::TitleBarTerminal(true),
                 window,
                 cx,
             );
@@ -931,6 +927,7 @@ fn toolbar_form_ignores_changes_while_busy(cx: &mut TestAppContext) {
         cx,
     );
     intent(&form, SettingsIntent::TitleBarSidebar(false), cx);
+    intent(&form, SettingsIntent::TitleBarTerminal(true), cx);
     cx.update(|_, cx| {
         assert!(events.read(cx).0.is_empty());
         assert_eq!(
@@ -1540,10 +1537,10 @@ fn toolbar_reset_button_restores_every_setting_and_rejects_stale_form(cx: &mut T
     use gpui::{Modifiers, MouseButton};
     let (fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
-    assert!(!cx.update(|_, cx| notes.read(cx).toolbar_settings().sidebar));
+    assert!(cx.update(|_, cx| notes.read(cx).toolbar_settings().sidebar));
     intent(
         &form,
-        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, true),
+        SettingsIntent::ToolbarItemEnabled(notebook::ToolbarItem::Sidebar, false),
         cx,
     );
     intent(
@@ -1575,7 +1572,7 @@ fn toolbar_reset_button_restores_every_setting_and_rejects_stale_form(cx: &mut T
             form.read(cx).values.toolbar,
             notebook::ToolbarSettings::default()
         );
-        assert!(!form.read(cx).values.toolbar.sidebar);
+        assert!(form.read(cx).values.toolbar.sidebar);
         notes.update(cx, |this, cx| {
             assert_eq!(this.session_toolbar, notebook::ToolbarSettings::default());
             assert_eq!(
@@ -1625,6 +1622,8 @@ fn toolbar_reset_persists_atomically_skips_defaults_and_rejects_scope_and_busy(
         },
         cx,
     );
+    intent(&form, SettingsIntent::TitleBarTerminal(true), cx);
+    intent(&form, SettingsIntent::TitleBarSidebar(true), cx);
     intent(&form, SettingsIntent::ResetToolbar, cx);
     assert_eq!(
         notebook::Notebook::open(&fixture.first.root, false)
@@ -3251,6 +3250,7 @@ fn panel_button_settings_apply_to_session_without_closing_panels(cx: &mut TestAp
     });
     let form = panel(&notes, cx);
     toolbar_section(&form, cx);
+    intent(&form, SettingsIntent::TitleBarTerminal(true), cx);
     intent(&form, SettingsIntent::TitleBarSidebar(false), cx);
     intent(
         &form,
@@ -3260,6 +3260,7 @@ fn panel_button_settings_apply_to_session_without_closing_panels(cx: &mut TestAp
     cx.update(|_, cx| {
         let this = notes.read(cx);
         assert!(!this.session_toolbar.title_bar_sidebar);
+        assert!(this.session_toolbar.title_bar_terminal);
         assert!(!this.session_toolbar.terminal);
         assert!(!this.session_toolbar.visible);
         assert!(this.right_panel_open);
@@ -3268,8 +3269,8 @@ fn panel_button_settings_apply_to_session_without_closing_panels(cx: &mut TestAp
     });
     intent(&form, SettingsIntent::Close, cx);
     cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
-    intent(&form, SettingsIntent::TitleBarSidebar(true), cx);
-    cx.update(|_, cx| assert!(!notes.read(cx).session_toolbar.title_bar_sidebar));
+    intent(&form, SettingsIntent::TitleBarTerminal(false), cx);
+    cx.update(|_, cx| assert!(notes.read(cx).session_toolbar.title_bar_terminal));
     let reopened = panel(&notes, cx);
     intent(&reopened, SettingsIntent::ResetToolbar, cx);
     cx.update(|_, cx| {

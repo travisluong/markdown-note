@@ -680,6 +680,18 @@ fn title_sidebar_button_retains_search_results_and_query_focus(cx: &mut TestAppC
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.md"), "hit hit").unwrap();
     let (notes, cx) = fixture(cx, dir.path());
+    cx.update(|_, cx| {
+        notes.update(cx, |this, cx| {
+            this.notebooks
+                .active
+                .as_mut()
+                .unwrap()
+                .settings
+                .toolbar
+                .title_bar_sidebar = true;
+            cx.notify();
+        })
+    });
     search(&notes, cx);
     finish_search(cx);
     let (query, cancelled) = cx.update(|_, cx| {

@@ -596,6 +596,15 @@ impl Notes {
                 }
                 false
             }
+            SettingsIntent::TitleBarTerminal(enabled) => {
+                if let Some(book) = &mut self.notebooks.active {
+                    book.settings.toolbar.title_bar_terminal = enabled;
+                    self.persist_notebooks(cx);
+                } else {
+                    self.session_toolbar.title_bar_terminal = enabled;
+                }
+                false
+            }
             SettingsIntent::TerminalCursorStyle(style) => {
                 if let Some(book) = &mut self.notebooks.active {
                     book.settings.terminal.cursor_style = style;

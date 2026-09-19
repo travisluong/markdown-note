@@ -2,7 +2,7 @@ use mithril::notebook::{Notebook, Settings, ToolbarItem, ToolbarSettings, save_b
 
 #[test]
 fn toolbar_defaults_preserve_legacy_and_partially_configured_notebooks() {
-    assert!(!ToolbarSettings::default().sidebar);
+    assert!(ToolbarSettings::default().sidebar);
     let legacy: Settings =
         serde_json::from_str(r#"{"version":1,"last_file":null,"expanded":[]}"#).unwrap();
     assert_eq!(legacy.toolbar, ToolbarSettings::default());
@@ -250,7 +250,8 @@ fn legacy_toolbar_gains_terminal_without_changing_saved_choices() {
 fn top_bar_visibility_defaults_and_saved_preferences_are_independent() {
     let legacy: ToolbarSettings =
         serde_json::from_str(r#"{"visible":false,"terminal":false}"#).unwrap();
-    assert!(legacy.title_bar_sidebar);
+    assert!(!legacy.title_bar_sidebar);
+    assert!(!legacy.title_bar_terminal);
     assert!(!legacy.terminal);
     let directory = tempfile::tempdir().unwrap();
     let mut book = Notebook::open(&directory.path().join("book"), true).unwrap();
@@ -259,6 +260,7 @@ fn top_bar_visibility_defaults_and_saved_preferences_are_independent() {
             book.settings.toolbar = ToolbarSettings {
                 visible: false,
                 title_bar_sidebar: sidebar,
+                title_bar_terminal: terminal,
                 terminal,
                 ..ToolbarSettings::default()
             };
