@@ -1,4 +1,4 @@
-// Run: node scripts/build-icons.mjs ../mithril-web
+// Run: node scripts/build-icons.mjs ../mithril-astro-poc
 // Uses the marketing repository's installed sharp dependency; Cargo builds use
 // only the checked-in outputs and do not need Node or the marketing repository.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const marketing = resolve(process.argv[2] ?? '../mithril-web');
+const marketing = resolve(process.argv[2] ?? '../mithril-astro-poc');
 const sharp = createRequire(resolve(marketing, 'package.json'))('sharp');
 const output = fileURLToPath(new URL('../assets/brand/', import.meta.url));
 await mkdir(output, { recursive: true });

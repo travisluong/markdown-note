@@ -10,7 +10,7 @@ To regenerate after changing the marketing logo, install the marketing
 repository's npm dependencies, then run from this repository:
 
 ```sh
-node scripts/build-icons.mjs ../mithril-web
+node scripts/build-icons.mjs ../mithril-astro-poc
 ```
 
 Commit the generated assets. Ordinary Cargo/release builds require neither Node
