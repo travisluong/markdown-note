@@ -466,11 +466,7 @@ impl Notes {
                             // The wrapper paints one hover surface for both controls.
                             .custom(ButtonCustomVariant::new(cx))
                             .small()
-                            .label(format!(
-                                "{}{}",
-                                if tab.dirty_cached { "• " } else { "" },
-                                title
-                            ))
+                            .label(title)
                             .when(tab.is_external_to(root), |button| {
                                 button.child(
                                     div()

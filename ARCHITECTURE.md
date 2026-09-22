@@ -275,7 +275,7 @@ The sidebar icon before File reuses the guarded sidebar adapter and stays availa
 in every header mode. Fullscreen retains the toggle and menus without controls or
 drag space. Toolbar and tabs
 remain below the bar. `Notes::window_title` still updates the OS title and unsaved
-marker; filenames and dirty indicators remain visible in tabs.
+marker; tabs display filenames without unsaved-change indicators.
 
 Only empty title-bar space can initiate dragging. Windows caption controls have
 individual non-client hit-test regions and leave press/release events unhandled
