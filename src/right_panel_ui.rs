@@ -210,6 +210,8 @@ impl Notes {
     ) -> impl IntoElement {
         let blocked = self.document_interaction_blocked() || window.has_active_dialog(cx);
         let icon_size = self.toolbar_settings().icon_size;
+        let zoom = self.appearance().zoom_factor();
+        let px = |value| gpui::px(value * zoom);
         div()
             .id("right-panel")
             .debug_selector(|| "right-panel".into())
@@ -297,6 +299,7 @@ impl Notes {
                     .child(
                         div().flex_shrink_0().child(
                             toolbar_icon_button(
+                                zoom,
                                 "terminal-tab-add",
                                 IconName::Plus,
                                 icon_size,
@@ -314,6 +317,7 @@ impl Notes {
                     .child(
                         div().flex_shrink_0().child(
                             toolbar_icon_button(
+                                zoom,
                                 "terminal-panel-collapse",
                                 IconName::PanelRight,
                                 icon_size,

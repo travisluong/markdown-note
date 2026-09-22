@@ -755,8 +755,18 @@ impl TerminalView {
     /// to the stdin writer. If a key handler is set and returns true, the event
     /// is consumed and not sent to the terminal.
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // The host reserves Ctrl+backtick. All other keys belong to this terminal.
-        if event.keystroke.modifiers.control && event.keystroke.key == "`" {
+        // Let host application actions handle terminal toggle and window zoom.
+        let key = &event.keystroke;
+        let zoom_modifier = !key.modifiers.alt
+            && if cfg!(target_os = "macos") {
+                key.modifiers.platform && !key.modifiers.control
+            } else {
+                key.modifiers.control && !key.modifiers.platform
+            };
+        let host_zoom = zoom_modifier
+            && (matches!(key.key.as_str(), "+" | "=")
+                || (!key.modifiers.shift && matches!(key.key.as_str(), "-" | "0")));
+        if host_zoom || (key.modifiers.control && key.key == "`") {
             return;
         }
         cx.stop_propagation();

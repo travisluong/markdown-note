@@ -110,3 +110,37 @@ fn external_autosave_defaults_off_per_notebook_and_ignores_former_global_flag() 
             .contains("autosave_external_files")
     );
 }
+
+#[test]
+fn zoom_defaults_round_trip_steps_and_bounds_preserve_base_preferences() {
+    use super::Appearance;
+    let mut appearance: Appearance =
+        serde_json::from_str(r#"{"content_font_size":19,"ui_font_size":18}"#).unwrap();
+    assert_eq!(appearance.zoom_percent, 100);
+    let baseline = appearance.clone();
+    appearance.zoom_in();
+    assert_eq!(appearance.zoom_percent, 110);
+    appearance.zoom_out();
+    assert_eq!(appearance, baseline);
+    for _ in 0..30 {
+        appearance.zoom_in();
+    }
+    assert_eq!(appearance.zoom_percent, 200);
+    assert_eq!(appearance.zoom_factor(), 2.);
+    let encoded = serde_json::to_string(&appearance).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Appearance>(&encoded).unwrap(),
+        appearance
+    );
+    for _ in 0..30 {
+        appearance.zoom_out();
+    }
+    assert_eq!(appearance.zoom_percent, 50);
+    assert_eq!(appearance.zoom_factor(), 0.5);
+    assert_eq!(appearance.content_font_size, 19);
+    assert_eq!(appearance.ui_font_size, 18);
+    for (value, expected) in [(0, 50), (99, 99), (u16::MAX, 200)] {
+        appearance.zoom_percent = value;
+        assert_eq!(appearance.clone().normalized().zoom_percent, expected);
+    }
+}

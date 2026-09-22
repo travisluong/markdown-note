@@ -499,7 +499,7 @@ impl RenderOnce for Dialog {
         let base_size = window.text_style().font_size;
         let rem_size = window.rem_size();
 
-        let mut paddings = Edges::all(px(24.));
+        let mut paddings = Edges::all(rem_size * 1.5);
         if let Some(pl) = self.style.padding.left {
             paddings.left = pl.to_pixels(base_size, rem_size);
         }

@@ -16,6 +16,9 @@ fn view_mode_commands_match_menu_availability() {
         Command::SourceMode,
         Command::LivePreview,
         Command::ReadingView,
+        Command::ZoomIn,
+        Command::ZoomOut,
+        Command::ResetZoom,
     ] {
         assert_eq!(
             ranked_entries(&entries, command.label())[0].label(),

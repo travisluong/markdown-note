@@ -60,6 +60,7 @@ pub struct Appearance {
     pub monospace_font: Option<String>,
     pub content_font_size: u16,
     pub ui_font_size: u16,
+    pub zoom_percent: u16,
     pub centered_editor: bool,
     pub centered_editor_width: u16,
     pub dark_mode: Option<bool>,
@@ -78,6 +79,7 @@ impl Default for Appearance {
             monospace_font: None,
             content_font_size: 16,
             ui_font_size: 16,
+            zoom_percent: 100,
             centered_editor: false,
             centered_editor_width: 700,
             dark_mode: None,
@@ -86,6 +88,18 @@ impl Default for Appearance {
 }
 
 impl Appearance {
+    /// Window-wide presentation scale; saved dimensions remain at 100%.
+    pub fn zoom_factor(&self) -> f32 {
+        f32::from(self.zoom_percent.clamp(50, 200)) / 100.
+    }
+
+    pub fn zoom_in(&mut self) {
+        self.zoom_percent = self.zoom_percent.clamp(50, 200).saturating_add(10).min(200);
+    }
+
+    pub fn zoom_out(&mut self) {
+        self.zoom_percent = self.zoom_percent.clamp(50, 200).saturating_sub(10).max(50);
+    }
     pub fn parse_editor_width(value: &str) -> Option<u16> {
         value
             .trim()
@@ -172,6 +186,7 @@ impl Appearance {
         self.font_color = self.font_color.filter(|c| *c <= 0xffffff);
         self.content_font_size = self.content_font_size.clamp(10, 40);
         self.ui_font_size = self.ui_font_size.clamp(10, 24);
+        self.zoom_percent = self.zoom_percent.clamp(50, 200);
         self.centered_editor_width = self.centered_editor_width.clamp(200, 4000);
         self
     }

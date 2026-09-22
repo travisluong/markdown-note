@@ -20,6 +20,9 @@ pub(super) fn command_action(command: Command) -> Option<(Box<dyn Action>, &'sta
         Command::SourceMode => (Box::new(SourceMode), "Notes"),
         Command::LivePreview => (Box::new(LivePreview), "Notes"),
         Command::ReadingView => (Box::new(ReadingView), "Notes"),
+        Command::ZoomIn => (Box::new(ZoomIn), "Notes"),
+        Command::ZoomOut => (Box::new(ZoomOut), "Notes"),
+        Command::ResetZoom => (Box::new(ResetZoom), "Notes"),
         Command::Back => (Box::new(NavigateBack), "Notes"),
         Command::Forward => (Box::new(NavigateForward), "Notes"),
         Command::SearchFile => (Box::new(Search), "Notes"),
@@ -74,10 +77,10 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
     macro_rules! shortcut {
         ($key:literal, $action:expr, $context:literal, $group:literal, $description:literal) => {{
             let key = platform_shortcut($key, macos);
-            let context = if $context == "Notes" {
-                "Notes && !Terminal"
-            } else {
-                $context
+            let context = match $context {
+                "Notes" => "Notes && !Terminal",
+                "NotesGlobal" => "Notes",
+                other => other,
             };
             let binding = KeyBinding::new(&key, $action, Some(context));
             Shortcut {
@@ -140,6 +143,30 @@ fn app_shortcuts_for_platform(macos: bool) -> Vec<Shortcut> {
             "Command palette"
         ),
         shortcut!("ctrl-s", Save, "Notes", "Application", "Save"),
+        shortcut!("ctrl-=", ZoomIn, "NotesGlobal", "", "Zoom in (equals key)"),
+        shortcut!(
+            "ctrl-shift-+",
+            ZoomIn,
+            "NotesGlobal",
+            "",
+            "Zoom in (shifted plus)"
+        ),
+        shortcut!(
+            "ctrl-shift-=",
+            ZoomIn,
+            "NotesGlobal",
+            "",
+            "Zoom in (shifted plus)"
+        ),
+        shortcut!("ctrl-+", ZoomIn, "NotesGlobal", "Application", "Zoom in"),
+        shortcut!("ctrl--", ZoomOut, "NotesGlobal", "Application", "Zoom out"),
+        shortcut!(
+            "ctrl-0",
+            ResetZoom,
+            "NotesGlobal",
+            "Application",
+            "Reset zoom"
+        ),
         shortcut!(
             "alt-left",
             NavigateBack,
@@ -402,7 +429,7 @@ impl Notes {
             .take()
             .or_else(|| window.focused(cx));
         self.menu = None;
-        window.open_dialog(cx, move |dialog, window, _cx| {
+        window.open_dialog(cx, move |dialog, window, cx| {
             let mut body = div().flex().flex_col().gap_2();
             if shortcuts {
                 let app = app_shortcuts();
@@ -415,12 +442,13 @@ impl Notes {
                 ] {
                     body = body.child(div().mt_2().font_weight(FontWeight::BOLD).child(group));
                     for shortcut in app.iter().filter(|s| s.group == group) {
-                        body = body.child(shortcut_row(&shortcut.key, shortcut.description));
+                        body = body.child(shortcut_row(&shortcut.key, shortcut.description, cx));
                     }
                     for (_, key, description) in CONTEXT_SHORTCUTS.iter().filter(|s| s.0 == group) {
                         body = body.child(shortcut_row(
                             &context_shortcut(key, cfg!(target_os = "macos")),
                             description,
+                            cx,
                         ));
                     }
                 }
@@ -437,7 +465,7 @@ impl Notes {
                 } else {
                     "About Mithril"
                 })
-                .w(px(700.).min(window.viewport_size().width - px(32.)))
+                .w(crate::zoom_ui::zoom_px(700., cx).min(window.viewport_size().width - px(32.)))
                 // Reserve both window margins and the dialog's 30px slide animation.
                 .margin_top(px(16.))
                 .max_h((window.viewport_size().height - px(62.)).max(px(0.)))
@@ -466,12 +494,16 @@ impl Notes {
     }
 }
 
-fn shortcut_row(key: &str, description: &str) -> impl IntoElement {
+fn shortcut_row(key: &str, description: &str, cx: &App) -> impl IntoElement {
     div()
         .flex()
         .flex_wrap()
         .gap_2()
-        .child(div().w(px(250.)).child(key.to_owned()))
+        .child(
+            div()
+                .w(crate::zoom_ui::zoom_px(250., cx))
+                .child(key.to_owned()),
+        )
         .child(div().flex_1().child(description.to_owned()))
 }
 
@@ -493,6 +525,9 @@ mod tests {
             (Command::EditLink, "ctrl-k", "DocumentEditor"),
             (Command::Settings, "ctrl-,", "Notes"),
             (Command::Save, "ctrl-s", "Notes"),
+            (Command::ZoomIn, "ctrl-+", "Notes"),
+            (Command::ZoomOut, "ctrl--", "Notes"),
+            (Command::ResetZoom, "ctrl-0", "Notes"),
             (Command::Back, "alt-left", "Notes"),
             (Command::Forward, "alt-right", "Notes"),
             (Command::SearchFile, "ctrl-f", "Notes"),
@@ -512,6 +547,7 @@ mod tests {
                 let binding = mapped.as_ref().and_then(|(action, _)| {
                     shortcuts
                         .iter()
+                        .rev()
                         .find(|s| s.binding.action().partial_eq(action.as_ref()))
                 });
                 if let Some((_, key, context)) = expected.iter().find(|(c, _, _)| *c == command) {

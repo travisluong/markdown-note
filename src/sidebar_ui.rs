@@ -135,8 +135,9 @@ impl Notes {
         if !left_visible && !right_visible {
             return editor.into_any_element();
         }
+        let zoom = self.appearance().zoom_factor();
         let geometry = WorkspaceGeometry::new(
-            viewport_width.as_f32(),
+            viewport_width.as_f32() / zoom,
             self.notebooks
                 .active
                 .as_ref()
@@ -168,21 +169,21 @@ impl Notes {
                 .child(div().flex_1().min_h_0().overflow_hidden().child(sidebar));
             panels = panels.child(
                 resizable_panel()
-                    .size(px(width))
-                    .size_range(px(geometry.min_side)..px(geometry.max_left))
+                    .size(px(width * zoom))
+                    .size_range(px(geometry.min_side * zoom)..px(geometry.max_left * zoom))
                     .child(sidebar),
             );
         }
         panels = panels.child(
             resizable_panel()
-                .size_range(px(200.)..Pixels::MAX)
+                .size_range(px(200. * zoom).min(viewport_width)..Pixels::MAX)
                 .child(editor),
         );
         if let Some(width) = geometry.right {
             panels = panels.child(
                 resizable_panel()
-                    .size(px(width))
-                    .size_range(px(geometry.min_side)..px(geometry.max_right))
+                    .size(px(width * zoom))
+                    .size_range(px(geometry.min_side * zoom)..px(geometry.max_right * zoom))
                     .child(self.render_right_panel(window, cx)),
             );
         }
@@ -203,13 +204,13 @@ impl Notes {
                         && divider == Some(0)
                         && let Some(width) = sizes.first()
                     {
-                        this.save_sidebar_width(width.as_f32(), cx);
+                        this.save_sidebar_width(width.as_f32() / zoom, cx);
                     }
                     if right_visible
                         && divider == Some(usize::from(left_visible))
                         && let Some(width) = sizes.last()
                     {
-                        this.save_terminal_width(width.as_f32(), cx);
+                        this.save_terminal_width(width.as_f32() / zoom, cx);
                     }
                 }),
             )

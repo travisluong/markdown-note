@@ -84,3 +84,10 @@ Terminal selection and clipboard:
   paste normalization, bracketed-paste framing, limits and error handling remain.
 - Root terminal integration and application TestPlatform tests exercise pointer
   selection, clipboard shortcuts, geometry, menus and stale/modal authority.
+
+Window zoom shortcuts join Ctrl+backtick as host-reserved keys. Mod+Plus/Equals
+(including shifted variants), Mod+Minus and Mod+0 bubble to the application before
+terminal encoding; Mod is Cmd on macOS and Ctrl elsewhere. Other modifiers and
+shell keys retain their existing behavior. Mithril passes scaled font/padding
+configuration while preserving saved terminal font overrides. The application
+`zoom_ui` tests verify focus, unchanged view identity and no shell bytes for zoom.

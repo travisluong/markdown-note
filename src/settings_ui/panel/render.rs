@@ -1,5 +1,5 @@
 use super::{FontSizeRole, Section, SettingsIntent, SettingsPanel};
-use gpui::{App, Context, Entity, IntoElement, Render, Window, div, prelude::*, px};
+use gpui::{App, Context, Entity, IntoElement, Render, Window, div, prelude::*};
 use gpui_component::{
     ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
@@ -15,7 +15,8 @@ use mithril::notebook;
 impl Render for SettingsPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let appearance = &self.values.appearance;
-        let narrow = self.placement.size().width - px(48.) < px(512.);
+        let narrow = self.placement.size().width - crate::zoom_ui::zoom_px(48., cx)
+            < crate::zoom_ui::zoom_px(512., cx);
         let mut body = div().w_full().min_w_0().flex().flex_col().gap_3().child(
             div()
                 .text_sm()
@@ -77,7 +78,7 @@ impl Render for SettingsPanel {
                     )
                     .child(
                         div()
-                            .min_w(px(48.))
+                            .min_w(crate::zoom_ui::zoom_px(48., cx))
                             .text_center()
                             .child(format!("{value} px")),
                     )
@@ -226,7 +227,7 @@ impl Render for SettingsPanel {
                     )
                     .child(
                         div()
-                            .min_w(px(48.))
+                            .min_w(crate::zoom_ui::zoom_px(48., cx))
                             .text_center()
                             .child(format!("{terminal_size} px")),
                     )
@@ -432,7 +433,7 @@ impl Render for SettingsPanel {
         let mut sidebar = div()
             .id("settings-section-tabs")
             .debug_selector(|| "settings-navigation".into())
-            .w(px(104.))
+            .w(crate::zoom_ui::zoom_px(104., cx))
             .flex_shrink_0()
             .flex()
             .flex_col()
@@ -480,7 +481,9 @@ impl Render for SettingsPanel {
                     .min_w_0()
                     .min_h_0()
                     .flex_1()
-                    .when(!narrow, |view| view.flex_1().min_w(px(240.)))
+                    .when(!narrow, |view| {
+                        view.flex_1().min_w(crate::zoom_ui::zoom_px(240., cx))
+                    })
                     .child(
                         div()
                             .id("settings-scroll")

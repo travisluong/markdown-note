@@ -311,7 +311,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
             mode,
             size(px(400.), px(700.)),
             px(400.),
-            px(16.),
+            (px(16.), 1.),
             widths,
             [true, false],
         );
@@ -324,7 +324,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
             mode,
             size(px(1000.), px(700.)),
             px(1000.),
-            px(16.),
+            (px(16.), 1.),
             widths,
             [true, false],
         );
@@ -334,7 +334,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         HeaderMode::Fullscreen,
         size(px(400.), px(700.)),
         px(400.),
-        px(16.),
+        (px(16.), 1.),
         widths,
         [true, false],
     );
@@ -346,7 +346,7 @@ fn platform_layouts_reserve_controls_and_preserve_menu_order() {
         HeaderMode::Server,
         size(px(400.), px(700.)),
         px(400.),
-        px(16.),
+        (px(16.), 1.),
         widths,
         [true, false],
     );

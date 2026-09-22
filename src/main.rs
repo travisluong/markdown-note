@@ -26,6 +26,7 @@ mod tabs;
 mod terminal_ui;
 mod title_bar_ui;
 mod toolbar_ui;
+mod zoom_ui;
 
 use std::{
     fs, io,
@@ -67,6 +68,9 @@ actions!(
         LivePreview,
         ReadingView,
         CycleViewMode,
+        ZoomIn,
+        ZoomOut,
+        ResetZoom,
         NavigateBack,
         NavigateForward,
         ToggleSidebar,
@@ -484,10 +488,10 @@ impl Notes {
 impl Render for Notes {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let appearance = self.appearance();
-        let content_size = px(appearance.content_font_size as f32);
+        let content_size = px(appearance.content_font_size as f32 * appearance.zoom_factor());
         let content_max_width = appearance
             .centered_editor
-            .then(|| px(f32::from(appearance.centered_editor_width)));
+            .then(|| px(f32::from(appearance.centered_editor_width) * appearance.zoom_factor()));
         self.sync_settings_panel(window, cx);
         self.sync_terminal(window, cx);
         if let Some(search) = &self.search {
@@ -686,6 +690,15 @@ impl Render for Notes {
         div()
             .id("notes")
             .key_context("Notes")
+            .on_action(cx.listener(|this, _: &ZoomIn, window, cx| {
+                this.change_zoom(zoom_ui::Zoom::In, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ZoomOut, window, cx| {
+                this.change_zoom(zoom_ui::Zoom::Out, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ResetZoom, window, cx| {
+                this.change_zoom(zoom_ui::Zoom::Reset, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &ToggleTerminal, window, cx| {
                 this.toggle_right_panel(window, cx)
             }))

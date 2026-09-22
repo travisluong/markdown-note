@@ -2637,3 +2637,29 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   remaining integration suites and doc-tests passed.
 - Validation used target/agent-validation and GPUI TestPlatform. No desktop input
   or native application harness was used; native visual validation remains manual.
+
+## 2026-09-22 — Notebook zoom controls
+
+- Added View → Zoom, three palette commands, and Mod+Plus/Equals, Mod+Minus and
+  Mod+0 (Cmd on macOS). Shifted Plus aliases are accepted; terminal focus reserves
+  these shortcuts for the application without writing shell bytes. All triggers
+  share busy/modal guards and reset only the zoom percentage.
+- Notebook appearance persists zoom_percent with a 100% compatibility default,
+  50–200% limits and ten-point steps. Standalone use keeps a separate session
+  value. Theme/rem sizes, document/terminal typography, explicit control geometry,
+  menus and dialogs follow zoom. Base font settings and panel widths stay intact;
+  divider gestures save unscaled widths. Retained documents and shells survive.
+- Added five TestPlatform scenarios plus preference round-trip/boundary coverage;
+  extended the command capability matrix and shortcut mapping checks. Tests cover
+  all triggers, terminal focus/input isolation, palette dismissal, modal/busy
+  rejection, notebook persistence, view identity/text/selection, toolbar scaling,
+  viewport constraints and panel resizing at non-default zoom.
+- Validation: cargo check --locked --offline, cargo fmt --check, and strict
+  all-target Clippy with editor-diagnostics passed. The serial locked full test
+  run passed 107 library and 366 application tests plus the integration suites
+  before the documented Windows PTY interrupt sandbox timeout. The other 14
+  terminal integration tests passed; the single failing PowerShell test passed
+  outside the sandbox. The remaining theme-icons/toolbar-settings suites and
+  doc-tests passed separately.
+- No native application windows or desktop input were used. Physical keyboard,
+  display-DPI transitions and visual inspection remain manual validation.

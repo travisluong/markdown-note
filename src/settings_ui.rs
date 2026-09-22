@@ -119,6 +119,7 @@ impl Notes {
             Some(window),
             cx,
         );
+        cx.set_global(crate::zoom_ui::ZoomScale(appearance.zoom_factor()));
         let theme = Theme::global_mut(cx);
         apply_theme_colors(theme, appearance.clone(), self.startup_dark);
         theme.font_family = resolve_font(
@@ -131,9 +132,9 @@ impl Notes {
             &self.installed_fonts,
             DEFAULT_MONOSPACE_FONT,
         );
-        theme.font_size = px(appearance.ui_font_size as f32);
-        theme.mono_font_size = px(appearance.content_font_size as f32);
-        window.set_rem_size(px(appearance.ui_font_size as f32));
+        theme.font_size = px(appearance.ui_font_size as f32 * appearance.zoom_factor());
+        theme.mono_font_size = px(appearance.content_font_size as f32 * appearance.zoom_factor());
+        window.set_rem_size(px(appearance.ui_font_size as f32 * appearance.zoom_factor()));
         window.refresh();
         cx.notify();
     }
@@ -176,6 +177,8 @@ impl Notes {
             self.session_appearance = appearance;
         }
         self.apply_appearance(window, cx);
+        self.reset_sidebar_resize(cx);
+        self.sync_terminal(window, cx);
         self.sync_settings_panel(window, cx);
     }
 }

@@ -360,7 +360,8 @@ impl Notes {
                     }),
             );
         }
-        menu.scrollable(true).max_h(px(400.))
+        menu.scrollable(true)
+            .max_h(px(400. * self.appearance().zoom_factor()))
     }
 
     pub(super) fn manage_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -395,7 +396,7 @@ impl Notes {
             } else {
                 "Manage notebooks"
             })
-            .w(px(460.).min(window.viewport_size().width - px(32.)))
+            .w(crate::zoom_ui::zoom_px(460., cx).min(window.viewport_size().width - px(32.)))
             .max_h((window.viewport_size().height - px(100.)).max(px(120.)))
             .overlay_closable(false)
             .close_button(!self.is_busy())
@@ -472,7 +473,7 @@ impl Notes {
         } else {
             let mut list = div()
                 .id("managed-notebooks")
-                .max_h(px(300.))
+                .max_h(crate::zoom_ui::zoom_px(300., cx))
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
@@ -1994,9 +1995,11 @@ impl Notes {
                                             },
                                         ),
                                     )
-                                    .h(px(28. * this.appearance().ui_font_size as f32 / 16.))
+                                    .h(px(28. * this.appearance().ui_font_size as f32 / 16.
+                                        * this.appearance().zoom_factor()))
                                     .w_full()
-                                    .pl(px(8. + row.depth as f32 * 16.))
+                                    .pl(px((8. + row.depth as f32 * 16.)
+                                        * this.appearance().zoom_factor()))
                                     .pr_2()
                                     .text_sm()
                                     .flex()

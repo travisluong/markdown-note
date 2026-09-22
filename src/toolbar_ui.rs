@@ -1,6 +1,8 @@
 //! Region-based toolbar presentation; actions retain their existing owners.
 use crate::Notes;
-use gpui::{Context, IntoElement, WeakEntity, Window, div, prelude::*, px};
+#[cfg(test)]
+use gpui::px;
+use gpui::{Context, IntoElement, WeakEntity, Window, div, prelude::*};
 use gpui_component::WindowExt;
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable,
@@ -45,6 +47,8 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let zoom = self.appearance().zoom_factor();
+        let px = |value| gpui::px(value * zoom);
         div()
             .id("sidebar-toolbar")
             .debug_selector(|| "sidebar-toolbar".into())
@@ -61,6 +65,8 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let zoom = self.appearance().zoom_factor();
+        let px = |value| gpui::px(value * zoom);
         let settings = self.toolbar_settings();
         let width = |region| {
             let count = self.toolbar_items(region).len();
@@ -72,7 +78,7 @@ impl Notes {
         // Taffy's intrinsic wrapped height can retain the min-content estimate.
         // Derive the toolbar height from the same available width as its icon rows.
         let button = settings.icon_size.button_pixels();
-        let per_row = ((f32::from(self.content_toolbar_width) - 4.) / (button + 4.))
+        let per_row = ((f32::from(self.content_toolbar_width) / zoom - 4.) / (button + 4.))
             .floor()
             .max(1.);
         let formatting_count = ((center + 4.) / (button + 4.)).floor();
@@ -147,6 +153,8 @@ impl Notes {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let zoom = self.appearance().zoom_factor();
+        let px = |value| gpui::px(value * zoom);
         let settings = self.toolbar_settings();
         let has_notebook = self.notebooks.active.is_some();
         let disabled = self.document_interaction_blocked() || !has_notebook;
@@ -184,6 +192,7 @@ impl Notes {
                             )
                         };
                         toolbar_icon_button(
+                            zoom,
                             id,
                             icon,
                             settings.icon_size,
@@ -198,6 +207,7 @@ impl Notes {
                         .into_any_element()
                     }
                     ToolbarItem::Terminal => toolbar_icon_button(
+                        zoom,
                         "toolbar-terminal",
                         IconName::PanelRight,
                         settings.icon_size,
@@ -209,6 +219,7 @@ impl Notes {
                     }))
                     .into_any_element(),
                     ToolbarItem::Sidebar => toolbar_icon_button(
+                        zoom,
                         "toolbar-sidebar-toggle",
                         IconName::PanelLeft,
                         settings.icon_size,
@@ -224,6 +235,7 @@ impl Notes {
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)))
                     .into_any_element(),
                     ToolbarItem::Explorer => toolbar_icon_button(
+                        zoom,
                         "sidebar-explorer",
                         IconName::Folder,
                         settings.icon_size,
@@ -238,6 +250,7 @@ impl Notes {
                     .on_click(cx.listener(|this, _, window, cx| this.show_explorer(window, cx)))
                     .into_any_element(),
                     ToolbarItem::Search => toolbar_icon_button(
+                        zoom,
                         "sidebar-search",
                         IconName::Search,
                         settings.icon_size,
@@ -252,6 +265,7 @@ impl Notes {
                     .on_click(cx.listener(|this, _, window, cx| this.open_search_all(window, cx)))
                     .into_any_element(),
                     ToolbarItem::Sort => toolbar_icon_button(
+                        zoom,
                         "sidebar-sort",
                         Icon::default().path("toolbar/sort.svg"),
                         settings.icon_size,
@@ -273,6 +287,7 @@ impl Notes {
                     item => {
                         let (id, path, format) = formatting_item(item);
                         let button = toolbar_icon_button(
+                            zoom,
                             id,
                             Icon::default().path(path),
                             settings.icon_size,
@@ -312,11 +327,13 @@ impl Notes {
 
 /// Keep icon geometry independent of Button's built-in icon-to-target ratio.
 pub(super) fn toolbar_icon_button(
+    zoom: f32,
     id: &'static str,
     icon: impl Into<Icon>,
     size: ToolbarIconSize,
     disabled: bool,
 ) -> Button {
+    let px = |value| gpui::px(value * zoom);
     Button::new(id)
         .debug_selector(move || id.into())
         .ghost()

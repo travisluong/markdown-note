@@ -806,3 +806,23 @@ TERMINAL-PATCH.md, selected by Cargo's patch table. Preserve its licenses and
 patch log. The native view uses GPUI 0.2.2, Alacritty's grid/parser and portable-pty
 0.9.0; no webview is involved. See [terminal usage and limits](docs/terminal.md).
 Root integration and TestPlatform tests cover the feature without desktop input.
+## Notebook zoom
+
+`zoom_ui.rs` owns the guarded Zoom in, Zoom out and Reset zoom adapter. View →
+Zoom, palette commands and Mod+Plus/Equals, Mod+Minus and Mod+0 use that adapter,
+including when the terminal is focused. Busy operations and open dialogs reject
+changes; palette execution occurs after dismissal. Appearance owns persisted
+`zoom_percent` (100 by default, 50–200 in ten-point steps). The active notebook
+sets the entire window's zoom; standalone use retains a separate session value.
+The existing ordered preference writer and activation appearance hook retain
+notebook scope. Reset changes only the zoom percentage.
+
+Base font sizes, centered-editor width and side-panel widths stay unscaled in
+settings. The appearance adapter publishes the effective scale for independent
+panels and updates theme/rem sizes. Rendering projects document/terminal fonts,
+toolbars, Explorer rows and explicit control dimensions; divider callbacks
+convert measured widths back to base units. Retained editor identities, text,
+selection/history and terminal processes survive scaling. Popup row heights and
+dialog padding follow rem size in the vendored component library. Native window
+bounds, display DPI and native caption reservations remain platform-owned.
+Headless coverage lives in `zoom_ui/tests.rs` and notebook settings tests.

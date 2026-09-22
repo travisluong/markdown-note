@@ -5,7 +5,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement,
     Render, ScrollStrategy, StatefulInteractiveElement, Styled, Subscription, Task,
-    UniformListScrollHandle, Window, div, px, uniform_list,
+    UniformListScrollHandle, Window, div, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Sizable,
@@ -440,7 +440,7 @@ impl Render for SearchPanel {
                                     .id(i)
                                     .debug_selector(move || format!("notebook-search-result-{i}"))
                                     .when(!panel.interaction_enabled, |view| view.opacity(0.5))
-                                    .h(px(54.))
+                                    .h(crate::zoom_ui::zoom_px(54., cx))
                                     .w_full()
                                     .min_w_0()
                                     .overflow_hidden()

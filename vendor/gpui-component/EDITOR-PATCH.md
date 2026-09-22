@@ -601,3 +601,11 @@ Grammar changes reinitialize diagnostics against the current rope and invalidate
 highlighting for the next render. Unconfigured generic inputs keep their behavior.
 The diagnostic syntax-range probe supports headless verification of real styles
 in Mithril's `src/editor/tests.rs`; retain this contract during upstream upgrades.
+
+## Zoomable menus and dialogs
+
+PopupMenu row heights use the window rem size (20/26 pixels at a 16-pixel rem)
+so enlarged interface text remains inside its hit target. Dialog's default
+24-pixel padding similarly uses 1.5 rem; explicit padding overrides still win.
+Reconcile `src/menu/popup_menu.rs` and `src/dialog.rs` on upgrades. Application
+zoom tests exercise nested menu actions and palette dismissal on TestPlatform.

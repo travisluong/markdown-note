@@ -5,7 +5,7 @@ use crate::{
 };
 use gpui::{
     App, Context, Entity, FocusHandle, ScrollStrategy, Subscription, UniformListScrollHandle,
-    Window, div, prelude::*, px, uniform_list,
+    Window, div, prelude::*, uniform_list,
 };
 #[cfg(feature = "editor-diagnostics")]
 use gpui::{AsyncWindowContext, Keystroke, Timer};
@@ -331,6 +331,9 @@ impl Notes {
             Command::SourceMode => self.change_view_mode(ViewMode::Source, window, cx),
             Command::LivePreview => self.change_view_mode(ViewMode::LivePreview, window, cx),
             Command::ReadingView => self.change_view_mode(ViewMode::Reading, window, cx),
+            Command::ZoomIn => self.change_zoom(crate::zoom_ui::Zoom::In, window, cx),
+            Command::ZoomOut => self.change_zoom(crate::zoom_ui::Zoom::Out, window, cx),
+            Command::ResetZoom => self.change_zoom(crate::zoom_ui::Zoom::Reset, window, cx),
             Command::Back => {
                 self.navigate_history(crate::app::navigation::Direction::Back, window, cx)
             }
@@ -513,7 +516,7 @@ impl Notes {
                                     .w_full()
                                     .min_w_0()
                                     .overflow_hidden()
-                                    .h(px(48.))
+                                    .h(crate::zoom_ui::zoom_px(48., cx))
                                     .px_2()
                                     .flex()
                                     .gap_2()
@@ -549,7 +552,7 @@ impl Notes {
                 )
                 .w_full()
                 .min_w_0()
-                .h(px(336.))
+                .h(crate::zoom_ui::zoom_px(336., cx).min((window.viewport_size().height * 0.8 - window.rem_size() * 9.).max(window.rem_size() * 3.)))
                 .track_scroll(palette.scroll.clone())
                 .into_any_element()
             });
@@ -561,7 +564,8 @@ impl Notes {
                 PaletteMode::Notebooks => "Change notebook",
                 PaletteMode::Sort => "Sort files",
             })
-            .w(px(560.).min(window.viewport_size().width - px(32.)))
+            .w(crate::zoom_ui::zoom_px(560., cx)
+                .min(window.viewport_size().width - crate::zoom_ui::zoom_px(32., cx)))
             .on_close(move |_, window, cx| {
                 let _ = owner.update(cx, |this, cx| this.close_palette(window, cx));
             })

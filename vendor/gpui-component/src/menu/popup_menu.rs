@@ -1036,8 +1036,8 @@ impl PopupMenu {
         let group_name = format!("popup-menu-item-{}", ix);
 
         let (item_height, radius) = match self.size {
-            Size::Small => (px(20.), options.radius.half()),
-            _ => (px(26.), options.radius),
+            Size::Small => (window.rem_size() * 1.25, options.radius.half()),
+            _ => (window.rem_size() * 1.625, options.radius),
         };
 
         let this = MenuItemElement::new(ix, &group_name)

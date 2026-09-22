@@ -2,8 +2,8 @@
 use crate::{
     About, CloseTab, CommandPalette, GoTo, KeyboardShortcuts, LivePreview, MenuKind,
     NavigateBack, NavigateForward, NewNote, NewTab, Next, Notes, Open,
-    OpenSettings, ReadingView, ReplaceFile, Save, SearchAllFiles, ShowExplorer, SourceMode,
-    ToggleSidebar, ViewMode,
+    OpenSettings, ReadingView, ReplaceFile, ResetZoom, Save, SearchAllFiles, ShowExplorer,
+    SourceMode, ToggleSidebar, ViewMode, ZoomIn, ZoomOut,
 };
 use gpui::{
     AnyElement, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement, MouseButton,
@@ -135,6 +135,12 @@ impl Notes {
                         let _ = owner.update(cx, |this, cx| this.toggle_theme(window, cx));
                     }),
             )
+            .submenu("Zoom", window, cx, |submenu, _, _| {
+                submenu
+                    .menu_with_disabled("Zoom in", Box::new(ZoomIn), busy)
+                    .menu_with_disabled("Zoom out", Box::new(ZoomOut), busy)
+                    .menu_with_disabled("Reset zoom", Box::new(ResetZoom), busy)
+            })
         } else if kind == MenuKind::Search {
             use mithril::commands::Command;
             menu.menu_with_disabled(
@@ -250,10 +256,11 @@ impl HeaderLayout {
         mode: HeaderMode,
         viewport: Size<Pixels>,
         width: Pixels,
-        rem: Pixels,
+        text_scale: (Pixels, f32),
         widths: [Pixels; MENUS.len() + 1],
         panel_buttons: [bool; 2],
     ) -> Self {
+        let (rem, zoom) = text_scale;
         let gap = rem * 0.25;
         let terminal_gap = if mode.controls() && panel_buttons[1] {
             px(4.)
@@ -262,7 +269,7 @@ impl HeaderLayout {
         };
         let reserved = px(if mode.controls() { 4. } else { 8. })
             + terminal_gap
-            + px(28.) * panel_buttons.into_iter().filter(|visible| *visible).count() as f32
+            + px(28. * zoom) * panel_buttons.into_iter().filter(|visible| *visible).count() as f32
             + if mode.combined() { px(32.) } else { px(0.) }
             + if mode == HeaderMode::Mac {
                 px(80.)
@@ -290,7 +297,7 @@ impl HeaderLayout {
             mode,
             viewport,
             width,
-            height: px(34.).max(rem * 1.5 + px(8.)),
+            height: px(34. * zoom).max(rem * 1.5 + px(8. * zoom)),
             widths,
             gap,
             terminal_gap,
@@ -471,7 +478,7 @@ impl Notes {
             mode,
             viewport,
             width,
-            rem,
+            (rem, self.appearance().zoom_factor()),
             widths,
             [settings.title_bar_sidebar, settings.title_bar_terminal],
         );
@@ -507,9 +514,12 @@ impl Notes {
                     .cursor_default()
                     .ghost()
                     .small()
-                    .w(px(28.))
+                    .w(px(28. * self.appearance().zoom_factor()))
                     .flex_shrink_0()
-                    .icon(Icon::new(IconName::PanelLeft).size(px(16.)))
+                    .icon(
+                        Icon::new(IconName::PanelLeft)
+                            .size(px(16. * self.appearance().zoom_factor())),
+                    )
                     .tooltip(if self.sidebar_collapsed {
                         "Show sidebar"
                     } else {
@@ -624,10 +634,13 @@ impl Notes {
                     .cursor_default()
                     .ghost()
                     .small()
-                    .w(px(28.))
+                    .w(px(28. * self.appearance().zoom_factor()))
                     .mr(layout.terminal_gap)
                     .flex_shrink_0()
-                    .icon(Icon::new(IconName::PanelRight).size(px(16.)))
+                    .icon(
+                        Icon::new(IconName::PanelRight)
+                            .size(px(16. * self.appearance().zoom_factor())),
+                    )
                     .tooltip(if self.right_panel_open {
                         "Close terminal panel"
                     } else {

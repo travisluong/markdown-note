@@ -361,8 +361,8 @@ impl TerminalSession {
             .unwrap_or_else(|| cx.theme().mono_font_family.to_string());
         self.config.font_size = px(f32::from(
             settings.effective_font_size(appearance.content_font_size),
-        ));
-        self.config.padding = Edges::all(px(4.));
+        ) * appearance.zoom_factor());
+        self.config.padding = Edges::all(px(4. * appearance.zoom_factor()));
         self.config.colors = ColorPalette::builder()
             .background(br, bg, bb)
             .foreground(fr, fg, fb)
@@ -375,6 +375,7 @@ impl TerminalSession {
                 if config.cursor_style != self.config.cursor_style
                     || config.font_family != self.config.font_family
                     || config.font_size != self.config.font_size
+                    || config.padding != self.config.padding
                     || config.colors.background() != self.config.colors.background()
                     || config.colors.foreground() != self.config.colors.foreground()
                 {
