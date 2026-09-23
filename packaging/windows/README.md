@@ -1,7 +1,8 @@
 # Windows installer
 
-`release.ps1` tests, builds and publishes a Windows x86-64 release from your local
-Windows machine. `mithril.iss` packages the executable with Inno Setup 6.3 or
+`release.sh` (Git Bash) or `release.ps1` (PowerShell) tests, builds and publishes a
+Windows x86-64 release from your local machine. `mithril.iss` packages the
+executable with Inno Setup 6.3 or
 newer. GitHub hosts the installer, portable ZIP and checksums; GitHub Actions
 is not involved in local publishing.
 
@@ -23,7 +24,8 @@ is not involved in local publishing.
    Keep tokens out of source files and logs; renew expiring tokens as needed.
 The script looks for Inno Setup in the standard machine and per-user install
 locations. For a portable/custom installation, append
-`-InnoSetup 'C:\path\to\ISCC.exe'` to either command below.
+`-InnoSetup 'C:\path\to\ISCC.exe'` in PowerShell, or
+`--inno-setup 'C:/path/to/ISCC.exe'` in Git Bash.
 
 ## Publish a version
 
@@ -40,6 +42,17 @@ locations. For a portable/custom installation, append
    ```powershell
    .\release.ps1 -Tag v0.1.1
    ```
+
+   Or, in Git Bash:
+
+   ```bash
+   ./release.sh v0.1.1
+   ```
+
+The Bash wrapper forwards remaining options to the same Node release command,
+preserves its exit status, and finds the tooling relative to the script even
+when invoked from another directory. Use `./release.sh --help` for usage. It
+still builds on Windows and uses Windows PowerShell internally for ZIP packaging.
 
 If your PowerShell policy blocks local scripts, the equivalent entry point is
 `node scripts/release-local.mjs --tag v0.1.1` (append `--build-only` to avoid
@@ -88,6 +101,12 @@ For a full local build without any GitHub requests or uploads:
 
 ```powershell
 .\release.ps1 -Tag v0.1.1 -BuildOnly
+```
+
+Or, in Git Bash:
+
+```bash
+./release.sh v0.1.1 --build-only
 ```
 
 This still tests and packages the tagged source. BuildOnly does not require gh

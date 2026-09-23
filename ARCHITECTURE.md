@@ -359,7 +359,8 @@ Explicit saved choices are preserved; reset applies the new defaults. The option
 top-bar terminal button sits before caption controls and toggles the retained
 panel. Native shell icons continue to use the packaged brand resources.
 
-Windows distribution is owned by [`release.ps1`](release.ps1), its local
+Windows distribution is owned by the [`release.ps1`](release.ps1) and
+[`release.sh`](release.sh) shell wrappers, their local
 orchestrator [`release-local.mjs`](scripts/release-local.mjs), and
 [`packaging/windows/mithril.iss`](packaging/windows/mithril.iss). The installer owns
 only app binaries, shortcuts and its per-user uninstall registration; notebook

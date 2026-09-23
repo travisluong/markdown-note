@@ -2725,3 +2725,17 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   No application code changed, no full Mithril release build was run, and no
   installer or application UI was launched. Real publishing credentials and
   manual install/upgrade checks remain operator setup.
+
+## Git Bash release entry point — 2026-09-22
+
+- Added `release.sh vMAJOR.MINOR.PATCH` as a thin wrapper over the existing Node
+  release command. Remaining options (including `--build-only` and custom Inno
+  Setup paths) and Node's exit status pass through unchanged. Script-relative
+  path resolution uses Bash builtins and handles spaces and Windows separators.
+- Added an LF checkout rule and executable Git mode for the wrapper, and
+  documented Git Bash publishing and build-only usage.
+- Passed Bash syntax and LF checks plus a temporary stub-based check of argument
+  forwarding, paths with spaces, invocation from another directory, exit-code
+  preservation, missing-tag usage and help. A real invocation rejected an invalid
+  tag through the Node entry point with exit code 1. No build, upload or desktop
+  interaction occurred; the existing release implementation was unchanged.

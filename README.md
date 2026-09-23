@@ -17,7 +17,8 @@ cargo run --locked
 ## Download a desktop build
 
 Windows releases are tested, built, packaged and published from a local Windows
-machine with `./release.ps1 -Tag vMAJOR.MINOR.PATCH`. The command builds an isolated
+machine with `./release.sh vMAJOR.MINOR.PATCH` in Git Bash, or
+`./release.ps1 -Tag vMAJOR.MINOR.PATCH` in PowerShell. The command builds an isolated
 snapshot of that local tag; its version must match Cargo metadata. See the
 [release setup and procedure](packaging/windows/README.md) for prerequisites,
 credentials and `-BuildOnly`. Publishing a release does not use GitHub Actions.
