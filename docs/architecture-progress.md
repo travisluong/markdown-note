@@ -2739,3 +2739,21 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   preservation, missing-tag usage and help. A real invocation rejected an invalid
   tag through the Node entry point with exit code 1. No build, upload or desktop
   interaction occurred; the existing release implementation was unchanged.
+
+## 2026-09-23 — Mermaid arrow-label background alignment
+
+- Corrected the shared renderer's pinned Merman 0.7.0 SVG output before
+  rasterization. Flowchart edge labels emitted centered text beside a left-aligned
+  background inside a left-shifted group. Text and background now share the edge
+  anchor in Reading and Live preview; other SVG structures are unchanged.
+- Added real-renderer regression checks for Yes/No, longer and multiline labels,
+  TD/LR directions, both themes and repeated normalization. All five headless
+  Mermaid integration tests pass via `cargo test --locked --offline --features
+  editor-diagnostics --test mermaid --target-dir target/headless -j 2`. Inspected
+  generated light/dark arrow-label raster images without desktop interaction.
+- `cargo check --locked --offline`, explicit vendor rustfmt and task-scoped
+  `git diff --check` pass. Full tests, root formatting and all-target Clippy were
+  attempted but blocked by missing `src/feedback/tests.rs` and/or
+  `src/feedback_ui/tests.rs` in concurrent, unrelated feedback-feature edits.
+  The ordinary target also encountered an in-use `target/debug/mithril.exe`;
+  focused tests passed in the separate headless target without touching that app.

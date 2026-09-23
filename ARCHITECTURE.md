@@ -672,7 +672,10 @@ verification. The shared renderer uses resvg 0.45.1 with all
 image-resource resolvers disabled. The SVG root canvas is made transparent so
 both views inherit their native themed code-block background; Merman's dark
 palette alone can leave a white canvas. Diagram work runs separately from Markdown
-analysis. A render key contains the parsed code, appearance, width and device
+analysis. `mermaid/svg.rs` corrects Merman 0.7.0's SVG flowchart edge-label
+coordinates before rasterization, centering text and its background on the same
+edge anchor in both views. Reconcile this narrow compatibility correction on
+renderer upgrades. A render key contains the parsed code, appearance, width and device
 scale. Weak request tickets discard abandoned queued work and stale completions;
 results never mutate document text, selection or history. One worker runs at a
 time, with at most 64 pending distinct requests. The cache is limited to 64 MiB

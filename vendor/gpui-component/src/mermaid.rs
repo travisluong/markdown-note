@@ -7,6 +7,8 @@ use std::{
     sync::{Arc, Weak},
 };
 
+mod svg;
+
 pub(crate) const MAX_SOURCE: usize = 50_000;
 const MAX_PIXELS: u64 = 4_000_000;
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
@@ -215,7 +217,7 @@ fn render(key: &Key) -> Result<Diagram, String> {
         .render_svg_with_pipeline_sync(&key.code, &pipeline)
         .map_err(|e| format!("Mermaid: {e}"))?
         .ok_or_else(|| "Unsupported or empty Mermaid diagram".to_string())?;
-    rasterize(&svg, key)
+    rasterize(&svg::align_flowchart_edge_labels(&svg), key)
 }
 fn rasterize(svg: &str, key: &Key) -> Result<Diagram, String> {
     use resvg::{tiny_skia, usvg};
@@ -350,6 +352,7 @@ pub(crate) fn reading(
 #[cfg(feature = "editor-diagnostics")]
 #[doc(hidden)]
 pub fn diagnostic_checks() -> Vec<(&'static str, bool, Arc<RenderImage>)> {
+    svg::diagnostic_checks();
     let mut examples = Vec::new();
     let fixtures = [
         "flowchart TD\nA[Start] --> B[End]",
@@ -377,6 +380,7 @@ pub fn diagnostic_checks() -> Vec<(&'static str, bool, Arc<RenderImage>)> {
         "gantt\n title Plan\n dateFormat YYYY-MM-DD\n section Work\n Task :a, 2026-01-01, 2d",
         "pie\n\"A\" : 40\n\"B\" : 60",
         include_str!("mermaid/spaced-sequence.mmd"),
+        "flowchart TD\nA{Query is empty?} -->|Yes| B[Show recent notes]\nA -->|No| C[Search notes]\nC -->|A longer label| D[Results]",
     ];
     for dark in [false, true] {
         for source in fixtures {
@@ -386,6 +390,8 @@ pub fn diagnostic_checks() -> Vec<(&'static str, bool, Arc<RenderImage>)> {
                 examples.push(("flowchart", dark, d.image.clone()));
             } else if source == fixtures[1] {
                 examples.push(("sequence", dark, d.image.clone()));
+            } else if source == fixtures[8] {
+                examples.push(("edge-labels", dark, d.image.clone()));
             }
             assert!(d.width > 0. && d.width <= 320. && d.height > 0.);
             assert!(d.bytes <= MAX_PIXELS as usize * 4);

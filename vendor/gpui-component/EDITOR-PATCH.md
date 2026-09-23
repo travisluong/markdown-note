@@ -563,6 +563,12 @@ bounded shared cache. Its resvg-safe pipeline applies Merman's root-background
 postprocessor with a transparent canvas so the native surface supplies the
 light/dark background without replacing diagram element colors. Preserve this
 postprocessor on upgrades; the dark palette alone can retain a white canvas.
+`src/mermaid/svg.rs` corrects the pinned renderer's non-HTML flowchart edge-label
+coordinates before rasterization: centered text and background rectangles share
+the edge anchor instead of mixing centered text with a left-aligned background.
+The match is limited to that generated SVG structure. Reconcile it on Merman
+upgrades; diagnostics cover Yes/No, long and multiline labels, TD/LR directions,
+both themes and idempotence, with headless raster artifacts for visual checks.
 `input/fenced_code.rs` retains Mermaid identity in the
 existing worker parse; `input/text_wrapper/mermaid.rs`, TextWrapper and TextElement
 implement multiline source-preserving projections, hit testing and height changes.
