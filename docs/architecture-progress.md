@@ -2757,3 +2757,42 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   `src/feedback_ui/tests.rs` in concurrent, unrelated feedback-feature edits.
   The ordinary target also encountered an in-use `target/debug/mithril.exe`;
   focused tests passed in the separate headless target without touching that app.
+
+## 2026-09-23 — Feedback and website capture
+
+- Added the pure `feedback` owner for payload validation, bounded JSON, UUID retry
+  identity and injectable transport. Production uses the fixed HTTPS endpoint;
+  debug/test-only overrides permit loopback HTTP. Requests run off the UI thread
+  with a 15-second total timeout, no redirects and bounded JSON acknowledgment.
+- Added Help → Send feedback and an app-session modal adapter. Message/contact
+  inputs and the in-flight task survive close/reopen; acknowledged success alone
+  clears them. Failures preserve the draft and unchanged retry UUID. Completion
+  never reopens the modal or steals focus. Root captures workspace focus before
+  opening, covering Cancel as well as normal dismissal. Autosave and document
+  text, selection, dirty state and identity remain independent.
+- Pure tests cover Unicode/byte/email bounds, request metadata, identity/retries,
+  acknowledgment, errors, timeout and redirect handling. Three GPUI TestPlatform
+  tests exercise actual Help-menu keyboard access, anonymous/contact submissions,
+  duplicate protection, close/reopen during send, all retryable errors, focus,
+  validation and autosave while the modal remains open.
+- `cargo fmt --check`, `cargo check --locked --offline`, and strict all-target
+  Clippy with `editor-diagnostics` passed. The ordinary all-tests command could
+  not replace the user's running `target/debug/mithril.exe`; it was left untouched.
+  Full regression used `--target x86_64-pc-windows-msvc --no-fail-fast --
+  --test-threads=1`. Its 731 passing tests plus the one PowerShell-interrupt test
+  rerun outside the sandbox cover all 732 regression tests. All 15 terminal tests
+  passed in that unsandboxed, noninteractive PTY rerun.
+- The one ignored cross-repository library test was run separately by the adjacent
+  Next.js harness. It sent the same UUID twice through the real desktop transport
+  to local Next.js and verified exactly one matching Postgres row. Both real
+  website signup forms persisted/merged independent interests; feedback contact
+  did not subscribe the sender. No submitted email/message appeared in server logs.
+- Website ESLint, TypeScript, production Webpack build, eight API/Postgres tests
+  and 13 headless browser checks passed. The official Postgres 18 container passed
+  fresh/repeated migrations, concurrent signup deduplication, feedback idempotency,
+  shared limits/expiry and container recreation with preserved data. Test container
+  and volume were removed afterward. See `mithril-web/docs/verification.md` for reproducible commands and schema.
+- [Feedback contracts and launch handoff](feedback.md) document backend-first
+  publication, stored-row checks and an owner review four weeks after the actual
+  public launch date. No services were provisioned for production, releases
+  published, outreach sent, automation created, or native desktop input injected.

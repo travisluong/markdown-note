@@ -55,6 +55,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Window title/menu bar | [title_bar_ui.rs](src/title_bar_ui.rs), [Edit menu](src/title_bar_ui/edit.rs); [Windows commands](src/title_bar_ui/windows.rs) | Platform frame presentation, measured menu overflow, popup anchors and optional sidebar/terminal panel buttons. Windows caption handlers post native move/minimize/maximize/restore commands after GPUI input returns; custom close shares the native close lifecycle. Menus reuse existing command owners. Root owns the Linux resize border. |
 | Workspace toolbars | [toolbar_ui.rs](src/toolbar_ui.rs) | Sidebar controls belong above Explorer/Search; content controls belong above tabs. When an active notebook sidebar is collapsed, its enabled toolbar button moves to the fixed left edge before navigation; reopening restores its fixed sidebar position. The opener follows workspace toolbar visibility and sizing. Toolbar icons and Settings rows cannot be reordered. A shared effective item list drives region visibility, widths and rendering. The terminal opener sits at the right edge of the editor toolbar while collapsed; the terminal header owns its always-available collapse button. Both use the existing retained-session toggle action. Fixed regions use the built-in item order and read effective visibility/sizing from the settings adapter. Dispatches navigation to existing owners. Toolbar, palette and document shortcuts share `apply_markdown_format`, which checks edit capability and modal state before the semantic Editor boundary; heading menus additionally retain document/source/selection guards. Owns no panel state or preferences. |
 | Links, file drops and image assets | [links.rs](src/links.rs), [images.rs](src/images.rs), [image_import.rs](src/image_import.rs) | Routing uses normal session navigation. File drops link ordinary files in place using note-relative Markdown destinations and import supported images as embeds. An image import retains rollback until insertion into its captured document/source succeeds. |
+| Feedback | [feedback.rs](src/feedback.rs), [feedback_ui.rs](src/feedback_ui.rs) | Pure request validation, UUID retry identity and injectable HTTP transport; app-session retained inputs and background task; disposable guarded modal. No document state access. |
 | Date values and shortcut documentation | [templates.rs](src/templates.rs), [help_ui.rs](src/help_ui.rs) | Shortcut definitions also supply Help. Preserve platform modifier handling. |
 
 The Settings dialog builder owns its SettingsPanel and a lifetime token. Notes
@@ -838,3 +839,16 @@ selection/history and terminal processes survive scaling. Popup row heights and
 dialog padding follow rem size in the vendored component library. Native window
 bounds, display DPI and native caption reservations remain platform-owned.
 Headless coverage lives in `zoom_ui/tests.rs` and notebook settings tests.
+
+## Feedback
+
+Help → Send feedback uses the application-session owner in feedback_ui.rs. Input
+entities and the request task survive modal dismissal; completion only updates
+retained state. Success clears submitted inputs, errors retain drafts and the same
+UUID for an unchanged retry. Dialog opening captures workspace focus before Root
+captures its dismissal target. Existing modal/busy guards apply and autosave keeps
+running. The library feedback module owns validation, serialization and transport;
+networking is background-only with a 15-second timeout and no redirects. Only
+message, optional contact email, app version, OS and UUID cross the boundary.
+No notes, paths, keys or logs are attached; feedback email is not signup consent.
+See [feedback contracts and headless verification](docs/feedback.md).

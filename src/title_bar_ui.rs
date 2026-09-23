@@ -2,8 +2,8 @@
 use crate::{
     About, CloseTab, CommandPalette, GoTo, KeyboardShortcuts, LivePreview, MenuKind,
     NavigateBack, NavigateForward, NewNote, NewTab, Next, Notes, Open,
-    OpenSettings, ReadingView, ReplaceFile, ResetZoom, Save, SearchAllFiles, ShowExplorer,
-    SourceMode, ToggleSidebar, ViewMode, ZoomIn, ZoomOut,
+    OpenSettings, ReadingView, ReplaceFile, ResetZoom, Save, SearchAllFiles, SendFeedback,
+    ShowExplorer, SourceMode, ToggleSidebar, ViewMode, ZoomIn, ZoomOut,
 };
 use gpui::{
     AnyElement, Bounds, Context, Decorations, DismissEvent, Focusable, IntoElement, MouseButton,
@@ -162,6 +162,7 @@ impl Notes {
             .menu_with_disabled("Go to file…", Box::new(GoTo), busy)
         } else if kind == MenuKind::Help {
             menu.menu("Keyboard shortcuts", Box::new(KeyboardShortcuts))
+                .menu("Send feedback…", Box::new(SendFeedback))
                 .menu("About", Box::new(About))
         } else {
             self.notebook_menu(menu, cx)

@@ -5,6 +5,7 @@ mod assets;
 mod autosave;
 #[cfg(feature = "editor-diagnostics")]
 mod benchmark;
+mod feedback_ui;
 #[cfg(feature = "editor-diagnostics")]
 mod find_diagnostics;
 mod goto;
@@ -85,6 +86,7 @@ actions!(
         HelpMenu,
         KeyboardShortcuts,
         About,
+        SendFeedback,
         ManageNotebooks,
         OpenSettings,
         CloseSettings,
@@ -193,6 +195,7 @@ impl Document {
 }
 
 struct Notes {
+    feedback: feedback_ui::FeedbackState,
     tabs: tabs::TabSet,
     documents: std::collections::HashMap<PathBuf, shared_documents::DocumentRuntime>,
     workspace: Option<tabs::WorkspaceOperation>,
@@ -245,6 +248,7 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            feedback: Default::default(),
             tabs,
             documents: Default::default(),
             workspace: None,
@@ -768,6 +772,9 @@ impl Render for Notes {
             .on_action(cx.listener(|this, _: &KeyboardShortcuts, window, cx| {
                 this.open_help(true, window, cx)
             }))
+            .on_action(
+                cx.listener(|this, _: &SendFeedback, window, cx| this.open_feedback(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &About, window, cx| this.open_help(false, window, cx)))
             .on_action(cx.listener(|this, _: &FileMenu, window, cx| {
                 this.show_menu(MenuKind::File, window, cx)
