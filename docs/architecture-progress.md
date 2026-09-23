@@ -2696,3 +2696,32 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   all 37 Mermaid/parser checks passed again. No desktop testing was performed.
 - The remaining two theme-icon and seven toolbar-settings tests, doc-tests,
   formatting checks and final strict all-target Clippy also passed.
+
+## Local one-command Windows releases — 2026-09-22
+
+- Added `release.ps1 -Tag vMAJOR.MINOR.PATCH` and the Node orchestrator in
+  `scripts/release-local.mjs`. It archives the selected local tag, validates its
+  Cargo version, runs headless tests, builds with the pinned Rust toolchain,
+  packages the installer/portable ZIP/checksums, and reuses the existing verified
+  draft publisher for `travisluong/mithril-releases`.
+- Builds leave the development checkout untouched and retain source snapshots,
+  release metadata and downloads under ignored `target/local-releases`. A local
+  lock serializes access to the separate build cache. No source tags are pushed.
+  `-BuildOnly` supports local builds without GitHub access. Publishing-token environment
+  variables are excluded from compilation/test subprocesses.
+- Made the hosted release workflow manual-only and removed its publish job.
+  The separate branch/PR validation workflow remains automatic; the setup guide
+  calls out its potential charges and the behavior of tags with older workflows.
+- Passed all 23 release automation checks, including real Git tag snapshots and
+  dirty-checkout preservation, build/package/auth failure handling, lock behavior,
+  and the existing draft/upload/download verification regression tests. GitHub
+  and Rust compilation were mocked; no release was published.
+- The optional smoke check used Inno Setup 6.7.3 and real Windows PowerShell ZIP
+  packaging against a synthetic executable, then checked installer headers and
+  the ZIP's exact filename/content. This caught a `Compress-Archive` module-load
+  failure; ZIP creation now uses the built-in .NET compression API and passes.
+- `actionlint` passed for the manual release workflow. PowerShell/Node parsing,
+  the wrapper's nonzero exit for an invalid tag, and `git diff --check` passed.
+  No application code changed, no full Mithril release build was run, and no
+  installer or application UI was launched. Real publishing credentials and
+  manual install/upgrade checks remain operator setup.

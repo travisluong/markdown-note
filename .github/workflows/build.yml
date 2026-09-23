@@ -1,8 +1,7 @@
 name: Build Windows release
 
 on:
-  push:
-    tags: ['v*']
+  # Local releases use release.ps1. Hosted builds are an explicit fallback only.
   workflow_dispatch:
 
 permissions:
@@ -24,7 +23,7 @@ jobs:
           persist-credentials: false
       - name: Test release automation
         run: node --test .github/scripts/release.test.mjs
-      - name: Accept stable version tags or manual builds
+      - name: Accept manual builds
         id: eligibility
         run: node .github/scripts/release.mjs eligibility
 
@@ -82,24 +81,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-
-  publish:
-    name: Publish public Windows downloads
-    if: github.event_name == 'push'
-    needs: build
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Download packaged build
-        uses: actions/download-artifact@v8
-        with:
-          name: mithril-windows-x86_64
-          path: dist
-      - name: Upload, verify and publish release
-        env:
-          GH_TOKEN: ${{ secrets.MITHRIL_RELEASES_TOKEN }}
-          APP_VERSION: ${{ needs.build.outputs.version }}
-        run: node .github/scripts/release.mjs publish

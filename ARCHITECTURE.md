@@ -359,16 +359,21 @@ Explicit saved choices are preserved; reset applies the new defaults. The option
 top-bar terminal button sits before caption controls and toggles the retained
 panel. Native shell icons continue to use the packaged brand resources.
 
-Windows distribution is owned by
-[`packaging/windows/mithril.iss`](packaging/windows/mithril.iss) and the
-[`build.yml`](.github/workflows/build.yml) release workflow. The installer owns
+Windows distribution is owned by [`release.ps1`](release.ps1), its local
+orchestrator [`release-local.mjs`](scripts/release-local.mjs), and
+[`packaging/windows/mithril.iss`](packaging/windows/mithril.iss). The installer owns
 only app binaries, shortcuts and its per-user uninstall registration; notebook
 files and preferences remain application/user-owned. Keep its AppId stable for
-upgrades. Stable `vMAJOR.MINOR.PATCH` tag pushes build and test Windows x86-64
-using the pinned Rust toolchain; the tag must match Cargo metadata. Manual runs
-retain Actions artifacts without publishing. The separate publish job uses
-`MITHRIL_RELEASES_TOKEN` only in its publishing step to write Release assets to
-`travisluong/mithril-releases`; the built-in token stays read-only in all jobs.
+upgrades. The local command archives a stable `vMAJOR.MINOR.PATCH` tag into an
+isolated source directory, validates Cargo metadata, and tests/builds Windows
+x86-64 using the snapshot's pinned toolchain. A per-repository lock protects the
+shared release cache; run snapshots, metadata and packages stay under ignored
+`target/local-releases`. The development checkout is never reset or cleaned.
+`-BuildOnly` creates a package without GitHub access. Only GitHub commands inherit the
+release-token environment variables; compiler/tests do not. Local GitHub CLI
+authentication or `MITHRIL_RELEASES_TOKEN` authorizes public Release assets in
+`travisluong/mithril-releases`. The [hosted build](.github/workflows/build.yml)
+is manual-only and retains Actions artifacts without publishing.
 [`release.mjs`](.github/scripts/release.mjs) owns tag/version validation,
 checksums and draft publication. It downloads and verifies assets before making
 a draft public, resumes matching drafts, and leaves published releases unchanged.

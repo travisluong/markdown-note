@@ -16,13 +16,12 @@ cargo run --locked
 
 ## Download a desktop build
 
-The **Build Windows release** GitHub Actions workflow tests and builds Windows
-x86-64 when a stable `vMAJOR.MINOR.PATCH` tag is pushed. The tag must match the
-Cargo package version. Prereleases, unprefixed versions and malformed tags do
-not publish. The tagged commit must contain the workflow; manual **Run workflow**
-becomes available when it is on the default branch. See the
-[release setup and procedure](packaging/windows/README.md) for credentials and
-versioning. Other platforms currently have validation checks but no releases.
+Windows releases are tested, built, packaged and published from a local Windows
+machine with `./release.ps1 -Tag vMAJOR.MINOR.PATCH`. The command builds an isolated
+snapshot of that local tag; its version must match Cargo metadata. See the
+[release setup and procedure](packaging/windows/README.md) for prerequisites,
+credentials and `-BuildOnly`. Publishing a release does not use GitHub Actions.
+Other platforms currently have validation checks but no releases.
 
 For Windows, open [Releases](https://github.com/travisluong/mithril-releases/releases)
 and download `mithril-<version>-windows-x86_64-setup.exe` under **Assets** once
@@ -49,10 +48,11 @@ be run directly:
 | `mithril-windows-x86_64` | Setup EXE, portable ZIP containing `mithril.exe`, and SHA-256 checksums |
 
 For the portable Windows build, extract its ZIP and run `mithril.exe`.
-Actions artifacts are retained for 14 days. Tagged builds create a draft release
-in the public downloads repository, verify every uploaded asset, and publish
-only after verification succeeds. Reruns resume matching drafts and leave
-published releases unchanged. Windows installer build instructions and manual
+Actions artifacts are retained for 14 days; that hosted build is manual-only.
+The local release command creates a draft in the public downloads repository,
+verifies every uploaded asset, and publishes only after verification succeeds.
+Reruns resume matching drafts and leave published releases unchanged.
+Windows installer build instructions and manual
 checks are in [`packaging/windows/README.md`](packaging/windows/README.md).
 Headless tests and packaging checks do not establish interactive UI or
 install/upgrade/uninstall behavior.
