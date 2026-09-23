@@ -2663,3 +2663,36 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   doc-tests passed separately.
 - No native application windows or desktop input were used. Physical keyboard,
   display-DPI transitions and visual inspection remain manual validation.
+
+## 2026-09-22 — Mermaid sequence participant names with spaces
+
+- Root Cargo patch now selects vendored merman-core 0.7.0. The only upstream
+  source change is in the sequence lexer: internal whitespace stays inside
+  participant IDs; declaration aliases, numeric IDs, comments and central
+  connection markers retain their boundaries. Provenance and original licenses
+  are included in vendor/merman-core, alongside MITHRIL-PATCH.md.
+- The shared renderer accepts existing diagrams without modifying document
+  source, selection or history. All new regression inputs use synthetic names
+  and messages. No user screenshot or original diagram text is committed.
+- Passed all 32 parser tests (28 upstream cases plus four local regression
+  cases), and all five headless Mermaid renderer/Live/Reading integration tests.
+  The fixtures cover spaces, tabs, Unicode, CRLF, aliases, notes, activation,
+  comments, statement separators, malformed input and source/copy/history
+  behavior. Renderer diagnostics exercise the longer synthetic diagram in both
+  light and dark themes and retain resource/size/queue checks.
+- cargo check --locked --offline, cargo fmt --check and strict all-target Clippy
+  with editor-diagnostics passed using target/agent-validation. The vendored
+  lexer passed rustfmt; other upstream source files remain byte-for-byte intact.
+- Validation used GPUI TestPlatform without desktop input or native app windows.
+  The open application's executable was left untouched after an initial Windows
+  file lock; the temporary initial reproduction executable and symbols were
+  removed. The independent validation directory avoids the running executable.
+- The serial integrated run passed 107 library tests, 366 application tests and
+  229 integration tests before the known Windows PowerShell PTY interrupt timeout.
+  The other 14 terminal tests passed, and the single sandbox-sensitive test
+  passed on an isolated headless retry outside the sandbox. An initial parallel
+  build's transient msvcrt.lib linker error cleared with one build job.
+- After preserving Unicode boundary whitespace in the final lexer adjustment,
+  all 37 Mermaid/parser checks passed again. No desktop testing was performed.
+- The remaining two theme-icon and seven toolbar-settings tests, doc-tests,
+  formatting checks and final strict all-target Clippy also passed.

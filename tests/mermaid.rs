@@ -64,7 +64,8 @@ impl Render for Live {
 #[gpui::test]
 fn live_mermaid_reveal_copy_history_and_modes(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
-    let source = "before\n```MeRmAiD\nflowchart TD\nA[Hello] --> B[World]\n```\nafter\n";
+    let source =
+        "before\n```MeRmAiD\nsequenceDiagram\nblue node->>green worker: Hello\n```\nafter\n";
     let mut editor = None;
     let (_, cx) = cx.add_window_view(|window, cx| {
         let input = cx.new(|cx| {
@@ -102,7 +103,7 @@ fn live_mermaid_reveal_copy_history_and_modes(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
-            Some("flowchart TD\nA[Hello] --> B[World]")
+            Some("sequenceDiagram\nblue node->>green worker: Hello")
         );
         assert_eq!(editor.read(cx).source_selection(), 0..0);
     });
@@ -115,7 +116,7 @@ fn live_mermaid_reveal_copy_history_and_modes(cx: &mut TestAppContext) {
         let state = editor.read(cx);
         assert_eq!(
             state.source_selection().start,
-            source.find("flowchart").unwrap()
+            source.find("sequenceDiagram").unwrap()
         );
         assert_eq!(state.diagnostic_mermaid_row(1).0, None);
         assert!(state.diagnostic_code_row(2).3 > 0.);
@@ -175,7 +176,7 @@ impl Render for Reading {
 #[gpui::test]
 fn reading_mermaid_renders_copies_and_reveals_find(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
-    let source = "> ~~~mermaid\n> flowchart TD\n> A --> B\n> ~~~\n";
+    let source = "> ~~~mermaid\n> sequenceDiagram\n> blue node->>green worker: Hello\n> ~~~\n";
     let mut view = None;
     let (_, cx) = cx.add_window_view(|window, cx| {
         let v = cx.new(|_| Reading {
@@ -202,12 +203,12 @@ fn reading_mermaid_renders_copies_and_reveals_find(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
-            Some("flowchart TD\nA --> B")
+            Some("sequenceDiagram\nblue node->>green worker: Hello")
         )
     });
     cx.update(|_, cx| {
         view.update(cx, |v, cx| {
-            let start = source.find("flowchart").unwrap();
+            let start = source.find("sequenceDiagram").unwrap();
             let range = start..start + 9;
             v.search = Some(SourceHighlights::new(
                 source.into(),

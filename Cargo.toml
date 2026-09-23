@@ -30,9 +30,12 @@ embed-resource = "=3.0.11"
 [patch.crates-io]
 gpui-component = { path = "vendor/gpui-component" }
 gpui-terminal = { path = "vendor/gpui-terminal" }
+merman-core = { path = "vendor/merman-core" }
 
 
 [dev-dependencies]
+futures = "0.3"
+merman = "=0.7.0"
 alacritty_terminal = "=0.25.1"
 gpui-component = { version = "=0.5.1", features = ["editor-diagnostics"] }
 gpui = { version = "=0.2.2", features = ["test-support"] }

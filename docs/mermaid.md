@@ -29,3 +29,7 @@ installation or network service is needed. External image resources, diagram
 links, export and zoom/pan controls are not supported. Diagram source is limited
 to 50,000 UTF-8 bytes and the rendered image to 4 megapixels at the current display
 scale; larger diagrams show a limit message with their source.
+
+Sequence participant names may contain spaces, including implicit participants
+such as `blue node->>green worker: Hello`. Mithril includes a local parser fix
+for these names; existing diagrams do not need to be rewritten with aliases.

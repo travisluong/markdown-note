@@ -609,3 +609,11 @@ so enlarged interface text remains inside its hit target. Dialog's default
 24-pixel padding similarly uses 1.5 rem; explicit padding overrides still win.
 Reconcile `src/menu/popup_menu.rs` and `src/dialog.rs` on upgrades. Application
 zoom tests exercise nested menu actions and palette dismissal on TestPlatform.
+
+## Mermaid sequence participant whitespace (2026-09-22)
+
+The host now patches Merman's parser through `vendor/merman-core`; its
+`MITHRIL-PATCH.md` records the lexer correction. Shared renderer diagnostics
+include a synthetic sequence with spaced names. Live/Reading regression tests
+exercise the same syntax while retaining source, copy, selection and history
+contracts. No document normalization or renderer API change is required.

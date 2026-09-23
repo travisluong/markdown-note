@@ -376,6 +376,7 @@ pub fn diagnostic_checks() -> Vec<(&'static str, bool, Arc<RenderImage>)> {
         "erDiagram\nCUSTOMER ||--o{ ORDER : places",
         "gantt\n title Plan\n dateFormat YYYY-MM-DD\n section Work\n Task :a, 2026-01-01, 2d",
         "pie\n\"A\" : 40\n\"B\" : 60",
+        include_str!("mermaid/spaced-sequence.mmd"),
     ];
     for dark in [false, true] {
         for source in fixtures {
