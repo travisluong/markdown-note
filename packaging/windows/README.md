@@ -1,6 +1,6 @@
 # Windows installer
 
-`release.sh` (Git Bash) or `release.ps1` (PowerShell) tests, builds and publishes a
+`scripts/release.sh` (Git Bash) or `scripts/release.ps1` (PowerShell) tests, builds and publishes a
 Windows x86-64 release from your local machine. `mithril.iss` packages the
 executable with Inno Setup 6.3 or
 newer. GitHub hosts the installer, portable ZIP and checksums; GitHub Actions
@@ -40,18 +40,18 @@ locations. For a portable/custom installation, append
 3. Run the one-command release from the repository root:
 
    ```powershell
-   .\release.ps1 -Tag v0.1.1
+   .\scripts\release.ps1 -Tag v0.1.1
    ```
 
    Or, in Git Bash:
 
    ```bash
-   ./release.sh v0.1.1
+   ./scripts/release.sh v0.1.1
    ```
 
 The Bash wrapper forwards remaining options to the same Node release command,
 preserves its exit status, and finds the tooling relative to the script even
-when invoked from another directory. Use `./release.sh --help` for usage. It
+when invoked from another directory. Use `./scripts/release.sh --help` for usage. It
 still builds on Windows and uses Windows PowerShell internally for ZIP packaging.
 
 If your PowerShell policy blocks local scripts, the equivalent entry point is
@@ -100,13 +100,13 @@ publisher from a different checkout/machine concurrently.
 For a full local build without any GitHub requests or uploads:
 
 ```powershell
-.\release.ps1 -Tag v0.1.1 -BuildOnly
+.\scripts\release.ps1 -Tag v0.1.1 -BuildOnly
 ```
 
 Or, in Git Bash:
 
 ```bash
-./release.sh v0.1.1 --build-only
+./scripts/release.sh v0.1.1 --build-only
 ```
 
 This still tests and packages the tagged source. BuildOnly does not require gh

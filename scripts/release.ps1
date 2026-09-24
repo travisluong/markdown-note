@@ -2,9 +2,9 @@
 .SYNOPSIS
 Build, verify, and publish a tagged Windows release from this machine.
 .EXAMPLE
-.\release.ps1 -Tag v0.1.1
+.\scripts\release.ps1 -Tag v0.1.1
 .EXAMPLE
-.\release.ps1 -Tag v0.1.1 -BuildOnly
+.\scripts\release.ps1 -Tag v0.1.1 -BuildOnly
 #>
 [CmdletBinding()]
 param(
@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$releaseArgs = @((Join-Path $PSScriptRoot 'scripts/release-local.mjs'), '--tag', $Tag)
+$releaseArgs = @((Join-Path $PSScriptRoot 'release-local.mjs'), '--tag', $Tag)
 if ($BuildOnly) { $releaseArgs += '--build-only' }
 if ($InnoSetup) { $releaseArgs += @('--inno-setup', $InnoSetup) }
 & node @releaseArgs

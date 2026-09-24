@@ -12,4 +12,4 @@ shift
 script_path=${BASH_SOURCE[0]//\\//}
 if [[ $script_path == */* ]]; then script_dir=${script_path%/*}; else script_dir=.; fi
 script_dir="$(CDPATH= cd -- "$script_dir" && pwd)"
-exec node "$script_dir/scripts/release-local.mjs" --tag "$tag" "$@"
+exec node "$script_dir/release-local.mjs" --tag "$tag" "$@"
