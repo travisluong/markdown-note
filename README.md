@@ -22,7 +22,7 @@ machine with `./release.sh vMAJOR.MINOR.PATCH` in Git Bash, or
 snapshot of that local tag; its version must match Cargo metadata. See the
 [release setup and procedure](packaging/windows/README.md) for prerequisites,
 credentials and `-BuildOnly`. Publishing a release does not use GitHub Actions.
-Other platforms currently have validation checks but no releases.
+Other platforms currently have no releases.
 
 For Windows, open [Releases](https://github.com/travisluong/mithril-releases/releases)
 and download `mithril-<version>-windows-x86_64-setup.exe` under **Assets** once
@@ -39,17 +39,7 @@ SmartScreen warning. Automatic updates are not included yet.
 
 The release also includes `mithril-<version>-windows-x86_64.zip` and
 `SHA256SUMS.txt` with SHA-256 checksums for the installer and portable ZIP.
-For manual builds, open **Actions → Build Windows release**, choose a
-successful run, and download its artifact. Manual runs never publish a release.
-Extract the Actions artifact ZIP first; the Windows installer inside can then
-be run directly:
-
-| Artifact | Contents |
-| --- | --- |
-| `mithril-windows-x86_64` | Setup EXE, portable ZIP containing `mithril.exe`, and SHA-256 checksums |
-
 For the portable Windows build, extract its ZIP and run `mithril.exe`.
-Actions artifacts are retained for 14 days; that hosted build is manual-only.
 The local release command creates a draft in the public downloads repository,
 verifies every uploaded asset, and publishes only after verification succeeds.
 Reruns resume matching drafts and leave published releases unchanged.
@@ -384,10 +374,9 @@ the original findings and plan. The component is patched in
 `vendor/gpui-component`; its [patch notes](vendor/gpui-component/EDITOR-PATCH.md)
 record the upstream source and local changes.
 
-The separate **Validate code** workflow checks the default application and runs
-headless tests on Windows, Linux and macOS for pull requests, pushes to `main`
-or `dev`, and manual runs. Windows also runs formatting and strict Clippy checks.
-It uses the repository's pinned Rust toolchain and does not publish artifacts.
+Builds and validation run locally; there are no GitHub Actions workflows.
+Use the headless verification commands in [ARCHITECTURE.md](ARCHITECTURE.md)
+with the repository's pinned Rust toolchain on each target platform.
 
 ### User-run native diagnostics
 

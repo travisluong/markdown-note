@@ -374,8 +374,8 @@ shared release cache; run snapshots, metadata and packages stay under ignored
 `-BuildOnly` creates a package without GitHub access. Only GitHub commands inherit the
 release-token environment variables; compiler/tests do not. Local GitHub CLI
 authentication or `MITHRIL_RELEASES_TOKEN` authorizes public Release assets in
-`travisluong/mithril-releases`. The [hosted build](.github/workflows/build.yml)
-is manual-only and retains Actions artifacts without publishing.
+`travisluong/mithril-releases`. Builds and validation run locally; there are no
+GitHub Actions workflows.
 [`release.mjs`](.github/scripts/release.mjs) owns tag/version validation,
 checksums and draft publication. It downloads and verifies assets before making
 a draft public, resumes matching drafts, and leaves published releases unchanged.
@@ -385,9 +385,8 @@ See the [packaging guide](packaging/windows/README.md) for setup, compiler
 verification and manual installation checks; agents must not run the installer
 or application to validate desktop behavior.
 
-[Rust 1.98.1](rust-toolchain.toml) is pinned. The separate
-[validation workflow](.github/workflows/check.yml) checks Windows, Linux and
-macOS; Windows also enforces format and strict lint. Packaging is separate.
+[Rust 1.98.1](rust-toolchain.toml) is pinned. Run validation locally on each
+target platform (Windows, Linux or macOS). Packaging is separate.
 
 ```powershell
 cargo check --locked
@@ -694,8 +693,8 @@ Find result reveals the block's source. Both modes retain Copy code and use sour
 plus a compact message while pending or on failure. Reading measures the actual
 content width before requesting a fitted image. No notebook setting or disk
 format changes are involved. `tests/mermaid.rs` exercises native rendering and
-GPUI TestPlatform behavior; the existing cross-platform validation workflow runs
-it with `editor-diagnostics`. See `docs/mermaid.md` for usage and compatibility.
+GPUI TestPlatform behavior; run it locally with `editor-diagnostics`.
+See `docs/mermaid.md` for usage and compatibility.
 
 ## Settings JSON editing
 

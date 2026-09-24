@@ -2796,3 +2796,15 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   publication, stored-row checks and an owner review four weeks after the actual
   public launch date. No services were provisioned for production, releases
   published, outreach sent, automation created, or native desktop input injected.
+
+## 2026-09-24: Remove GitHub Actions workflows
+
+- Removed the hosted Windows release build and cross-platform validation workflows.
+  Builds, validation and release publishing now use the documented local commands.
+- Updated the architecture map, README and Windows packaging guide. Retained
+  `.github/scripts/release.mjs` and its tests because the local release command
+  imports its validation, checksum and publishing helpers.
+- `node --test .github/scripts/release.test.mjs scripts/release-local.test.mjs`:
+  22 passed, 1 optional real-installer-compiler test skipped, 0 failed.
+- `git diff --check` passed; no workflow files or current documentation links to
+  removed workflows remain. Historical audit/progress entries are preserved.

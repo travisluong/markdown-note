@@ -112,18 +112,13 @@ Or, in Git Bash:
 This still tests and packages the tagged source. BuildOnly does not require gh
 or publishing credentials, but compilation may download toolchains/dependencies.
 
-The **Build Windows release** Actions workflow is now manual-only and never
-publishes; an explicit **Run workflow** still uses hosted runner minutes and
-retains its artifacts for 14 days. The separate **Validate code** workflow still
-runs on main/dev pushes and pull requests and may incur Actions charges. Updating
-the release workflow only affects commits containing that change: pushing an
-older tag whose workflow still has a tag trigger can start the old hosted build.
+Builds and validation run locally; there are no GitHub Actions workflows.
 The local release command never pushes tags.
 
 Release downloads are at
 [mithril-releases](https://github.com/travisluong/mithril-releases/releases).
-Other platforms retain their separate validation workflow but have no release
-builds. Signing and automatic application updates remain separate work.
+Other platforms have no release builds. Signing and automatic application
+updates remain separate work.
 
 ## Installation contract
 
@@ -182,10 +177,8 @@ handling, credential scoping, local locking, draft recovery, published-release
 preservation, and failed/corrupt uploads. Tests mock compilation and GitHub;
 they never publish or launch desktop UI. Set `MITHRIL_TEST_ISCC` to an actual
 ISCC.exe path to also exercise the real installer compiler and PowerShell ZIP
-packaging with a synthetic executable payload. The publisher tests also run in the
-manual workflow's prepare job. Compile the actual installer script with ISCC and
-check its exit status. Check workflow syntax with
-`actionlint .github/workflows/build.yml`.
+packaging with a synthetic executable payload. Compile the actual installer
+script with ISCC and check its exit status.
 Compilation establishes valid packaging, but not native
 Windows behavior. Agents must not install the application or launch desktop UI
 for these checks under the repository's testing rules.
