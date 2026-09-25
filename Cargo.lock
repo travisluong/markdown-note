@@ -4256,7 +4256,7 @@ dependencies = [
 
 [[package]]
 name = "mithril"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "alacritty_terminal",
  "chrono",
