@@ -2842,3 +2842,24 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
 - No desktop windows were launched or controlled. Native Windows close/relaunch,
   minimized-from-maximized, fullscreen, taskbar/DPI and disconnected-monitor
   visual validation remain manual checks for the user.
+
+## Production v0.1.1 release verification
+
+- Published Windows x86-64 v0.1.1 from source commit
+  `f8c2f560dee096a3c81d2a0f2323a49152b8204f`. The source commit and
+  annotated tag were pushed to the source repository.
+- The recorded desktop test run used `editor-diagnostics`; one existing
+  cross-repository test remained ignored.
+- Fresh release snapshots exposed a second test setup assumption: Mermaid PNG
+  diagnostics wrote into a local `target` folder that external Cargo build caches
+  do not create. The test now creates its own output directory.
+- All 23 release-tooling checks passed, including actual noninteractive Inno Setup
+  and ZIP packaging. Windows native tar was selected explicitly. Transient Windows
+  linker file-access failures were resolved by retrying the same source snapshot;
+  no test failure was bypassed. The completed snapshot passed the entire suite
+  before the optimized build and packaging.
+- The installer, portable ZIP and SHA256SUMS.txt were uploaded, downloaded and
+  byte-verified before publishing at
+  https://github.com/travisluong/mithril-releases/releases/tag/v0.1.1.
+  Installer signing, Microsoft Store distribution and desktop UI validation remain
+  outside this release. No desktop application was launched for testing.
