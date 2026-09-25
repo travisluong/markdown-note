@@ -41,7 +41,7 @@ impl Notes {
                 cx.new(|cx| {
                     InputState::new(window, cx)
                         .multi_line(true)
-                        .rows(5)
+                        .rows(8)
                         .placeholder("What worked, or what got in your way?")
                 })
             })
@@ -159,19 +159,68 @@ impl Render for FeedbackPanel {
         };
         let retry = state.session.result.is_some_and(|r| r.is_err());
         let owner = owner.downgrade();
-        div().flex().flex_col().gap_3()
-            .child("Message (required, up to 5,000 characters)")
-            .child(div().id("feedback-message").debug_selector(|| "feedback-message".into()).child(Input::new(state.message.as_ref().unwrap()).disabled(sending).w_full()))
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child("Message")
+            .child(
+                div()
+                    .id("feedback-message")
+                    .debug_selector(|| "feedback-message".into())
+                    .flex_shrink_0()
+                    .child(
+                        Input::new(state.message.as_ref().unwrap())
+                            .disabled(sending)
+                            .w_full()
+                            .h(gpui::rems(12.)),
+                    ),
+            )
             .child("Reply email (optional)")
-            .child(div().id("feedback-email").debug_selector(|| "feedback-email".into()).child(Input::new(state.email.as_ref().unwrap()).disabled(sending).w_full()))
-            .child(format!("Sent with Mithril {} · {}", feedback::VERSION, feedback::OS))
-            .child(div().text_sm().child("No notes, file paths, or logs are attached. Supplying an email does not subscribe you. Please include only what you want to share."))
-            .child(div().id("feedback-status").debug_selector(|| "feedback-status".into()).child(status))
-            .child(div().flex().gap_2()
-                .child(Button::new("send-feedback").debug_selector(|| "send-feedback".into()).primary()
-                    .label(if sending { "Sending…" } else if retry { "Retry feedback" } else { "Send feedback" }).disabled(sending)
-                    .on_click(move |_, window, cx| { let _ = owner.update(cx, |owner, cx| owner.send_feedback(window, cx)); }))
-                .child(Button::new("cancel-feedback").debug_selector(|| "cancel-feedback".into()).label("Cancel").on_click(|_, window, cx| window.close_dialog(cx))))
+            .child(
+                div()
+                    .id("feedback-email")
+                    .debug_selector(|| "feedback-email".into())
+                    .child(
+                        Input::new(state.email.as_ref().unwrap())
+                            .disabled(sending)
+                            .w_full(),
+                    ),
+            )
+            .child(
+                div()
+                    .id("feedback-status")
+                    .debug_selector(|| "feedback-status".into())
+                    .child(status),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        Button::new("send-feedback")
+                            .debug_selector(|| "send-feedback".into())
+                            .primary()
+                            .label(if sending {
+                                "Sending…"
+                            } else if retry {
+                                "Retry feedback"
+                            } else {
+                                "Send feedback"
+                            })
+                            .disabled(sending)
+                            .on_click(move |_, window, cx| {
+                                let _ =
+                                    owner.update(cx, |owner, cx| owner.send_feedback(window, cx));
+                            }),
+                    )
+                    .child(
+                        Button::new("cancel-feedback")
+                            .debug_selector(|| "cancel-feedback".into())
+                            .label("Cancel")
+                            .on_click(|_, window, cx| window.close_dialog(cx)),
+                    ),
+            )
             .into_any_element()
     }
 }
