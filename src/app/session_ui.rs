@@ -78,7 +78,7 @@ impl Notes {
                         self.restore_tree_cursor(window, cx);
                     }
                 }
-                Effect::Close => self.close_terminal_then_window(window, cx),
+                Effect::Close => self.close_window(window, cx),
                 Effect::Rejected(Rejection::IdentityExhausted) => {
                     self.notebooks.notice = Some(
                         "The session identity limit was reached. Keep your unsaved text and restart the application."

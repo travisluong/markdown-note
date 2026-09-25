@@ -146,19 +146,6 @@ impl Notes {
         })
     }
 
-    pub(super) fn close_terminal_then_window(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let cleanup = self.shutdown_terminals(cx);
-        cx.spawn_in(window, async move |_, cx| {
-            cleanup.await;
-            let _ = cx.update(|window, _| window.remove_window());
-        })
-        .detach();
-    }
-
     fn focus_after_terminal(&self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.active.mode == ViewMode::Reading || self.document().is_none() {
             self.focus.focus(window);

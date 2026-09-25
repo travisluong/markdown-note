@@ -2808,3 +2808,37 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   22 passed, 1 optional real-installer-compiler test skipped, 0 failed.
 - `git diff --check` passed; no workflow files or current documentation links to
   removed workflows remain. Historical audit/progress entries are preserved.
+
+## 2026-09-24: Persist window placement
+
+- Added app-owned versioned `window-state.json` beside `notebooks.json`, separate
+  from notebook preferences. It records normal bounds in logical pixels and
+  maximization, with validated finite dimensions and negative monitor positions.
+  Startup fits bounds onto the display with the greatest overlap (primary when
+  disconnected), retains the 400 x 300 minimum and centered 900 x 700 fallback,
+  and passes the selected display ID so Windows accepts secondary-monitor bounds.
+- Accepted Close captures GPUI's restore bounds, starts an atomic background
+  replacement, and awaits both that write and terminal cleanup before removal.
+  Cancelled close does not capture or write state; persistence errors log and
+  still allow close. Windows reads the minimized restore-to-maximized flag;
+  minimized windows never reopen minimized and fullscreen restores normally.
+  Diagnostic runs bypass personal reads/writes; headless fixtures default to no
+  persistence and explicitly inject temporary paths when testing it.
+- Seven focused tests cover JSON round trips and replacement, missing/corrupt
+  files and unsupported versions, invalid geometry, negative positions, monitor
+  removal, minimum size, normal/maximized/fullscreen/minimized policy, startup
+  defaults, diagnostic bypass, cancellation, accepted-close write completion at
+  window removal, standalone close and write failure. GPUI TestPlatform does not
+  implement native maximization; restoration tests inspect the produced bounds.
+- `cargo check --locked --offline`, `cargo fmt --check`, strict all-target Clippy
+  with `editor-diagnostics`, and `git diff --check` pass.
+- Full regression used `cargo test --locked --offline --features
+  editor-diagnostics --target x86_64-pc-windows-msvc --no-fail-fast --
+  --test-threads=1` to keep the running app's normal build output untouched:
+  739 passed, one existing cross-repository test ignored, and the documented
+  sandbox-sensitive PowerShell interrupt test failed. That one noninteractive
+  PTY test passed on rerun outside the sandbox, covering all 740 regression tests.
+  The seven placement tests also passed again after final display-selection edits.
+- No desktop windows were launched or controlled. Native Windows close/relaunch,
+  minimized-from-maximized, fullscreen, taskbar/DPI and disconnected-monitor
+  visual validation remain manual checks for the user.

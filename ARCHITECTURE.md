@@ -38,6 +38,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Responsibility | Start here | Contract |
 | --- | --- | --- |
 | Startup, root rendering and action bindings | [main.rs](src/main.rs): `Notes`, `Next`, `NotesWindow` | Wire owners and dispatch actions. `NotesWindow` renders modal layers outside `Notes::render` to avoid a recursive entity borrow. |
+| App-wide window placement | [window_state.rs](src/window_state.rs) | Versioned `window-state.json` beside the notebook index stores maximization and normal logical bounds independently of notebook preferences. Startup validates and fits geometry to an available display and supplies its ID to GPUI. Accepted Close captures placement and awaits its atomic background write alongside terminal cleanup before removing the window; write failures only log. Diagnostics and headless fixtures bypass personal state. |
 | Shared documents | [shared_documents.rs](src/shared_documents.rs): `DocumentRuntime` | Canonical registry owns stable document identity, buffer subscription, shared baseline, save policy/timer/error and dirty comparison. Tabs retain independent views. |
 | Retained tabs and workspace close/move/delete coordination | [tabs.rs](src/tabs.rs): `TabSet`, `Tab`, `WorkspaceOperation` | Stable TabId qualifies session-local identities. Tab selection retains all document runtime state; preparation retains buffers until every required decision and I/O succeeds. |
 | Content, foreground phase, writes, autosave and continuations | [app/session.rs](src/app/session.rs): `Session`; [session contract](docs/document-session.md) | Pure private state; transitions return ordered effects. No mutable content accessor or generic begin/finish bypass. |
@@ -775,6 +776,18 @@ Closing a tab invalidates pending installation and retains cleanup until late
 launches have been stopped and reaped. Accepted session Close signals all live
 sessions and awaits both their cleanup and already-closing tabs before removing
 the window; cancelled document close preserves every terminal.
+The accepted Close effect also captures window placement through `window_state.rs`.
+Its atomic background write and terminal cleanup both finish before window removal;
+placement write failures log without blocking close. Cancelled close never captures
+or writes placement. Normal startup loads placement before opening the window,
+preserving negative monitor coordinates, a 400 x 300 minimum and the centered
+900 x 700 missing/invalid-state fallback. Restored geometry fits the display with
+the most overlap, falling back to the primary display after monitor removal.
+GPUI supplies normal restore bounds while maximized; Windows additionally reads
+the native restore-to-maximized flag while minimized. Minimized windows reopen
+normally or maximized, never minimized; fullscreen reopens normally with its
+restore bounds. Diagnostic runs bypass both reads and writes. Native Windows
+relaunch, taskbar/DPI and multi-monitor visual behavior require manual validation.
 
 Notebook terminal.windows_shell defaults to powershell, with git_bash as
 the other Windows choice; standalone settings remain session-only. The Terminal

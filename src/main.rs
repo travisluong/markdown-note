@@ -27,6 +27,7 @@ mod tabs;
 mod terminal_ui;
 mod title_bar_ui;
 mod toolbar_ui;
+mod window_state;
 mod zoom_ui;
 
 use std::{
@@ -195,6 +196,7 @@ impl Document {
 }
 
 struct Notes {
+    window_state_path: Option<PathBuf>,
     feedback: feedback_ui::FeedbackState,
     tabs: tabs::TabSet,
     documents: std::collections::HashMap<PathBuf, shared_documents::DocumentRuntime>,
@@ -248,6 +250,7 @@ impl Notes {
         let notebooks = notebook_ui::NotebookState::new(window, cx);
         let startup_dark = gpui_component::ThemeMode::from(window.appearance()).is_dark();
         Self {
+            window_state_path: None,
             feedback: Default::default(),
             tabs,
             documents: Default::default(),
@@ -988,10 +991,16 @@ fn main() {
                 }
             })
             .detach();
-            let bounds = Bounds::centered(None, size(px(900.), px(700.)), cx);
+            let diagnostic_run = cfg!(feature = "editor-diagnostics")
+                && (std::env::var_os("MITHRIL_BENCH").is_some()
+                    || std::env::var_os("MITHRIL_NOTEBOOK_CHECK").is_some()
+                    || std::env::var_os("MITHRIL_AUTOSAVE_CHECK").is_some());
+            let window_state_path = window_state::state_path(diagnostic_run);
+            let bounds = window_state::startup(window_state_path.as_deref(), cx);
             cx.open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_bounds: Some(bounds),
+                    display_id: window_state::display_for(bounds, cx),
                     window_min_size: Some(size(px(400.), px(300.))),
                     app_id: Some("org.mithril.Mithril".into()),
                     window_decorations: cfg!(target_os = "linux")
@@ -1003,13 +1012,13 @@ fn main() {
                     }),
                     ..Default::default()
                 },
-                |window, cx| {
-                    let notes = cx.new(|cx| Notes::new(window, cx));
+                move |window, cx| {
+                    let notes = cx.new(|cx| {
+                        let mut notes = Notes::new(window, cx);
+                        notes.window_state_path = window_state_path;
+                        notes
+                    });
                     notes.update(cx, |this, cx| this.apply_appearance(window, cx));
-                    let diagnostic_run = cfg!(feature = "editor-diagnostics")
-                        && (std::env::var_os("MITHRIL_BENCH").is_some()
-                            || std::env::var_os("MITHRIL_NOTEBOOK_CHECK").is_some()
-                            || std::env::var_os("MITHRIL_AUTOSAVE_CHECK").is_some());
                     if !diagnostic_run {
                         notes.update(cx, |this, cx| this.restore_notebooks(window, cx));
                     }
