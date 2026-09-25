@@ -9,6 +9,9 @@ use gpui_component::{
 
 #[test]
 fn offline_renderer_families_limits_and_queue() {
+    // Release snapshots use an external CARGO_TARGET_DIR, so this local
+    // diagnostic-artifact directory may not have been created by Cargo.
+    std::fs::create_dir_all("target").unwrap();
     for (kind, dark, rendered) in gpui_component::diagnostic_mermaid_checks() {
         let dimensions = rendered.size(0);
         let mut rgba = rendered.as_bytes(0).unwrap().to_vec();
