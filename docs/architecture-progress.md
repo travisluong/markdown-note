@@ -2898,3 +2898,32 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   `git diff --check` pass. Footer layout and visibility use GPUI TestPlatform;
   its retained debug-bound maps are reset with test-only frame sentinels before
   checking removed elements. Native visual validation remains manual.
+
+## Settings group spacing and dividers
+
+- All six Settings tabs now group related controls behind semibold headings and
+  separate groups with the existing themed, one-pixel horizontal divider. Private
+  layout helpers use one-rem gaps between independent settings and on either side
+  of dividers, with half-rem gaps inside fields so labels, help and errors remain
+  associated with their controls. Spacing follows interface size and notebook zoom.
+- General separates notebook context, Editor, Footer, Saving and Sidebar; Terminal
+  separates Shell, Font and Cursor; Toolbar separates its existing top-bar, sizing
+  and region groups. Font separates families from sizes, Templates separates its
+  date field from the reference, and Theme separates selection from palette colors.
+  Controls, preference intents, modal dimensions, navigation and scrolling retain
+  their existing behavior. No preference schema or vendor changes were needed.
+- Existing scroll-to-bottom tests now allow a half-logical-pixel rounding difference
+  between nested group bounds and the page extent (one device pixel on the 2x
+  TestPlatform). An explicit redraw confirmed the difference was layout rounding;
+  scrolling still reaches its maximum and the final toolbar row remains reachable.
+- `cargo check --locked --offline --target x86_64-pc-windows-msvc`,
+  `cargo fmt --check`, strict all-target Clippy with `editor-diagnostics`, and
+  `git diff --check` pass. All 69 Settings-panel tests pass in the full regression.
+- Full regression used `cargo test --locked --offline --features
+  editor-diagnostics --target x86_64-pc-windows-msvc --no-fail-fast --
+  --test-threads=1`: 764 passed, one existing cross-repository test was ignored,
+  and the documented sandbox-sensitive PowerShell interrupt test timed out.
+  That single noninteractive PTY test passed outside the sandbox, covering all
+  765 regression tests. The isolated target preserved the running app's build.
+- No desktop application was launched or controlled. Native visual review remains
+  a manual check for the user.

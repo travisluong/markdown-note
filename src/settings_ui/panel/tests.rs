@@ -1495,7 +1495,11 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
     let last_bounds = cx
         .debug_bounds(format!("toolbar-row-{}", last as usize).leak())
         .unwrap();
-    assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
+    // Nested group bounds can round one device pixel beyond the page extent.
+    assert!(
+        last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom() + px(0.5),
+        "last row={last_bounds:?}, viewport={content:?}"
+    );
     assert_eq!(cx.debug_bounds("dialog-title").unwrap(), header);
     assert_eq!(cx.debug_bounds("settings-navigation").unwrap(), navigation);
     cx.update(|_, cx| {
@@ -1543,7 +1547,11 @@ fn modal_settings_bounds_scrolling_resize_and_close(cx: &mut TestAppContext) {
         let last_bounds = cx
             .debug_bounds(format!("toolbar-row-{}", last as usize).leak())
             .unwrap();
-        assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
+        assert!(
+            last_bounds.top() >= content.top()
+                && last_bounds.bottom() <= content.bottom() + px(0.5),
+            "last row={last_bounds:?}, viewport={content:?}"
+        );
     }
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
@@ -1604,7 +1612,14 @@ fn modal_settings_scrollbar_pointer_and_wheel_follow_viewport(cx: &mut TestAppCo
             "track click at {viewport:?}"
         );
         let last_bounds = cx.debug_bounds(last_selector).unwrap();
-        assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
+        // TestPlatform's 2x scale can round nested groups by half a logical pixel.
+        assert!(
+            last_bounds.top() >= content.top()
+                && last_bounds.bottom() <= content.bottom() + px(0.5),
+            "last row={last_bounds:?}, viewport={content:?}, scroll={:?}, max={:?}",
+            scroll.offset(),
+            scroll.max_offset()
+        );
 
         let top = point(content.right() - px(8.), content.top() + px(12.));
         cx.simulate_click(top, Modifiers::default());
@@ -1624,7 +1639,11 @@ fn modal_settings_scrollbar_pointer_and_wheel_follow_viewport(cx: &mut TestAppCo
             "thumb drag at {viewport:?}"
         );
         let last_bounds = cx.debug_bounds(last_selector).unwrap();
-        assert!(last_bounds.top() >= content.top() && last_bounds.bottom() <= content.bottom());
+        assert!(
+            last_bounds.top() >= content.top()
+                && last_bounds.bottom() <= content.bottom() + px(0.5),
+            "last row={last_bounds:?}, viewport={content:?}"
+        );
         assert_eq!(cx.debug_bounds("settings-content").unwrap(), content);
         assert_eq!(cx.debug_bounds("dialog-title").unwrap(), header);
         assert_eq!(cx.debug_bounds("settings-navigation").unwrap(), navigation);
