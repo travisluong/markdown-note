@@ -45,6 +45,10 @@ pub(super) enum SettingsIntent {
     TerminalFontSizeReset,
     CenteredEditor(bool),
     CenteredEditorWidth(u16),
+    FooterVisible(bool),
+    FooterWordCount(bool),
+    FooterCharacterCount(bool),
+    FooterCountMode(notebook::FooterCountMode),
     ResetToolbar,
     ToolbarIconSize(notebook::ToolbarIconSize),
     TitleBarSidebar(bool),
@@ -79,6 +83,7 @@ impl SettingsIntent {
 pub(super) struct SettingsValues {
     pub terminal: mithril::terminal::TerminalSettings,
     pub toolbar: notebook::ToolbarSettings,
+    pub footer: notebook::FooterSettings,
     pub appearance: notebook::Appearance,
     pub autosave: notebook::Autosave,
     pub autosave_external_files: bool,
@@ -449,6 +454,16 @@ impl SettingsPanel {
     }
 
     fn emit_intent(&mut self, intent: SettingsIntent, cx: &mut Context<Self>) {
+        if !self.values.footer.visible
+            && matches!(
+                intent,
+                SettingsIntent::FooterWordCount(_)
+                    | SettingsIntent::FooterCharacterCount(_)
+                    | SettingsIntent::FooterCountMode(_)
+            )
+        {
+            return;
+        }
         if matches!(intent, SettingsIntent::OpenSettingsJson)
             && (!self.values.has_settings_file || self.values.opening_settings_file)
         {

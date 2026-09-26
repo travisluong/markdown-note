@@ -8,6 +8,7 @@ mod benchmark;
 mod feedback_ui;
 #[cfg(feature = "editor-diagnostics")]
 mod find_diagnostics;
+mod footer_ui;
 mod goto;
 mod help_ui;
 mod image_import;
@@ -215,6 +216,7 @@ struct Notes {
     session_date_format: String,
     session_show_file_extensions: bool,
     session_toolbar: notebook::ToolbarSettings,
+    session_footer: notebook::FooterSettings,
     session_always_hide_extensions: Vec<String>,
     settings_panel: Option<settings_ui::SettingsDialog>,
     installed_fonts: Vec<String>,
@@ -271,6 +273,7 @@ impl Notes {
             session_date_format: templates::default_format(),
             session_show_file_extensions: notebook::default_show_file_extensions(),
             session_toolbar: notebook::ToolbarSettings::default(),
+            session_footer: notebook::FooterSettings::default(),
             session_always_hide_extensions: notebook::default_always_hide_extensions(),
             settings_panel: None,
             installed_fonts: cx.text_system().all_font_names(),
@@ -500,6 +503,7 @@ impl Render for Notes {
             .centered_editor
             .then(|| px(f32::from(appearance.centered_editor_width) * appearance.zoom_factor()));
         self.sync_settings_panel(window, cx);
+        self.sync_footer_counts(window, cx);
         self.sync_terminal(window, cx);
         if let Some(search) = &self.search {
             search.update(cx, |panel, cx| {
@@ -808,27 +812,66 @@ impl Render for Notes {
             .text_color(cx.theme().foreground)
             .child(self.render_title_bar(window, cx))
             .child(
-                div().flex().flex_1().min_h_0().overflow_hidden().child(
-                    self.render_sidebar_layout(
-                        div()
-                            .id("content-column")
-                            .debug_selector(|| "content-column".into())
-                            .size_full()
-                            .flex()
-                            .flex_col()
-                            .when(
-                                [
-                                    notebook::ToolbarRegion::ContentLeft,
-                                    notebook::ToolbarRegion::ContentCenter,
-                                    notebook::ToolbarRegion::ContentRight,
-                                ]
-                                .into_iter()
-                                .any(|region| self.toolbar_region_visible(region)),
-                                |view| view.child(self.render_content_toolbar(window, cx)),
-                            )
-                            .when_some(
-                                self.save_state(self.tabs.active.id).error.clone(),
-                                |view, error| {
+                div()
+                    .debug_selector(|| "app-workspace".into())
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(
+                        self.render_sidebar_layout(
+                            div()
+                                .id("content-column")
+                                .debug_selector(|| "content-column".into())
+                                .size_full()
+                                .flex()
+                                .flex_col()
+                                .when(
+                                    [
+                                        notebook::ToolbarRegion::ContentLeft,
+                                        notebook::ToolbarRegion::ContentCenter,
+                                        notebook::ToolbarRegion::ContentRight,
+                                    ]
+                                    .into_iter()
+                                    .any(|region| self.toolbar_region_visible(region)),
+                                    |view| view.child(self.render_content_toolbar(window, cx)),
+                                )
+                                .when_some(
+                                    self.save_state(self.tabs.active.id).error.clone(),
+                                    |view, error| {
+                                        view.child(
+                                            div()
+                                                .flex()
+                                                .items_start()
+                                                .gap_2()
+                                                .p_2()
+                                                .text_sm()
+                                                .child(
+                                                    div()
+                                                        .flex_1()
+                                                        .min_w_0()
+                                                        .whitespace_normal()
+                                                        .child(error),
+                                                )
+                                                .child(
+                                                    Button::new("dismiss-save-error")
+                                                        .small()
+                                                        .ghost()
+                                                        .flex_shrink_0()
+                                                        .icon(IconName::Close)
+                                                        .tooltip("Dismiss message")
+                                                        .on_click(cx.listener(|this, _, _, cx| {
+                                                            this.save_state_mut(
+                                                                this.tabs.active.id,
+                                                            )
+                                                            .error = None;
+                                                            cx.notify();
+                                                        })),
+                                                ),
+                                        )
+                                    },
+                                )
+                                .when_some(self.notebooks.notice.clone(), |view, notice| {
                                     view.child(
                                         div()
                                             .flex()
@@ -841,94 +884,66 @@ impl Render for Notes {
                                                     .flex_1()
                                                     .min_w_0()
                                                     .whitespace_normal()
-                                                    .child(error),
+                                                    .child(notice),
                                             )
                                             .child(
-                                                Button::new("dismiss-save-error")
+                                                Button::new("dismiss-notebook-notice")
                                                     .small()
                                                     .ghost()
                                                     .flex_shrink_0()
                                                     .icon(IconName::Close)
                                                     .tooltip("Dismiss message")
                                                     .on_click(cx.listener(|this, _, _, cx| {
-                                                        this.save_state_mut(this.tabs.active.id)
-                                                            .error = None;
+                                                        this.notebooks.notice = None;
                                                         cx.notify();
                                                     })),
                                             ),
                                     )
-                                },
-                            )
-                            .when_some(self.notebooks.notice.clone(), |view, notice| {
-                                view.child(
+                                })
+                                .child(
                                     div()
+                                        .id("file-drop-content")
+                                        .debug_selector(|| "file-drop-content".into())
                                         .flex()
-                                        .items_start()
-                                        .gap_2()
-                                        .p_2()
-                                        .text_sm()
+                                        .flex_col()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .min_w_0()
+                                        .on_drop(cx.listener(
+                                            |this, paths: &ExternalPaths, window, cx| {
+                                                cx.stop_propagation();
+                                                this.drop_files(paths.paths().to_vec(), window, cx);
+                                            },
+                                        ))
+                                        .on_drop(cx.listener(
+                                            |this, drag: &notebook_ui::EntryDrag, window, cx| {
+                                                cx.stop_propagation();
+                                                this.drop_files(
+                                                    vec![drag.root.join(&drag.path)],
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ))
+                                        .child(self.render_tabs(cx))
                                         .child(
                                             div()
                                                 .flex_1()
                                                 .min_w_0()
-                                                .whitespace_normal()
-                                                .child(notice),
-                                        )
-                                        .child(
-                                            Button::new("dismiss-notebook-notice")
-                                                .small()
-                                                .ghost()
-                                                .flex_shrink_0()
-                                                .icon(IconName::Close)
-                                                .tooltip("Dismiss message")
-                                                .on_click(cx.listener(|this, _, _, cx| {
-                                                    this.notebooks.notice = None;
-                                                    cx.notify();
-                                                })),
+                                                .min_h_0()
+                                                .overflow_hidden()
+                                                .child(content),
                                         ),
                                 )
-                            })
-                            .child(
-                                div()
-                                    .id("file-drop-content")
-                                    .debug_selector(|| "file-drop-content".into())
-                                    .flex()
-                                    .flex_col()
-                                    .flex_1()
-                                    .min_h_0()
-                                    .min_w_0()
-                                    .on_drop(cx.listener(
-                                        |this, paths: &ExternalPaths, window, cx| {
-                                            cx.stop_propagation();
-                                            this.drop_files(paths.paths().to_vec(), window, cx);
-                                        },
-                                    ))
-                                    .on_drop(cx.listener(
-                                        |this, drag: &notebook_ui::EntryDrag, window, cx| {
-                                            cx.stop_propagation();
-                                            this.drop_files(
-                                                vec![drag.root.join(&drag.path)],
-                                                window,
-                                                cx,
-                                            );
-                                        },
-                                    ))
-                                    .child(self.render_tabs(cx))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .min_h_0()
-                                            .overflow_hidden()
-                                            .child(content),
-                                    ),
-                            )
-                            .into_any_element(),
-                        window,
-                        cx,
+                                .into_any_element(),
+                            window,
+                            cx,
+                        ),
                     ),
-                ),
             )
+            .when(self.footer_settings().visible, |view| {
+                view.child(self.render_footer(cx))
+            })
             .when_some(
                 self.notebooks.context_menu.clone(),
                 |view, (position, menu)| {

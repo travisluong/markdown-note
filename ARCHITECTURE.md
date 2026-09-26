@@ -50,6 +50,7 @@ owners below, with explicit snapshots or intents at their boundaries.
 | Active notebook, index, activation and preference scope | [notebook_ui.rs](src/notebook_ui.rs): `NotebookState`; [activation_preferences.rs](src/notebook_ui/activation_preferences.rs) | Retain canonical targets and explicit preference intents under the operation token. Never restore a stale settings clone after I/O. |
 | Explorer cache, row projection and selection | [explorer.rs](src/explorer.rs): `Explorer` | Pure owner accepts settings and captured directory results. UI owns scroll/focus/workers, settings own persisted expansion and sort. |
 | Settings form | [settings_ui/panel.rs](src/settings_ui/panel.rs): `SettingsPanel`; [settings_ui.rs](src/settings_ui.rs) adapter | Controls, validation and subscriptions are private. Typed preference intents cross to the adapter; dialog lifetime, form identity and preference scope reject stale events. |
+| Footer and document counts | [footer_ui.rs](src/footer_ui.rs), [document_counts.rs](src/document_counts.rs) | The footer spans the workspace below all panels. Shared DocumentRuntime owns cached statistics and one count worker plus the latest pending snapshot. The pure counter owns Unicode and readable-Markdown semantics; render only reads cached totals and synchronizes request keys. Notebook preferences own visibility and count mode; standalone values are session-only. |
 | Commands and palette | [commands/mod.rs](src/commands/mod.rs), [capabilities.rs](src/capabilities.rs), [goto.rs](src/goto.rs) | Catalogue, discovery and `PaletteModel` own policy. The adapter owns input, focus and rendering and computes fresh capabilities before execution. |
 | Notebook search | [search.rs](src/search.rs), [search_ui/panel.rs](src/search_ui/panel.rs), [search_ui.rs](src/search_ui.rs) | Pure matching/scanning; panel owns query, cancellation, results and navigation proposals. App supplies all retained document overlays and approves navigation. |
 | Workspace geometry, right panel and Reading find | [sidebar_ui.rs](src/sidebar_ui.rs), [right_panel_ui.rs](src/right_panel_ui.rs), [reading_search.rs](src/reading_search.rs) | Search and Explorer share the left panel. The workspace fits independently resizable side panels around at least 200 logical pixels of content. Notebook settings own persisted sidebar/terminal widths; Notes owns session-only right-panel visibility and the terminal width fallback without a notebook; TerminalTabs owns retained session identities and cleanup tasks, TerminalSession owns each view, and the terminal runtime owns PTY processes. Reading find maps UTF-8 source ranges into the exact rendered snapshot. |
@@ -173,6 +174,30 @@ and wheel target at full width. Layout changes retain editor identity, selection
 and shared undo history; tabs, toolbars, images and empty views keep their layout.
 
 ## Lifecycle rules
+
+The footer shows whole-document word and character totals independently of the
+selected Source, Live preview or Reading view and its selection. General Settings
+owns `footer.visible`, `word_count`, `character_count` and `count_mode`; missing
+values default to all visible and `source`. Hiding the footer preserves its other
+choices. Enabled empty footers remain visible; image and empty tabs omit metrics,
+while empty text documents show zero. The row inherits theme and notebook zoom.
+
+`document_counts` counts Unicode words and extended grapheme clusters, including
+whitespace. Readable mode converts GFM to an inert HTML DOM and extracts prose,
+link labels, image alt text, code and footnote bodies. It omits syntax, destinations,
+generated footnote/task adornments, comments and script/style/head/template text.
+Text-run whitespace is preserved; block boundaries use one newline and table cells
+use tabs without compiler layout padding. Other text file types retain source
+semantics. No browser, network resource loading or HTML execution is involved.
+
+The runtime captures immutable Editor snapshots after load and buffer edits. Counts
+run off the UI thread with 100ms edit coalescing, one running job and one replaceable
+pending snapshot per document. Readable counting starts on demand and then tracks
+that retained document's edits. Source revision, document identity and current file
+kind reject stale completions; closing the final view drops count ownership. Mode
+switches reuse caches; a first result uses a dash and refreshes retain prior totals
+only for the same document, count mode and file kind. Counts never edit the source,
+selection, history or save state.
 
 The complete transition/effect rules are in the [session contract](docs/document-session.md).
 These are the invariants most likely to matter when changing a feature:

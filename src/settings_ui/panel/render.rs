@@ -92,6 +92,25 @@ impl Render for SettingsPanel {
                     ),
             );
         }
+        let footer_disabled = self.values.busy || !self.values.footer.visible;
+        let mut footer_modes = div().flex().flex_wrap().gap_2();
+        for (index, mode, label) in [
+            (0usize, notebook::FooterCountMode::Source, "Document source"),
+            (1, notebook::FooterCountMode::ReadableText, "Readable text"),
+        ] {
+            footer_modes = footer_modes.child(
+                Button::new(("footer-count-mode", index))
+                    .debug_selector(move || format!("footer-count-mode-{index}"))
+                    .label(label)
+                    .when(self.values.footer.count_mode == mode, |button| {
+                        button.primary()
+                    })
+                    .disabled(footer_disabled)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.emit_intent(SettingsIntent::FooterCountMode(mode), cx)
+                    })),
+            );
+        }
         body = body
             .child(
                 Button::new("open-settings-json")
@@ -120,6 +139,20 @@ impl Render for SettingsPanel {
             .child(div().text_sm().text_color(cx.theme().muted_foreground)
                 .child("Maximum width for Source, Live preview, and Reading. Shrinks to fit the available space."))
             .when_some(self.editor_width_error.clone(), |view, error| view.child(div().text_sm().text_color(cx.theme().danger).child(error)))
+            .child("Footer")
+            .child(Switch::new("footer-visible").label("Show footer").checked(self.values.footer.visible)
+                .disabled(self.values.busy)
+                .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::FooterVisible(*enabled), cx))))
+            .child(Switch::new("footer-word-count").label("Show word count").checked(self.values.footer.word_count)
+                .disabled(footer_disabled)
+                .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::FooterWordCount(*enabled), cx))))
+            .child(Switch::new("footer-character-count").label("Show character count").checked(self.values.footer.character_count)
+                .disabled(footer_disabled)
+                .on_click(cx.listener(|this, enabled: &bool, _, cx| this.emit_intent(SettingsIntent::FooterCharacterCount(*enabled), cx))))
+            .child("Count")
+            .child(footer_modes)
+            .child(div().text_sm().text_color(cx.theme().muted_foreground)
+                .child("Document source includes Markdown syntax. Readable text counts the content without Markdown formatting. Characters include spaces and line breaks."))
             .child("Saving")
             .child(div().text_sm().text_color(cx.theme().muted_foreground).child(self.values.autosave_scope.clone()))
             .when(self.values.has_autosave_notebook, |body| body.child(Switch::new("autosave-enabled").label("Autosave").checked(self.values.autosave.enabled)

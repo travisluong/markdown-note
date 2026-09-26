@@ -6,6 +6,7 @@
 pub mod capabilities;
 pub mod commands;
 pub mod document;
+pub mod document_counts;
 pub mod editor;
 pub mod explorer;
 pub mod feedback;

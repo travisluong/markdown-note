@@ -3310,3 +3310,140 @@ fn terminal_font_controls_fit_narrow_and_wide_dialogs(cx: &mut TestAppContext) {
         );
     }
 }
+
+#[gpui::test]
+fn footer_preferences_preserve_hidden_choices_and_reopened_session_form(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::FooterWordCount(false), cx);
+    intent(
+        &form,
+        SettingsIntent::FooterCountMode(notebook::FooterCountMode::ReadableText),
+        cx,
+    );
+    intent(&form, SettingsIntent::FooterVisible(false), cx);
+    let expected = notebook::FooterSettings {
+        visible: false,
+        word_count: false,
+        character_count: true,
+        count_mode: notebook::FooterCountMode::ReadableText,
+    };
+    // Disabled child controls cannot discard choices while the footer is hidden.
+    intent(&form, SettingsIntent::FooterWordCount(true), cx);
+    intent(&form, SettingsIntent::FooterCharacterCount(false), cx);
+    intent(
+        &form,
+        SettingsIntent::FooterCountMode(notebook::FooterCountMode::Source),
+        cx,
+    );
+    cx.update(|_, cx| {
+        assert_eq!(notes.read(cx).footer_settings(), expected);
+        assert_eq!(form.read(cx).values.footer, expected);
+    });
+    intent(&form, SettingsIntent::Close, cx);
+    cx.update(|window, cx| notes.update(cx, |this, cx| this.open_settings(window, cx)));
+    let reopened = panel(&notes, cx);
+    cx.update(|_, cx| assert_eq!(reopened.read(cx).values.footer, expected));
+    intent(&reopened, SettingsIntent::FooterVisible(true), cx);
+    intent(&reopened, SettingsIntent::FooterCharacterCount(false), cx);
+    // An enabled footer can have no count items without resetting the mode.
+    cx.update(|_, cx| {
+        assert_eq!(
+            notes.read(cx).session_footer,
+            notebook::FooterSettings {
+                visible: true,
+                character_count: false,
+                ..expected
+            }
+        );
+    });
+    intent(&form, SettingsIntent::FooterVisible(false), cx);
+    cx.update(|_, cx| assert!(notes.read(cx).footer_settings().visible));
+}
+
+#[gpui::test]
+fn footer_preferences_persist_only_for_the_active_notebook_and_reject_stale_scope(
+    cx: &mut TestAppContext,
+) {
+    let (fixture, notes, cx) = fixture(cx, true, true);
+    cx.update(|_, cx| {
+        notes.update(cx, |this, _| {
+            this.notebooks
+                .set_test_persistence_target(fixture._directory.path().join("index.json"));
+        })
+    });
+    let form = panel(&notes, cx);
+    intent(&form, SettingsIntent::FooterCharacterCount(false), cx);
+    intent(
+        &form,
+        SettingsIntent::FooterCountMode(notebook::FooterCountMode::ReadableText),
+        cx,
+    );
+    intent(&form, SettingsIntent::FooterVisible(false), cx);
+    let expected = notebook::FooterSettings {
+        visible: false,
+        character_count: false,
+        count_mode: notebook::FooterCountMode::ReadableText,
+        ..notebook::FooterSettings::default()
+    };
+    assert_eq!(
+        notebook::Notebook::open(&fixture.first.root, false)
+            .unwrap()
+            .settings
+            .footer,
+        expected
+    );
+    assert_eq!(
+        notebook::Notebook::open(&fixture.second.root, false)
+            .unwrap()
+            .settings
+            .footer,
+        notebook::FooterSettings::default()
+    );
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            assert_eq!(this.session_footer, notebook::FooterSettings::default());
+            this.notebooks.active = Some(fixture.second.clone());
+            this.handle_settings_intent(
+                form.entity_id(),
+                SettingsIntent::FooterVisible(false),
+                window,
+                cx,
+            );
+            assert_eq!(this.footer_settings(), notebook::FooterSettings::default());
+            assert!(this.settings_panel.is_none());
+            this.notebooks.active =
+                Some(notebook::Notebook::open(&fixture.first.root, false).unwrap());
+            this.open_settings(window, cx);
+        });
+    });
+    let reopened = panel(&notes, cx);
+    cx.update(|_, cx| assert_eq!(reopened.read(cx).values.footer, expected));
+}
+
+#[gpui::test]
+fn footer_form_and_adapter_reject_changes_while_busy(cx: &mut TestAppContext) {
+    let (_fixture, notes, cx) = fixture(cx, false, true);
+    let form = panel(&notes, cx);
+    let choices = [
+        SettingsIntent::FooterVisible(false),
+        SettingsIntent::FooterWordCount(false),
+        SettingsIntent::FooterCharacterCount(false),
+        SettingsIntent::FooterCountMode(notebook::FooterCountMode::ReadableText),
+    ];
+    cx.update(|window, cx| {
+        notes.update(cx, |this, cx| {
+            let _ = this.session.pick();
+            for intent in choices.clone() {
+                this.handle_settings_intent(form.entity_id(), intent, window, cx);
+            }
+            assert_eq!(this.footer_settings(), notebook::FooterSettings::default());
+            assert!(form.read(cx).values.busy);
+        })
+    });
+    let (events, _subscription) = watch(&form, cx);
+    for choice in choices {
+        intent(&form, choice, cx);
+    }
+    cx.update(|_, cx| assert!(events.read(cx).0.is_empty()));
+}

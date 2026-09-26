@@ -12,6 +12,7 @@ pub(crate) struct DocumentRuntime {
     pub saves: autosave::SaveState,
     pub dirty_revision: u64,
     pub dirty_task: Option<Task<()>>,
+    pub counts: crate::footer_ui::CountState,
 }
 
 impl Notes {
@@ -31,6 +32,8 @@ impl Notes {
             first
         };
         self.check_tab_dirty(id, window, cx);
+        let snapshot = self.tabs.get(id).unwrap().editor.snapshot(cx);
+        self.document_counts_edited(document, snapshot, window, cx);
         for &peer in &ids {
             let tab = self.tabs.get_mut(peer).unwrap();
             if tab.mode == ViewMode::Reading {
@@ -157,8 +160,10 @@ impl Notes {
                 saves: Default::default(),
                 dirty_revision: 0,
                 dirty_task: None,
+                counts: Default::default(),
             },
         );
+        self.queue_document_counts(document_id, editor.snapshot(cx), false, window, cx);
         editor
     }
 

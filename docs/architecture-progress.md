@@ -2863,3 +2863,38 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   https://github.com/travisluong/mithril-releases/releases/tag/v0.1.1.
   Installer signing, Microsoft Store distribution and desktop UI validation remain
   outside this release. No desktop application was launched for testing.
+
+## Configurable footer and document counts
+
+- Added a themed, zoom-aware footer beneath the complete workspace. General
+  Settings independently controls the footer, word count and character count,
+  and chooses document source (default) or readable text. All visibility flags
+  default on for new and existing notebooks. Hidden choices are retained; notebook
+  preferences persist through the guarded writer and standalone preferences remain
+  session-only.
+- Shared document runtimes own cached counts and bounded background work: one
+  running job and one latest pending immutable editor snapshot, with 100ms edit
+  coalescing. Document identity, source revision and file kind reject stale work.
+  Source/Live/Reading, selection, duplicate tabs and saved/unsaved status do not
+  change count semantics. Initial results show dashes; refreshes retain the prior
+  totals for the same document and count mode.
+- The pure counter uses Unicode word boundaries and extended grapheme clusters,
+  including whitespace. Readable Markdown uses GFM-to-HTML and an inert DOM walk
+  for text, code, link labels, image alt text and footnotes without markup or
+  generated navigation labels. Block/cell separators prevent merged words. Normal
+  text files keep source semantics. Dependencies reuse already-locked versions;
+  no vendored editor changes were needed.
+- Headless coverage includes Unicode and Markdown fixtures, all 16 preference
+  combinations, persistence and stale settings scopes, pending and abandoned count
+  jobs, shared views, undo/redo, notebook switching, and workspace/footer geometry.
+  No desktop application was launched or controlled.
+- All 25 new tests pass. Full regression with `editor-diagnostics`, the isolated
+  `x86_64-pc-windows-msvc` target and one test thread passed 764 tests, with one
+  existing cross-repository test ignored and the documented sandbox-sensitive
+  PowerShell interrupt test timing out. That single noninteractive PTY test passed
+  outside the sandbox, covering all 765 regression tests.
+- `cargo check --locked --offline --target x86_64-pc-windows-msvc`,
+  `cargo fmt --check`, strict all-target Clippy with `editor-diagnostics`, and
+  `git diff --check` pass. Footer layout and visibility use GPUI TestPlatform;
+  its retained debug-bound maps are reset with test-only frame sentinels before
+  checking removed elements. Native visual validation remains manual.

@@ -20,6 +20,13 @@ const DEFAULT_MONOSPACE_FONT: &str = if cfg!(target_os = "macos") {
     "DejaVu Sans Mono"
 };
 impl Notes {
+    pub(super) fn footer_settings(&self) -> notebook::FooterSettings {
+        self.notebooks
+            .active
+            .as_ref()
+            .map_or(self.session_footer, |book| book.settings.footer)
+    }
+
     pub(super) fn toolbar_settings(&self) -> notebook::ToolbarSettings {
         self.notebooks
             .active
@@ -226,6 +233,7 @@ impl Notes {
         SettingsValues {
             terminal: self.terminal_settings(),
             toolbar: self.toolbar_settings(),
+            footer: self.footer_settings(),
             appearance: self.appearance(),
             autosave: self.autosave_settings(),
             autosave_external_files: self.external_autosave_enabled(),
@@ -515,6 +523,31 @@ impl Notes {
                     self.resolve_settings_file_open(window, cx);
                 }
                 return;
+            }
+            SettingsIntent::FooterVisible(_)
+            | SettingsIntent::FooterWordCount(_)
+            | SettingsIntent::FooterCharacterCount(_)
+            | SettingsIntent::FooterCountMode(_) => {
+                let previous = self.footer_settings();
+                let mut settings = previous;
+                match intent {
+                    SettingsIntent::FooterVisible(visible) => settings.visible = visible,
+                    SettingsIntent::FooterWordCount(enabled) => settings.word_count = enabled,
+                    SettingsIntent::FooterCharacterCount(enabled) => {
+                        settings.character_count = enabled
+                    }
+                    SettingsIntent::FooterCountMode(mode) => settings.count_mode = mode,
+                    _ => unreachable!(),
+                }
+                if settings != previous {
+                    if let Some(book) = &mut self.notebooks.active {
+                        book.settings.footer = settings;
+                        self.persist_notebooks(cx);
+                    } else {
+                        self.session_footer = settings;
+                    }
+                }
+                false
             }
             SettingsIntent::ResetToolbar => {
                 let defaults = notebook::ToolbarSettings::default();

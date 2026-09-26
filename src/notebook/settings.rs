@@ -548,6 +548,34 @@ impl ToolbarSettings {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FooterCountMode {
+    #[default]
+    Source,
+    ReadableText,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FooterSettings {
+    pub visible: bool,
+    pub word_count: bool,
+    pub character_count: bool,
+    pub count_mode: FooterCountMode,
+}
+
+impl Default for FooterSettings {
+    fn default() -> Self {
+        Self {
+            visible: true,
+            word_count: true,
+            character_count: true,
+            count_mode: FooterCountMode::Source,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
@@ -556,6 +584,8 @@ pub struct Settings {
     pub autosave_external_files: bool,
     #[serde(default)]
     pub toolbar: ToolbarSettings,
+    #[serde(default)]
+    pub footer: FooterSettings,
     #[serde(default)]
     pub excluded_patterns: Vec<String>,
     #[serde(default = "default_show_file_extensions")]
@@ -586,6 +616,7 @@ impl Default for Settings {
         Self {
             terminal: Default::default(),
             toolbar: ToolbarSettings::default(),
+            footer: FooterSettings::default(),
             autosave_external_files: false,
             excluded_patterns: Vec::new(),
             file_sort: FileSort::default(),
