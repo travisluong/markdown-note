@@ -261,6 +261,9 @@ impl WorkspaceGeometry {
 #[cfg(test)]
 mod tests {
     use super::WorkspaceGeometry;
+    use crate::{Document, Notes, NotesWindow, ViewMode, notebook};
+    use gpui::{TestAppContext, prelude::*, px, size};
+    use gpui_component::Root;
 
     #[test]
     fn side_panels_fit_proportionally_and_reserve_content() {
@@ -283,6 +286,243 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[gpui::test]
+    fn terminal_divider_resizes_beside_document_modes(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("resize.md");
+        let text = "# Terminal resizing\n\nA paragraph with **bold text**, *emphasis*, and a [link](https://example.com) that wraps as the terminal gets wider.\n\n## A list\n\n- First item with enough text to wrap while resizing the content panel.\n- Second item\n  - Nested item\n\n> A quoted paragraph that also needs to be laid out repeatedly.\n\n| Name | Value |\n| --- | --- |\n| terminal | retained |\n\n```rust\nfn main() {\n    println!(\"terminal width changes\");\n}\n```\n".repeat(4);
+        std::fs::write(&path, &text).unwrap();
+        let mut notes = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let entity = cx.new(|cx| Notes::new(window, cx));
+            entity.update(cx, |this, cx| {
+                this.session_autosave.enabled = false;
+                this.notebooks
+                    .set_test_persistence_target(directory.path().join("index.json"));
+                this.apply_appearance(window, cx);
+            });
+            notes = Some(entity.clone());
+            let root = cx.new(|cx| NotesWindow {
+                _subscription: cx.observe(&entity, |_, _, cx| cx.notify()),
+                notes: entity,
+            });
+            Root::new(root, window, cx)
+        });
+        let notes = notes.unwrap();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.install_document(Some(Document::open(path).unwrap()), window, cx);
+                this.toggle_right_panel(window, cx);
+            });
+        });
+        cx.simulate_resize(size(px(1400.), px(900.)));
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        let (editor, terminal) = cx.update(|_, cx| {
+            let this = notes.read(cx);
+            (
+                this.editor.id(),
+                this.terminals
+                    .active_session()
+                    .unwrap()
+                    .read(cx)
+                    .view
+                    .clone()
+                    .unwrap(),
+            )
+        });
+        for notebook_open in [false, true] {
+            if notebook_open {
+                cx.update(|window, cx| {
+                    notes.update(cx, |this, cx| {
+                        this.notebooks.active =
+                            Some(notebook::Notebook::open(directory.path(), false).unwrap());
+                        this.apply_appearance(window, cx);
+                        cx.notify();
+                    });
+                });
+            }
+            for mode in [ViewMode::Source, ViewMode::LivePreview, ViewMode::Reading] {
+                cx.update(|window, cx| {
+                    notes.update(cx, |this, cx| {
+                        this.change_view_mode(mode, window, cx);
+                        if mode != ViewMode::Reading {
+                            this.editor.select(text.len()..text.len(), window, cx);
+                        }
+                    });
+                });
+                cx.run_until_parked();
+                cx.refresh().unwrap();
+                if mode == ViewMode::Reading {
+                    let position = cx.debug_bounds("workspace-content").unwrap().center();
+                    cx.simulate_event(gpui::ScrollWheelEvent {
+                        position,
+                        delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-1200.))),
+                        ..Default::default()
+                    });
+                    cx.run_until_parked();
+                    cx.refresh().unwrap();
+                }
+                for delta in [-80., 120., -100., 60.] {
+                    let panel = cx.debug_bounds("right-panel").unwrap();
+                    let start = gpui::point(panel.left(), panel.center().y);
+                    let before = cx.update(|_, cx| terminal.read(cx).dimensions());
+                    cx.simulate_mouse_move(start, None, gpui::Modifiers::default());
+                    cx.simulate_mouse_down(
+                        start,
+                        gpui::MouseButton::Left,
+                        gpui::Modifiers::default(),
+                    );
+                    // Exercise successive rendered drag frames, not only the release.
+                    for step in 1..=8 {
+                        let position = gpui::point(start.x + px(delta * step as f32 / 8.), start.y);
+                        cx.simulate_mouse_move(
+                            position,
+                            gpui::MouseButton::Left,
+                            gpui::Modifiers::default(),
+                        );
+                        cx.run_until_parked();
+                        cx.refresh().unwrap();
+                    }
+                    cx.simulate_mouse_up(
+                        gpui::point(start.x + px(delta), start.y),
+                        gpui::MouseButton::Left,
+                        gpui::Modifiers::default(),
+                    );
+                    cx.run_until_parked();
+                    cx.refresh().unwrap();
+                    let displayed = cx.debug_bounds("right-panel").unwrap().size.width;
+                    cx.update(|_, cx| {
+                        let this = notes.read(cx);
+                        assert_eq!(this.editor.id(), editor);
+                        assert_eq!(this.editor.text(cx), text);
+                        assert_eq!(
+                            this.terminals.active_session().unwrap().read(cx).view.as_ref(),
+                            Some(&terminal)
+                        );
+                        assert!((f32::from(displayed) - this.terminal_width()).abs() < 1.);
+                        let after = terminal.read(cx).dimensions();
+                        assert_eq!(before.1, after.1);
+                        assert!(
+                            if delta < 0. { after.0 > before.0 } else { after.0 < before.0 },
+                            "{mode:?}, notebook={notebook_open}, delta={delta}: {before:?} -> {after:?}"
+                        );
+                    });
+                }
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn narrow_zoomed_workspace_keeps_terminal_minimum_columns(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let mut notes = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let entity = cx.new(|cx| Notes::new(window, cx));
+            notes = Some(entity.clone());
+            let root = cx.new(|cx| NotesWindow {
+                _subscription: cx.observe(&entity, |_, _, cx| cx.notify()),
+                notes: entity,
+            });
+            Root::new(root, window, cx)
+        });
+        let notes = notes.unwrap();
+        cx.update(|window, cx| {
+            notes.update(cx, |this, cx| {
+                this.notebooks
+                    .set_test_persistence_target(directory.path().join("index.json"));
+                let mut book = notebook::Notebook::open(directory.path(), false).unwrap();
+                book.settings.terminal.font_size = Some(40);
+                book.settings.appearance.zoom_percent = 200;
+                book.settings.terminal_width = 1000.;
+                this.notebooks.active = Some(book);
+                this.apply_appearance(window, cx);
+                this.toggle_right_panel(window, cx);
+            });
+        });
+        cx.simulate_resize(size(px(800.), px(700.)));
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        let terminal = cx.update(|_, cx| {
+            let this = notes.read(cx);
+            this.terminals
+                .active_session()
+                .unwrap()
+                .read(cx)
+                .view
+                .clone()
+                .unwrap()
+        });
+        cx.update(|_, cx| assert!(terminal.read(cx).dimensions().0 > 2));
+        let panel = cx.debug_bounds("right-panel").unwrap();
+        let start = gpui::point(panel.left(), panel.center().y);
+        cx.simulate_mouse_move(start, None, gpui::Modifiers::default());
+        cx.simulate_mouse_down(start, gpui::MouseButton::Left, gpui::Modifiers::default());
+        // Unequal saved panel widths project to an 87.5px sidebar and a 312.5px
+        // terminal. Dragging the divider can shrink the terminal below two cells.
+        let mut reached_minimum_grid = false;
+        for step in 1..=8 {
+            let position = gpui::point(start.x + px(225. * step as f32 / 8.), start.y);
+            cx.simulate_mouse_move(
+                position,
+                gpui::MouseButton::Left,
+                gpui::Modifiers::default(),
+            );
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            let panel_width = cx.debug_bounds("right-panel").unwrap().size.width;
+            reached_minimum_grid |= cx.update(|_, cx| {
+                let terminal = terminal.read(cx);
+                let columns = terminal.dimensions().0;
+                assert!(columns >= 2, "drag frame {step}: only {columns} column(s)");
+                let geometry = terminal.grid_geometry().unwrap();
+                assert_eq!(geometry.columns, columns);
+                let padding = terminal.config().padding;
+                let available_width = panel_width - padding.left - padding.right;
+                if available_width < geometry.cell_width * 2. {
+                    assert_eq!(columns, 2);
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+        assert!(
+            reached_minimum_grid,
+            "drag must project fewer than two cells"
+        );
+        cx.simulate_mouse_up(
+            gpui::point(start.x + px(225.), start.y),
+            gpui::MouseButton::Left,
+            gpui::Modifiers::default(),
+        );
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        // Persisting the completed drag normalizes the saved width and may widen
+        // the panel again; the terminal must remain valid after that projection.
+        cx.update(|_, cx| assert!(terminal.read(cx).dimensions().0 >= 2));
+        // Both panels compress around the editor's minimum width. With a large
+        // terminal font, the projected panel can fit fewer than two cells.
+        for width in [1000., 600., 500., 440., 500., 1000.] {
+            cx.simulate_resize(size(px(width), px(700.)));
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            let panel_width = cx.debug_bounds("right-panel").unwrap().size.width;
+            cx.update(|_, cx| {
+                let this = notes.read(cx);
+                let session = this.terminals.active_session().unwrap().read(cx);
+                let terminal = session.view.as_ref().unwrap().read(cx);
+                let columns = terminal.dimensions().0;
+                assert!(
+                    columns >= 2,
+                    "viewport={width}, terminal={panel_width:?}: only {columns} column(s)"
+                );
+            });
         }
     }
 }

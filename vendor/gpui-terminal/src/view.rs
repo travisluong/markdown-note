@@ -51,7 +51,8 @@ use crate::colors::ColorPalette;
 use crate::event::{GpuiEventProxy, TerminalEvent};
 use crate::input::keystroke_to_bytes;
 use crate::render::{CursorStyle, TerminalRenderer};
-use crate::terminal::TerminalState;
+use crate::terminal::{TermDimensions, TerminalState};
+use alacritty_terminal::grid::Dimensions;
 use gpui::{Edges, *};
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -1082,6 +1083,7 @@ impl TerminalView {
         }
         self.state.resize(cols, rows);
         if let Some(callback) = &self.resize_callback {
+            let (cols, rows) = self.dimensions();
             callback(cols, rows);
         }
     }
@@ -1138,9 +1140,11 @@ impl TerminalView {
         let cell_width_f32: f32 = self.renderer.cell_width.into();
         let cell_height_f32: f32 = self.renderer.cell_height.into();
 
-        let cols = ((width_f32 / cell_width_f32) as usize).max(1);
-        let rows = ((height_f32 / cell_height_f32) as usize).max(1);
-        (cols, rows)
+        let dimensions = TermDimensions::new(
+            (width_f32 / cell_width_f32) as usize,
+            (height_f32 / cell_height_f32) as usize,
+        );
+        (dimensions.columns(), dimensions.screen_lines())
     }
 }
 
@@ -1208,8 +1212,12 @@ impl Render for TerminalView {
                             geometry.set(None);
                             return;
                         }
-                        let cols = ((available_width / cell_width_f32) as usize).max(1);
-                        let rows = ((available_height / cell_height_f32) as usize).max(1);
+                        let dimensions = TermDimensions::new(
+                            (available_width / cell_width_f32) as usize,
+                            (available_height / cell_height_f32) as usize,
+                        );
+                        let cols = dimensions.columns();
+                        let rows = dimensions.screen_lines();
                         geometry.set(Some(crate::render::GridGeometry {
                             origin: point(
                                 bounds.origin.x + padding.left,
@@ -1221,32 +1229,6 @@ impl Render for TerminalView {
                             rows,
                         }));
 
-                        // Helper struct implementing Dimensions for resize
-                        struct TermSize {
-                            cols: usize,
-                            rows: usize,
-                        }
-                        impl Dimensions for TermSize {
-                            fn total_lines(&self) -> usize {
-                                self.rows
-                            }
-                            fn screen_lines(&self) -> usize {
-                                self.rows
-                            }
-                            fn columns(&self) -> usize {
-                                self.cols
-                            }
-                            fn last_column(&self) -> alacritty_terminal::index::Column {
-                                alacritty_terminal::index::Column(self.cols.saturating_sub(1))
-                            }
-                            fn bottommost_line(&self) -> alacritty_terminal::index::Line {
-                                alacritty_terminal::index::Line(self.rows as i32 - 1)
-                            }
-                            fn topmost_line(&self) -> alacritty_terminal::index::Line {
-                                alacritty_terminal::index::Line(0)
-                            }
-                        }
-
                         // Resize terminal if dimensions changed
                         let mut term = state_arc.lock();
                         let current_cols = term.columns();
@@ -1256,7 +1238,7 @@ impl Render for TerminalView {
                             if let Some(ref callback) = resize_callback {
                                 callback(cols, rows);
                             }
-                            term.resize(TermSize { cols, rows });
+                            term.resize(dimensions);
                         }
 
                         // Paint the terminal with measured dimensions

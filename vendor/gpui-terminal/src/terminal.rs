@@ -46,22 +46,24 @@
 
 use crate::event::GpuiEventProxy;
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::term::{Config, Term, TermMode};
+use alacritty_terminal::term::{Config, MIN_COLUMNS, MIN_SCREEN_LINES, Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-/// Simple dimensions implementation for terminal initialization.
-struct TermDimensions {
+/// Grid dimensions shared by construction, explicit resize and layout resize.
+pub(crate) struct TermDimensions {
     columns: usize,
     screen_lines: usize,
 }
 
 impl TermDimensions {
-    fn new(columns: usize, screen_lines: usize) -> Self {
+    pub(crate) fn new(columns: usize, screen_lines: usize) -> Self {
         Self {
-            columns,
-            screen_lines,
+            // Alacritty requires room for a full-width character and its spacer.
+            // A one-column grid can panic on output or fail to finish reflowing.
+            columns: columns.max(MIN_COLUMNS),
+            screen_lines: screen_lines.max(MIN_SCREEN_LINES),
         }
     }
 }
@@ -175,8 +177,8 @@ impl TerminalState {
         Self {
             term: Arc::new(Mutex::new(term)),
             parser,
-            cols,
-            rows,
+            cols: dimensions.columns(),
+            rows: dimensions.screen_lines(),
         }
     }
 
@@ -231,13 +233,11 @@ impl TerminalState {
     /// terminal.resize(120, 30);
     /// ```
     pub fn resize(&mut self, cols: usize, rows: usize) {
-        self.cols = cols;
-        self.rows = rows;
+        let dimensions = TermDimensions::new(cols, rows);
+        self.cols = dimensions.columns();
+        self.rows = dimensions.screen_lines();
 
         let mut term = self.term.lock();
-
-        // Create dimensions for the resize
-        let dimensions = TermDimensions::new(cols, rows);
 
         // Resize the terminal
         term.resize(dimensions);

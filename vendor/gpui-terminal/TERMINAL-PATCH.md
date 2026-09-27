@@ -9,6 +9,12 @@ The upstream example and unused clipboard helper are retained as references;
 Mithril uses GPUI clipboard access and never launches the example application.
 
 Local changes:
+- Share normalized grid dimensions across construction, explicit resize and canvas
+  layout, enforcing Alacritty's two-column/one-row minimum. One-column grids can
+  panic on wide Unicode output or fail to finish reflowing existing wide cells.
+  Hit testing and PTY resize callbacks report the same safe dimensions; tiny
+  panels clip the grid and zero-size view resizes remain ignored. Root
+  tests/terminal_resize.rs and application sidebar tests cover these limits.
 - Add from_receiver for Mithril-owned PTY I/O. Bound the standalone stream
   constructor's queue; process at most 64 KiB per UI turn and yield between
   batches. Drain protocol events while hidden rather than only during paint.

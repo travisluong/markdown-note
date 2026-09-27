@@ -2927,3 +2927,39 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   765 regression tests. The isolated target preserved the running app's build.
 - No desktop application was launched or controlled. Native visual review remains
   a manual check for the user.
+
+## Terminal resize minimum grid (2026-09-26)
+
+- Reproduced an invalid one-column terminal grid in TestPlatform: a 600px
+  workspace at 200% zoom with a 40px terminal font projects a 100px terminal
+  panel. Unequal saved panel widths also allow an actual divider drag to cross
+  below two cells. Ordinary divider dragging beside Source, Live preview and
+  Reading documents passed before the fix.
+- An isolated regression reproduced the crash after an ASCII prompt, a resize
+  to one column and full-width Unicode output: Alacritty panicked at
+  `grid/mod.rs:439` with index 1 into a row of length 1. The terminal engine
+  requires at least two columns and one row; the view previously allowed one
+  column. This confirms a reachable resize crash; the user's original Windows
+  exit-code report did not include a backtrace identifying its precise path.
+- The vendored terminal now shares normalized dimensions across construction,
+  explicit resize and canvas layout. The internal grid, selection geometry and
+  PTY callbacks agree on those dimensions. Very small panels clip the two-column
+  grid; zero-size view resizes still leave the existing grid unchanged.
+- Four component regressions failed before the fix and pass afterward, covering
+  construction, explicit resize callbacks, tiny canvas layout and continued wide
+  Unicode output. Application tests cover compressed/zoomed layouts and repeated
+  border drags across document modes while retaining text, views and widths.
+- Full regression with `editor-diagnostics`, `x86_64-pc-windows-msvc` and one
+  test thread passed 769 tests, with one existing cross-repository test ignored.
+  The new drag test initially checked the panel after release, when saved-width
+  normalization can widen it; the corrected check measures available width after
+  padding during the drag and passes. The existing sandbox-sensitive PowerShell
+  interrupt test also passed when rerun outside the sandbox. Together the full
+  run and these focused reruns cover all 771 tests without remaining failures.
+- `cargo check --locked --offline --target x86_64-pc-windows-msvc`, root and changed
+  vendor formatting checks, strict all-target Clippy with `editor-diagnostics`,
+  and `git diff --check` pass. The isolated Cargo target leaves the ordinary
+  development executable untouched.
+- All verification uses in-memory GPUI TestPlatform or noninteractive commands.
+  No desktop application was launched or controlled; native visual validation
+  remains manual.

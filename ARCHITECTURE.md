@@ -836,6 +836,10 @@ latest style during
 launch so async installation cannot restore an old preference. Config updates
 preserve the PTY, terminal grid and output. The vendored renderer honors application
 cursor visibility while the host configuration determines the shape.
+The vendored terminal's shared dimensions constructor enforces Alacritty's minimum
+two columns and one row for initial grids and every resize. Layout, selection
+geometry and PTY callbacks use those same dimensions, clipping the grid inside
+panels too narrow to fit both columns. Zero-size view resizes remain ignored.
 Terminal focus consumes shell keys independently of document commands; the host
 retains Ctrl+backtick, and modal/busy input guards are checked at dispatch time.
 TerminalView owns Alacritty selection, plain-text extraction and GPUI clipboard
