@@ -9,7 +9,7 @@ shows the shell/application-reported title (OSC 0/2), or its shell name when no
 title is reported, and an **×** button to close that session. Titles update even
 while hidden; long titles are truncated with the full title in a tooltip.
 Command or Claude session names appear when the shell/application reports them;
-Mithril does not install shell hooks to infer commands. New tabs capture the
+Markdown Note does not install shell hooks to infer commands. New tabs capture the
 current shell preference and starting directory and receive stable internal IDs.
 Selecting a tab restores its terminal and focus; other shells keep processing
 output. Closing an active tab selects its right neighbor, otherwise its left.
@@ -118,6 +118,6 @@ detached jobs are outside the session lifecycle contract.
 Run the commands in ARCHITECTURE.md. tests/terminal.rs adds headless shell and
 component coverage; Git Bash's scenario skips explicitly when it is not installed.
 Windows sandbox restrictions can block Ctrl+C even though spawn/read/write work;
-run real PTY tests outside that restriction. No test opens the Mithril application,
+run real PTY tests outside that restriction. No test opens the Markdown Note application,
 a terminal window, or injects desktop input. User validation should check native
 font rendering, panel resizing, shell profiles and real interactive programs.

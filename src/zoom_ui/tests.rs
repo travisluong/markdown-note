@@ -3,7 +3,7 @@ use super::Zoom;
 use crate::{CommandPalette, Document, Notes, NotesWindow, ViewMenu, ViewMode, notebook};
 use gpui::{Entity, TestAppContext, VisualTestContext, prelude::*, px, size};
 use gpui_component::{ActiveTheme, Root, WindowExt};
-use mithril::commands::Command;
+use markdown_note::commands::Command;
 
 fn fixture(cx: &mut TestAppContext) -> (Entity<Notes>, &mut VisualTestContext) {
     cx.update(|cx| {

@@ -62,11 +62,11 @@ fn settings_json_resolution_admits_only_exact_regular_settings_file() {
         super::resolve_document_path(&book.root, &path).unwrap(),
         path
     );
-    assert!(notebook::resolve(&book.root, std::path::Path::new(".mithril/settings.json")).is_err());
+    assert!(notebook::resolve(&book.root, std::path::Path::new(".markdown-note/settings.json")).is_err());
     for relative in [
-        ".mithril/other.json",
-        "nested/.mithril/settings.json",
-        ".mithril/../note.md",
+        ".markdown-note/other.json",
+        "nested/.markdown-note/settings.json",
+        ".markdown-note/../note.md",
     ] {
         assert!(super::resolve_document_path(&book.root, &book.root.join(relative)).is_err());
     }
@@ -85,7 +85,7 @@ fn settings_json_resolution_rejects_linked_metadata_directory() {
     fs::create_dir(&root).unwrap();
     fs::create_dir(&target).unwrap();
     fs::write(target.join("settings.json"), "{}").unwrap();
-    let link = root.join(".mithril");
+    let link = root.join(".markdown-note");
     #[cfg(unix)]
     std::os::unix::fs::symlink(&target, &link).unwrap();
     #[cfg(windows)]
@@ -94,9 +94,9 @@ fn settings_json_resolution_rejects_linked_metadata_directory() {
         let result = std::process::Command::new("powershell.exe")
             .creation_flags(0x08000000) // CREATE_NO_WINDOW: headless diagnostics only.
             .args(["-NoProfile", "-NonInteractive", "-Command",
-                "New-Item -ItemType Junction -Path $env:MITHRIL_TEST_LINK -Target $env:MITHRIL_TEST_TARGET | Out-Null"])
-            .env("MITHRIL_TEST_LINK", &link)
-            .env("MITHRIL_TEST_TARGET", &target)
+                "New-Item -ItemType Junction -Path $env:MARKDOWN_NOTE_TEST_LINK -Target $env:MARKDOWN_NOTE_TEST_TARGET | Out-Null"])
+            .env("MARKDOWN_NOTE_TEST_LINK", &link)
+            .env("MARKDOWN_NOTE_TEST_TARGET", &target)
             .output().unwrap();
         assert!(
             result.status.success(),

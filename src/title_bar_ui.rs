@@ -89,14 +89,14 @@ impl Notes {
             .menu_with_disabled(
                 "Back",
                 Box::new(NavigateBack),
-                mithril::commands::Command::Back
+                markdown_note::commands::Command::Back
                     .unavailable(capabilities)
                     .is_some(),
             )
             .menu_with_disabled(
                 "Forward",
                 Box::new(NavigateForward),
-                mithril::commands::Command::Forward
+                markdown_note::commands::Command::Forward
                     .unavailable(capabilities)
                     .is_some(),
             )
@@ -142,7 +142,7 @@ impl Notes {
                     .menu_with_disabled("Reset zoom", Box::new(ResetZoom), busy)
             })
         } else if kind == MenuKind::Search {
-            use mithril::commands::Command;
+            use markdown_note::commands::Command;
             menu.menu_with_disabled(
                 "Search in file",
                 Box::new(Search),

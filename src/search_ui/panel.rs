@@ -12,7 +12,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState, Rope},
 };
-use mithril::search;
+use markdown_note::search;
 use std::{
     collections::{BTreeSet, VecDeque},
     path::{Path, PathBuf},
@@ -57,7 +57,7 @@ pub(crate) struct SearchPanel {
     visible: bool,
     interaction_enabled: bool,
     root: PathBuf,
-    exclusions: mithril::notebook::Exclusions,
+    exclusions: markdown_note::notebook::Exclusions,
     query: Entity<InputState>,
     _subscription: Subscription,
     case_sensitive: bool,
@@ -86,7 +86,7 @@ impl Drop for SearchPanel {
 impl SearchPanel {
     pub(super) fn new(
         root: PathBuf,
-        exclusions: mithril::notebook::Exclusions,
+        exclusions: markdown_note::notebook::Exclusions,
         overlay: impl IntoIterator<Item = Overlay>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -159,7 +159,7 @@ impl SearchPanel {
     pub(super) fn rescan(
         &mut self,
         overlay: impl IntoIterator<Item = Overlay>,
-        exclusions: mithril::notebook::Exclusions,
+        exclusions: markdown_note::notebook::Exclusions,
         cx: &mut Context<Self>,
     ) {
         self.exclusions = exclusions;

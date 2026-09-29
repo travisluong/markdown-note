@@ -5,17 +5,17 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Mithril</string>
+    <string>Markdown Note</string>
     <key>CFBundleExecutable</key>
-    <string>mithril</string>
+    <string>markdown-note</string>
     <key>CFBundleIdentifier</key>
-    <string>org.mithril.Mithril</string>
+    <string>io.github.travisluong.MarkdownNote</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Mithril</string>
+    <string>Markdown Note</string>
     <key>CFBundleIconFile</key>
-    <string>mithril.icns</string>
+    <string>markdown-note.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>NSHighResolutionCapable</key>

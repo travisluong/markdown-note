@@ -5,7 +5,7 @@ use gpui_component::{
     Root,
     input::{Redo, Undo},
 };
-use mithril::document_counts::DocumentCounts;
+use markdown_note::document_counts::DocumentCounts;
 use notebook::{FooterCountMode, FooterSettings};
 use std::{fs, time::Duration};
 

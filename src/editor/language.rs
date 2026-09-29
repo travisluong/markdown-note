@@ -27,7 +27,7 @@ pub(super) fn for_path(path: &Path) -> &'static str {
             "gql" => "graphql",
             "exs" => "elixir",
             "patch" => "diff",
-            // Only .md and .markdown have Markdown semantics in Mithril.
+            // Only .md and .markdown have Markdown semantics in Markdown Note.
             "mdx" => "text",
             other => other,
         },

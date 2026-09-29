@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Markdown Note
+Comment=Markdown notes
+Exec=markdown-note
+Icon=io.github.travisluong.MarkdownNote
+Terminal=false
+Categories=Office;TextEditor;
+StartupWMClass=io.github.travisluong.MarkdownNote

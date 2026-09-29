@@ -33,7 +33,7 @@ fn settings_json_button_opens_source_and_preserves_notebook_preferences(cx: &mut
         });
         cx.run_until_parked();
         let before = fs::read(&path).unwrap();
-        let before_identity = mithril::document::open(&path).unwrap().version;
+        let before_identity = markdown_note::document::open(&path).unwrap().version;
         cx.refresh().unwrap();
         let button = cx.debug_bounds("open-settings-json").unwrap();
         cx.simulate_click(button.center(), gpui::Modifiers::default());
@@ -59,7 +59,7 @@ fn settings_json_button_opens_source_and_preserves_notebook_preferences(cx: &mut
         });
         assert_eq!(fs::read(&path).unwrap(), before);
         assert_eq!(
-            mithril::document::open(&path).unwrap().version,
+            markdown_note::document::open(&path).unwrap().version,
             before_identity
         );
     }

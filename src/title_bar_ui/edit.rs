@@ -2,7 +2,7 @@
 use super::*;
 use gpui::{Action, App, EntityId, FocusHandle};
 use gpui_component::input::{Copy, Cut, Paste, Redo, Rope, SelectAll, Undo};
-use mithril::commands::Command;
+use markdown_note::commands::Command;
 use std::ops::Range;
 
 #[derive(Clone)]

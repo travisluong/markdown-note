@@ -420,14 +420,14 @@ fn ranking() {
 #[test]
 fn recursive_duplicates_and_settings() {
     let temp = tempfile::tempdir().unwrap();
-    for folder in ["a/deep", "b", ".mithril"] {
+    for folder in ["a/deep", "b", ".markdown-note"] {
         fs::create_dir_all(temp.path().join(folder)).unwrap();
     }
     for file in [
         "a/deep/Note.md",
         "b/Note.md",
         "b/ignore.txt",
-        ".mithril/private.md",
+        ".markdown-note/private.md",
     ] {
         fs::write(temp.path().join(file), "").unwrap();
     }

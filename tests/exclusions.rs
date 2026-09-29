@@ -1,6 +1,6 @@
 //! One exclusion policy across notebook discovery, search, and explicit access.
 use gpui_component::input::Rope;
-use mithril::{commands, document, explorer::Explorer, notebook, search};
+use markdown_note::{commands, document, explorer::Explorer, notebook, search};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -20,7 +20,7 @@ fn exclusions_prune_every_discovery_surface_but_keep_explicit_access() {
         "nested/visible/keep.md",
         "keep.md",
         "scratch.tmp",
-        ".mithril/hidden.md",
+        ".markdown-note/hidden.md",
     ] {
         fs::write(book.root.join(file), "hit").unwrap();
     }
@@ -92,7 +92,7 @@ fn exclusions_prune_every_discovery_surface_but_keep_explicit_access() {
     );
     assert!(
         !all.iter()
-            .any(|entry| entry.relative.starts_with(".mithril"))
+            .any(|entry| entry.relative.starts_with(".markdown-note"))
     );
 }
 

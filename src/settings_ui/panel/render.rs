@@ -11,7 +11,7 @@ use gpui_component::{
     select::Select,
     switch::Switch,
 };
-use mithril::notebook;
+use markdown_note::notebook;
 
 /// Keep independent settings farther apart than a field's label and help text.
 fn settings_stack() -> Div {

@@ -54,8 +54,8 @@ const TOOLBAR: &[(&str, &[u8])] = &[
     ),
 ];
 const BRAND: (&str, &[u8]) = (
-    "brand/mithril.png",
-    include_bytes!("../assets/brand/mithril.png"),
+    "brand/markdown-note.png",
+    include_bytes!("../assets/brand/markdown-note.png"),
 );
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {

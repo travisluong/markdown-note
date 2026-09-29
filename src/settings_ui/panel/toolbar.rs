@@ -2,7 +2,7 @@
 use super::{SettingsIntent, SettingsPanel};
 use gpui::{Context, IntoElement, div, prelude::*};
 use gpui_component::{Disableable, switch::Switch};
-use mithril::notebook::ToolbarItem;
+use markdown_note::notebook::ToolbarItem;
 
 impl SettingsPanel {
     pub(super) fn render_toolbar_item(

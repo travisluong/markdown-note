@@ -295,7 +295,7 @@ Inherited focus/modal controls, not document commands:
 | Color picker / popover | Escape | Dismiss; [color picker](../vendor/gpui-component/src/color_picker.rs), [popover](../vendor/gpui-component/src/popover.rs) |
 | Debug/inspector-enabled builds only | Ctrl+Shift+I; Cmd+Option+I on macOS | Toggle GPUI inspector; [inspector](../vendor/gpui-component/src/inspector.rs) |
 
-For completeness, component initialization also registers keys for widgets not used as Mithril command surfaces: NumberInput Up/Down (increment/decrement); Sheet Escape; DatePicker Enter/Escape/Delete/Backspace; generic Table Escape/Up/Down/Left/Right; generic Tree arrows; generic AppMenuBar Escape/Left/Right. Mithril's Explorer, Markdown tables and title menu use the dedicated routes above. These inherited registrations are not evidence of additional product features. See [component initialization](../vendor/gpui-component/src/lib.rs).
+For completeness, component initialization also registers keys for widgets not used as Markdown Note command surfaces: NumberInput Up/Down (increment/decrement); Sheet Escape; DatePicker Enter/Escape/Delete/Backspace; generic Table Escape/Up/Down/Left/Right; generic Tree arrows; generic AppMenuBar Escape/Left/Right. Markdown Note's Explorer, Markdown tables and title menu use the dedicated routes above. These inherited registrations are not evidence of additional product features. See [component initialization](../vendor/gpui-component/src/lib.rs).
 
 ## 5. File context menus and nearby controls
 

@@ -1,4 +1,4 @@
-use mithril::notebook::{FooterCountMode, FooterSettings, Notebook, Settings, save_book};
+use markdown_note::notebook::{FooterCountMode, FooterSettings, Notebook, Settings, save_book};
 
 #[test]
 fn footer_defaults_preserve_legacy_and_partial_settings() {

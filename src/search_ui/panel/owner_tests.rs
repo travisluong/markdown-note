@@ -20,7 +20,7 @@ fn fixture<'a>(
         let entity = cx.new(|cx| {
             SearchPanel::new(
                 root.to_path_buf(),
-                mithril::notebook::Exclusions::default(),
+                markdown_note::notebook::Exclusions::default(),
                 overlay,
                 window,
                 cx,

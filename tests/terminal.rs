@@ -4,7 +4,7 @@ use gpui_terminal::{
     event::{GpuiEventProxy, TerminalEvent},
     terminal::TerminalState,
 };
-use mithril::terminal::*;
+use markdown_note::terminal::*;
 use std::{
     io::Write,
     time::{Duration, Instant},
@@ -76,25 +76,25 @@ fn exercise(settings: TerminalSettings) {
     let cwd = directory.path().to_string_lossy().replace('\'', "''");
     let command = if cfg!(windows) && !bash {
         format!(
-            "if ((Get-Location).Path -eq '{cwd}' -and $Host.UI.RawUI.WindowSize.Width -eq 120 -and $Host.UI.RawUI.WindowSize.Height -eq 40) {{ Write-Output ('MITHRIL_' + 'READY') }}\r"
+            "if ((Get-Location).Path -eq '{cwd}' -and $Host.UI.RawUI.WindowSize.Width -eq 120 -and $Host.UI.RawUI.WindowSize.Height -eq 40) {{ Write-Output ('MARKDOWN_NOTE_' + 'READY') }}\r"
         )
     } else {
         // Git Bash represents Windows paths using /c/...; validate the directory
         // through a file created there instead of comparing platform spellings.
-        std::fs::write(directory.path().join("mithril-cwd-probe"), "").unwrap();
-        "HISTFILE=/dev/null; test -f mithril-cwd-probe && test \"$(stty size)\" = '40 120' && printf 'MITHRIL_%s\\n' READY\r".into()
+        std::fs::write(directory.path().join("markdown-note-cwd-probe"), "").unwrap();
+        "HISTFILE=/dev/null; test -f markdown-note-cwd-probe && test \"$(stty size)\" = '40 120' && printf 'MARKDOWN_NOTE_%s\\n' READY\r".into()
     };
     input.write_all(command.as_bytes()).unwrap();
-    wait_for(&process, "MITHRIL_READY");
+    wait_for(&process, "MARKDOWN_NOTE_READY");
     // A foreground shell builtin must be interruptible without killing the shell.
     input
         .write_all(if cfg!(windows) && !bash {
-            b"Write-Output ('MITHRIL_' + 'BUSY'); Start-Sleep -Seconds 30\r"
+            b"Write-Output ('MARKDOWN_NOTE_' + 'BUSY'); Start-Sleep -Seconds 30\r"
         } else {
-            b"printf 'MITHRIL_%s\\n' BUSY; sleep 30\r"
+            b"printf 'MARKDOWN_NOTE_%s\\n' BUSY; sleep 30\r"
         })
         .unwrap();
-    wait_for(&process, "MITHRIL_BUSY");
+    wait_for(&process, "MARKDOWN_NOTE_BUSY");
     // Let the external foreground job acquire the terminal before interrupting.
     std::thread::sleep(Duration::from_millis(300));
     input.write_all(b"\x03").unwrap();
@@ -102,12 +102,12 @@ fn exercise(settings: TerminalSettings) {
     std::thread::sleep(Duration::from_millis(300));
     input
         .write_all(if cfg!(windows) && !bash {
-            b"Write-Output ('MITHRIL_' + 'ALIVE')\r"
+            b"Write-Output ('MARKDOWN_NOTE_' + 'ALIVE')\r"
         } else {
-            b"printf 'MITHRIL_%s\\n' ALIVE\r"
+            b"printf 'MARKDOWN_NOTE_%s\\n' ALIVE\r"
         })
         .unwrap();
-    wait_for(&process, "MITHRIL_ALIVE");
+    wait_for(&process, "MARKDOWN_NOTE_ALIVE");
     input.write_all(b"exit 7\r").unwrap();
     assert_eq!(
         process.exit.recv_timeout(Duration::from_secs(15)).unwrap(),
@@ -208,10 +208,10 @@ fn terminal_launch_failure_and_old_settings_defaults() {
         })
         .is_err()
     );
-    let settings = mithril::notebook::Settings::default();
+    let settings = markdown_note::notebook::Settings::default();
     let mut json = serde_json::to_value(&settings).unwrap();
     json.as_object_mut().unwrap().remove("terminal");
-    let restored: mithril::notebook::Settings = serde_json::from_value(json).unwrap();
+    let restored: markdown_note::notebook::Settings = serde_json::from_value(json).unwrap();
     assert_eq!(restored.terminal.windows_shell, WindowsShell::Powershell);
     assert_eq!(restored.terminal.cursor_style, CursorStyle::Line);
     let settings = TerminalSettings {
@@ -426,18 +426,18 @@ fn terminal_sessions_are_independent_and_closing_one_preserves_the_other() {
         .input
         .clone()
         .write_all(if powershell {
-            b"$mithril_tab = 'FIRST'; Write-Output ('SESSION_' + $mithril_tab)\r"
+            b"$markdown_note_tab = 'FIRST'; Write-Output ('SESSION_' + $markdown_note_tab)\r"
         } else {
-            b"HISTFILE=/dev/null; mithril_tab=FIRST; printf 'SESSION_%s\\n' $mithril_tab\r"
+            b"HISTFILE=/dev/null; markdown_note_tab=FIRST; printf 'SESSION_%s\\n' $markdown_note_tab\r"
         })
         .unwrap();
     second
         .input
         .clone()
         .write_all(if powershell {
-            b"$mithril_tab = 'SECOND'; Write-Output ('SESSION_' + $mithril_tab)\r"
+            b"$markdown_note_tab = 'SECOND'; Write-Output ('SESSION_' + $markdown_note_tab)\r"
         } else {
-            b"HISTFILE=/dev/null; mithril_tab=SECOND; printf 'SESSION_%s\\n' $mithril_tab\r"
+            b"HISTFILE=/dev/null; markdown_note_tab=SECOND; printf 'SESSION_%s\\n' $markdown_note_tab\r"
         })
         .unwrap();
     wait_for(&first, "SESSION_FIRST");
@@ -455,9 +455,9 @@ fn terminal_sessions_are_independent_and_closing_one_preserves_the_other() {
         .input
         .clone()
         .write_all(if powershell {
-            b"Write-Output ('SURVIVING_' + $mithril_tab)\r"
+            b"Write-Output ('SURVIVING_' + $markdown_note_tab)\r"
         } else {
-            b"printf 'SURVIVING_%s\\n' $mithril_tab\r"
+            b"printf 'SURVIVING_%s\\n' $markdown_note_tab\r"
         })
         .unwrap();
     wait_for(&second, "SURVIVING_SECOND");

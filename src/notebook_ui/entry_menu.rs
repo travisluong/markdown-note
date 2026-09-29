@@ -2,7 +2,7 @@
 use super::*;
 use gpui::{ClipboardItem, Pixels, Point};
 use gpui_component::{WindowExt, dialog::DialogButtonProps, input::Input};
-use mithril::explorer::Generation;
+use markdown_note::explorer::Generation;
 use std::path::Path;
 
 #[derive(Clone)]
@@ -309,7 +309,7 @@ impl Notes {
                             .map(|_| ())
                     } else {
                         notebook::validate_name(&name).and_then(|_| {
-                            if name.eq_ignore_ascii_case(".mithril") {
+                            if name.eq_ignore_ascii_case(".markdown-note") {
                                 Err(io::Error::other("This name is reserved."))
                             } else {
                                 Ok(())

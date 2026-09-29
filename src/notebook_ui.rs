@@ -1,6 +1,6 @@
 use super::*;
 use gpui_component::{Disableable, dialog::Dialog, menu::PopupMenuItem};
-use mithril::explorer::Explorer;
+use markdown_note::explorer::Explorer;
 #[cfg(test)]
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ fn resolve_document_path(root: &Path, path: &Path) -> io::Result<PathBuf> {
     if path == notebook::settings_path(root) {
         for (component, directory) in [
             (root.to_path_buf(), true),
-            (root.join(".mithril"), true),
+            (root.join(".markdown-note"), true),
             (path.to_path_buf(), false),
         ] {
             let metadata = std::fs::symlink_metadata(&component)?;

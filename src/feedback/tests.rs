@@ -139,16 +139,16 @@ fn real_transport_checks_acknowledgment_status_and_never_follows_redirects() {
     ));
 }
 
-/// Invoked only by mithril-web/tests/cross-repository.mjs against an isolated DB.
+/// Invoked only by markdown-note-web/tests/cross-repository.mjs against an isolated DB.
 #[test]
 #[ignore = "requires local Next.js and an isolated Postgres test database"]
 fn cross_repository_feedback_with_local_backend() {
-    let endpoint = std::env::var("MITHRIL_FEEDBACK_ENDPOINT").expect("test endpoint required");
+    let endpoint = std::env::var("MARKDOWN_NOTE_FEEDBACK_ENDPOINT").expect("test endpoint required");
     assert!(endpoint.starts_with("http://127.0.0.1:"));
     let mut payload =
         Payload::new("Cross-repository test 🙂 <plain text>", "test@example.com").unwrap();
     payload.submission_id =
-        Uuid::parse_str(&std::env::var("MITHRIL_FEEDBACK_TEST_ID").unwrap()).unwrap();
+        Uuid::parse_str(&std::env::var("MARKDOWN_NOTE_FEEDBACK_TEST_ID").unwrap()).unwrap();
     assert_eq!(HttpTransport.send(&payload), Ok(()));
     assert_eq!(HttpTransport.send(&payload), Ok(()));
 }

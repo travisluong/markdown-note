@@ -7,7 +7,7 @@ records verification and platform limits. Update this map when a contract moves.
 
 ## System shape
 
-Mithril is a single-window Markdown application with retained document tabs.
+Markdown Note is a single-window Markdown application with retained document tabs.
 Each tab owns a document view, image, or empty view; canonical notes share a document runtime. Ordinary files hold notes, a per-user index lists notebooks,
 and each notebook has JSON preferences. Source and Live preview share document text and undo history across views. Reading is derived from that editor's source.
 
@@ -240,11 +240,11 @@ operation, including unchanged re-selection; untouched loaded settings survive.
 Removing an inactive notebook is an index edit and does not navigate or save the
 active document.
 
-Mithril stores each notebook's preferences in `.mithril/settings.json` and the
-per-user notebook index under the platform configuration directory's `mithril`
-folder. The explorer, search and path guards exclude `.mithril`. Earlier storage
+Markdown Note stores each notebook's preferences in `.markdown-note/settings.json` and the
+per-user notebook index under the platform configuration directory's `markdown-note`
+folder. The explorer, search and path guards exclude `.markdown-note`. Earlier storage
 directory names are not automatically migrated; preserve settings by renaming
-those directories before opening existing notebooks with Mithril.
+those directories before opening existing notebooks with Markdown Note.
 
 Notebook discovery exclusions belong to `notebook/exclusions.rs`. Settings store
 `excluded_patterns` per notebook; `NotebookState` compiles an immutable policy on
@@ -376,7 +376,7 @@ Application branding is owned by [`assets/brand/README.md`](assets/brand/README.
 and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
 marketing site's exact SVG mark. `build.rs` embeds Windows icon resource 1;
 release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
-launcher identity matches `WindowOptions::app_id` (`org.mithril.Mithril`).
+launcher identity matches `WindowOptions::app_id` (`io.github.travisluong.MarkdownNote`).
 The title bar owns the sidebar button before the menus. Settings → Toolbar → Top
 bar controls `toolbar.title_bar_sidebar` and `toolbar.title_bar_terminal` (both
 default false), independently of workspace toolbar visibility and icon sizing.
@@ -389,7 +389,7 @@ panel. Native shell icons continue to use the packaged brand resources.
 Windows distribution is owned by the [`release.ps1`](scripts/release.ps1) and
 [`release.sh`](scripts/release.sh) shell wrappers, their local
 orchestrator [`release-local.mjs`](scripts/release-local.mjs), and
-[`packaging/windows/mithril.iss`](packaging/windows/mithril.iss). The installer owns
+[`packaging/windows/markdown-note.iss`](packaging/windows/markdown-note.iss). The installer owns
 only app binaries, shortcuts and its per-user uninstall registration; notebook
 files and preferences remain application/user-owned. Keep its AppId stable for
 upgrades. The local command archives a stable `vMAJOR.MINOR.PATCH` tag into an
@@ -399,8 +399,8 @@ shared release cache; run snapshots, metadata and packages stay under ignored
 `target/local-releases`. The development checkout is never reset or cleaned.
 `-BuildOnly` creates a package without GitHub access. Only GitHub commands inherit the
 release-token environment variables; compiler/tests do not. Local GitHub CLI
-authentication or `MITHRIL_RELEASES_TOKEN` authorizes public Release assets in
-`travisluong/mithril-releases`. Builds and validation run locally; there are no
+authentication or `MARKDOWN_NOTE_RELEASES_TOKEN` authorizes public Release assets in
+`travisluong/markdown-note`. Builds and validation run locally; there are no
 GitHub Actions workflows.
 [`release.mjs`](.github/scripts/release.mjs) owns tag/version validation,
 checksums and draft publication. It downloads and verifies assets before making
@@ -429,7 +429,7 @@ integration tests. Some tests include vendor source through `#[path]`, so root
 format/lint checks can report those files.
 
 GPUI tests use TestPlatform, not native desktop windows. Agents must not launch
-`MITHRIL_BENCH`, `MITHRIL_NOTEBOOK_CHECK`, `MITHRIL_AUTOSAVE_CHECK` or other
+`MARKDOWN_NOTE_BENCH`, `MARKDOWN_NOTE_NOTEBOOK_CHECK`, `MARKDOWN_NOTE_AUTOSAVE_CHECK` or other
 native application harnesses, even hidden. Leave physical input, native pickers,
 rendered benchmarks and platform UI validation to the user. Historical results
 in [benchmarks/README.md](benchmarks/README.md) are not current verification.
@@ -690,10 +690,10 @@ Other TextViews retain their default outside-click selection clearing behavior.
 
 Fenced blocks labelled `mermaid` render offline in Live preview and Reading.
 Source mode remains literal. The vendored `mermaid` Cargo feature is enabled by
-Mithril; `src/mermaid.rs` owns the application-wide rendering queue and LRU cache.
+Markdown Note; `src/mermaid.rs` owns the application-wide rendering queue and LRU cache.
 It pins Merman 0.7.0 for native SVG generation. The root Cargo patch selects
 vendored `merman-core` 0.7.0 with a sequence lexer fix for participant names
-containing spaces; `vendor/merman-core/MITHRIL-PATCH.md` records provenance and
+containing spaces; `vendor/merman-core/MARKDOWN-NOTE-PATCH.md` records provenance and
 verification. The shared renderer uses resvg 0.45.1 with all
 image-resource resolvers disabled. The SVG root canvas is made transparent so
 both views inherit their native themed code-block background; Merman's dark
@@ -731,9 +731,9 @@ identity, lifetime, scope and busy guards still apply; failure keeps the form op
 Success dismisses the modal before normal current-tab document navigation and its
 unsaved-change prompt. Without a notebook the button is disabled.
 
-The document-loading adapter alone admits the exact `.mithril/settings.json` path,
+The document-loading adapter alone admits the exact `.markdown-note/settings.json` path,
 checking the notebook root, metadata directory and regular file for links. Tree
-resolution and persisted relative paths still exclude `.mithril`. JSON uses the
+resolution and persisted relative paths still exclude `.markdown-note`. JSON uses the
 existing Source-only installation and shared-buffer/save contracts. Opening or
 selecting this document skips last-note persistence, preserving the Markdown mode,
 last note and loaded disk baseline. This adds no automatic reload of manually
@@ -767,7 +767,7 @@ External autosave changes travel through SettingsPanel's typed
 `ExternalAutosaveEnabled` intent, retaining dialog identity/lifetime and busy-phase
 autosave guards. Its scope follows the active notebook, even when the selected file
 is outside that notebook or belongs to another retained notebook. NotebookState
-saves the flag in that notebook's `.mithril/settings.json` through the ordinary
+saves the flag in that notebook's `.markdown-note/settings.json` through the ordinary
 ordered preference writer and close-flush barrier; the per-user index no longer
 stores it. An old index-wide flag is ignored rather than copied into notebooks.
 Same-notebook activation replays explicit choices, including unchanged re-selection;

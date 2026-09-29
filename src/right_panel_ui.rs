@@ -5,14 +5,14 @@ use crate::toolbar_ui::toolbar_icon_button;
 use gpui_component::{Disableable, button::ButtonCustomVariant};
 
 impl Notes {
-    pub(super) fn terminal_settings(&self) -> mithril::terminal::TerminalSettings {
+    pub(super) fn terminal_settings(&self) -> markdown_note::terminal::TerminalSettings {
         self.notebooks.active.as_ref().map_or_else(
             || self.session_terminal.clone(),
             |book| book.settings.terminal.clone(),
         )
     }
 
-    fn resolved_terminal_settings(&self, cx: &App) -> mithril::terminal::TerminalSettings {
+    fn resolved_terminal_settings(&self, cx: &App) -> markdown_note::terminal::TerminalSettings {
         let mut settings = self.terminal_settings();
         settings.font_family = Some(
             crate::settings_ui::resolve_font(
@@ -30,7 +30,7 @@ impl Notes {
             return;
         }
         let settings = self.terminal_settings();
-        let directory = mithril::terminal::initial_directory(
+        let directory = markdown_note::terminal::initial_directory(
             self.notebooks
                 .active
                 .as_ref()

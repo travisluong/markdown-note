@@ -45,8 +45,8 @@ use gpui_component::{
     menu::PopupMenu,
     text::TextView,
 };
-use mithril::editor::{Editor, Event as EditorEvent};
-use mithril::{ViewMode, document, notebook, search, templates};
+use markdown_note::editor::{Editor, Event as EditorEvent};
+use markdown_note::{ViewMode, document, notebook, search, templates};
 
 actions!(
     notes,
@@ -207,7 +207,7 @@ struct Notes {
     sidebar_collapsed: bool,
     right_panel_open: bool,
     terminals: terminal_ui::TerminalTabs,
-    session_terminal: mithril::terminal::TerminalSettings,
+    session_terminal: markdown_note::terminal::TerminalSettings,
     // Session fallback when no notebook owns the terminal width.
     right_panel_width: f32,
     workspace_layout: Option<(bool, bool, Pixels)>,
@@ -386,9 +386,9 @@ impl Notes {
             .or(self.image_path())
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Mithril".into());
+            .unwrap_or_else(|| "Markdown Note".into());
         format!(
-            "{}{} — Mithril",
+            "{}{} — Markdown Note",
             if self.tabs.active.dirty_cached {
                 "* "
             } else {
@@ -419,8 +419,8 @@ impl Notes {
         }
     }
 
-    fn capabilities(&self) -> mithril::capabilities::Capabilities {
-        mithril::capabilities::Capabilities {
+    fn capabilities(&self) -> markdown_note::capabilities::Capabilities {
+        markdown_note::capabilities::Capabilities {
             has_document: self.document().is_some(),
             source_only: self.tabs.active.source_only(),
             mode: self.tabs.active.mode,
@@ -533,7 +533,7 @@ impl Render for Notes {
                     .on_action(cx.listener(|this, _: &Bold, window, cx| {
                         if this.tabs.active.editor.is_focused(window, cx) {
                             this.apply_markdown_format(
-                                mithril::markdown_edit::Format::Bold,
+                                markdown_note::markdown_edit::Format::Bold,
                                 window,
                                 cx,
                             );
@@ -542,7 +542,7 @@ impl Render for Notes {
                     .on_action(cx.listener(|this, _: &Italic, window, cx| {
                         if this.tabs.active.editor.is_focused(window, cx) {
                             this.apply_markdown_format(
-                                mithril::markdown_edit::Format::Italic,
+                                markdown_note::markdown_edit::Format::Italic,
                                 window,
                                 cx,
                             );
@@ -719,7 +719,7 @@ impl Render for Notes {
                 this.search_current_file(window, cx);
             }))
             .on_action(cx.listener(|this, _: &ReplaceFile, window, cx| {
-                if mithril::commands::Command::ReplaceFile
+                if markdown_note::commands::Command::ReplaceFile
                     .unavailable(this.capabilities())
                     .is_none()
                     && !window.has_active_dialog(cx)
@@ -980,7 +980,7 @@ impl Render for NotesWindow {
 fn main() {
     #[cfg(feature = "editor-diagnostics")]
     if let Some(output) =
-        std::env::var_os("MITHRIL_BENCH").or_else(|| std::env::var_os("MITHRIL_NOTEBOOK_CHECK"))
+        std::env::var_os("MARKDOWN_NOTE_BENCH").or_else(|| std::env::var_os("MARKDOWN_NOTE_NOTEBOOK_CHECK"))
     {
         let output = PathBuf::from(output);
         let _ = fs::write(
@@ -1007,9 +1007,9 @@ fn main() {
             })
             .detach();
             let diagnostic_run = cfg!(feature = "editor-diagnostics")
-                && (std::env::var_os("MITHRIL_BENCH").is_some()
-                    || std::env::var_os("MITHRIL_NOTEBOOK_CHECK").is_some()
-                    || std::env::var_os("MITHRIL_AUTOSAVE_CHECK").is_some());
+                && (std::env::var_os("MARKDOWN_NOTE_BENCH").is_some()
+                    || std::env::var_os("MARKDOWN_NOTE_NOTEBOOK_CHECK").is_some()
+                    || std::env::var_os("MARKDOWN_NOTE_AUTOSAVE_CHECK").is_some());
             let window_state_path = window_state::state_path(diagnostic_run);
             let bounds = window_state::startup(window_state_path.as_deref(), cx);
             cx.open_window(
@@ -1017,11 +1017,11 @@ fn main() {
                     window_bounds: Some(bounds),
                     display_id: window_state::display_for(bounds, cx),
                     window_min_size: Some(size(px(400.), px(300.))),
-                    app_id: Some("org.mithril.Mithril".into()),
+                    app_id: Some("io.github.travisluong.MarkdownNote".into()),
                     window_decorations: cfg!(target_os = "linux")
                         .then_some(WindowDecorations::Client),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Mithril".into()),
+                        title: Some("Markdown Note".into()),
                         appears_transparent: cfg!(any(target_os = "windows", target_os = "macos")),
                         traffic_light_position: Some(point(px(9.), px(9.))),
                     }),
@@ -1038,18 +1038,18 @@ fn main() {
                         notes.update(cx, |this, cx| this.restore_notebooks(window, cx));
                     }
                     #[cfg(feature = "editor-diagnostics")]
-                    if let Some(output) = std::env::var_os("MITHRIL_BENCH") {
+                    if let Some(output) = std::env::var_os("MARKDOWN_NOTE_BENCH") {
                         let notes = notes.clone();
                         window.on_next_frame(move |window, cx| {
                             benchmark::start(&notes, output.into(), window, cx)
                         });
                     }
                     #[cfg(feature = "editor-diagnostics")]
-                    if let Some(output) = std::env::var_os("MITHRIL_NOTEBOOK_CHECK") {
+                    if let Some(output) = std::env::var_os("MARKDOWN_NOTE_NOTEBOOK_CHECK") {
                         notebook_ui::diagnostics::start(notes.clone(), output.into(), window, cx);
                     }
                     #[cfg(feature = "editor-diagnostics")]
-                    if let Some(output) = std::env::var_os("MITHRIL_AUTOSAVE_CHECK") {
+                    if let Some(output) = std::env::var_os("MARKDOWN_NOTE_AUTOSAVE_CHECK") {
                         autosave::diagnostics::start(notes.clone(), output.into(), window, cx);
                     }
                     let view = cx.new(|cx| NotesWindow {
@@ -1059,7 +1059,7 @@ fn main() {
                     cx.new(|cx| Root::new(view, window, cx))
                 },
             )
-            .expect("Could not create the Mithril window");
+            .expect("Could not create the Markdown Note window");
             cx.activate(true);
         });
 }

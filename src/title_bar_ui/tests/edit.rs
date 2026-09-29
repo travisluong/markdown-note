@@ -1,7 +1,7 @@
 use super::*;
 use gpui::ClipboardItem;
 use gpui_component::input::Undo;
-use mithril::markdown_edit::{self, Format};
+use markdown_note::markdown_edit::{self, Format};
 
 fn select(notes: &Entity<Notes>, cx: &mut VisualTestContext) {
     cx.update(|window, cx| {

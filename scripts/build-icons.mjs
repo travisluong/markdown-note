@@ -1,4 +1,4 @@
-// Run: node scripts/build-icons.mjs ../mithril-astro-poc
+// Run: node scripts/build-icons.mjs ../markdown-note-astro-poc
 // Uses the marketing repository's installed sharp dependency; Cargo builds use
 // only the checked-in outputs and do not need Node or the marketing repository.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -6,14 +6,14 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const marketing = resolve(process.argv[2] ?? '../mithril-astro-poc');
+const marketing = resolve(process.argv[2] ?? '../markdown-note-astro-poc');
 const sharp = createRequire(resolve(marketing, 'package.json'))('sharp');
 const output = fileURLToPath(new URL('../assets/brand/', import.meta.url));
 await mkdir(output, { recursive: true });
-const mark = await readFile(resolve(marketing, 'public/brand/mithril-mark.svg'));
-await writeFile(resolve(output, 'mithril.svg'), mark);
+const mark = await readFile(resolve(marketing, 'public/brand/markdown-note-mark.svg'));
+await writeFile(resolve(output, 'markdown-note.svg'), mark);
 const png = (size) => sharp(mark, { density: 1536 }).resize(size, size).png().toBuffer();
-await writeFile(resolve(output, 'mithril.png'), await png(512));
+await writeFile(resolve(output, 'markdown-note.png'), await png(512));
 
 const sizes = [16, 24, 32, 48, 64, 128, 256];
 const images = await Promise.all(sizes.map(png));
@@ -31,7 +31,7 @@ images.forEach((image, index) => {
   header.writeUInt32LE(offset, entry + 12);
   offset += image.length;
 });
-await writeFile(resolve(output, 'mithril.ico'), Buffer.concat([header, ...images]));
+await writeFile(resolve(output, 'markdown-note.ico'), Buffer.concat([header, ...images]));
 
 // Modern macOS ICNS entries contain PNG images, including Retina resolutions.
 const chunks = await Promise.all(
@@ -48,5 +48,5 @@ const chunks = await Promise.all(
 const icns = Buffer.alloc(8);
 icns.write('icns');
 icns.writeUInt32BE(8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0), 4);
-await writeFile(resolve(output, 'mithril.icns'), Buffer.concat([icns, ...chunks]));
+await writeFile(resolve(output, 'markdown-note.icns'), Buffer.concat([icns, ...chunks]));
 console.log('Generated desktop icons from the marketing logo.');

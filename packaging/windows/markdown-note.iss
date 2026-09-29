@@ -3,7 +3,7 @@
   #error AppVersion must be supplied from Cargo package metadata.
 #endif
 #ifndef SourceDir
-  #error SourceDir must point to the directory containing mithril.exe.
+  #error SourceDir must point to the directory containing markdown-note.exe.
 #endif
 #ifndef OutputDir
   #error OutputDir must be supplied.
@@ -11,14 +11,14 @@
 
 [Setup]
 ; Keep this ID stable across versions so upgrades share one uninstall entry.
-AppId={{43268376-A27A-49D0-9C98-C8DF48B437C5}
-AppName=Mithril
+AppId={{1FDA4A23-D4A8-444F-8D03-40FE139443CE}
+AppName=Markdown Note
 AppVersion={#AppVersion}
 AppPublisher=Travis Luong
-AppPublisherURL=https://github.com/travisluong/mithril
-AppSupportURL=https://github.com/travisluong/mithril/issues
-AppUpdatesURL=https://github.com/travisluong/mithril-releases/releases
-DefaultDirName={localappdata}\Programs\Mithril
+AppPublisherURL=https://github.com/travisluong/markdown-note
+AppSupportURL=https://github.com/travisluong/markdown-note/issues
+AppUpdatesURL=https://github.com/travisluong/markdown-note/releases
+DefaultDirName={localappdata}\Programs\Markdown Note
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -26,12 +26,12 @@ MinVersion=10.0
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 WizardStyle=modern
-SetupIconFile=..\..\assets\brand\mithril.ico
+SetupIconFile=..\..\assets\brand\markdown-note.ico
 OutputDir={#OutputDir}
-OutputBaseFilename=mithril-{#AppVersion}-windows-x86_64-setup
+OutputBaseFilename=markdown-note-{#AppVersion}-windows-x86_64-setup
 Compression=lzma2
 SolidCompression=yes
-UninstallDisplayIcon={app}\mithril.exe
+UninstallDisplayIcon={app}\markdown-note.exe
 ; Let users save and close the editor themselves before replacing locked files.
 CloseApplications=no
 RestartApplications=no
@@ -42,11 +42,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; List payload files explicitly. Never remove notebook or preference directories.
-Source: "{#SourceDir}\mithril.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\markdown-note.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\Mithril"; Filename: "{app}\mithril.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\Mithril"; Filename: "{app}\mithril.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\Markdown Note"; Filename: "{app}\markdown-note.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\Markdown Note"; Filename: "{app}\markdown-note.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\mithril.exe"; Description: "Launch Mithril"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\markdown-note.exe"; Description: "Launch Markdown Note"; Flags: nowait postinstall skipifsilent

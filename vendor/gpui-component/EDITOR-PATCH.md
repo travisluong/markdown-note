@@ -4,7 +4,7 @@
 
 `Dialog::overlay_color` overrides only the backdrop paint color, defaulting to the
 theme overlay. A transparent color retains modal mouse interception and outside-click
-dismissal; `overlay(false)` retains its existing behavior. Mithril's shared palette
+dismissal; `overlay(false)` retains its existing behavior. Markdown Note's shared palette
 dialog opts into transparency for Commands, Go To, Change Notebook and Sort Files.
 Reconcile `src/dialog.rs` on upgrades. The diagnostics-only color accessor and
 `goto::tests::palette_overlays_preserve_colors_and_outside_click_focus` cover default
@@ -24,7 +24,7 @@ independent dividers, limits, narrow layouts and preserved preferences.
 
 Popover::trigger_on_click and DropdownMenuPopover::trigger_on_click opt into
 completed-left-click activation instead of mouse-down. Both default to false,
-preserving other popovers. Mithril's Heading and Sort toolbar buttons opt in so
+preserving other popovers. Markdown Note's Heading and Sort toolbar buttons opt in so
 GPUI can distinguish dragging from activation before opening a menu. Disabled
 buttons continue blocking activation. The open state captured on mouse-down survives
 a repaint after outside-click dismissal, so clicking an open trigger still closes
@@ -548,7 +548,7 @@ both Markdown and HTML views. When enabled, outside mouse presses preserve the
 rendered selection, allowing application menus to copy it after taking focus.
 Inside presses still replace the selection. TextView implements Focusable so menu
 Copy can target the rendered view even when another control held focus.
-Mithril enables persistent selections for Reading;
+Markdown Note enables persistent selections for Reading;
 Copy continues to use rendered text rather than Markdown source. Reconcile the
 flag, constructors and outside-click handler on upgrade. Headless coverage lives
 in `src/title_bar_ui/tests/edit.rs`; existing `tests/link_context_menu.rs` covers
@@ -606,7 +606,7 @@ Other languages reject Live and Markdown list Enter/nesting/task operations.
 Grammar changes reinitialize diagnostics against the current rope and invalidate
 highlighting for the next render. Unconfigured generic inputs keep their behavior.
 The diagnostic syntax-range probe supports headless verification of real styles
-in Mithril's `src/editor/tests.rs`; retain this contract during upstream upgrades.
+in Markdown Note's `src/editor/tests.rs`; retain this contract during upstream upgrades.
 
 ## Zoomable menus and dialogs
 
@@ -619,7 +619,7 @@ zoom tests exercise nested menu actions and palette dismissal on TestPlatform.
 ## Mermaid sequence participant whitespace (2026-09-22)
 
 The host now patches Merman's parser through `vendor/merman-core`; its
-`MITHRIL-PATCH.md` records the lexer correction. Shared renderer diagnostics
+`MARKDOWN-NOTE-PATCH.md` records the lexer correction. Shared renderer diagnostics
 include a synthetic sequence with spaced names. Live/Reading regression tests
 exercise the same syntax while retaining source, copy, selection and history
 contracts. No document normalization or renderer API change is required.

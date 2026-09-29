@@ -137,7 +137,7 @@ impl Transport for HttpTransport {
 }
 fn endpoint() -> Result<String, Failure> {
     #[cfg(debug_assertions)]
-    if let Ok(value) = std::env::var("MITHRIL_FEEDBACK_ENDPOINT") {
+    if let Ok(value) = std::env::var("MARKDOWN_NOTE_FEEDBACK_ENDPOINT") {
         let url = url::Url::parse(&value).map_err(|_| Failure::Invalid)?;
         let loopback = match url.host() {
             Some(url::Host::Domain("localhost")) => true,

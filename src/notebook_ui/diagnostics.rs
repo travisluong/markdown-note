@@ -30,7 +30,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
         let started = Instant::now();
         let mut step = 0;
         while step <= 31 {
-            cx.background_executor().timer(Duration::from_millis(std::env::var("MITHRIL_SMOKE_DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(60).clamp(60, 2000))).await;
+            cx.background_executor().timer(Duration::from_millis(std::env::var("MARKDOWN_NOTE_SMOKE_DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(60).clamp(60, 2000))).await;
             assert!(started.elapsed() < Duration::from_secs(120), "Notebook smoke check timed out at step {step}");
             let ready = notes.update(cx, |this, _| !this.is_busy() && !this.notebooks.explorer.is_loading()).unwrap();
             if !ready { continue; }
@@ -57,7 +57,7 @@ pub(crate) fn start(notes: Entity<Notes>, output: PathBuf, window: &mut Window, 
                     }
                     4 => {
                         assert!(this.notebooks.explorer.rows().iter().any(|r| r.label == "image.png" && !r.disabled));
-                        assert!(!this.notebooks.explorer.rows().iter().any(|r| r.label == ".mithril"));
+                        assert!(!this.notebooks.explorer.rows().iter().any(|r| r.label == ".markdown-note"));
                         let folder = this.notebooks.explorer.rows().iter().position(|r| r.label == "folder").unwrap();
                         this.activate_row(folder, window, cx);
                     }

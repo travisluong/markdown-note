@@ -1,6 +1,6 @@
 use super::*;
 use gpui_component::kbd::Kbd;
-use mithril::commands::Command;
+use markdown_note::commands::Command;
 
 /// Match command semantics, independently of the palette input's focus context.
 pub(super) fn command_action(command: Command) -> Option<(Box<dyn Action>, &'static str)> {
@@ -454,7 +454,7 @@ impl Notes {
                 }
             } else {
                 body = body
-                    .child("Mithril")
+                    .child("Markdown Note")
                     .child(format!("Version {}", env!("CARGO_PKG_VERSION")));
             }
             let restore = previous.clone();
@@ -463,7 +463,7 @@ impl Notes {
                 .title(if shortcuts {
                     "Keyboard shortcuts"
                 } else {
-                    "About Mithril"
+                    "About Markdown Note"
                 })
                 .w(crate::zoom_ui::zoom_px(700., cx).min(window.viewport_size().width - px(32.)))
                 // Reserve both window margins and the dialog's 30px slide animation.
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     fn palette_shortcuts_match_catalogue_on_both_platforms() {
-        use mithril::commands::Command;
+        use markdown_note::commands::Command;
 
         let expected = [
             (Command::Bold, "ctrl-b", "DocumentEditor"),

@@ -1365,7 +1365,7 @@ fn note_and_tab_shortcuts_keep_creation_and_close_lifecycles_distinct(cx: &mut T
 
 #[gpui::test]
 fn text_files_use_picker_source_editing_and_restore_markdown_mode(cx: &mut TestAppContext) {
-    use mithril::commands::Command;
+    use markdown_note::commands::Command;
     let (fixture, notes, cx) = fixture(cx);
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| this.set_mode(ViewMode::Reading, window, cx))

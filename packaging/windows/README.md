@@ -1,7 +1,7 @@
 # Windows installer
 
 `scripts/release.sh` (Git Bash) or `scripts/release.ps1` (PowerShell) tests, builds and publishes a
-Windows x86-64 release from your local machine. `mithril.iss` packages the
+Windows x86-64 release from your local machine. `markdown-note.iss` packages the
 executable with Inno Setup 6.3 or
 newer. GitHub hosts the installer, portable ZIP and checksums; GitHub Actions
 is not involved in local publishing.
@@ -13,14 +13,14 @@ is not involved in local publishing.
    rustup, Cargo and gh must be on PATH. Windows supplies `tar.exe` and Windows
    PowerShell. The tagged `rust-toolchain.toml` selects the Rust version; rustup
    may download that toolchain and its Windows target on the first run.
-2. Create the public repository `travisluong/mithril-releases`, initialized with
+2. Create the public repository `travisluong/markdown-note`, initialized with
    a README on `main`. This repository holds public Release assets; no application
    source or binaries are committed to its Git history. It needs no workflow.
 3. Authenticate locally with `gh auth login --hostname github.com` using an
    account with write access to the downloads repository. Alternatively, create
-   a fine-grained token scoped only to `mithril-releases` with **Contents: Read
-   and write**, and supply it through `MITHRIL_RELEASES_TOKEN` or `GH_TOKEN` in
-   the release process environment. `MITHRIL_RELEASES_TOKEN` takes precedence.
+   a fine-grained token scoped only to `markdown-note-releases` with **Contents: Read
+   and write**, and supply it through `MARKDOWN_NOTE_RELEASES_TOKEN` or `GH_TOKEN` in
+   the release process environment. `MARKDOWN_NOTE_RELEASES_TOKEN` takes precedence.
    Keep tokens out of source files and logs; renew expiring tokens as needed.
 The script looks for Inno Setup in the standard machine and per-user install
 locations. For a portable/custom installation, append
@@ -34,7 +34,7 @@ locations. For a portable/custom installation, append
 2. Create a local tag on that commit, using its matching version, for example:
 
    ```powershell
-   git tag -a v0.1.1 -m "Mithril 0.1.1"
+   git tag -a v0.1.1 -m "Markdown Note 0.1.1"
    ```
 
 3. Run the one-command release from the repository root:
@@ -71,8 +71,8 @@ It never checks out, resets or cleans your working tree. It runs the pinned
 toolchain's headless tests, builds the release executable, compiles the installer
 and creates:
 
-- `mithril-<version>-windows-x86_64-setup.exe`
-- `mithril-<version>-windows-x86_64.zip` containing `mithril.exe`
+- `markdown-note-<version>-windows-x86_64-setup.exe`
+- `markdown-note-<version>-windows-x86_64.zip` containing `markdown-note.exe`
 - `SHA256SUMS.txt` containing the SHA-256 hashes of both downloads
 
 Each invocation prints its unique output directory. Its `dist` folder contains
@@ -87,7 +87,7 @@ be removed when no longer needed. No app or installer is launched automatically.
 Publication creates a draft in the public repository with the source tag and
 commit SHA recorded in its notes. Its tag targets the public repository's own
 `main`, not the source commit. GitHub's automatic source archives therefore
-contain the public repository's README, not Mithril source code.
+contain the public repository's README, not Markdown Note source code.
 
 The publisher uploads all three assets, downloads them again, and verifies the
 exact filenames and bytes before publishing. An upload/verification failure
@@ -116,24 +116,24 @@ Builds and validation run locally; there are no GitHub Actions workflows.
 The local release command never pushes tags.
 
 Release downloads are at
-[mithril-releases](https://github.com/travisluong/mithril-releases/releases).
+[markdown-note-releases](https://github.com/travisluong/markdown-note/releases).
 Other platforms have no release builds. Signing and automatic application
 updates remain separate work.
 
 ## Installation contract
 
-- One per-user installation at `%LOCALAPPDATA%\Programs\Mithril` by default;
+- One per-user installation at `%LOCALAPPDATA%\Programs\Markdown Note` by default;
   no elevation, machine-wide registry changes, file associations or PATH edits.
 - A Start menu shortcut, an optional unchecked desktop shortcut, and an Installed
   apps entry with version, publisher, support link and uninstaller.
 - Keep `AppId` stable across releases. Inno Setup reuses the previous install
   directory and uninstall entry. `AppVersion` comes from `Cargo.toml` package
   metadata; bump it for a new release. Running an older installer is not blocked.
-- The payload is explicitly limited to `mithril.exe`. There are no wildcard
-  deletion rules. Notebooks and `%APPDATA%\mithril` preferences remain outside
+- The payload is explicitly limited to `markdown-note.exe`. There are no wildcard
+  deletion rules. Notebooks and `%APPDATA%\markdown-note` preferences remain outside
   installer ownership, including on uninstall. Keep notes outside the install
   directory.
-- Save and close Mithril before upgrading or uninstalling. The installer does
+- Save and close Markdown Note before upgrading or uninstalling. The installer does
   not ask Windows Restart Manager to close or restart the editor. Windows may
   require a restart if files are still locked.
 - Launch on completion is skipped during silent installation. Automatic updates
@@ -151,19 +151,19 @@ commands. Output stays under ignored `target/`.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-cargo build --release --locked --bin mithril
+cargo build --release --locked --bin markdown-note
 if ($LASTEXITCODE -ne 0) { throw 'Application build failed' }
 $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed' }
-$version = ($metadata.packages | Where-Object name -eq 'mithril').version
+$version = ($metadata.packages | Where-Object name -eq 'markdown-note').version
 $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
 $sourceDir = (Resolve-Path target/release).Path
 $outputDir = Join-Path (Get-Location) 'target/installer'
-& $compiler "/DAppVersion=$version" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/mithril.iss
+& $compiler "/DAppVersion=$version" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" packaging/windows/markdown-note.iss
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
 ```
 
-The result is `target/installer/mithril-<version>-windows-x86_64-setup.exe`.
+The result is `target/installer/markdown-note-<version>-windows-x86_64-setup.exe`.
 The automated local command uses the explicit MSVC target, an isolated snapshot
 and its own cache instead. Paths and release metadata are passed to tools as
 argument arrays or environment variables without shell interpolation. Publishing
@@ -175,7 +175,7 @@ Run `node --test .github/scripts/release.test.mjs scripts/release-local.test.mjs
 for tag/version validation, real Git snapshot isolation, build/package failure
 handling, credential scoping, local locking, draft recovery, published-release
 preservation, and failed/corrupt uploads. Tests mock compilation and GitHub;
-they never publish or launch desktop UI. Set `MITHRIL_TEST_ISCC` to an actual
+they never publish or launch desktop UI. Set `MARKDOWN_NOTE_TEST_ISCC` to an actual
 ISCC.exe path to also exercise the real installer compiler and PowerShell ZIP
 packaging with a synthetic executable payload. Compile the actual installer
 script with ISCC and check its exit status.

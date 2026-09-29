@@ -7,7 +7,7 @@ use gpui_component::{
     input::{InputEvent, InputState},
     select::{SearchableVec, SelectEvent, SelectState},
 };
-use mithril::{notebook, templates};
+use markdown_note::{notebook, templates};
 
 mod reference;
 mod render;
@@ -38,8 +38,8 @@ pub(super) enum ColorRole {
 
 #[derive(Clone, Debug)]
 pub(super) enum SettingsIntent {
-    TerminalShell(mithril::terminal::WindowsShell),
-    TerminalCursorStyle(mithril::terminal::CursorStyle),
+    TerminalShell(markdown_note::terminal::WindowsShell),
+    TerminalCursorStyle(markdown_note::terminal::CursorStyle),
     TerminalFont(Option<String>),
     TerminalFontSizeStep(i8),
     TerminalFontSizeReset,
@@ -81,7 +81,7 @@ impl SettingsIntent {
 /// A display snapshot, never written back wholesale or used as disk evidence.
 #[derive(Clone, PartialEq)]
 pub(super) struct SettingsValues {
-    pub terminal: mithril::terminal::TerminalSettings,
+    pub terminal: markdown_note::terminal::TerminalSettings,
     pub toolbar: notebook::ToolbarSettings,
     pub footer: notebook::FooterSettings,
     pub appearance: notebook::Appearance,
@@ -115,14 +115,14 @@ enum Section {
 type FontPicker = Entity<SelectState<SearchableVec<String>>>;
 type ChoicePicker = Entity<SelectState<Vec<&'static str>>>;
 const FOLLOW_EDITOR_FONT: &str = "Follow editor monospace font";
-const SHELL_OPTIONS: [(mithril::terminal::WindowsShell, &str); 2] = [
-    (mithril::terminal::WindowsShell::Powershell, "PowerShell"),
-    (mithril::terminal::WindowsShell::GitBash, "Git Bash"),
+const SHELL_OPTIONS: [(markdown_note::terminal::WindowsShell, &str); 2] = [
+    (markdown_note::terminal::WindowsShell::Powershell, "PowerShell"),
+    (markdown_note::terminal::WindowsShell::GitBash, "Git Bash"),
 ];
-const CURSOR_OPTIONS: [(mithril::terminal::CursorStyle, &str); 3] = [
-    (mithril::terminal::CursorStyle::Line, "Line"),
-    (mithril::terminal::CursorStyle::Box, "Box"),
-    (mithril::terminal::CursorStyle::Underline, "Underline"),
+const CURSOR_OPTIONS: [(markdown_note::terminal::CursorStyle, &str); 3] = [
+    (markdown_note::terminal::CursorStyle::Line, "Line"),
+    (markdown_note::terminal::CursorStyle::Box, "Box"),
+    (markdown_note::terminal::CursorStyle::Underline, "Underline"),
 ];
 
 pub(crate) struct SettingsPanel {

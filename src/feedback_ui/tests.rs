@@ -3,7 +3,7 @@ use crate::{HelpMenu, Notes, NotesWindow, SendFeedback};
 use gpui::{Entity, prelude::*};
 use gpui::{TestAppContext, VisualTestContext};
 use gpui_component::{Root, WindowExt};
-use mithril::feedback::{Failure, Payload};
+use markdown_note::feedback::{Failure, Payload};
 use std::sync::Arc;
 use std::sync::Mutex;
 

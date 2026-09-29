@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const destination = 'travisluong/mithril-releases';
+const destination = 'travisluong/markdown-note';
 const stableTag = /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 
 export function eligible(event, ref) {
@@ -13,7 +13,7 @@ export function eligible(event, ref) {
 }
 
 export function validateVersion(event, ref, version) {
-  if (!version) throw new Error('Missing mithril package version');
+  if (!version) throw new Error('Missing markdown-note package version');
   if (event === 'workflow_dispatch') return version;
   if (!eligible(event, ref)) throw new Error('Expected a stable vMAJOR.MINOR.PATCH tag');
   if (ref.slice(1) !== version) {
@@ -27,7 +27,7 @@ export function assetNames(version) {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error('Invalid package version');
   }
-  return [`mithril-${version}-windows-x86_64-setup.exe`, `mithril-${version}-windows-x86_64.zip`];
+  return [`markdown-note-${version}-windows-x86_64-setup.exe`, `markdown-note-${version}-windows-x86_64.zip`];
 }
 
 function digest(path) {
@@ -67,14 +67,14 @@ export function publish({ directory, version, tag, sha, run = gh }) {
     return;
   }
   verifyAssets(directory, version);
-  const notes = `Windows x86-64 downloads for Mithril ${version}.\n\nSource tag: ${tag}\nSource commit: ${sha}\n\nDownload the setup executable to install Mithril, or extract the portable ZIP. SHA256SUMS.txt contains download checksums.\n`;
+  const notes = `Windows x86-64 downloads for Markdown Note ${version}.\n\nSource tag: ${tag}\nSource commit: ${sha}\n\nDownload the setup executable to install Markdown Note, or extract the portable ZIP. SHA256SUMS.txt contains download checksums.\n`;
   if (release && release.body !== notes) {
     throw new Error('Existing draft has different source metadata; inspect it before retrying');
   }
   if (!release) {
     release = JSON.parse(run(['api', '--method', 'POST', `${api}/releases`,
       '-f', `tag_name=${tag}`, '-f', 'target_commitish=main',
-      '-f', `name=Mithril ${version}`, '-f', `body=${notes}`,
+      '-f', `name=Markdown Note ${version}`, '-f', `body=${notes}`,
       '-F', 'draft=true', '-F', 'prerelease=false']));
   }
   // Clobber is confined to our unpublished draft so interrupted uploads resume.
@@ -87,7 +87,7 @@ export function publish({ directory, version, tag, sha, run = gh }) {
   if (JSON.stringify(uploaded.assets.map(asset => asset.name).sort()) !== JSON.stringify([...names].sort())) {
     throw new Error('Draft contains missing or unexpected release assets');
   }
-  const downloaded = mkdtempSync(join(tmpdir(), 'mithril-release-'));
+  const downloaded = mkdtempSync(join(tmpdir(), 'markdown-note-release-'));
   try {
     run(['release', 'download', tag, '--repo', destination, '--dir', downloaded]);
     verifyAssets(downloaded, version);
@@ -114,7 +114,7 @@ function main(command) {
       break;
     case 'version': {
       const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--no-deps', '--format-version', '1'], { encoding: 'utf8' }));
-      const version = validateVersion(event, ref, metadata.packages.find(item => item.name === 'mithril')?.version);
+      const version = validateVersion(event, ref, metadata.packages.find(item => item.name === 'markdown-note')?.version);
       output(`version=${version}`);
       break;
     }
@@ -123,7 +123,7 @@ function main(command) {
       verifyAssets('dist', process.env.APP_VERSION);
       break;
     case 'publish':
-      if (!process.env.GH_TOKEN) throw new Error('Set the source repository Actions secret MITHRIL_RELEASES_TOKEN');
+      if (!process.env.GH_TOKEN) throw new Error('Set the source repository Actions secret MARKDOWN_NOTE_RELEASES_TOKEN');
       publish({ directory: resolve('dist'), version: process.env.APP_VERSION, tag: ref, sha: process.env.GITHUB_SHA });
       break;
     default:

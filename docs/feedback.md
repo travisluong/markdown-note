@@ -27,7 +27,7 @@ and modal guards apply; document owners and autosave are independent.
 The release endpoint is compiled as:
 `https://mithril.techstackstudio.com/api/feedback`.
 Release builds ignore endpoint overrides. Debug/test builds allow
-`MITHRIL_FEEDBACK_ENDPOINT=http://127.0.0.1:3137/api/feedback` (or another loopback
+`MARKDOWN_NOTE_FEEDBACK_ENDPOINT=http://127.0.0.1:3137/api/feedback` (or another loopback
 HTTP endpoint, including localhost/IPv6 loopback). Non-loopback, credentials and
 non-HTTP overrides are rejected. No API secret is compiled into the application.
 
@@ -47,7 +47,7 @@ menu, anonymous/contact submissions, errors/retry, close/reopen during sending,
 focus, retained document text/selection/dirty state, and autosave while the modal
 is open. They never launch native application windows or inject desktop input.
 
-If a running development app locks `target/debug/mithril.exe`, leave it running
+If a running development app locks `target/debug/markdown-note.exe`, leave it running
 and use `--target x86_64-pc-windows-msvc` for the full Windows test suite. This
 creates a separate target output. TestPlatform suites can be run serially with
 `-- --test-threads=1` when diagnosing asynchronous filesystem fixture timing.

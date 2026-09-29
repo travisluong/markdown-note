@@ -5,7 +5,7 @@ use gpui_component::{
     menu::{PopupMenu, PopupMenuItem},
 };
 use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
-use mithril::terminal::{ProcessExit, TerminalProcess, TerminalSettings};
+use markdown_note::terminal::{ProcessExit, TerminalProcess, TerminalSettings};
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,14 +63,14 @@ pub(super) fn shell_label(settings: TerminalSettings) -> String {
     #[cfg(windows)]
     {
         match settings.windows_shell {
-            mithril::terminal::WindowsShell::Powershell => "PowerShell",
-            mithril::terminal::WindowsShell::GitBash => "Git Bash",
+            markdown_note::terminal::WindowsShell::Powershell => "PowerShell",
+            markdown_note::terminal::WindowsShell::GitBash => "Git Bash",
         }
         .into()
     }
     #[cfg(not(windows))]
     {
-        mithril::terminal::launch_spec(settings, PathBuf::new())
+        markdown_note::terminal::launch_spec(settings, PathBuf::new())
             .ok()
             .and_then(|spec| {
                 spec.program
@@ -121,7 +121,7 @@ impl TerminalSession {
             generation: 0,
             process: None,
             config: TerminalConfig {
-                cursor_style: cursor_style(mithril::terminal::CursorStyle::default()),
+                cursor_style: cursor_style(markdown_note::terminal::CursorStyle::default()),
                 ..Default::default()
             },
             task: None,
@@ -206,7 +206,7 @@ impl TerminalSession {
                     .background_executor()
                     .spawn(async move {
                         let cwd = directory?;
-                        let spec = mithril::terminal::launch_spec(settings, cwd)
+                        let spec = markdown_note::terminal::launch_spec(settings, cwd)
                             .map_err(|e| e.to_string())?;
                         TerminalProcess::spawn(spec)
                     })
@@ -341,7 +341,7 @@ impl TerminalSession {
     pub fn sync(
         &mut self,
         enabled: bool,
-        appearance: &mithril::notebook::Appearance,
+        appearance: &markdown_note::notebook::Appearance,
         startup_dark: bool,
         settings: TerminalSettings,
         cx: &mut Context<Self>,
@@ -539,11 +539,11 @@ impl Render for TerminalSession {
             )
     }
 }
-fn cursor_style(style: mithril::terminal::CursorStyle) -> gpui_terminal::CursorStyle {
+fn cursor_style(style: markdown_note::terminal::CursorStyle) -> gpui_terminal::CursorStyle {
     match style {
-        mithril::terminal::CursorStyle::Line => gpui_terminal::CursorStyle::Line,
-        mithril::terminal::CursorStyle::Box => gpui_terminal::CursorStyle::Box,
-        mithril::terminal::CursorStyle::Underline => gpui_terminal::CursorStyle::Underline,
+        markdown_note::terminal::CursorStyle::Line => gpui_terminal::CursorStyle::Line,
+        markdown_note::terminal::CursorStyle::Box => gpui_terminal::CursorStyle::Box,
+        markdown_note::terminal::CursorStyle::Underline => gpui_terminal::CursorStyle::Underline,
     }
 }
 fn div_message(message: String, cx: &App) -> impl IntoElement {
@@ -589,7 +589,7 @@ mod tests {
     fn terminal_typography_sync_preserves_output_and_pending_launch_configuration(
         cx: &mut TestAppContext,
     ) {
-        use mithril::terminal::{CursorStyle, TerminalSettings};
+        use markdown_note::terminal::{CursorStyle, TerminalSettings};
         cx.update(gpui_component::init);
         let mut owner = None;
         let (_, cx) = cx.add_window_view(|window, cx| {
@@ -838,7 +838,7 @@ mod tab_lifecycle_tests {
         cx.update(|window, cx| {
             owner.update(cx, |notes, cx| {
                 notes.toggle_right_panel(window, cx);
-                notes.session_terminal.cursor_style = mithril::terminal::CursorStyle::Underline;
+                notes.session_terminal.cursor_style = markdown_note::terminal::CursorStyle::Underline;
                 notes.sync_terminal(window, cx);
             })
         });

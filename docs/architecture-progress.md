@@ -297,7 +297,7 @@ was pushed and no native application or desktop automation was launched.
 
 ## Windows installer — 2026-09-12
 
-Added `packaging/windows/mithril.iss` for per-user Windows installation, Start
+Added `packaging/windows/markdown-note.iss` for per-user Windows installation, Start
 menu and optional desktop shortcuts, and Installed apps registration/uninstall.
 The stable AppId lets newer installers reuse the existing installation. Installer
 ownership excludes notebook files and application preferences. Automatic editor
@@ -310,10 +310,10 @@ only. No release was created or uploaded during local verification.
 
 Validation on Windows/MSVC with the pinned Rust 1.98.1:
 
-- `cargo build --release --locked --offline --bin mithril`: passed.
+- `cargo build --release --locked --offline --bin markdown-note`: passed.
 - Inno Setup 6.7.3 compiled the actual script with the freshly built executable:
   passed. Local output is
-  `target/installer/mithril-0.1.0-windows-x86_64-setup.exe` (9,275,958 bytes).
+  `target/installer/markdown-note-0.1.0-windows-x86_64-setup.exe` (9,275,958 bytes).
 - Installer PE product version and publisher match the package/configuration.
 - actionlint 1.7.12 on `.github/workflows/build.yml`: passed.
 - PowerShell AST parsing of the installer workflow step: passed.
@@ -322,22 +322,22 @@ Validation on Windows/MSVC with the pinned Rust 1.98.1:
 The existing `proc-macro-error2` future-compatibility notice remains. No Rust
 source changed, so the application test suites were not repeated for packaging.
 The compiler was prepared in silent portable mode under ignored `target/`;
-neither Mithril nor its installer was launched. Native install, upgrade,
+neither Markdown Note nor its installer was launched. Native install, upgrade,
 file-in-use, uninstall and shortcut behavior remain manual verification in a
 clean Windows account or VM, as listed in `packaging/windows/README.md`.
 GitHub Actions execution/upload was not tested locally. App and installer remain
 unsigned; automatic updates and custom Windows icon branding are not included.
 
-## Mithril rename — 2026-09-12
+## Markdown Note rename — 2026-09-12
 
 Renamed the Rust package/library/executable, app titles and Help, diagnostic
 variables, notebook metadata and user configuration paths, macOS bundle,
 Windows installer script and shortcuts, release artifacts, repository links,
-and documentation to Mithril. The Windows installer AppId remains stable.
+and documentation to Markdown Note. The Windows installer AppId remains stable.
 Earlier entries above use the current names; the checks below verify this rename.
 
-Preferences now live in `.mithril/settings.json` and the platform configuration
-folder's `mithril/notebooks.json`. Existing installations must rename their
+Preferences now live in `.markdown-note/settings.json` and the platform configuration
+folder's `markdown-note/notebooks.json`. Existing installations must rename their
 previous settings directories before opening notebooks; README documents this
 step. On this workstation, the two registered notebooks and user configuration
 were renamed with SHA-256 verification that every existing settings file stayed
@@ -349,9 +349,9 @@ Verification on Windows/MSVC with pinned Rust 1.98.1:
 - `cargo test --locked --offline --features editor-diagnostics`: 301 passed.
 - `cargo fmt --check`: passed.
 - `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`: passed.
-- `cargo build --release --locked --offline --bin mithril`: passed.
-- Inno Setup 6.7.3 compiled `packaging/windows/mithril.iss` with the renamed
-  release executable into `target/installer/mithril-0.1.0-windows-x86_64-setup.exe`.
+- `cargo build --release --locked --offline --bin markdown-note`: passed.
+- Inno Setup 6.7.3 compiled `packaging/windows/markdown-note.iss` with the renamed
+  release executable into `target/installer/markdown-note-0.1.0-windows-x86_64-setup.exe`.
 - actionlint on `.github/workflows/build.yml`, macOS plist XML parsing, and
   `git diff --check`: passed.
 - Tracked source/content inspection found no previous project-name references.
@@ -359,7 +359,7 @@ Verification on Windows/MSVC with pinned Rust 1.98.1:
 The existing `proc-macro-error2` future-compatibility notice remains. No desktop
 application or installer was launched. Native installation/upgrade behavior and
 other platform builds remain manual/CI validation. The GitHub repository was
-renamed to `travisluong/mithril`, its repository identity was verified, and the
+renamed to `travisluong/markdown-note`, its repository identity was verified, and the
 local origin was updated. Source changes were not pushed.
 
 ## Icon-free Windows title bar (2026-09-12)
@@ -369,10 +369,10 @@ Windows startup now requests a transparent native title bar and Notes renders
 One title helper supplies the visible text and native title, preserving file
 names and the unsaved marker. Fullscreen omits the client title bar.
 
-Windows/MSVC verification: `cargo check --offline --locked --bin mithril`,
+Windows/MSVC verification: `cargo check --offline --locked --bin markdown-note`,
 `cargo test --offline --locked --features editor-diagnostics` (301 passed),
 `cargo fmt --check`, strict all-target clippy with editor diagnostics, and
-`cargo build --offline --locked --bin mithril` passed. No desktop app was
+`cargo build --offline --locked --bin markdown-note` passed. No desktop app was
 launched. Native appearance, dragging, minimize/maximize and close behavior
 remain manual validation.
 
@@ -425,7 +425,7 @@ Windows/MSVC validation passed: `cargo check --offline --locked`,
 including session close and all four GPUI preference-close tests),
 `cargo fmt --check`,
 `cargo clippy --offline --locked --all-targets --features editor-diagnostics -- -D warnings`,
-and `cargo build --offline --locked --bin mithril`.
+and `cargo build --offline --locked --bin markdown-note`.
 
 ## Link ordinary files dropped into notes (2026-09-12)
 
@@ -442,7 +442,7 @@ Windows/MSVC validation passed: `cargo check --offline --locked`,
 diagnostics Clippy, and `git diff --check`. Regression coverage exercises mixed
 file/image drops, nested relative links, Unicode and special filenames, and
 rollback preserving linked files. The full integration command could not finish:
-Windows denied replacement of `target/debug/mithril.exe`; a Mithril process was
+Windows denied replacement of `target/debug/markdown-note.exe`; a Markdown Note process was
 running and was left untouched. No desktop validation was performed.
 
 ## Publish Windows downloads in a public release repository (2026-09-12)
@@ -452,7 +452,7 @@ the Cargo package version to match, and runs Windows headless tests and release
 packaging using the pinned Rust toolchain. Manual runs retain Actions artifacts
 without publishing. Cross-platform validation remains in the separate check
 workflow. The Windows installer updates link and main download documentation
-now point to `travisluong/mithril-releases`.
+now point to `travisluong/markdown-note`.
 
 The release helper owns tag/version validation, versioned filenames, SHA-256
 checksums, and draft creation/recovery. The publisher's separate credential is
@@ -473,7 +473,7 @@ Local verification passed:
   and `version=0.1.0` for `v0.1.0`.
 - Inno Setup 6.7.3 compiled the updated script using the existing local release
   executable into `target/public-release-check/dist`. The portable ZIP contains
-  only `mithril.exe`; checksum generation and verification passed. This checks
+  only `markdown-note.exe`; checksum generation and verification passed. This checks
   packaging against an existing binary, not a fresh CI release build.
 - `cargo test --offline --locked --features editor-diagnostics`: full headless
   suite passed. The existing proc-macro-error2 future-compatibility warning remains.
@@ -482,7 +482,7 @@ No application or installer was launched. Live GitHub publication and manual
 workflow dispatch were not performed: no GitHub CLI, connector or token is
 available in this session, and public API lookup was blocked by local network
 restrictions. The user must provision/confirm the public repository and set
-`MITHRIL_RELEASES_TOKEN` using the packaging guide before pushing a release tag.
+`MARKDOWN_NOTE_RELEASES_TOKEN` using the packaging guide before pushing a release tag.
 Native Windows installation checks remain manual. The pre-existing Cargo.lock
 changes are outside this work and remain uncommitted.
 
@@ -568,7 +568,7 @@ same inset as their content; empty blocks retain real source positions.
 Headless verification: all 3 code-highlighting tests and all 75 editor module
 tests pass, including source/history, cursor and selection positions, themes,
 Unicode/CRLF, empty/unfinished/nested blocks and viewport work bounds. Tests use
-`--target-dir target/agent-validation` because the default output's mithril.exe
+`--target-dir target/agent-validation` because the default output's markdown-note.exe
 is locked. No running application or desktop state was changed.
 ## Windows Reveal repair (2026-09-12)
 
@@ -600,7 +600,7 @@ Final noninteractive verification on Windows:
 - `cargo fmt --check`: passed.
 - `cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings`: passed.
 
-The separate test target avoids a locked default-output mithril.exe. The only
+The separate test target avoids a locked default-output markdown-note.exe. The only
 reported toolchain notice is the existing dependency future-compatibility notice
 for proc-macro-error2. No native application, Explorer window, or desktop input
 was used. Native visual and Explorer confirmation remain user-run.
@@ -678,7 +678,7 @@ move_line_tests passed (3 tests); the Source/Live TestPlatform history regressio
 passed. Coverage includes both directions, selected siblings, nested/quoted lists,
 Unicode, CRLF, digit widths and literal fences. The pre-existing Cargo.lock edit
 is excluded. Headless tests use target/headless with shared dependency caches
-because Windows denies replacement of target/debug/mithril.exe; no app was
+because Windows denies replacement of target/debug/markdown-note.exe; no app was
 launched, stopped or controlled.
 
 ## Live table continuity during edits (2026-09-13)
@@ -738,7 +738,7 @@ standard Arrow cursor and destination tooltip; other editor text uses IBeam.
 Reading inline links also use Arrow. No source, selection, or click semantics
 changed. `cargo check --locked --offline`, `cargo fmt --check`, and strict
 all-target editor-diagnostics clippy passed. The existing direct-link-click test
-could not rebuild because Windows denied removal of target/debug/mithril.exe;
+could not rebuild because Windows denied removal of target/debug/markdown-note.exe;
 a targeted cargo-rustc attempt encountered the same file lock. No application
 was closed or launched and no desktop interaction was used for validation.
 
@@ -842,7 +842,7 @@ passed all 199 tests (67 library and 132 application), including notebook width
 persistence and search navigation/focus/state regressions. Static review verified
 shared toggle/panel/sort dispatch and Explorer's retained root-drop handler.
 The full `cargo test --locked --offline --features editor-diagnostics` command
-was attempted but could not remove `target/debug/mithril.exe` (Windows access
+was attempted but could not remove `target/debug/markdown-note.exe` (Windows access
 denied); the integration suite could not complete through that command. No
 application process was stopped and no desktop or native harness was used.
 Native layout, themes, narrow windows, toolbar interaction, and Explorer drops
@@ -937,7 +937,7 @@ The full cargo test --locked --offline --target-dir target/headless --features
 editor-diagnostics suite passed, including all 96 editor module tests and both
 horizontal-rule TestPlatform tests. cargo check and strict all-target clippy
 with editor-diagnostics passed in the same target directory; cargo fmt --check
-also passed. The ordinary target build hit a locked mithril.exe, so validation
+also passed. The ordinary target build hit a locked markdown-note.exe, so validation
 used the existing separate headless target without stopping or interacting with
 the running application. Native visual confirmation remains with the user.
 The pre-existing Cargo.lock change remains excluded from the commit.
@@ -1132,7 +1132,7 @@ cargo clippy --locked --offline --all-targets --features editor-diagnostics --
 -D warnings passed. The full cargo test --locked --offline -j 1 --features
 editor-diagnostics --target-dir target/headless suite passed all 429 tests.
 The default target directory hit Windows LNK1104/output-access errors, including
-an inaccessible target/debug/mithril.exe; the existing separate headless cache
+an inaccessible target/debug/markdown-note.exe; the existing separate headless cache
 completed without changing or stopping any application process. No desktop
 interaction or native application launch was used. Unrelated lockfile/vendor
 link-menu changes and their architecture-map addition remain outside this commit;
@@ -1225,7 +1225,7 @@ Windows headless verification:
 - The full suite log is `target/headless/tabs-full-tests.log`. Existing headless deps
   is a junction into workspace `target/debug/deps`; stale test executables there
   were removed only after checking both exact paths. The running application and
-  `target/debug/mithril.exe` were not touched.
+  `target/debug/markdown-note.exe` were not touched.
 - An automatic approval reviewer capacity failure delayed one test launch; retry
   after path inspection succeeded. No native app, desktop input, or visible test
   window was used. Native visual validation remains user-run.
@@ -1330,7 +1330,7 @@ Windows headless verification:
   section navigation. Escape dismisses nested pickers before the settings modal;
   closing restores prior focus and retains document selection, undo and scrolling.
 - Verification: all 37 settings tests passed with `cargo test --locked --features
-  editor-diagnostics --bin mithril settings_ui::panel::tests -- --test-threads=1`;
+  editor-diagnostics --bin markdown-note settings_ui::panel::tests -- --test-threads=1`;
   `cargo fmt --check` passed. TestPlatform only, no native desktop interaction.
   Log: `target/settings-modal-restore-tests.log`.
 
@@ -1346,10 +1346,10 @@ Windows headless verification:
   fixture to render NotesWindow's modal layer, and background click tests to
   verify that outside-click dismissal does not activate the covered control.
 - All **479 tests passed**: 209 application tests through `cargo test --locked
-  --features editor-diagnostics --bin mithril -- --test-threads=1`, plus 81 library
+  --features editor-diagnostics --bin markdown-note -- --test-threads=1`, plus 81 library
   and 189 integration tests through the current Cargo-built test harnesses.
   The unrestricted cargo test command compiled all 21 harnesses but could not
-  replace the running `target/debug/mithril.exe`; Cargo JSON artifacts verified
+  replace the running `target/debug/markdown-note.exe`; Cargo JSON artifacts verified
   all harnesses were current before direct execution. The application harness
   was verified through Cargo separately to capture its Windows-subsystem output.
   Doc tests also passed (zero cases). No application or desktop input was used.
@@ -1393,11 +1393,11 @@ Windows/MSVC verification:
 - `cargo check --offline --locked`, `cargo fmt --check`, strict all-target
   diagnostics Clippy and `git diff --check` passed.
 - The default executable build passed with `cargo build --offline --locked
-  --bin mithril --target-dir target/titlebar-validation`.
+  --bin markdown-note --target-dir target/titlebar-validation`.
 - The complete `cargo test --offline --locked --features editor-diagnostics
   --target-dir target/titlebar-validation` suite passed, including existing
   save/close/preference-flush regressions and the pre-existing link-menu work.
-  The normal target directory could not replace the running/locked mithril.exe;
+  The normal target directory could not replace the running/locked markdown-note.exe;
   validation used a separate output directory seeded from build caches instead.
 
 Only the Windows Rust target is installed locally. Linux/macOS compilation remains
@@ -1478,7 +1478,7 @@ closing after dragging and resizing, fresh form identity on reopen, focus
 restoration and Escape. All 40 Settings tests and the complete 490-test suite
 (including dialog placement) pass. Commands used:
 
-- `cargo test --offline --locked --features editor-diagnostics --bin mithril settings_ui::panel::tests --target-dir target/titlebar-validation`
+- `cargo test --offline --locked --features editor-diagnostics --bin markdown-note settings_ui::panel::tests --target-dir target/titlebar-validation`
 - `cargo test --offline --locked --features editor-diagnostics --target-dir target/titlebar-validation`
 - `cargo check --offline --locked`
 - `cargo fmt --check`
@@ -1501,7 +1501,7 @@ editor-diagnostics --target-dir target/titlebar-validation`. `cargo check
 --offline --locked`, `cargo fmt --check`, strict all-target Clippy with editor
 diagnostics, and `git diff --check` also pass. Logs are in
 `target/input-border-{tests,check,clippy}.log`. The initial default-target test
-build encountered a locked `target/debug/mithril.exe`; the alternate target
+build encountered a locked `target/debug/markdown-note.exe`; the alternate target
 completed without interacting with the running application. Full-suite results
 include existing unrelated workspace changes, excluded from this commit.
 
@@ -1520,7 +1520,7 @@ stale analysis and rendered runs through Light/Dark themes, wrapping, marker
 reveal, edits, Undo/Redo and Source mode. `cargo check --offline --locked`,
 `cargo fmt --check`, strict all-target Clippy with editor diagnostics and
 `git diff --check` pass. Logs: `target/strikethrough-{tests,check,format,clippy}.log`.
-The alternate test target avoids a locked default-target mithril.exe. No native
+The alternate test target avoids a locked default-target markdown-note.exe. No native
 app or desktop input was used. The suite includes unrelated existing workspace
 changes, excluded from the strikethrough commit.
 
@@ -1800,7 +1800,7 @@ cargo check --offline --locked, cargo fmt --check and strict all-target Clippy
 with editor-diagnostics pass using target/titlebar-validation. The full headless
 suite passes with cargo test --offline --locked --features editor-diagnostics
 --target-dir target/titlebar-validation --config
-'profile.test.package.mithril.codegen-units=16'. This package-only build override
+'profile.test.package.markdown-note.codegen-units=16'. This package-only build override
 avoids a locked pre-existing test executable (LNK1104) without touching its
 running process. No desktop interaction was used; visual UI validation remains
 manual. The pre-existing Cargo.lock edit is excluded.
@@ -1815,7 +1815,7 @@ and extended the existing settings normalization test to cover the saved old ord
 Windows verification passes: 31 focused toolbar tests, all 537 headless tests,
 cargo check, cargo fmt --check, and strict all-target Clippy with editor-diagnostics.
 Cargo checks used --offline --locked and target/titlebar-validation. Tests used
---config 'profile.test.package.mithril.codegen-units=32' to avoid LNK1104 when
+--config 'profile.test.package.markdown-note.codegen-units=32' to avoid LNK1104 when
 overwriting older test executables. No desktop interaction was used, and the
 pre-existing Cargo.lock edit is excluded.
 
@@ -1831,7 +1831,7 @@ Windows verification passes: all 13 focused title-bar tests, the full headless
 suite, cargo check, cargo fmt --check and strict all-target Clippy with
 editor-diagnostics. Cargo checks used --offline --locked and
 target/titlebar-validation. Tests used the package-only override
---config 'profile.test.package.mithril.codegen-units=64' after the previous test
+--config 'profile.test.package.markdown-note.codegen-units=64' after the previous test
 executable could not be overwritten (LNK1104). No desktop interaction was used;
 native visual validation remains manual. The pre-existing Cargo.lock edit is
 excluded.
@@ -1853,7 +1853,7 @@ Windows verification: the full 543-test headless suite passed, followed by the
 20 focused title-bar tests after adding the empty-view focus guard. Cargo check,
 cargo fmt --check and strict all-target Clippy with editor-diagnostics passed.
 Cargo checks used --offline --locked and target/titlebar-validation; tests used
---config 'profile.test.package.mithril.codegen-units=64'. No desktop interaction
+--config 'profile.test.package.markdown-note.codegen-units=64'. No desktop interaction
 was used. Native visual validation remains manual.
 
 ## Mermaid diagrams (2026-09-17)
@@ -1897,7 +1897,7 @@ were composited onto representative surfaces and inspected headlessly.
 `cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings`
 passed. The focused test command was `cargo test --locked --features
 editor-diagnostics --test mermaid --config
-'profile.test.package.mithril.codegen-units=64'`; the command-only profile override
+'profile.test.package.markdown-note.codegen-units=64'`; the command-only profile override
 avoided a Windows LNK1104 lock on the original test executable. No desktop was
 launched or controlled; native visual validation remains manual. The unrelated
 Cargo.lock reorder remains excluded.
@@ -1918,7 +1918,7 @@ empty content retain their layout. No vendored editor changes were needed.
 
 Windows verification: `cargo check --locked`, `cargo fmt --check`, and
 `cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings`
-passed. `cargo test --locked --features editor-diagnostics --lib --bin mithril`
+passed. `cargo test --locked --features editor-diagnostics --lib --bin markdown-note`
 passed all 353 tests (89 library and 264 application), including four new tests
 covering schema compatibility/validation, invalid drafts and remembered values,
 persistence and stale/busy guards, and all-mode pane geometry across window and
@@ -1926,8 +1926,8 @@ sidebar sizes. The existing selection/undo test now also changes the centered
 setting and width while retaining the document.
 
 The broader `cargo test --locked --features editor-diagnostics centered_editor`
-invocation failed while replacing `target/debug/mithril.exe` with Windows access
-denied; a Mithril process was already running. Integration targets therefore
+invocation failed while replacing `target/debug/markdown-note.exe` with Windows access
+denied; a Markdown Note process was already running. Integration targets therefore
 were not run in this verification. The headless library/application targets
 avoid that executable and passed. No desktop interaction or native application
 launch was used. Native visual validation remains manual. The pre-existing
@@ -1947,11 +1947,11 @@ Headless verification passed all 354 library/application tests (89 + 265), inclu
 updated geometry coverage across all modes, narrow windows/sidebar sizes, gutter
 wheel scrolling, right-edge track clicks/thumb dragging, and Reading scroll anchor
 retention on width changes. Command: `cargo test --locked --features
-editor-diagnostics --lib --bin mithril --config
-'profile.test.package.mithril.codegen-units=64'`. The command-only build variant
+editor-diagnostics --lib --bin markdown-note --config
+'profile.test.package.markdown-note.codegen-units=64'`. The command-only build variant
 avoids Windows LNK1104 locks on the original test executable. Check, format and
 strict all-targets Clippy gates passed. The complete Cargo test command was also
-attempted but could not replace the locked `target/debug/mithril.exe`, so integration
+attempted but could not replace the locked `target/debug/markdown-note.exe`, so integration
 tests remain unrun for this change. No native app or desktop interaction was used;
 manual visual validation remains with the user. Unrelated Cargo.lock changes are
 excluded.
@@ -1967,8 +1967,8 @@ notebook preference scope/persistence, empty documents, and modal/busy rejection
 
 Final verification of both the scrollbar correction and menu addition passed all
 356 library/application tests (89 + 267), using `cargo test --locked --features
-editor-diagnostics --lib --bin mithril --config
-'profile.test.package.mithril.codegen-units=32'`. Build variants 64 and 128 also ran
+editor-diagnostics --lib --bin markdown-note --config
+'profile.test.package.markdown-note.codegen-units=32'`. Build variants 64 and 128 also ran
 successfully during the work; a subsequent link to an already-used executable
 encountered Windows LNK1104, so the final run used a fresh command-only variant.
 Check, format and strict all-targets Clippy passed on the final code. The complete
@@ -1985,10 +1985,10 @@ highlighting covers supported grammars with a plain-text fallback. Markdown
 formatting and list semantics are unavailable for other file types.
 
 Verification passed: 91 library tests and 269 application tests with
-`cargo test --locked --features editor-diagnostics --lib --bin mithril`, plus all
+`cargo test --locked --features editor-diagnostics --lib --bin markdown-note`, plus all
 five public storage tests by executing the freshly built `document` test binary.
 Check, format and strict all-targets Clippy passed. Full integration testing was
-attempted but Cargo could not replace the locked `target/debug/mithril.exe`;
+attempted but Cargo could not replace the locked `target/debug/markdown-note.exe`;
 `cargo rustc --test document` produced the updated storage test binary despite the
 same application-binary lock. No desktop interaction occurred. Unrelated
 Cargo.lock changes are excluded.
@@ -2030,7 +2030,7 @@ manual Save while disabled, notebook-switch policy changes, Settings events with
 and without a notebook, and rejected events from a closed form. Existing autosave
 harnesses explicitly opt in to retain their lifecycle coverage. The full integration
 command was attempted but could not replace the running application's locked
-`target/debug/mithril.exe`. No native application or desktop interaction was used.
+`target/debug/markdown-note.exe`. No native application or desktop interaction was used.
 Unrelated Cargo.lock changes remain untouched.
 ## Notebook-scoped external autosave (2026-09-17)
 
@@ -2053,7 +2053,7 @@ values, actual external-file autosave after switching back to the enabled notebo
 no session-default leakage, legacy/default schema behavior, stale form rejection,
 and preference replay during same/different notebook activation. The full test
 command was attempted but could not replace the running application's locked
-`target/debug/mithril.exe`. No desktop interaction occurred. Unrelated Cargo.lock
+`target/debug/markdown-note.exe`. No desktop interaction occurred. Unrelated Cargo.lock
 changes remain untouched.
 
 ## Open settings JSON from Settings (2026-09-17)
@@ -2321,7 +2321,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   protocol position and pending-launch configuration.
 - Full tests used cargo --config 'build.target-dir="target/terminal-settings-validation"'
   --config 'build.build-dir="target"' test --locked --offline --features
-  editor-diagnostics -j 1, preserving the user's running target/debug/mithril.exe.
+  editor-diagnostics -j 1, preserving the user's running target/debug/markdown-note.exe.
   The final headless suite ran outside the sandbox because the existing ConPTY
   Ctrl+C scenario cannot complete inside it. No desktop interaction or visible
   application launch was used; native appearance remains manual validation.
@@ -2670,7 +2670,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   source change is in the sequence lexer: internal whitespace stays inside
   participant IDs; declaration aliases, numeric IDs, comments and central
   connection markers retain their boundaries. Provenance and original licenses
-  are included in vendor/merman-core, alongside MITHRIL-PATCH.md.
+  are included in vendor/merman-core, alongside MARKDOWN-NOTE-PATCH.md.
 - The shared renderer accepts existing diagrams without modifying document
   source, selection or history. All new regression inputs use synthetic names
   and messages. No user screenshot or original diagram text is committed.
@@ -2703,7 +2703,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   `scripts/release-local.mjs`. It archives the selected local tag, validates its
   Cargo version, runs headless tests, builds with the pinned Rust toolchain,
   packages the installer/portable ZIP/checksums, and reuses the existing verified
-  draft publisher for `travisluong/mithril-releases`.
+  draft publisher for `travisluong/markdown-note`.
 - Builds leave the development checkout untouched and retain source snapshots,
   release metadata and downloads under ignored `target/local-releases`. A local
   lock serializes access to the separate build cache. No source tags are pushed.
@@ -2722,7 +2722,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   failure; ZIP creation now uses the built-in .NET compression API and passes.
 - `actionlint` passed for the manual release workflow. PowerShell/Node parsing,
   the wrapper's nonzero exit for an invalid tag, and `git diff --check` passed.
-  No application code changed, no full Mithril release build was run, and no
+  No application code changed, no full Markdown Note release build was run, and no
   installer or application UI was launched. Real publishing credentials and
   manual install/upgrade checks remain operator setup.
 
@@ -2755,7 +2755,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   `git diff --check` pass. Full tests, root formatting and all-target Clippy were
   attempted but blocked by missing `src/feedback/tests.rs` and/or
   `src/feedback_ui/tests.rs` in concurrent, unrelated feedback-feature edits.
-  The ordinary target also encountered an in-use `target/debug/mithril.exe`;
+  The ordinary target also encountered an in-use `target/debug/markdown-note.exe`;
   focused tests passed in the separate headless target without touching that app.
 
 ## 2026-09-23 — Feedback and website capture
@@ -2777,7 +2777,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   validation and autosave while the modal remains open.
 - `cargo fmt --check`, `cargo check --locked --offline`, and strict all-target
   Clippy with `editor-diagnostics` passed. The ordinary all-tests command could
-  not replace the user's running `target/debug/mithril.exe`; it was left untouched.
+  not replace the user's running `target/debug/markdown-note.exe`; it was left untouched.
   Full regression used `--target x86_64-pc-windows-msvc --no-fail-fast --
   --test-threads=1`. Its 731 passing tests plus the one PowerShell-interrupt test
   rerun outside the sandbox cover all 732 regression tests. All 15 terminal tests
@@ -2791,7 +2791,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   and 13 headless browser checks passed. The official Postgres 18 container passed
   fresh/repeated migrations, concurrent signup deduplication, feedback idempotency,
   shared limits/expiry and container recreation with preserved data. Test container
-  and volume were removed afterward. See `mithril-web/docs/verification.md` for reproducible commands and schema.
+  and volume were removed afterward. See `markdown-note-web/docs/verification.md` for reproducible commands and schema.
 - [Feedback contracts and launch handoff](feedback.md) document backend-first
   publication, stored-row checks and an owner review four weeks after the actual
   public launch date. No services were provisioned for production, releases
@@ -2860,7 +2860,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   before the optimized build and packaging.
 - The installer, portable ZIP and SHA256SUMS.txt were uploaded, downloaded and
   byte-verified before publishing at
-  https://github.com/travisluong/mithril-releases/releases/tag/v0.1.1.
+  https://github.com/travisluong/markdown-note/releases/tag/v0.1.1.
   Installer signing, Microsoft Store distribution and desktop UI validation remain
   outside this release. No desktop application was launched for testing.
 

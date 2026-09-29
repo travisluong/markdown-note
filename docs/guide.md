@@ -1,4 +1,4 @@
-# Mithril
+# Markdown Note
 
 A desktop Markdown notebook built with GPUI, with Windows as the primary
 platform. One window shows one note or image at a time. Notes are ordinary UTF-8
@@ -24,22 +24,22 @@ snapshot of that local tag; its version must match Cargo metadata. See the
 credentials and `-BuildOnly`. Publishing a release does not use GitHub Actions.
 Other platforms currently have no releases.
 
-For Windows, open [Releases](https://github.com/travisluong/mithril-releases/releases)
-and download `mithril-<version>-windows-x86_64-setup.exe` under **Assets** once
+For Windows, open [Releases](https://github.com/travisluong/markdown-note/releases)
+and download `markdown-note-<version>-windows-x86_64-setup.exe` under **Assets** once
 the build finishes. Run it and choose **Install**. It installs for your Windows
-account without requiring administrator privileges, adds Mithril to the Start
+account without requiring administrator privileges, adds Markdown Note to the Start
 menu and **Settings → Apps → Installed apps**, and offers an optional desktop
 shortcut and launch on completion. The default location is
-`%LOCALAPPDATA%\Programs\Mithril`.
+`%LOCALAPPDATA%\Programs\Markdown Note`.
 
-To upgrade, save your notes, close Mithril, and run the newer installer.
+To upgrade, save your notes, close Markdown Note, and run the newer installer.
 Uninstall through Installed apps; your notebooks and preferences are retained.
 The app and installer are currently unsigned, so Windows may display a
 SmartScreen warning. Automatic updates are not included yet.
 
-The release also includes `mithril-<version>-windows-x86_64.zip` and
+The release also includes `markdown-note-<version>-windows-x86_64.zip` and
 `SHA256SUMS.txt` with SHA-256 checksums for the installer and portable ZIP.
-For the portable Windows build, extract its ZIP and run `mithril.exe`.
+For the portable Windows build, extract its ZIP and run `markdown-note.exe`.
 The local release command creates a draft in the public downloads repository,
 verifies every uploaded asset, and publishes only after verification succeeds.
 Reruns resume matching drafts and leave published releases unchanged.
@@ -263,7 +263,7 @@ Search refreshes after edits to the open note, discarding unsaved search content
 when navigating away, or changes to the query or case option. To pick up external
 file changes, change the query or toggle Match case.
 Scans run in the background and superseded queries are cancelled. Filesystem
-links and `.mithril` are excluded. Results are capped at 2,000 matches; files
+links and `.markdown-note` are excluded. Results are capped at 2,000 matches; files
 over 8 MiB and unreadable/non-UTF-8 files are skipped with a visible count.
 Changed matches are rechecked against the loaded text before navigation.
 
@@ -342,7 +342,7 @@ and Windows named streams, is not copied by the replacement policy. The Markdown
 file picker shows all files and rejects unsupported extensions. See the
 [storage contract](document-storage.md) for conflict checks and their limits.
 
-Each notebook keeps settings in `.mithril/settings.json`, including appearance,
+Each notebook keeps settings in `.markdown-note/settings.json`, including appearance,
 autosave, view mode, sidebar options, the last selected file and expanded folders.
 File/folder paths there are notebook-relative; the internal directory is hidden
 from Explorer. The user configuration stores registered notebook paths and the
@@ -350,14 +350,14 @@ active notebook so they can be restored at startup:
 
 | Platform | User configuration |
 | --- | --- |
-| Windows | `%APPDATA%\mithril\notebooks.json` |
-| macOS | `~/Library/Application Support/mithril/notebooks.json` |
-| Linux | `$XDG_CONFIG_HOME/mithril/notebooks.json`, falling back to `~/.config/mithril/notebooks.json` if XDG_CONFIG_HOME is unset or not absolute |
+| Windows | `%APPDATA%\markdown-note\notebooks.json` |
+| macOS | `~/Library/Application Support/markdown-note/notebooks.json` |
+| Linux | `$XDG_CONFIG_HOME/markdown-note/notebooks.json`, falling back to `~/.config/markdown-note/notebooks.json` if XDG_CONFIG_HOME is unset or not absolute |
 
-If you used a build from before the Mithril rename, close the app and rename
-the previous notebook metadata folder to `.mithril` in each notebook. Rename
+If you used a build from before the Markdown Note rename, close the app and rename
+the previous notebook metadata folder to `.markdown-note` in each notebook. Rename
 the previous app folder in your platform's user configuration directory to
-`mithril` as well. Keep the JSON files unchanged; existing settings are not
+`markdown-note` as well. Keep the JSON files unchanged; existing settings are not
 automatically migrated. If a destination already exists, back up both folders
 before reconciling them.
 
@@ -387,14 +387,14 @@ fixtures and an isolated notebook index:
 
 ```powershell
 cargo build --locked --features editor-diagnostics
-$env:MITHRIL_NOTEBOOK_CHECK = Join-Path (Get-Location) 'target/notebook-smoke.txt'
-& ./target/debug/mithril.exe
-Remove-Item Env:MITHRIL_NOTEBOOK_CHECK
+$env:MARKDOWN_NOTE_NOTEBOOK_CHECK = Join-Path (Get-Location) 'target/notebook-smoke.txt'
+& ./target/debug/markdown-note.exe
+Remove-Item Env:MARKDOWN_NOTE_NOTEBOOK_CHECK
 Get-Content target/notebook-smoke.txt
 ```
 
 It exits automatically and writes a result, progress file or panic report.
-`MITHRIL_AUTOSAVE_CHECK` selects a separate disposable-fixture diagnostic for
+`MARKDOWN_NOTE_AUTOSAVE_CHECK` selects a separate disposable-fixture diagnostic for
 timers, save races, failure recovery, task autosave and settings validation.
 [Performance validation](../benchmarks/README.md) documents the user-run release
 benchmark, fixtures, hardware, historical measurements, limitations and commands.

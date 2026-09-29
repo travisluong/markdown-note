@@ -659,7 +659,7 @@ fn toolbar_icons_keep_fixed_order_and_never_start_drags_at_every_size(cx: &mut T
     let mut reversed = ToolbarItem::DEFAULT_ORDER;
     reversed.reverse();
     book.settings.toolbar = serde_json::from_value(serde_json::json!({"order": reversed})).unwrap();
-    let settings_path = book.root.join(".mithril/settings.json");
+    let settings_path = book.root.join(".markdown-note/settings.json");
     let before_file = std::fs::read(&settings_path).unwrap();
     cx.update(|_, cx| {
         notes.update(cx, |this, cx| {
@@ -1147,7 +1147,7 @@ fn terminal_new_tab_uses_current_notebook_and_preserves_existing_session(cx: &mu
     let (dir, notes, cx) = fixture(cx);
     let first = notebook::Notebook::open(&dir.path().join("terminal-first"), true).unwrap();
     let mut second = notebook::Notebook::open(&dir.path().join("terminal-second"), true).unwrap();
-    second.settings.terminal.windows_shell = mithril::terminal::WindowsShell::GitBash;
+    second.settings.terminal.windows_shell = markdown_note::terminal::WindowsShell::GitBash;
     cx.update(|window, cx| {
         notes.update(cx, |this, cx| {
             this.notebooks.active = Some(first.clone());
@@ -1169,7 +1169,7 @@ fn terminal_new_tab_uses_current_notebook_and_preserves_existing_session(cx: &mu
         let launch = panel.read(cx).last_launch.as_ref().unwrap();
         assert_eq!(
             launch.0.windows_shell,
-            mithril::terminal::WindowsShell::Powershell
+            markdown_note::terminal::WindowsShell::Powershell
         );
         assert_eq!(launch.1.as_ref().unwrap(), &first.root);
 
@@ -1184,7 +1184,7 @@ fn terminal_new_tab_uses_current_notebook_and_preserves_existing_session(cx: &mu
         let launch = next.read(cx).last_launch.as_ref().unwrap();
         assert_eq!(
             launch.0.windows_shell,
-            mithril::terminal::WindowsShell::GitBash
+            markdown_note::terminal::WindowsShell::GitBash
         );
         assert_eq!(launch.1.as_ref().unwrap(), &second.root);
         assert_ne!(next.read(cx).view, Some(view));

@@ -39,7 +39,7 @@ pub fn safe_relative(path: &Path) -> bool {
         && path.components().all(|c| matches!(c, Component::Normal(_)))
         && !path
             .components()
-            .any(|c| c.as_os_str().eq_ignore_ascii_case(".mithril"))
+            .any(|c| c.as_os_str().eq_ignore_ascii_case(".markdown-note"))
 }
 
 pub fn markdown(path: &Path) -> bool {

@@ -80,19 +80,19 @@ mod tests {
         let date = chrono::DateTime::parse_from_rfc3339("2026-09-03T14:05:06-05:00").unwrap();
         for &(pattern, expected) in EXAMPLES {
             assert_eq!(
-                mithril::templates::format(pattern, &date).unwrap(),
+                markdown_note::templates::format(pattern, &date).unwrap(),
                 expected
             );
         }
         for &(pattern, description) in TOKENS {
             let expected = description.split_once(": ").unwrap().1;
             assert_eq!(
-                mithril::templates::format(pattern, &date).unwrap(),
+                markdown_note::templates::format(pattern, &date).unwrap(),
                 expected
             );
         }
         assert_eq!(
-            mithril::templates::format("[Today] YYYY-MM-DD", &date).unwrap(),
+            markdown_note::templates::format("[Today] YYYY-MM-DD", &date).unwrap(),
             "Today 2026-09-03"
         );
     }

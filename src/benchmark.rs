@@ -11,7 +11,7 @@ struct Run {
 }
 
 pub(super) fn start(notes: &Entity<Notes>, output: PathBuf, window: &mut Window, cx: &mut App) {
-    if std::env::var_os("MITHRIL_BURST").is_some() {
+    if std::env::var_os("MARKDOWN_NOTE_BURST").is_some() {
         burst::start(notes, output, window, cx);
         return;
     }
@@ -255,7 +255,7 @@ fn table_round(notes: Entity<Notes>, output: PathBuf, round: usize, window: &mut
             });
             table_round(notes, output, round + 1, window);
         } else {
-            if std::env::var_os("MITHRIL_TABLE_PREVIEW").is_some() {
+            if std::env::var_os("MARKDOWN_NOTE_TABLE_PREVIEW").is_some() {
                 fs::write(output.with_extension("progress.txt"), "table preview ready").unwrap();
                 return;
             }

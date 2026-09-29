@@ -1,5 +1,5 @@
-// Mithril patch: preserve whitespace inside sequence participant identifiers.
-// See ../../../MITHRIL-PATCH.md for provenance and regression coverage.
+// Markdown Note patch: preserve whitespace inside sequence participant identifiers.
+// See ../../../MARKDOWN-NOTE-PATCH.md for provenance and regression coverage.
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]

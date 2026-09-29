@@ -128,7 +128,7 @@ fn run_trash_operation(
     // A fresh thread lets trash own its apartment and keeps any dependency
     // panic out of the executor. Callers already run this blocking I/O off UI.
     std::thread::Builder::new()
-        .name("mithril-trash".into())
+        .name("markdown-note-trash".into())
         .spawn(operation)?
         .join()
         .map_err(|_| io::Error::other("Trash operation failed unexpectedly."))?
@@ -200,7 +200,7 @@ mod tests {
         let root = temp.path();
         create_folder(root, Path::new(""), "notes").unwrap();
         assert!(create_folder(root, Path::new(""), "notes").is_err());
-        for name in ["../escape", ".mithril", "CON", "bad/child", "bad."] {
+        for name in ["../escape", ".markdown-note", "CON", "bad/child", "bad."] {
             assert!(create_folder(root, Path::new(""), name).is_err());
         }
         fs::write(root.join("notes/a.md"), b"\xef\xbb\xbfhello\r\n").unwrap();

@@ -208,7 +208,7 @@ fn render(key: &Key) -> Result<Diagram, String> {
             "securityLevel": "strict", "htmlLabels": false,
             "fontFamily": "Arial", "maxTextSize": MAX_SOURCE
         })))
-        .with_diagram_id("mithril-mermaid");
+        .with_diagram_id("markdown-note-mermaid");
     // Mermaid parity output can keep a white canvas even with the dark theme.
     // Let the native code-block surface supply the background in both views.
     let pipeline = SvgPipeline::resvg_safe()

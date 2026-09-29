@@ -4255,7 +4255,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mithril"
+name = "markdown-note"
 version = "0.1.1"
 dependencies = [
  "alacritty_terminal",

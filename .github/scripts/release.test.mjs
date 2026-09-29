@@ -26,7 +26,7 @@ test('tag and Cargo version must match; manual builds use Cargo metadata', () =>
 });
 
 function fixture(t) {
-  const directory = mkdtempSync(join(tmpdir(), 'mithril-release-test-'));
+  const directory = mkdtempSync(join(tmpdir(), 'markdown-note-release-test-'));
   t.after(() => {
     assert.equal(dirname(directory), resolve(tmpdir()));
     rmSync(directory, { recursive: true, force: true });

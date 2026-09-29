@@ -9,7 +9,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     menu::{DropdownMenu, PopupMenu, PopupMenuItem},
 };
-use mithril::{
+use markdown_note::{
     markdown_edit::Format,
     notebook::{ToolbarIconSize, ToolbarItem, ToolbarRegion},
 };

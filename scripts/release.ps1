@@ -19,4 +19,4 @@ $releaseArgs = @((Join-Path $PSScriptRoot 'release-local.mjs'), '--tag', $Tag)
 if ($BuildOnly) { $releaseArgs += '--build-only' }
 if ($InnoSetup) { $releaseArgs += @('--inno-setup', $InnoSetup) }
 & node @releaseArgs
-if ($LASTEXITCODE -ne 0) { throw 'Mithril release failed. See the error above; no successful publication is implied.' }
+if ($LASTEXITCODE -ne 0) { throw 'Markdown Note release failed. See the error above; no successful publication is implied.' }

@@ -6,7 +6,7 @@ use gpui_component::{
     Root,
     input::{Redo, Undo},
 };
-use mithril::{ViewMode, editor::Editor};
+use markdown_note::{ViewMode, editor::Editor};
 
 struct View(Editor);
 impl Render for View {

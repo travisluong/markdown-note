@@ -10,16 +10,16 @@ import { releaseLocal } from './release-local.mjs';
 function fixture(t) {
   // Real Git and archive extraction establish that the build uses the tag,
   // including paths with spaces, without modifying the development checkout.
-  const root = mkdtempSync(join(tmpdir(), 'mithril local release test '));
+  const root = mkdtempSync(join(tmpdir(), 'markdown-note local release test '));
   t.after(() => {
     assert.equal(dirname(root), resolve(tmpdir()));
-    assert.ok(basename(root).startsWith('mithril local release test '));
+    assert.ok(basename(root).startsWith('markdown-note local release test '));
     rmSync(root, { recursive: true, force: true });
   });
   const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
   git(['init', '-q']);
   git(['config', 'core.autocrlf', 'false']);
-  writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "mithril"\nversion = "1.2.3"\n');
+  writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "markdown-note"\nversion = "1.2.3"\n');
   writeFileSync(join(root, 'committed.txt'), 'tagged content');
   git(['add', '.']);
   git(['-c', 'user.name=Release Test', '-c', 'user.email=release@example.invalid', 'commit', '-qm', 'fixture']);
@@ -33,7 +33,7 @@ function fixture(t) {
   const run = (name, args, options) => {
     state.calls.push({ name, args, ...options });
     if (name !== 'gh') {
-      for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'MITHRIL_RELEASES_TOKEN']) assert.equal(options.env[key], undefined);
+      for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'MARKDOWN_NOTE_RELEASES_TOKEN']) assert.equal(options.env[key], undefined);
     }
     if (state.fail === name || state.fail === `${name} ${args[0]}`) throw new Error('Injected command failure');
     if (name === 'git' || name === 'tar.exe') {
@@ -45,30 +45,30 @@ function fixture(t) {
       assert.equal(existsSync(join(options.cwd, 'untracked.txt')), false);
       if (args[0] === 'metadata') {
         const version = readFileSync(join(options.cwd, 'Cargo.toml'), 'utf8').match(/version = "([^"]+)"/)[1];
-        return JSON.stringify({ packages: [{ name: 'mithril', version }] });
+        return JSON.stringify({ packages: [{ name: 'markdown-note', version }] });
       }
       if (args[0] === 'build') {
-        assert.deepEqual(args, ['build', '--release', '--locked', '--target', 'x86_64-pc-windows-msvc', '--bin', 'mithril']);
+        assert.deepEqual(args, ['build', '--release', '--locked', '--target', 'x86_64-pc-windows-msvc', '--bin', 'markdown-note']);
         const output = join(options.env.CARGO_TARGET_DIR, 'x86_64-pc-windows-msvc', 'release');
         mkdirSync(output, { recursive: true });
-        writeFileSync(join(output, 'mithril.exe'), 'compiled fixture');
+        writeFileSync(join(output, 'markdown-note.exe'), 'compiled fixture');
       }
       return '';
     }
     if (name === compiler) {
       const dist = args.find(arg => arg.startsWith('/DOutputDir=')).slice('/DOutputDir='.length);
-      writeFileSync(join(dist, 'mithril-1.2.3-windows-x86_64-setup.exe'), 'installer fixture');
+      writeFileSync(join(dist, 'markdown-note-1.2.3-windows-x86_64-setup.exe'), 'installer fixture');
       return '';
     }
     if (name === 'powershell.exe') {
       assert.ok(args.includes('-NonInteractive'));
-      assert.equal(readFileSync(options.env.MITHRIL_PACKAGE_EXE, 'utf8'), 'compiled fixture');
-      writeFileSync(options.env.MITHRIL_PACKAGE_ZIP, 'ZIP fixture');
+      assert.equal(readFileSync(options.env.MARKDOWN_NOTE_PACKAGE_EXE, 'utf8'), 'compiled fixture');
+      writeFileSync(options.env.MARKDOWN_NOTE_PACKAGE_ZIP, 'ZIP fixture');
       return '';
     }
     if (name === 'gh') {
       assert.equal(options.env.GH_TOKEN, 'fixture-publish-token');
-      if (args[1] === 'repos/travisluong/mithril-releases') return JSON.stringify({ private: false, permissions: { push: true } });
+      if (args[1] === 'repos/travisluong/markdown-note') return JSON.stringify({ private: false, permissions: { push: true } });
       if (args.includes('--slurp')) return JSON.stringify([state.release ? [state.release] : []]);
       if (args.includes('POST')) {
         state.release = { id: 42, draft: true, tag_name: 'v1.2.3', body: args.find(arg => arg.startsWith('body=')).slice(5) };
@@ -93,7 +93,7 @@ function fixture(t) {
   };
   return { root, sha, state, git, options: {
     root, tag: 'v1.2.3', innoSetup: compiler, platform: 'win32', run, log: () => {},
-    env: { ...process.env, MITHRIL_RELEASES_TOKEN: 'fixture-publish-token' },
+    env: { ...process.env, MARKDOWN_NOTE_RELEASES_TOKEN: 'fixture-publish-token' },
   } };
 }
 
@@ -114,7 +114,7 @@ test('tag snapshot builds, tests, packages, verifies and publishes; dirty checko
   assert.equal(existsSync(join(root, 'target', 'local-releases', 'release.lock')), false);
   assert.deepEqual(JSON.parse(readFileSync(join(result.directory, 'release.json'), 'utf8')), {
     tag: 'v1.2.3', sha, version: '1.2.3', target: 'x86_64-pc-windows-msvc',
-    installer: 'mithril-1.2.3-windows-x86_64-setup.exe', zip: 'mithril-1.2.3-windows-x86_64.zip',
+    installer: 'markdown-note-1.2.3-windows-x86_64-setup.exe', zip: 'markdown-note-1.2.3-windows-x86_64.zip',
   });
 });
 
@@ -161,18 +161,18 @@ test('concurrent release is rejected without removing its lock', t => {
 });
 
 test('real Inno Setup and PowerShell package the snapshot without launching it', {
-  skip: !process.env.MITHRIL_TEST_ISCC,
+  skip: !process.env.MARKDOWN_NOTE_TEST_ISCC,
 }, t => {
   const { root, git, options } = fixture(t);
   const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  for (const path of ['packaging/windows/mithril.iss', 'assets/brand/mithril.ico']) {
+  for (const path of ['packaging/windows/markdown-note.iss', 'assets/brand/markdown-note.ico']) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     copyFileSync(join(repository, path), join(root, path));
   }
   git(['add', 'packaging', 'assets']);
   git(['-c', 'user.name=Release Test', '-c', 'user.email=release@example.invalid', 'commit', '-qm', 'packaging fixture']);
   git(['tag', '-f', 'v1.2.3']);
-  const compiler = resolve(process.env.MITHRIL_TEST_ISCC);
+  const compiler = resolve(process.env.MARKDOWN_NOTE_TEST_ISCC);
   const result = releaseLocal({ ...options, innoSetup: compiler, buildOnly: true,
     run: (name, args, context) => {
       if (name === compiler || name === 'powershell.exe') {
@@ -181,10 +181,10 @@ test('real Inno Setup and PowerShell package the snapshot without launching it',
       return options.run(name, args, context);
     },
   });
-  const installer = readFileSync(join(result.dist, 'mithril-1.2.3-windows-x86_64-setup.exe'));
+  const installer = readFileSync(join(result.dist, 'markdown-note-1.2.3-windows-x86_64-setup.exe'));
   assert.equal(installer.subarray(0, 2).toString(), 'MZ');
   const zipContents = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [IO.Compression.ZipFile]::OpenRead($env:MITHRIL_TEST_ZIP); try { if ($zip.Entries.Count -ne 1 -or $zip.Entries[0].FullName -ne 'mithril.exe') { throw 'Unexpected ZIP entries' }; $reader = [IO.StreamReader]::new($zip.Entries[0].Open()); try { $reader.ReadToEnd() } finally { $reader.Dispose() } } finally { $zip.Dispose() }"],
-  { encoding: 'utf8', windowsHide: true, env: { ...process.env, MITHRIL_TEST_ZIP: join(result.dist, 'mithril-1.2.3-windows-x86_64.zip') } });
+    "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [IO.Compression.ZipFile]::OpenRead($env:MARKDOWN_NOTE_TEST_ZIP); try { if ($zip.Entries.Count -ne 1 -or $zip.Entries[0].FullName -ne 'markdown-note.exe') { throw 'Unexpected ZIP entries' }; $reader = [IO.StreamReader]::new($zip.Entries[0].Open()); try { $reader.ReadToEnd() } finally { $reader.Dispose() } } finally { $zip.Dispose() }"],
+  { encoding: 'utf8', windowsHide: true, env: { ...process.env, MARKDOWN_NOTE_TEST_ZIP: join(result.dist, 'markdown-note-1.2.3-windows-x86_64.zip') } });
   assert.equal(zipContents.trim(), 'compiled fixture');
 });

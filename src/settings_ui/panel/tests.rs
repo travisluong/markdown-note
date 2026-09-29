@@ -1432,7 +1432,7 @@ fn toolbar_reset_persists_atomically_skips_defaults_and_rejects_scope_and_busy(
         notebook::ToolbarSettings::default()
     );
     // Removing this fixture file makes an unnecessary write observable, without timing assumptions.
-    let settings_path = fixture.first.root.join(".mithril/settings.json");
+    let settings_path = fixture.first.root.join(".markdown-note/settings.json");
     fs::remove_file(&settings_path).unwrap();
     intent(&form, SettingsIntent::ResetToolbar, cx);
     assert!(!settings_path.exists());
@@ -2717,7 +2717,7 @@ fn toolbar_visibility_persists_only_for_the_active_notebook(cx: &mut TestAppCont
 
 #[gpui::test]
 fn terminal_shell_settings_persist_per_notebook_and_reject_stale_forms(cx: &mut TestAppContext) {
-    use mithril::terminal::WindowsShell;
+    use markdown_note::terminal::WindowsShell;
     let (fixture, notes, cx) = fixture(cx, true, false);
     cx.update(|_, cx| {
         notes.update(cx, |this, _| {
@@ -2771,7 +2771,7 @@ fn terminal_shell_settings_persist_per_notebook_and_reject_stale_forms(cx: &mut 
 
 #[gpui::test]
 fn terminal_shell_without_notebook_is_session_only(cx: &mut TestAppContext) {
-    use mithril::terminal::WindowsShell;
+    use markdown_note::terminal::WindowsShell;
     let (fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
     intent(
@@ -2817,7 +2817,7 @@ fn terminal_shell_dropdown_confirms_and_syncs_effective_selection(cx: &mut TestA
     cx.update(|_, cx| {
         assert_eq!(
             notes.read(cx).terminal_settings().windows_shell,
-            mithril::terminal::WindowsShell::GitBash
+            markdown_note::terminal::WindowsShell::GitBash
         );
         assert_eq!(picker.read(cx).selected_value(), Some(&"Git Bash"));
         assert!(notes.read(cx).terminals.tabs.is_empty());
@@ -2834,7 +2834,7 @@ fn terminal_shell_dropdown_confirms_and_syncs_effective_selection(cx: &mut TestA
     cx.update(|window, cx| {
         form.update(cx, |form, cx| {
             let mut values = form.values.clone();
-            values.terminal.windows_shell = mithril::terminal::WindowsShell::Powershell;
+            values.terminal.windows_shell = markdown_note::terminal::WindowsShell::Powershell;
             form.sync_effective(values, window, cx);
         });
         assert_eq!(picker.read(cx).selected_value(), Some(&"PowerShell"));
@@ -2844,7 +2844,7 @@ fn terminal_shell_dropdown_confirms_and_syncs_effective_selection(cx: &mut TestA
 #[gpui::test]
 fn terminal_cursor_dropdown_persists_and_rejects_stale_or_busy_forms(cx: &mut TestAppContext) {
     use gpui_component::select::SelectEvent;
-    use mithril::terminal::CursorStyle;
+    use markdown_note::terminal::CursorStyle;
     let (fixture, notes, cx) = fixture(cx, true, false);
     cx.update(|_, cx| {
         notes.update(cx, |this, _| {
@@ -2924,7 +2924,7 @@ fn terminal_cursor_dropdown_persists_and_rejects_stale_or_busy_forms(cx: &mut Te
 
 #[gpui::test]
 fn terminal_cursor_updates_retained_hidden_terminal_and_follows_notebook(cx: &mut TestAppContext) {
-    use mithril::terminal::CursorStyle;
+    use markdown_note::terminal::CursorStyle;
     let (fixture, notes, cx) = fixture(cx, false, true);
     let form = panel(&notes, cx);
     intent(&form, SettingsIntent::Close, cx);

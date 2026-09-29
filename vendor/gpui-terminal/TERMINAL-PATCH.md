@@ -1,12 +1,12 @@
-# Mithril terminal integration patches
+# Markdown Note terminal integration patches
 
 Upstream: gpui-terminal 0.1.0, downloaded from crates.io.
 Repository: https://github.com/zortax/gpui-terminal
 Keep LICENSE-MIT, LICENSE-APACHE and this log when upgrading.
 
-Mithril pins GPUI 0.2.2 and selects this copy with [patch.crates-io].
+Markdown Note pins GPUI 0.2.2 and selects this copy with [patch.crates-io].
 The upstream example and unused clipboard helper are retained as references;
-Mithril uses GPUI clipboard access and never launches the example application.
+Markdown Note uses GPUI clipboard access and never launches the example application.
 
 Local changes:
 - Share normalized grid dimensions across construction, explicit resize and canvas
@@ -15,7 +15,7 @@ Local changes:
   Hit testing and PTY resize callbacks report the same safe dimensions; tiny
   panels clip the grid and zero-size view resizes remain ignored. Root
   tests/terminal_resize.rs and application sidebar tests cover these limits.
-- Add from_receiver for Mithril-owned PTY I/O. Bound the standalone stream
+- Add from_receiver for Markdown Note-owned PTY I/O. Bound the standalone stream
   constructor's queue; process at most 64 KiB per UI turn and yield between
   batches. Drain protocol events while hidden rather than only during paint.
 - Forward Alacritty PtyWrite replies (including cursor-position queries).
@@ -23,7 +23,7 @@ Local changes:
   they cannot mutate the host clipboard or accumulate while hidden.
 - Emit TerminalTitleChanged for OSC 0/2 and resets during output processing,
   including hidden views. Retain only the latest pending title for the existing
-  window-dependent callback. Mithril subscribes with session/view/generation
+  window-dependent callback. Markdown Note subscribes with session/view/generation
   guards and falls back to the shell label for empty titles.
 - Isolate terminal keys with a Terminal key context and stop propagation.
   Reserve Ctrl+backtick for the host; check a host input guard at key dispatch.
@@ -52,7 +52,7 @@ Cursor configuration extension:
 - Expose CursorStyle (Line, Box, Underline) in TerminalConfig and the renderer;
   construction and update_config both apply it without resetting terminal state.
 - Paint a thin vertical line, the existing transparent box outline, or a thin
-  underline. The component keeps Box as its compatibility default; Mithril
+  underline. The component keeps Box as its compatibility default; Markdown Note
   explicitly selects Line unless its notebook/session preference says otherwise.
 - Keep SHOW_CURSOR visibility control; application shape requests do not override
   host configuration. cursor_quad exposes the same paint primitive used by paint
@@ -86,7 +86,7 @@ Terminal selection and clipboard:
 - Expose guarded clipboard methods and selection availability for host menus.
   The host interaction guard remains effective after exit, independently of the
   input-enabled flag, so retained output supports copy while writes are disabled.
-  Mithril owns popup presentation and stale session/menu validation. Existing
+  Markdown Note owns popup presentation and stale session/menu validation. Existing
   paste normalization, bracketed-paste framing, limits and error handling remain.
 - Root terminal integration and application TestPlatform tests exercise pointer
   selection, clipboard shortcuts, geometry, menus and stale/modal authority.
@@ -94,6 +94,6 @@ Terminal selection and clipboard:
 Window zoom shortcuts join Ctrl+backtick as host-reserved keys. Mod+Plus/Equals
 (including shifted variants), Mod+Minus and Mod+0 bubble to the application before
 terminal encoding; Mod is Cmd on macOS and Ctrl elsewhere. Other modifiers and
-shell keys retain their existing behavior. Mithril passes scaled font/padding
+shell keys retain their existing behavior. Markdown Note passes scaled font/padding
 configuration while preserving saved terminal font overrides. The application
 `zoom_ui` tests verify focus, unchanged view identity and no shell bytes for zoom.

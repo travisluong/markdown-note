@@ -1,9 +1,9 @@
-# Mithril
+# Markdown Note
 
 A desktop Markdown notebook built with GPUI, with Windows as the primary
 platform. Notes are ordinary UTF-8 files, with Source, Live preview and Reading
 views. See the [full guide](docs/guide.md) for usage and feature details, or
-download a [Windows release](https://github.com/travisluong/mithril-releases/releases).
+download a [Windows release](https://github.com/travisluong/markdown-note/releases).
 
 ## Build and run
 
@@ -15,7 +15,7 @@ root in Git Bash:
 ```bash
 cargo run --locked                  # Build and run a development build
 cargo build --locked --release      # Build an optimized executable
-./target/release/mithril.exe         # Run the optimized Windows build
+./target/release/markdown-note.exe         # Run the optimized Windows build
 ```
 
 ## Key commands

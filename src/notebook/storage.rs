@@ -35,7 +35,7 @@ fn index_path_for(
         _ => absolute("XDG_CONFIG_HOME")
             .or_else(|| absolute("HOME").map(|home| home.join(".config"))),
     };
-    base.map(|base| base.join("mithril/notebooks.json"))
+    base.map(|base| base.join("markdown-note/notebooks.json"))
         .ok_or_else(|| io::Error::other(format!(
             "No absolute configuration directory is available for {os}; notebook history cannot be stored."
         )))
@@ -106,7 +106,7 @@ pub fn save_index(path: &Path, index: &Index) -> io::Result<()> {
 }
 
 pub fn settings_path(root: &Path) -> PathBuf {
-    root.join(".mithril/settings.json")
+    root.join(".markdown-note/settings.json")
 }
 
 #[derive(Clone, Debug)]
@@ -125,11 +125,11 @@ impl Notebook {
         if !root.is_dir() {
             return Err(io::Error::other("Choose an existing folder."));
         }
-        let metadata_dir = root.join(".mithril");
+        let metadata_dir = root.join(".markdown-note");
         if let Ok(metadata) = fs::symlink_metadata(&metadata_dir)
             && (is_link(&metadata) || !metadata.is_dir())
         {
-            return Err(io::Error::other(".mithril must be a regular folder."));
+            return Err(io::Error::other(".markdown-note must be a regular folder."));
         }
         let path = settings_path(&root);
         if let Ok(metadata) = fs::symlink_metadata(&path)
@@ -180,7 +180,7 @@ pub fn read_directory_filtered(
     let mut entries = Vec::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
-        if entry.file_name().eq_ignore_ascii_case(".mithril") {
+        if entry.file_name().eq_ignore_ascii_case(".markdown-note") {
             continue;
         }
         let relative = relative.join(entry.file_name());

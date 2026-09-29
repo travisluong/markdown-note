@@ -14,8 +14,8 @@ use gpui_component::{
     dialog::Dialog,
     input::{Input, InputEvent, InputState},
 };
-use mithril::ViewMode;
-use mithril::{
+use markdown_note::ViewMode;
+use markdown_note::{
     commands::{Command, PaletteEntry, PaletteModel, discover},
     notebook, templates,
 };

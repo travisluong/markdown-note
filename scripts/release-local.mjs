@@ -7,7 +7,7 @@ import { assetNames, checksums, eligible, publish, validateVersion } from '../.g
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const target = 'x86_64-pc-windows-msvc';
-const destination = 'travisluong/mithril-releases';
+const destination = 'travisluong/markdown-note';
 
 function execute(command, args, { cwd, env, capture = false }) {
   return execFileSync(command, args, {
@@ -40,7 +40,7 @@ export function releaseLocal({
   const buildEnv = { ...env,
     CARGO_TARGET_DIR: join(root, 'target', 'local-release-cache') };
   // A public-download credential is never inherited by the compiler or tests.
-  for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'MITHRIL_RELEASES_TOKEN']) delete buildEnv[name];
+  for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'MARKDOWN_NOTE_RELEASES_TOKEN']) delete buildEnv[name];
   const runs = join(root, 'target', 'local-releases');
   mkdirSync(runs, { recursive: true });
   const lockPath = join(runs, 'release.lock');
@@ -70,9 +70,9 @@ export function releaseLocal({
     unlinkSync(archive);
     command('rustup', ['show', 'active-toolchain'], source);
     const metadata = JSON.parse(command('cargo', ['metadata', '--locked', '--no-deps', '--format-version', '1'], source, true));
-    const version = validateVersion('push', tag, metadata.packages.find(item => item.name === 'mithril')?.version);
+    const version = validateVersion('push', tag, metadata.packages.find(item => item.name === 'markdown-note')?.version);
     const publishEnv = { ...env };
-    if (env.MITHRIL_RELEASES_TOKEN) publishEnv.GH_TOKEN = env.MITHRIL_RELEASES_TOKEN;
+    if (env.MARKDOWN_NOTE_RELEASES_TOKEN) publishEnv.GH_TOKEN = env.MARKDOWN_NOTE_RELEASES_TOKEN;
     const github = args => run('gh', args, { cwd: root, env: publishEnv, capture: true });
     if (!buildOnly) {
       // Fail before the expensive build if CLI authentication/repo access is missing.
@@ -82,21 +82,21 @@ export function releaseLocal({
     }
     command('rustup', ['target', 'add', target], source);
     command('cargo', ['test', '--locked', '--target', target, '--features', 'editor-diagnostics'], source);
-    command('cargo', ['build', '--release', '--locked', '--target', target, '--bin', 'mithril'], source);
-    const executable = join(buildEnv.CARGO_TARGET_DIR, target, 'release', 'mithril.exe');
+    command('cargo', ['build', '--release', '--locked', '--target', target, '--bin', 'markdown-note'], source);
+    const executable = join(buildEnv.CARGO_TARGET_DIR, target, 'release', 'markdown-note.exe');
     const [installer, zip] = assetNames(version);
     command(compiler, [`/DAppVersion=${version}`, `/DSourceDir=${dirname(executable)}`, `/DOutputDir=${dist}`,
-      join(source, 'packaging', 'windows', 'mithril.iss')], source);
+      join(source, 'packaging', 'windows', 'markdown-note.iss')], source);
     // Use the built-in .NET ZIP API: Compress-Archive's script module may be
     // unavailable under Windows PowerShell's execution policy/module search path.
     const zipCommand = [
       "$ErrorActionPreference = 'Stop'",
       'Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem',
-      '$archive = [IO.Compression.ZipFile]::Open($env:MITHRIL_PACKAGE_ZIP, [IO.Compression.ZipArchiveMode]::Create)',
-      "try { [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $env:MITHRIL_PACKAGE_EXE, 'mithril.exe', [IO.Compression.CompressionLevel]::Optimal) | Out-Null } finally { $archive.Dispose() }",
+      '$archive = [IO.Compression.ZipFile]::Open($env:MARKDOWN_NOTE_PACKAGE_ZIP, [IO.Compression.ZipArchiveMode]::Create)',
+      "try { [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $env:MARKDOWN_NOTE_PACKAGE_EXE, 'markdown-note.exe', [IO.Compression.CompressionLevel]::Optimal) | Out-Null } finally { $archive.Dispose() }",
     ].join('; ');
     run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', zipCommand],
-    { cwd: source, env: { ...buildEnv, MITHRIL_PACKAGE_EXE: executable, MITHRIL_PACKAGE_ZIP: join(dist, zip) }, capture: false });
+    { cwd: source, env: { ...buildEnv, MARKDOWN_NOTE_PACKAGE_EXE: executable, MARKDOWN_NOTE_PACKAGE_ZIP: join(dist, zip) }, capture: false });
     writeFileSync(join(dist, 'SHA256SUMS.txt'), checksums(dist, version));
     writeFileSync(join(directory, 'release.json'), JSON.stringify({ tag, sha, version, target,
       installer, zip }, null, 2) + '\n');

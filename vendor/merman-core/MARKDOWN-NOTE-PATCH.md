@@ -1,4 +1,4 @@
-# Mithril parser patch
+# Markdown Note parser patch
 
 This is the published `merman-core` 0.7.0 crate from crates.io, based on upstream
 commit `00a2f291025913d612b6ca1ce9b6df6daf5bef94` in

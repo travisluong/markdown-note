@@ -40,10 +40,10 @@ From the repository root in an interactive Windows desktop session:
 
 ```powershell
 cargo build --release --locked --features editor-diagnostics
-$env:MITHRIL_BENCH = Join-Path $pwd 'benchmarks/live-preview.csv'
-& ./target/release/mithril.exe
+$env:MARKDOWN_NOTE_BENCH = Join-Path $pwd 'benchmarks/live-preview.csv'
+& ./target/release/markdown-note.exe
 # The benchmark closes its own window when done.
-Remove-Item Env:MITHRIL_BENCH
+Remove-Item Env:MARKDOWN_NOTE_BENCH
 ```
 
 The environment variable is ignored without `editor-diagnostics`. Diagnostic
@@ -86,9 +86,9 @@ view task autosave. All fixtures and notebook indexes are disposable.
 Run the autosave check with an editor-diagnostics build:
 
 ```powershell
-$env:MITHRIL_AUTOSAVE_CHECK = Join-Path $pwd 'target/autosave-smoke.txt'
-& ./target/release/mithril.exe
-Remove-Item Env:MITHRIL_AUTOSAVE_CHECK
+$env:MARKDOWN_NOTE_AUTOSAVE_CHECK = Join-Path $pwd 'target/autosave-smoke.txt'
+& ./target/release/markdown-note.exe
+Remove-Item Env:MARKDOWN_NOTE_AUTOSAVE_CHECK
 ```
 
 The benchmark and keyboard smoke check need a rendered window; launching them
@@ -120,10 +120,10 @@ separate undo steps, and horizontal scrolling without moving surrounding text.
 Native IME candidate-window placement remains a manual check.
 
 To leave the disposable table fixture open for visual inspection, build with
-editor-diagnostics and set both MITHRIL_BENCH to an output path and
-MITHRIL_TABLE_PREVIEW=1 before launching. Autosave is disabled for this fixture.
+editor-diagnostics and set both MARKDOWN_NOTE_BENCH to an output path and
+MARKDOWN_NOTE_TABLE_PREVIEW=1 before launching. Autosave is disabled for this fixture.
 The normal benchmark exits automatically; preview mode stays open. The separate
-MITHRIL_AUTOSAVE_CHECK harness includes cell edits followed by row insertion.
+MARKDOWN_NOTE_AUTOSAVE_CHECK harness includes cell edits followed by row insertion.
 
 ## Sustained Enter/Backspace validation
 
@@ -152,10 +152,10 @@ of frame completion. Set both variables before launching the diagnostic build:
 
 ```powershell
 cargo build --release --locked --features editor-diagnostics
-$env:MITHRIL_BENCH = Join-Path $pwd 'benchmarks/sustained-preview.csv'
-$env:MITHRIL_BURST = '1'
-& ./target/release/mithril.exe
-Remove-Item Env:MITHRIL_BENCH, Env:MITHRIL_BURST
+$env:MARKDOWN_NOTE_BENCH = Join-Path $pwd 'benchmarks/sustained-preview.csv'
+$env:MARKDOWN_NOTE_BURST = '1'
+& ./target/release/markdown-note.exe
+Remove-Item Env:MARKDOWN_NOTE_BENCH, Env:MARKDOWN_NOTE_BURST
 ```
 
 This benchmark opens its own diagnostic window and must be run manually; agents

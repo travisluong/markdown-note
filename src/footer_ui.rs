@@ -2,7 +2,7 @@
 use crate::{Notes, notebook};
 use gpui::{Context, IntoElement, Task, Window, div, prelude::*};
 use gpui_component::{ActiveTheme, input::Rope};
-use mithril::document_counts::{self, DocumentCounts};
+use markdown_note::document_counts::{self, DocumentCounts};
 use notebook::FooterCountMode;
 use std::time::Duration;
 

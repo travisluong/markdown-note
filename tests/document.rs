@@ -1,5 +1,5 @@
 //! Exercise the storage API through the library, without importing the app root.
-use mithril::document::{self, Newline, TextFormat};
+use markdown_note::document::{self, Newline, TextFormat};
 use std::{fs, io};
 
 #[test]

@@ -1,7 +1,7 @@
 //! Application-scoped feedback inputs and request lifetime; modal is only an adapter.
 use super::*;
 use gpui_component::Disableable;
-use mithril::feedback::{self, HttpTransport, Transport};
+use markdown_note::feedback::{self, HttpTransport, Transport};
 use std::sync::Arc;
 
 pub(super) struct FeedbackState {

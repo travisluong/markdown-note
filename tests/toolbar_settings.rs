@@ -1,4 +1,4 @@
-use mithril::notebook::{Notebook, Settings, ToolbarItem, ToolbarSettings, save_book};
+use markdown_note::notebook::{Notebook, Settings, ToolbarItem, ToolbarSettings, save_book};
 
 #[test]
 fn toolbar_defaults_preserve_legacy_and_partially_configured_notebooks() {
@@ -83,8 +83,8 @@ fn legacy_toolbar_orders_are_ignored_and_omitted_on_save() {
             settings,
             ToolbarSettings {
                 search: false,
-                icon_size: mithril::notebook::ToolbarIconSize::Large,
-                alignment: mithril::notebook::ToolbarAlignment::Right,
+                icon_size: markdown_note::notebook::ToolbarIconSize::Large,
+                alignment: markdown_note::notebook::ToolbarAlignment::Right,
                 ..ToolbarSettings::default()
             }
         );
@@ -98,7 +98,7 @@ fn legacy_toolbar_orders_are_ignored_and_omitted_on_save() {
 
     let directory = tempfile::tempdir().unwrap();
     let book = Notebook::open(&directory.path().join("book"), true).unwrap();
-    let path = book.root.join(".mithril/settings.json");
+    let path = book.root.join(".markdown-note/settings.json");
     let mut legacy = serde_json::to_value(&book.settings).unwrap();
     legacy["toolbar"]["order"] = serde_json::json!(reversed);
     legacy["toolbar"]["bold"] = serde_json::json!(false);
@@ -122,7 +122,7 @@ fn legacy_toolbar_orders_are_ignored_and_omitted_on_save() {
 
 #[test]
 fn toolbar_icon_sizes_default_normalize_and_persist() {
-    use mithril::notebook::ToolbarIconSize;
+    use markdown_note::notebook::ToolbarIconSize;
     assert_eq!(
         ToolbarSettings::default().icon_size,
         ToolbarIconSize::Medium
@@ -162,7 +162,7 @@ fn toolbar_icon_sizes_default_normalize_and_persist() {
 
 #[test]
 fn toolbar_alignments_default_normalize_and_persist() {
-    use mithril::notebook::ToolbarAlignment;
+    use markdown_note::notebook::ToolbarAlignment;
     assert_eq!(ToolbarSettings::default().alignment, ToolbarAlignment::Left);
     assert_eq!(
         serde_json::from_str::<ToolbarSettings>("{}")
@@ -201,7 +201,7 @@ fn toolbar_alignments_default_normalize_and_persist() {
 
 #[test]
 fn legacy_toolbar_gains_terminal_without_changing_saved_choices() {
-    use mithril::notebook::ToolbarRegion;
+    use markdown_note::notebook::ToolbarRegion;
     let settings: ToolbarSettings = serde_json::from_str(
         r#"{"order":["italic","bold","forward","back"],"bold":false,"alignment":"right"}"#,
     )
@@ -210,7 +210,7 @@ fn legacy_toolbar_gains_terminal_without_changing_saved_choices() {
     assert!(!settings.bold);
     assert_eq!(
         settings.alignment,
-        mithril::notebook::ToolbarAlignment::Right
+        markdown_note::notebook::ToolbarAlignment::Right
     );
     assert_eq!(ToolbarItem::Terminal.region(), ToolbarRegion::ContentRight);
 }
