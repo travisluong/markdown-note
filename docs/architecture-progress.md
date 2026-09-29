@@ -2955,9 +2955,9 @@ published Markdown Note package.
 - Verification: static documentation links, screenshot integrity, and whitespace
   checks are recorded with this change. No Rust toolchain command, desktop app,
   or installer was launched for documentation work.
-- Current Rust checks remain pending: Windows Smart App Control blocked the
-  pinned toolchain. Publication is on hold until those checks pass. Earlier
-  entries in this log do not establish validation of the current source.
+- During documentation work, Windows Smart App Control initially blocked the
+  pinned Rust toolchain. The final verification section below records the
+  subsequent successful checks of the current source.
 
 ## Source and release preparation verification (2026-09-29)
 
@@ -2971,10 +2971,34 @@ published Markdown Note package.
   seven ICO resolutions and eleven ICNS images, with transparency preserved.
 - Gitleaks 8.30.1 scanned the complete retained Git history with no findings.
   Documentation links, original screenshot hashes and whitespace checks passed.
-- Rust compilation, regression tests, formatting and Clippy remain unverified.
-  Windows Smart App Control blocks the pinned toolchain standard-library DLL
-  at process startup (0xC0E90002); no security policy was changed. Static source
-  checks are not substitutes for those required gates.
-- The public repository and downloads have not been created. Publication remains
-  on hold until the Rust checks pass. No desktop application or installer was
-  launched for validation.
+- Initial Rust checks were blocked when Windows Smart App Control rejected the
+  pinned toolchain standard-library DLL at process startup (0xC0E90002). After
+  the toolchain became usable, this checkout's generated `target/.rustc_info.json`
+  was cleared because Cargo had cached that startup failure. The agent made no
+  security-policy changes. The successful checks below supersede this initial
+  blocked state.
+- Source publication and packaged downloads are separate from local verification.
+  No desktop application or installer was launched for validation.
+
+## Final source verification (2026-09-29)
+
+- Verified the prepared Markdown Note source at `947bf58` on Windows with the
+  pinned Rust 1.98.1 toolchain:
+  - `cargo check --locked` passed.
+  - `cargo test --locked --features editor-diagnostics` passed 749 tests with
+    no failures; one optional backend integration test remained ignored.
+  - `cargo fmt --check` passed.
+  - `cargo clippy --locked --all-targets --features editor-diagnostics -- -D warnings`
+    passed.
+  - `cargo build --locked --release --bin markdown-note` passed and produced
+    the local optimized Windows executable.
+- The Node release-tooling suite passed 40 tests with no failures. The optional
+  real Inno Setup test remained skipped because its compiler is not installed.
+  These tests use mocked publication requests and do not publish a release.
+- Cargo reports an existing future-incompatibility warning for the
+  `proc-macro-error2` dependency. It does not fail the current pinned-toolchain
+  checks and remains a dependency-upgrade consideration.
+- The package remains version 0.1.1, prepared for an initial source-only
+  publication. No packaged binary release has been published. Native desktop
+  appearance and installer install, upgrade and uninstall behavior remain
+  manual validation; no desktop UI or installer was launched by the agent.
