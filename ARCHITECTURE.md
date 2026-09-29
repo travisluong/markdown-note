@@ -377,7 +377,10 @@ semantic edit/save/search queries instead of repurposing a command's predicate.
 
 Application branding is owned by [`assets/brand/README.md`](assets/brand/README.md)
 and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
-marketing site's exact SVG mark. `build.rs` embeds Windows icon resource 1;
+checked-in `assets/brand/markdown-note.svg` mark. Regeneration loads the optional
+Sharp dependency from `target/icon-tools` or an explicit dependency directory;
+normal builds require neither Node nor a website checkout. `build.rs` embeds
+Windows icon resource 1;
 release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
 launcher identity matches `WindowOptions::app_id` (`io.github.travisluong.MarkdownNote`).
 The title bar owns the sidebar button before the menus. Settings → Toolbar → Top
@@ -394,8 +397,10 @@ Windows distribution is owned by the [`release.ps1`](scripts/release.ps1) and
 orchestrator [`release-local.mjs`](scripts/release-local.mjs), and
 [`packaging/windows/markdown-note.iss`](packaging/windows/markdown-note.iss). The installer owns
 only app binaries, shortcuts and its per-user uninstall registration; notebook
-files and preferences remain application/user-owned. Keep its AppId stable for
-upgrades. The local command archives a stable `vMAJOR.MINOR.PATCH` tag into an
+files and preferences remain application/user-owned. Its fresh AppId and
+`Programs\Markdown Note` install directory permit a separate installation. Keep
+that AppId stable for future Markdown Note upgrades. The local command archives a
+stable `vMAJOR.MINOR.PATCH` tag into an
 isolated source directory, validates Cargo metadata, and tests/builds Windows
 x86-64 using the snapshot's pinned toolchain. A per-repository lock protects the
 shared release cache; run snapshots, metadata and packages stay under ignored
@@ -408,8 +413,12 @@ GitHub Actions workflows.
 [`release.mjs`](.github/scripts/release.mjs) owns tag/version validation,
 checksums and draft publication. It downloads and verifies assets before making
 a draft public, resumes matching drafts, and leaves published releases unchanged.
-The public tag targets that repository's `main`; source identity lives in the
-release notes. No source or binaries are copied into public Git history.
+The repository owns both source and releases. Publication requires its existing
+lightweight or annotated tag to resolve to the exact source commit being built.
+The adapter checks before building, uploading, and making the verified draft
+public; release creation names that source commit, never the current branch tip.
+Binaries are release assets and do not enter Git history. The source-only launch
+has no published installer or portable archive.
 See the [packaging guide](packaging/windows/README.md) for setup, compiler
 verification and manual installation checks; agents must not run the installer
 or application to validate desktop behavior.
@@ -417,7 +426,7 @@ or application to validate desktop behavior.
 [Rust 1.98.1](rust-toolchain.toml) is pinned. Run validation locally on each
 target platform (Windows, Linux or macOS). Packaging is separate.
 
-```powershell
+```bash
 cargo check --locked
 cargo test --locked --features editor-diagnostics
 cargo fmt --check

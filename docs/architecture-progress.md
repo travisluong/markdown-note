@@ -2958,3 +2958,23 @@ published Markdown Note package.
 - Current Rust checks remain pending: Windows Smart App Control blocked the
   pinned toolchain. Publication is on hold until those checks pass. Earlier
   entries in this log do not establish validation of the current source.
+
+## Source and release preparation verification (2026-09-29)
+
+- Package metadata resolves as `markdown-note` 0.1.1 with MIT license metadata
+  using `cargo metadata --locked --no-deps --format-version 1`. Bundled third-party
+  license files retain their original contents.
+- The release-tooling suite passed 40 tests with no failures. Its optional real
+  Inno Setup test was skipped because that compiler is not installed. Remote
+  lightweight and annotated tags must resolve to the built source commit.
+- Local icon generation passed an isolated Sharp fixture check for the PNG,
+  seven ICO resolutions and eleven ICNS images, with transparency preserved.
+- Gitleaks 8.30.1 scanned the complete retained Git history with no findings.
+  Documentation links, original screenshot hashes and whitespace checks passed.
+- Rust compilation, regression tests, formatting and Clippy remain unverified.
+  Windows Smart App Control blocks the pinned toolchain standard-library DLL
+  at process startup (0xC0E90002); no security policy was changed. Static source
+  checks are not substitutes for those required gates.
+- The public repository and downloads have not been created. Publication remains
+  on hold until the Rust checks pass. No desktop application or installer was
+  launched for validation.
