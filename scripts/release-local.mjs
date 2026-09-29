@@ -3,7 +3,7 @@ import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, unlinkSync, wr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { assetNames, checksums, eligible, publish, validateVersion } from '../.github/scripts/release.mjs';
+import { assetNames, checksums, eligible, publish, validateVersion, verifySourceTag } from '../.github/scripts/release.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const target = 'x86_64-pc-windows-msvc';
@@ -39,7 +39,7 @@ export function releaseLocal({
   const compiler = findCompiler(innoSetup, env);
   const buildEnv = { ...env,
     CARGO_TARGET_DIR: join(root, 'target', 'local-release-cache') };
-  // A public-download credential is never inherited by the compiler or tests.
+  // A publishing credential is never inherited by the compiler or tests.
   for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'MARKDOWN_NOTE_RELEASES_TOKEN']) delete buildEnv[name];
   const runs = join(root, 'target', 'local-releases');
   mkdirSync(runs, { recursive: true });
@@ -77,8 +77,9 @@ export function releaseLocal({
     if (!buildOnly) {
       // Fail before the expensive build if CLI authentication/repo access is missing.
       const repo = JSON.parse(github(['api', `repos/${destination}`]));
-      if (repo.private !== false) throw new Error('The downloads repository must be public.');
+      if (repo.private !== false) throw new Error('The source and release repository must be public.');
       if (!repo.permissions?.push) throw new Error(`GitHub credentials need Contents read/write access to ${destination}.`);
+      verifySourceTag({ tag, sha, run: github });
     }
     command('rustup', ['target', 'add', target], source);
     command('cargo', ['test', '--locked', '--target', target, '--features', 'editor-diagnostics'], source);

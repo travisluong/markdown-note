@@ -29,7 +29,7 @@ function fixture(t) {
   writeFileSync(join(root, 'untracked.txt'), 'not part of the release');
   const compiler = join(root, 'ISCC.exe');
   writeFileSync(compiler, 'compiler fixture');
-  const state = { calls: [], fail: null, release: null, uploaded: [] };
+  const state = { calls: [], fail: null, release: null, uploaded: [], remoteSha: sha, missingTag: false };
   const run = (name, args, options) => {
     state.calls.push({ name, args, ...options });
     if (name !== 'gh') {
@@ -68,6 +68,10 @@ function fixture(t) {
     }
     if (name === 'gh') {
       assert.equal(options.env.GH_TOKEN, 'fixture-publish-token');
+      if (args[1] === 'repos/travisluong/markdown-note/git/ref/tags/v1.2.3') {
+        if (state.missingTag) throw new Error('Source tag not found (404)');
+        return JSON.stringify({ ref: 'refs/tags/v1.2.3', object: { type: 'commit', sha: state.remoteSha } });
+      }
       if (args[1] === 'repos/travisluong/markdown-note') return JSON.stringify({ private: false, permissions: { push: true } });
       if (args.includes('--slurp')) return JSON.stringify([state.release ? [state.release] : []]);
       if (args.includes('POST')) {
@@ -188,3 +192,16 @@ test('real Inno Setup and PowerShell package the snapshot without launching it',
   { encoding: 'utf8', windowsHide: true, env: { ...process.env, MARKDOWN_NOTE_TEST_ZIP: join(result.dist, 'markdown-note-1.2.3-windows-x86_64.zip') } });
   assert.equal(zipContents.trim(), 'compiled fixture');
 });
+
+
+for (const missing of [false, true]) {
+  test((missing ? 'missing' : 'mismatched') + ' remote source tag fails before tests and compilation', t => {
+    const { root, state, options } = fixture(t);
+    state.missingTag = missing;
+    state.remoteSha = 'd'.repeat(40);
+    assert.throws(() => releaseLocal(options), missing ? /not found/ : /does not match the built commit/);
+    assert.equal(state.calls.some(call => call.name === 'cargo' && ['test', 'build'].includes(call.args[0])), false);
+    assert.equal(state.release, null);
+    assert.equal(existsSync(join(root, 'target', 'local-releases', 'release.lock')), false);
+  });
+}

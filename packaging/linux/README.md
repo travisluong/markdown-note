@@ -1,10 +1,11 @@
 # Linux launcher
 
-The release archive includes the Markdown Note icon and desktop entry. After extracting
-the archive, install `markdown-note` somewhere on your PATH (for example `~/.local/bin`),
-then install the launcher and icon for your user:
+No Linux binary release is available yet. If you build Markdown Note from source,
+install the resulting `markdown-note` executable somewhere on your PATH, such
+as `~/.local/bin`. From the repository root, install the checked-in launcher
+and icon for your user:
 
-```sh
+```bash
 install -Dm644 packaging/linux/io.github.travisluong.MarkdownNote.desktop ~/.local/share/applications/io.github.travisluong.MarkdownNote.desktop
 install -Dm644 assets/brand/markdown-note.png ~/.local/share/icons/hicolor/512x512/apps/io.github.travisluong.MarkdownNote.png
 ```

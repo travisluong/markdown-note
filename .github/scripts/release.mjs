@@ -54,9 +54,36 @@ function gh(args) {
   return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
 }
 
+// The public repository owns both source and downloads. Resolve annotated tags
+// through their objects instead of comparing a tag object's SHA with a commit.
+export function verifySourceTag({ tag, sha, run = gh }) {
+  if (!stableTag.test(tag)) throw new Error('Expected a stable vMAJOR.MINOR.PATCH tag');
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Expected the full source commit SHA');
+  const api = `repos/${destination}`;
+  const reference = JSON.parse(run(['api', `${api}/git/ref/tags/${tag}`]));
+  if (reference?.ref !== `refs/tags/${tag}`) throw new Error('Invalid source tag reference response');
+  let object = reference.object;
+  const visited = new Set();
+  while (true) {
+    if (!object || typeof object.sha !== 'string' || !/^[0-9a-f]{40}$/.test(object.sha)) throw new Error('Invalid source tag object response');
+    if (object.type === 'commit') {
+      if (object.sha !== sha) throw new Error(`Remote source tag ${tag} does not match the built commit ${sha}`);
+      return sha;
+    }
+    if (object.type !== 'tag') throw new Error('Source tag must resolve to a commit');
+    if (visited.has(object.sha)) throw new Error('Cycle in source tag objects');
+    if (visited.size >= 32) throw new Error('Source tag nesting exceeds 32 objects');
+    visited.add(object.sha);
+    const annotated = JSON.parse(run(['api', `${api}/git/tags/${object.sha}`]));
+    if (annotated?.sha !== object.sha) throw new Error('Invalid annotated source tag response');
+    object = annotated.object;
+  }
+}
+
 export function publish({ directory, version, tag, sha, run = gh }) {
   validateVersion('push', tag, version);
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Expected the full source commit SHA');
+  verifySourceTag({ tag, sha, run });
   const api = `repos/${destination}`;
   // Listing includes drafts for the authenticated owner. Do not mistake an auth
   // or network failure for an absent release and create a duplicate.
@@ -73,13 +100,14 @@ export function publish({ directory, version, tag, sha, run = gh }) {
   }
   if (!release) {
     release = JSON.parse(run(['api', '--method', 'POST', `${api}/releases`,
-      '-f', `tag_name=${tag}`, '-f', 'target_commitish=main',
+      '-f', `tag_name=${tag}`, '-f', `target_commitish=${sha}`,
       '-f', `name=Markdown Note ${version}`, '-f', `body=${notes}`,
       '-F', 'draft=true', '-F', 'prerelease=false']));
   }
   // Clobber is confined to our unpublished draft so interrupted uploads resume.
   // Download and compare every asset before making the release public.
   const names = [...assetNames(version), 'SHA256SUMS.txt'];
+  verifySourceTag({ tag, sha, run });
   run(['release', 'upload', tag, ...names.map(name => join(directory, name)),
     '--repo', destination, '--clobber']);
   const uploaded = JSON.parse(run(['api', `${api}/releases/${release.id}`]));
@@ -96,6 +124,7 @@ export function publish({ directory, version, tag, sha, run = gh }) {
         throw new Error(`Uploaded asset differs from the build: ${name}`);
       }
     }
+    verifySourceTag({ tag, sha, run });
     run(['api', '--method', 'PATCH', `${api}/releases/${release.id}`, '-F', 'draft=false']);
   } finally {
     if (dirname(downloaded) !== resolve(tmpdir())) throw new Error('Unexpected temporary download path');
@@ -123,7 +152,7 @@ function main(command) {
       verifyAssets('dist', process.env.APP_VERSION);
       break;
     case 'publish':
-      if (!process.env.GH_TOKEN) throw new Error('Set the source repository Actions secret MARKDOWN_NOTE_RELEASES_TOKEN');
+      if (!process.env.GH_TOKEN) throw new Error('Set GH_TOKEN for release publication');
       publish({ directory: resolve('dist'), version: process.env.APP_VERSION, tag: ref, sha: process.env.GITHUB_SHA });
       break;
     default:

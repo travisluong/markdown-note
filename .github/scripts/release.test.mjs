@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
-import { assetNames, checksums, eligible, publish, validateVersion } from './release.mjs';
+import { assetNames, checksums, eligible, publish, validateVersion, verifySourceTag } from './release.mjs';
 
 test('only stable v-prefixed SemVer tags publish; manual builds remain eligible', () => {
   for (const tag of ['v0.0.0', 'v0.1.0', 'v1.2.3', 'v12.345.678']) {
@@ -36,14 +36,24 @@ function fixture(t) {
   writeFileSync(join(directory, names[0]), 'installer fixture');
   writeFileSync(join(directory, names[1]), 'ZIP fixture');
   writeFileSync(join(directory, names[2]), checksums(directory, version));
-  const state = { release: undefined, calls: [], failUpload: false, corruptDownload: false, extraAsset: false };
+  const state = { release: undefined, calls: [], failUpload: false, corruptDownload: false, extraAsset: false,
+    sourceRef: { ref: 'refs/tags/v1.2.3', object: { type: 'commit', sha: 'a'.repeat(40) } },
+    tagObjects: new Map(), refError: null, afterCreate: null, afterDownload: null };
   const run = args => {
     state.calls.push(args);
+    if (args[1] === 'repos/travisluong/markdown-note/git/ref/tags/v1.2.3') {
+      if (state.refError) throw state.refError;
+      return typeof state.sourceRef === 'string' ? state.sourceRef : JSON.stringify(state.sourceRef);
+    }
+    if (args[1]?.startsWith('repos/travisluong/markdown-note/git/tags/')) {
+      return JSON.stringify(state.tagObjects.get(args[1].split('/').at(-1)));
+    }
     if (args.includes('--slurp')) return JSON.stringify([[], state.release ? [state.release] : []]);
     if (args.includes('POST')) {
-      assert.ok(args.includes('target_commitish=main'));
+      assert.ok(args.includes('target_commitish=' + 'a'.repeat(40)));
       assert.ok(args.includes('draft=true'));
       state.release = { id: 42, tag_name: 'v1.2.3', draft: true, body: args.find(arg => arg.startsWith('body=')).slice(5) };
+      state.afterCreate?.();
       return JSON.stringify(state.release);
     }
     if (args[1] === 'upload') {
@@ -58,6 +68,7 @@ function fixture(t) {
         // Even a self-consistent manifest must match the original build.
         writeFileSync(join(downloaded, names[2]), checksums(downloaded, version));
       }
+      state.afterDownload?.();
       return '';
     }
     if (args.includes('PATCH')) {
@@ -96,7 +107,7 @@ test('published release rerun performs no mutations', t => {
   const { state, options } = fixture(t);
   state.release = { tag_name: options.tag, draft: false };
   publish(options);
-  assert.equal(state.calls.length, 1);
+  assert.equal(state.calls.length, 2);
 });
 
 test('download corruption prevents publication, even with recomputed checksums', t => {
@@ -133,5 +144,103 @@ test('a draft from another source commit is never overwritten', t => {
   const { state, options } = fixture(t);
   state.release = { tag_name: options.tag, draft: true, body: 'different source' };
   assert.throws(() => publish(options), /different source metadata/);
+  assert.equal(state.calls.length, 2);
+});
+
+
+test('lightweight source tags resolve to the built commit', t => {
+  const { state, options } = fixture(t);
+  assert.equal(verifySourceTag(options), options.sha);
   assert.equal(state.calls.length, 1);
+});
+
+test('nested annotated source tags resolve to the built commit', t => {
+  const { state, options } = fixture(t);
+  const outer = 'b'.repeat(40);
+  const inner = 'c'.repeat(40);
+  state.sourceRef.object = { type: 'tag', sha: outer };
+  state.tagObjects.set(outer, { sha: outer, object: { type: 'tag', sha: inner } });
+  state.tagObjects.set(inner, { sha: inner, object: { type: 'commit', sha: options.sha } });
+  publish(options);
+  assert.equal(state.release.draft, false);
+  assert.ok(state.calls.some(args => args[1]?.endsWith('/git/tags/' + inner)));
+});
+
+const invalidReferences = [
+  ['wrong ref', { ref: 'refs/tags/v9.9.9', object: { type: 'commit', sha: 'a'.repeat(40) } }, /Invalid source tag reference/],
+  ['null response', null, /Invalid source tag reference/],
+  ['missing object', { ref: 'refs/tags/v1.2.3' }, /Invalid source tag object/],
+  ['short SHA', { ref: 'refs/tags/v1.2.3', object: { type: 'commit', sha: 'abc123' } }, /Invalid source tag object/],
+  ['non-string SHA', { ref: 'refs/tags/v1.2.3', object: { type: 'commit', sha: ['a'.repeat(40)] } }, /Invalid source tag object/],
+  ['tree object', { ref: 'refs/tags/v1.2.3', object: { type: 'tree', sha: 'a'.repeat(40) } }, /must resolve to a commit/],
+  ['wrong commit', { ref: 'refs/tags/v1.2.3', object: { type: 'commit', sha: 'd'.repeat(40) } }, /does not match the built commit/],
+  ['malformed JSON', 'not-json', /JSON|Unexpected token/],
+];
+for (const [name, reference, message] of invalidReferences) {
+  test(name + ' fails before release creation or upload', t => {
+    const { state, options } = fixture(t);
+    state.sourceRef = reference;
+    assert.throws(() => publish(options), message);
+    assert.equal(state.release, undefined);
+    assert.equal(state.calls.some(args => args.includes('POST') || args[1] === 'upload'), false);
+  });
+}
+
+test('missing remote tag is not created by publication', t => {
+  const { state, options } = fixture(t);
+  state.refError = new Error('Source tag not found (404)');
+  assert.throws(() => publish(options), /not found/);
+  assert.equal(state.calls.length, 1);
+  assert.equal(state.release, undefined);
+});
+
+test('annotated tag cycles and invalid objects stop before publication', t => {
+  const { state, options } = fixture(t);
+  const tagSha = 'b'.repeat(40);
+  state.sourceRef.object = { type: 'tag', sha: tagSha };
+  state.tagObjects.set(tagSha, { sha: tagSha, object: { type: 'tag', sha: tagSha } });
+  assert.throws(() => publish(options), /Cycle/);
+  state.tagObjects.set(tagSha, { sha: 'c'.repeat(40), object: { type: 'commit', sha: options.sha } });
+  assert.throws(() => publish(options), /Invalid annotated source tag/);
+  state.tagObjects.set(tagSha, { sha: tagSha, object: null });
+  assert.throws(() => publish(options), /Invalid source tag object/);
+  assert.equal(state.release, undefined);
+  assert.equal(state.calls.some(args => args.includes('POST') || args[1] === 'upload'), false);
+});
+
+test('annotated tag nesting is bounded', t => {
+  const { state, options } = fixture(t);
+  const tagSha = index => index.toString(16).padStart(40, '0');
+  state.sourceRef.object = { type: 'tag', sha: tagSha(1) };
+  for (let index = 1; index <= 33; index++) {
+    state.tagObjects.set(tagSha(index), { sha: tagSha(index), object: { type: 'tag', sha: tagSha(index + 1) } });
+  }
+  assert.throws(() => publish(options), /nesting exceeds/);
+  assert.equal(state.calls.length, 33);
+  assert.equal(state.release, undefined);
+});
+
+test('published reruns still reject source tags pointing to another commit', t => {
+  const { state, options } = fixture(t);
+  state.release = { tag_name: options.tag, draft: false };
+  state.sourceRef.object.sha = 'd'.repeat(40);
+  assert.throws(() => publish(options), /does not match the built commit/);
+  assert.equal(state.calls.length, 1);
+  assert.equal(state.release.draft, false);
+});
+
+test('a tag moved after draft creation stops asset upload', t => {
+  const { state, options } = fixture(t);
+  state.afterCreate = () => { state.sourceRef.object.sha = 'd'.repeat(40); };
+  assert.throws(() => publish(options), /does not match the built commit/);
+  assert.equal(state.release.draft, true);
+  assert.equal(state.calls.some(args => args[1] === 'upload' || args.includes('PATCH')), false);
+});
+
+test('a tag moved during asset verification leaves the release as a draft', t => {
+  const { state, options } = fixture(t);
+  state.afterDownload = () => { state.sourceRef.object.sha = 'd'.repeat(40); };
+  assert.throws(() => publish(options), /does not match the built commit/);
+  assert.equal(state.release.draft, true);
+  assert.equal(state.calls.some(args => args.includes('PATCH')), false);
 });
