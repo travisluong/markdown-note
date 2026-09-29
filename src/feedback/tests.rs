@@ -139,7 +139,7 @@ fn real_transport_checks_acknowledgment_status_and_never_follows_redirects() {
     ));
 }
 
-/// Invoked only by markdown-note-web/tests/cross-repository.mjs against an isolated DB.
+/// Optional feedback-service integration check against a separately supplied local backend.
 #[test]
 #[ignore = "requires local Next.js and an isolated Postgres test database"]
 fn cross_repository_feedback_with_local_backend() {

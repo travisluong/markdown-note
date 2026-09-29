@@ -1,7 +1,10 @@
 # Architecture implementation progress
 
 Historical verification records describe development snapshots and do not replace
-current verification of the source.
+current verification of the source. Entries before September 29, 2026 describe the
+original application. Commands and paths may use current repository names for
+reference; those records do not establish current test results or published
+Markdown Note packages.
 
 The full objective is the staged plan in [the audit](architecture-audit.md):
 complete the architectural improvements, improve performance, and preserve
@@ -328,20 +331,12 @@ clean Windows account or VM, as listed in `packaging/windows/README.md`.
 GitHub Actions execution/upload was not tested locally. App and installer remain
 unsigned; automatic updates and custom Windows icon branding are not included.
 
-## Markdown Note rename — 2026-09-12
+## Earlier application rename (historical, 2026-09-12)
 
-Renamed the Rust package/library/executable, app titles and Help, diagnostic
-variables, notebook metadata and user configuration paths, macOS bundle,
-Windows installer script and shortcuts, release artifacts, repository links,
-and documentation to Markdown Note. The Windows installer AppId remains stable.
-Earlier entries above use the current names; the checks below verify this rename.
-
-Preferences now live in `.markdown-note/settings.json` and the platform configuration
-folder's `markdown-note/notebooks.json`. Existing installations must rename their
-previous settings directories before opening notebooks; README documents this
-step. On this workstation, the two registered notebooks and user configuration
-were renamed with SHA-256 verification that every existing settings file stayed
-unchanged. No note contents were changed.
+This earlier change renamed the original application's package, executable,
+interface, diagnostic variables, configuration paths, and packaging while
+retaining its installer identity. It predates Markdown Note and does not
+describe this project's current preferences or installation behavior.
 
 Verification on Windows/MSVC with pinned Rust 1.98.1:
 
@@ -358,9 +353,7 @@ Verification on Windows/MSVC with pinned Rust 1.98.1:
 
 The existing `proc-macro-error2` future-compatibility notice remains. No desktop
 application or installer was launched. Native installation/upgrade behavior and
-other platform builds remain manual/CI validation. The GitHub repository was
-renamed to `travisluong/markdown-note`, its repository identity was verified, and the
-local origin was updated. Source changes were not pushed.
+other platform builds remained manual/CI validation in that historical task.
 
 ## Icon-free Windows title bar (2026-09-12)
 
@@ -451,8 +444,8 @@ The build workflow now accepts stable `vMAJOR.MINOR.PATCH` tag pushes, requires
 the Cargo package version to match, and runs Windows headless tests and release
 packaging using the pinned Rust toolchain. Manual runs retain Actions artifacts
 without publishing. Cross-platform validation remains in the separate check
-workflow. The Windows installer updates link and main download documentation
-now point to `travisluong/markdown-note`.
+workflow. The installer links and download documentation were updated to the
+original application's downloads repository.
 
 The release helper owns tag/version validation, versioned filenames, SHA-256
 checksums, and draft creation/recovery. The publisher's separate credential is
@@ -481,9 +474,7 @@ Local verification passed:
 No application or installer was launched. Live GitHub publication and manual
 workflow dispatch were not performed: no GitHub CLI, connector or token is
 available in this session, and public API lookup was blocked by local network
-restrictions. The user must provision/confirm the public repository and set
-`MARKDOWN_NOTE_RELEASES_TOKEN` using the packaging guide before pushing a release tag.
-Native Windows installation checks remain manual. The pre-existing Cargo.lock
+restrictions. Native Windows installation checks remained manual. The pre-existing Cargo.lock
 changes are outside this work and remain uncommitted.
 
 ## Fix the first release's Windows file-drop test fixture (2026-09-12)
@@ -2703,7 +2694,7 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   `scripts/release-local.mjs`. It archives the selected local tag, validates its
   Cargo version, runs headless tests, builds with the pinned Rust toolchain,
   packages the installer/portable ZIP/checksums, and reuses the existing verified
-  draft publisher for `travisluong/markdown-note`.
+  draft publisher for the original downloads repository.
 - Builds leave the development checkout untouched and retain source snapshots,
   release metadata and downloads under ignored `target/local-releases`. A local
   lock serializes access to the separate build cache. No source tags are pushed.
@@ -2782,20 +2773,10 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   --test-threads=1`. Its 731 passing tests plus the one PowerShell-interrupt test
   rerun outside the sandbox cover all 732 regression tests. All 15 terminal tests
   passed in that unsandboxed, noninteractive PTY rerun.
-- The one ignored cross-repository library test was run separately by the adjacent
-  Next.js harness. It sent the same UUID twice through the real desktop transport
-  to local Next.js and verified exactly one matching Postgres row. Both real
-  website signup forms persisted/merged independent interests; feedback contact
-  did not subscribe the sender. No submitted email/message appeared in server logs.
-- Website ESLint, TypeScript, production Webpack build, eight API/Postgres tests
-  and 13 headless browser checks passed. The official Postgres 18 container passed
-  fresh/repeated migrations, concurrent signup deduplication, feedback idempotency,
-  shared limits/expiry and container recreation with preserved data. Test container
-  and volume were removed afterward. See `markdown-note-web/docs/verification.md` for reproducible commands and schema.
-- [Feedback contracts and launch handoff](feedback.md) document backend-first
-  publication, stored-row checks and an owner review four weeks after the actual
-  public launch date. No services were provisioned for production, releases
-  published, outreach sent, automation created, or native desktop input injected.
+- A separately supplied local feedback service was used for the ignored
+  integration check. Two requests with the same identifier produced one stored
+  submission; submitted email and message text were not logged. This historical
+  service check is separate from the self-contained desktop test suite.
 
 ## 2026-09-24: Remove GitHub Actions workflows
 
@@ -2843,11 +2824,10 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   minimized-from-maximized, fullscreen, taskbar/DPI and disconnected-monitor
   visual validation remain manual checks for the user.
 
-## Production v0.1.1 release verification
+## Original application v0.1.1 verification (historical)
 
-- Published Windows x86-64 v0.1.1 from source commit
-  `f8c2f560dee096a3c81d2a0f2323a49152b8204f`. The source commit and
-  annotated tag were pushed to the source repository.
+These checks describe the original application's release snapshot, not a
+published Markdown Note package.
 - The recorded desktop test run used `editor-diagnostics`; one existing
   cross-repository test remained ignored.
 - Fresh release snapshots exposed a second test setup assumption: Mermaid PNG
@@ -2858,11 +2838,10 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
   linker file-access failures were resolved by retrying the same source snapshot;
   no test failure was bypassed. The completed snapshot passed the entire suite
   before the optimized build and packaging.
-- The installer, portable ZIP and SHA256SUMS.txt were uploaded, downloaded and
-  byte-verified before publishing at
-  https://github.com/travisluong/markdown-note/releases/tag/v0.1.1.
-  Installer signing, Microsoft Store distribution and desktop UI validation remain
-  outside this release. No desktop application was launched for testing.
+- Historical packaging checks compared the installer, portable ZIP, and
+  checksums byte for byte. Installer signing, Microsoft Store distribution, and
+  desktop UI validation were outside that task. No desktop application was
+  launched for testing.
 
 ## Configurable footer and document counts
 
@@ -2963,3 +2942,19 @@ occurred. The unrelated Cargo.lock change is excluded from this feature commit.
 - All verification uses in-memory GPUI TestPlatform or noninteractive commands.
   No desktop application was launched or controlled; native visual validation
   remains manual.
+
+## User documentation and screenshots (2026-09-29)
+
+- Reworked the README around notebook setup, everyday editing, shortcuts, and
+  local files. It states that packaged downloads are not yet published.
+- Added the five existing example screenshots unchanged, with local README
+  links and descriptive alternative text. Added a separate contribution guide.
+- Updated the user guide for retained tabs, Source-only UTF-8 text files,
+  external-file autosave, fresh preferences, and current Settings sections.
+  Documented optional feedback without requiring a website or backend checkout.
+- Verification: static documentation links, screenshot integrity, and whitespace
+  checks are recorded with this change. No Rust toolchain command, desktop app,
+  or installer was launched for documentation work.
+- Current Rust checks remain pending: Windows Smart App Control blocked the
+  pinned toolchain. Publication is on hold until those checks pass. Earlier
+  entries in this log do not establish validation of the current source.

@@ -1,71 +1,52 @@
 # In-app feedback
 
-Help → **Send feedback…** opens a native GPUI modal. It submits only the message,
-optional reply email, compiled app version, OS name and a random submission UUID.
-No notes, paths, keys or logs are attached. Email does not subscribe the sender.
+**Help → Send feedback…** is an optional way to send a message to the maintainer.
+It sends the message you enter, an optional reply email, the app version, your
+operating system, and a random submission identifier. It does not attach notes,
+file paths, keys, or logs. Providing an email does not subscribe you to anything.
 
-`src/feedback.rs` owns validation, request serialization, retry identity, session
-request status and the injectable `Transport` interface. `HttpTransport` uses
-reqwest on a GPUI background executor, with a 15-second total network timeout,
-redirects disabled, bounded response reading and explicit JSON acknowledgment.
-Failures are mapped to fixed messages and never expose server bodies or log input.
-`Payload` permits a nonblank message of at most 5,000 Unicode scalar characters,
-an optional email of at most 254, and a serialized JSON body of at most 16 KiB.
-The byte limit can be reached before the character limit. Server validation is
-always authoritative. Feedback is literal plain text.
+The form currently uses an existing service at
+`https://mithril.techstackstudio.com/api/feedback`. That address retains its
+original domain. A network connection and an available service are needed only
+when you choose to send feedback; building the app and working with notes do not
+require the service or a website checkout.
 
-`src/feedback_ui.rs` owns application-session input entities, subscriptions,
-transport and task handle in `Notes.feedback`. The disposable modal only projects
-this state. A send disables editing and repeat submission. An unchanged retry
-retains its UUID; changed payloads get a new one. Closing and reopening preserves
-inputs and pending/completed state. Only acknowledged success clears the inputs.
-Completion never opens a dialog or changes focus. An error leaves an explicit retry
-button; there is no persisted queue or automatic retry on a later launch. Dismissal
-restores workspace focus, including Cancel and Root-driven close. Existing busy
-and modal guards apply; document owners and autosave are independent.
+You can also [report a bug or suggest a feature on GitHub](https://github.com/travisluong/markdown-note/issues).
 
-The release endpoint is compiled as:
-`https://mithril.techstackstudio.com/api/feedback`.
-Release builds ignore endpoint overrides. Debug/test builds allow
-`MARKDOWN_NOTE_FEEDBACK_ENDPOINT=http://127.0.0.1:3137/api/feedback` (or another loopback
-HTTP endpoint, including localhost/IPv6 loopback). Non-loopback, credentials and
-non-HTTP overrides are rejected. No API secret is compiled into the application.
+## Sending and retrying
 
-## Headless verification
+Your message can contain up to 5,000 Unicode characters, and the optional email
+up to 254. The complete request is also limited to 16 KiB. An unsuccessful send
+keeps the draft so you can retry. Retrying an unchanged message reuses its
+identifier to prevent duplicate submissions; editing it creates a new request.
 
-```powershell
-cargo check --locked --offline
-cargo fmt --check
-cargo clippy --locked --offline --all-targets --features editor-diagnostics -- -D warnings
-cargo test --locked --offline --features editor-diagnostics
+Closing and reopening the form retains drafts and pending results for the current
+app session. Only confirmed success clears the inputs. There is no persisted
+queue or automatic retry after restarting. Sending feedback does not interrupt
+editing or autosave.
+
+## Implementation and local checks
+
+`src/feedback.rs` owns validation, request serialization, retry identity, and the
+injectable transport. `src/feedback_ui.rs` owns the session's form state and
+background task. HTTP requests have a 15-second timeout, disabled redirects,
+bounded response reading, and an explicit JSON acknowledgment. Errors use fixed
+messages and do not expose server bodies or log the submitted text.
+
+Release builds use the endpoint above and ignore overrides. Development and test
+builds allow a separately supplied local test service, for example in Git Bash:
+
+```bash
+export MARKDOWN_NOTE_FEEDBACK_ENDPOINT='http://127.0.0.1:3137/api/feedback'
 ```
 
-Pure tests cover Unicode/byte/email bounds, duplicate sends, payload identity,
-HTTP acknowledgment, timeouts, offline failure, rate limits, conflicts and disabled
-redirects using only a local TCP server. GPUI TestPlatform tests cover the Help
-menu, anonymous/contact submissions, errors/retry, close/reopen during sending,
-focus, retained document text/selection/dirty state, and autosave while the modal
-is open. They never launch native application windows or inject desktop input.
+Only loopback HTTP endpoints are accepted; remote overrides and credentials in
+the URL are rejected. No service credentials are compiled into the application.
 
-If a running development app locks `target/debug/markdown-note.exe`, leave it running
-and use `--target x86_64-pc-windows-msvc` for the full Windows test suite. This
-creates a separate target output. TestPlatform suites can be run serially with
-`-- --test-threads=1` when diagnosing asynchronous filesystem fixture timing.
+The ordinary Rust suite checks validation, retry identity, HTTP results, timeouts,
+and redirects using local test servers. Headless GPUI tests check form behavior,
+focus, retained drafts, document content, and autosave. They do not require the
+hosted service. A separate backend integration test is ignored by default and
+needs an explicitly configured local test service; do not point it at production.
 
-The adjacent Next.js repository contains `tests/cross-repository.mjs`. Its
-`npm run test:cross` starts a local website backed
-by a separate database ending in `_test`, calls the ignored library test
-`feedback::tests::cross_repository_feedback_with_local_backend`, submits twice
-through the real desktop transport, and verifies exactly one Postgres row. It
-also checks both real signup forms. Do not invoke that test against production.
-It runs a library test executable, never the desktop app.
-
-## Launch handoff
-
-Publish and verify the website backend **before** distributing a feedback-enabled
-build. Verify both forms and a native feedback submission, then inspect stored
-rows directly in Postgres. No deployment or release is performed by this change.
-Record the actual public launch date and review **four weeks after that date**.
-The owner should review distinct signup interests and overlap, feedback, and
-follow-up conversations about repeat use, replaced tools and obstacles. Signup
-counts do not establish active use. No automation or outreach is created.
+See [contribution checks](../CONTRIBUTING.md#validate-a-change) for the commands.

@@ -1,7 +1,7 @@
-# Terminal trial
+# Integrated terminal
 
-Use the right-panel icon in the top bar, immediately left of minimize,
-Ctrl+backtick (including macOS), or the
+Use the terminal button at the right edge of the editor toolbar, the optional
+top-bar terminal button, Ctrl+backtick (including macOS), or the
 **Terminal: Toggle terminal** command to open the right panel. The first opening
 starts one shell. The header contains a horizontally scrollable tab strip and a
 **+** button beside the tabs, kept visible when the strip overflows. Each tab
@@ -84,7 +84,7 @@ without restarting shells or clearing output. Preferences belong to the active
 notebook; without a notebook they last for the current app session. Switching
 notebooks updates terminal typography while preserving existing shell directories.
 
-The trial does not provide scrollback navigation, terminal
+The terminal does not provide scrollback navigation, terminal
 search, mouse reporting, shell integration, splits, custom
 shell paths or session restoration across app restarts. Full advanced keyboard
 protocols and IME composition are not supported by this component.

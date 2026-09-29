@@ -146,7 +146,7 @@ release only its own operation. Centralize semantic capability queries such as
 ### F7 — P2: validation and documentation do not define a reliable baseline
 
 **Observed checks and repository structure.** Formatting and strict lint checks
-fail. The sole workflow, [build.yml](../.github/workflows/build.yml), builds
+fail. The sole workflow at the time, `build.yml` (removed later), builds
 release binaries on release publication/manual dispatch; it does not run tests
 or validate pull requests. Preserve those release trigger choices and add a
 separate validation workflow.

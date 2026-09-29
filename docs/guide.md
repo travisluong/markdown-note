@@ -1,146 +1,106 @@
-# Markdown Note
+# Markdown Note user guide
 
-A desktop Markdown notebook built with GPUI, with Windows as the primary
-platform. One window shows one note or image at a time. Notes are ordinary UTF-8
-files; Source, Live preview and Reading provide three ways to work with them.
+Markdown Note keeps your notes as ordinary UTF-8 files. One window contains
+document tabs, a notebook sidebar, and an optional terminal. Markdown files have
+Source, Live preview, and Reading views.
 
-## Run on Windows
+## Install and start
 
-Install Rust through rustup, Visual Studio C++ Build Tools, and a Windows SDK.
-Use the Windows MSVC toolchain. The repository selects Rust 1.98.1 through
-[`rust-toolchain.toml`](../rust-toolchain.toml):
+Packaged downloads have not been published for Markdown Note yet. Windows is the
+primary platform. Follow the [build instructions](../README.md#build-from-source-windows)
+to build from source. Linux and macOS do not currently have packaged downloads.
 
-```powershell
-cargo run --locked
-```
-
-## Download a desktop build
-
-Windows releases are tested, built, packaged and published from a local Windows
-machine with `./scripts/release.sh vMAJOR.MINOR.PATCH` in Git Bash, or
-`./scripts/release.ps1 -Tag vMAJOR.MINOR.PATCH` in PowerShell. The command builds an isolated
-snapshot of that local tag; its version must match Cargo metadata. See the
-[release setup and procedure](../packaging/windows/README.md) for prerequisites,
-credentials and `-BuildOnly`. Publishing a release does not use GitHub Actions.
-Other platforms currently have no releases.
-
-For Windows, open [Releases](https://github.com/travisluong/markdown-note/releases)
-and download `markdown-note-<version>-windows-x86_64-setup.exe` under **Assets** once
-the build finishes. Run it and choose **Install**. It installs for your Windows
-account without requiring administrator privileges, adds Markdown Note to the Start
-menu and **Settings → Apps → Installed apps**, and offers an optional desktop
-shortcut and launch on completion. The default location is
-`%LOCALAPPDATA%\Programs\Markdown Note`.
-
-To upgrade, save your notes, close Markdown Note, and run the newer installer.
-Uninstall through Installed apps; your notebooks and preferences are retained.
-The app and installer are currently unsigned, so Windows may display a
-SmartScreen warning. Automatic updates are not included yet.
-
-The release also includes `markdown-note-<version>-windows-x86_64.zip` and
-`SHA256SUMS.txt` with SHA-256 checksums for the installer and portable ZIP.
-For the portable Windows build, extract its ZIP and run `markdown-note.exe`.
-The local release command creates a draft in the public downloads repository,
-verifies every uploaded asset, and publishes only after verification succeeds.
-Reruns resume matching drafts and leave published releases unchanged.
-Windows installer build instructions and manual
-checks are in [`packaging/windows/README.md`](../packaging/windows/README.md).
-Headless tests and packaging checks do not establish interactive UI or
-install/upgrade/uninstall behavior.
+Building and editing notes require no website checkout, database, account, or
+hosted service. The optional feedback form is described in [Feedback](feedback.md).
 
 ## Get started
 
-1. Use **Notebooks → Manage notebooks** to create a notebook or open an existing
-   folder. Alternatively, **File → Open…** opens an existing `.md` or `.markdown`
-   file without requiring a notebook.
-2. Press **Ctrl+O** to find a Markdown note or folder anywhere in the active
-   notebook, including collapsed folders. Results show relative paths; Up/Down
-   selects, Enter opens, and Escape returns focus. Without an active notebook,
-   Ctrl+O opens the file picker instead. **File → Open…** always uses that picker.
-3. Press **Ctrl+P** and choose **Notebook: Create new note** to create an empty
-   `Untitled.md` in the notebook root. Existing names are preserved by using
-   `Untitled 2.md`, `Untitled 3.md`, and so on. Save/Discard/Cancel protection runs
-   first; the new note opens for editing, switching Reading view to Source.
-4. Choose **View → Source mode**, **Live preview**, or **Reading view**. Autosave
-   is enabled by default; **File → Save** or **Ctrl+S** saves immediately.
+1. Open **Notebooks → Manage notebooks**. Create a notebook, or choose **Open folder as notebook** for an existing folder.
+2. Choose **File → New note** or press **Ctrl+N** to create `Untitled.md` in the notebook root. Existing names are preserved with numbered filenames. Rename it from its sidebar context menu.
+3. Write in Live preview, or select **View → Source mode** or **Reading view**.
+4. Press **Ctrl+O** to find a Markdown note or folder in the active notebook. Up/Down selects a result, Enter opens it, and Escape returns focus. Without a notebook, Ctrl+O opens the file picker.
+5. Use **Ctrl+S** to save immediately. Notebook autosave is enabled by default.
 
-On macOS, application shortcuts use **Command** in place of **Ctrl** above.
-Menu shortcuts are **Control+Option+F / V / N / H**, leaving Option-letter
-combinations available for typing. On Windows/Linux, use **Alt+F / V / N / H**
-for File, View, Notebooks and Help; arrows, Enter and Escape navigate menus.
-**Help → Keyboard shortcuts** lists bindings for the current platform, including
-editor-specific differences such as Command+Shift+Z for redo on macOS.
+**File → Open…** always opens the file picker and works without a notebook. It
+accepts Markdown and other UTF-8 text files, as well as supported images.
 
-Mermaid code blocks render offline in Live preview and Reading. See
-[Mermaid diagrams](mermaid.md) for syntax, editing and compatibility.
+Use **Ctrl+P** for the command palette. On macOS, use **Command** instead of
+**Ctrl** for these shortcuts. **Help → Keyboard shortcuts** lists the bindings
+for your platform, including editor and menu shortcuts.
 
-## Notebooks and Explorer
+## Notebooks and tabs
 
-Creating a notebook makes a new folder with the chosen name inside its parent
-location. Names must be valid Windows folder names, without slashes. Existing
-folders are never replaced by Create; use **Open folder as notebook** instead.
-An opened folder uses its folder name as the notebook name.
+A notebook is a folder you choose. Creating one makes a new folder inside the
+selected parent; opening one uses an existing folder without moving its files.
+**Manage notebooks → Remove** forgets a notebook without deleting its folder or
+notes. Missing folders and damaged settings are reported rather than replaced.
 
-The Notebooks menu switches between registered notebooks and restores the last
-selected note. Manage notebooks shows their names and full paths. Remove forgets
-a notebook without deleting its folder or files. Removing the active notebook
-closes it, with Save/Discard/Cancel protection for unsaved edits. Missing notebooks
-remain in the menu; corrupt or unsupported settings are reported and preserved.
+**Ctrl+T** opens an empty tab without creating a file. Open a file in that tab,
+or use **Ctrl+N** to create a note in the active notebook. **Ctrl+W** closes the
+current tab. Opening a file from Explorer, a link, Search, or the file picker
+uses the current tab, so create a new tab first to keep the previous file open.
 
-Explorer displays folders and files recursively. Click a folder to expand it or
-a Markdown file to open it in the current view mode. Supported image files open
-in an image viewer. Other file types and filesystem links are displayed but
-cannot be opened. Empty folders remain visible. Up/Down moves through rows and
-opens supported selected files while retaining sidebar focus; Left/Right
-collapses or expands folders, and Enter activates a row. Use **Refresh** to pick
-up external changes; there is no file watcher.
+Switching tabs retains edits, selection, view mode, and navigation history.
+Opening the same file in multiple tabs shares its text and undo history. Closing
+its last view prompts to Save, Discard, or Cancel when needed.
 
-The sidebar's top icons switch between Explorer and notebook Search. The toggle
-beside File collapses the sidebar or restores its previous panel; Ctrl+Shift+F
-also reveals Search. Collapse state lasts for the session, and switching panels
-retains search queries and results. Drag the right border to resize both panels.
-Each notebook saves the width, defaulting to 280 px with a 160–600 px range; the
-layout keeps at least 200 px available for the editor.
+Each notebook keeps its own group of tabs during the app session. Switching
+notebooks restores that group's tabs without discarding drafts in another group.
+Files opened without a notebook have a separate group. After an app restart,
+the active notebook restores its last selected note or empty tab, not its entire
+previous tab set.
 
-The **Sort files** icon offers filename A–Z/Z–A, modified newest/oldest, and created
-newest/oldest ordering, saved per notebook. Folders remain first in alphabetical
-order; sorting applies to files within each folder. Unavailable timestamps sort
-last, and successful saves refresh timestamp ordering. Manual ordering and
-insertion targets are not supported; old custom ordering is ignored.
+### Explorer
 
-Drag files or folders onto a folder to move them, or onto the sidebar toolbar to
-move them to the notebook root. Name collisions and moves into a folder's own
-descendants are rejected. Open buffers retain their edits and follow the moved path.
+Click a folder to expand it, a Markdown file to open it, or a supported image to
+view it. Other file types are displayed but cannot be opened from Explorer;
+use **File → Open…** for other UTF-8 text files. Filesystem links are not opened
+or traversed. Empty folders remain visible.
+
+Up/Down moves between rows, Left/Right collapses or expands folders, and Enter
+activates a row. Right-click a row, or press **Shift+F10**, for creation, rename,
+duplicate, relative-path copy, system reveal, and Trash actions. Folder and
+background menus offer New note and New folder. Duplicate copies a file,
+including retained unsaved text when applicable. Trash uses the system recycle
+bin and resolves affected unsaved changes first.
+
+Drag files or folders onto another folder to move them, or onto the sidebar
+toolbar to move them to the notebook root. Name collisions and moves inside a
+folder's own descendants are rejected. Open documents keep their edits and
+follow successfully moved paths.
+
+**Sort files** offers filename, modified-date, and created-date ordering.
+Folders stay first in alphabetical order. **Refresh** picks up external changes;
+there is no automatic file watcher. The sidebar controls switch between Explorer
+and Search, and its edge can be dragged to resize it.
 
 ### File extension labels
 
-**Settings → General → Sidebar** controls file-tree labels. **Show file
-extensions** is on by default; **Always hide these extensions** defaults to `md`,
-so `notes.md` appears as `notes` while `photo.png` retains its extension. Turn the
-switch off to hide all final extensions; the exception list is disabled and
-preserved. Clear the list with the switch on to show every extension.
+**Settings → General → Sidebar** controls whether extensions appear. **Show file
+extensions** is on by default, while **Always hide these extensions** starts with
+`md`: `notes.md` appears as `notes`, but `photo.png` keeps its extension.
 
-Enter comma-separated extensions such as `md, txt`. Matching ignores case,
-surrounding whitespace, optional leading dots, duplicates and empty entries.
-Invalid paths, spaces within extensions, wildcards and compound suffixes show an
-error and retain the last valid setting. Only the final suffix is hidden:
-`archive.tar.gz` becomes `archive.tar` when hiding `gz`. Extensionless names,
-dotfiles such as `.gitignore`, trailing dots and folder names are preserved.
-Hover over a file for its full filename. Search results and actual paths are
-unchanged. Preferences apply immediately and persist per notebook; without an
-active notebook, they last for the session.
+Enter comma-separated extensions such as `md, txt`. Matching ignores case and
+optional leading dots. These settings change labels only; filenames and search
+results remain unchanged. Hover over a file to see its full filename.
 
 ## Editing and view modes
 
 **Source** edits literal Markdown. **Live preview** edits the same text while
-rendering supported Markdown around the active line or block. These modes share
-the buffer, selection and undo history. **Reading** renders the current text,
-including unsaved edits. Source and Live preview copy their source selection;
-Reading copies selected rendered text. Saving always uses the Markdown source.
+rendering formatting around the active line or block. Both use the same text and
+undo history. **Reading** renders the current text, including unsaved edits.
+Source and Live preview copy the source selection; Reading copies selected
+rendered text. Saving always writes the underlying source.
 
-Each notebook remembers its selected view mode. New notebooks and older settings
-without a saved mode start in Live preview, as do standalone sessions. Find and
-notebook Search keep the selected mode. Use the View menu to change modes.
+Use the View menu or **Ctrl+Shift+M** to cycle through the three views. Tabs keep
+their own view modes during the session; notebooks remember the selected
+Markdown mode for later use. The default is Live preview.
+
+Other UTF-8 files, such as `.txt`, `.json`, and source code, open in Source mode.
+Known languages receive syntax highlighting; unknown extensions use plain text.
+Find, replace, undo, and saving remain available. Markdown formatting controls,
+Live preview, and Reading are unavailable for those files. Binary data and
+invalid UTF-8 are rejected.
 
 ### Headings, lists, tasks and quotes
 
@@ -233,190 +193,107 @@ selected text. If the document changes before the import finishes, the drop is
 cancelled and newly copied files are rolled back. Undo removes inserted Markdown;
 files from an accepted import remain in the notebook.
 
+In Live preview, drag a bullet or checkbox to move its item and nested content
+before or after another unordered/task item. Escape cancels; Undo restores the
+move. Use **Ctrl+Up / Ctrl+Down** in the editor to move lines or selected lines.
+
+Mermaid code blocks render offline in Live preview and Reading. See
+[Mermaid diagrams](mermaid.md) for syntax and limits. The optional
+[terminal panel](terminal.md) can keep shells beside your notes.
+
 ## Find and notebook Search
 
-**Ctrl+F** finds literal text in the current document, including unsaved edits
-and table text. In Source and Live preview, selected text seeds the query.
-Matches have highlights and an active-match counter; Enter/Shift+Enter or the
-arrow buttons move through them and wrap. **Match case** toggles sensitivity:
-case-insensitive matching folds ASCII letters, while non-ASCII characters match
-exactly. Escape closes Find and returns focus to the document. Ctrl+F also works
-from the notebook sidebar; Find state resets when another document loads.
+**Ctrl+F** finds literal text in the current document, including unsaved changes.
+In Source and Live preview, the current selection seeds the query. Matches are
+highlighted and show a counter; use the Find controls to move between them.
+**Match case** is optional. Case-insensitive matching folds ASCII letters;
+non-ASCII characters match exactly. Escape closes Find.
 
-Reading Find highlights rendered text and scrolls to the active match while
-keeping Reading mode. Matches in hidden Markdown syntax reveal their containing
-block and show an explanation. Source and Live preview also offer **Replace one**
-and **Replace all**, using literal text and separate undo steps. The command
-palette can open replacement controls; Reading does not offer replacement.
+Reading Find scrolls to the rendered match while keeping Reading mode. A match
+in hidden Markdown syntax reveals its containing block with an explanation.
+Source and Live preview also support literal **Replace one** and **Replace all**
+as undoable edits; Reading does not offer replacement.
 
-**Ctrl+Shift+F** or the sidebar **Search** icon searches Markdown files across the
-active notebook, including unsaved changes in its open note. Results group
-matches by file with line numbers and highlighted snippets. Match case uses the
-same ASCII rules as Find. Up/Down selects and reveals a result; Enter or a click
-opens it with Save/Discard/Cancel protection. Reading reveals the rendered match.
-Opening a result preserves the list, query, selection and scroll position.
-Escape returns focus to the editor; **Files** returns to Explorer. Reopening
-Search retains the query and results until switching notebooks. Without an
-active notebook, Search asks you to open one.
+**Ctrl+Shift+F** searches Markdown files across the active notebook, including
+unsaved text in retained open documents. Results group highlighted snippets by
+file. Up/Down selects a result; Enter or a click opens it in the current tab with
+the usual unsaved-change protection. The query and result list remain available
+when you return to Search.
 
-Search refreshes after edits to the open note, discarding unsaved search content
-when navigating away, or changes to the query or case option. To pick up external
-file changes, change the query or toggle Match case.
-Scans run in the background and superseded queries are cancelled. Filesystem
-links and `.markdown-note` are excluded. Results are capped at 2,000 matches; files
-over 8 MiB and unreadable/non-UTF-8 files are skipped with a visible count.
-Changed matches are rechecked against the loaded text before navigation.
+Search refreshes after relevant edits or query changes. To rescan external file
+changes, change the query or toggle Match case. Scans skip filesystem links,
+internal metadata, unreadable/non-UTF-8 files, and files over 8 MiB. Results are
+capped at 2,000 matches, with skipped or limited results indicated. **Ctrl+O**
+and notebook Search are Markdown-specific; use File → Open for other text files.
 
-## Settings, commands and date templates
+## Customize the workspace
 
-**File → Settings** has General, Font, Templates and Theme sections. Font offers
-searchable installed-font lists for the interface, text and monospace roles.
-Source uses the monospace font; Live preview and Reading use the text font.
-Unavailable saved fonts fall back to defaults. Content font size ranges from
-10–40 px and UI font size from 10–24 px; both default to 16 px.
-Appearance starts with the system theme. Preferences apply immediately and are
-saved per active notebook; without a notebook, appearance, date and sidebar
-preferences last for the session. Switching notebooks restores their preferences,
-and leaving a notebook restores the separate session preferences. Autosave uses
-the separate scope described below for files outside the active notebook.
+**File → Settings** contains General, Terminal, Toolbar, Templates, Font, and
+Theme sections. Most preferences belong to the active notebook. Without one,
+appearance and similar preferences last for the current app session.
 
-Theme offers independent Light and Dark palettes with Background, Font and
-Primary color pickers. Primary controls task checkboxes and links independently
-of font color. **Reset Light and Dark themes** restores both palettes without
-changing the active mode or font sizes. Older custom colors are preserved in
-the previously selected palette; Dark Gray migrates to a customized Dark theme.
+- **General:** autosave, external-file autosave, sidebar labels/exclusions, centered editor width, and footer counts. The footer can count source text or readable Markdown.
+- **Terminal:** shell, cursor, and independent terminal font settings. New shell choices apply to new terminal tabs.
+- **Toolbar:** visibility of buttons and regions, plus icon size. Hiding a panel button does not close the panel's documents or shells.
+- **Font:** interface, text, and monospace fonts and sizes. Source uses the monospace font; Live preview and Reading use the text font.
+- **Theme:** independent light/dark palettes for background, text, primary, border, icon, and secondary colors. Reset restores the palettes.
+- **Templates:** the format used by **Templates: Insert current date**, also available with **Ctrl+Shift+D**.
 
-**Ctrl+P** opens the searchable command palette. Unavailable commands remain
-visible with an explanation:
-
-| Command | Action |
-| --- | --- |
-| Appearance: Toggle light/dark mode | Switches themes while retaining each palette's custom colors. |
-| Notebook: Change notebook | Lists registered notebooks with paths and an active marker; Escape returns to commands. |
-| Notebook: Create new note | Creates an available Untitled filename in the active notebook root. |
-| Search: Search current file | Opens Find in any document view mode. |
-| Search: Search in all files | Searches Markdown files in the active notebook. |
-| Search: Search and replace in current file | Opens replacement controls in Source or Live preview. |
-| Templates: Insert current date | Replaces the remembered editor selection in one undoable edit in Source or Live preview. |
-| Text: Insert or edit link | Opens the link editor in Source or Live preview. |
-
-The date format is saved per notebook, or for the session without a notebook.
-Invalid edits show an inline error and retain the last valid format. The default
-is `YYYY-MM-DD`. Templates use local time and English names, supporting these
-Moment-style tokens:
+The default date format is `YYYY-MM-DD`. Supported tokens include years, months,
+days, weekdays, hours, minutes, seconds, and time zones:
 
 ```text
 YY YYYY M MM MMM MMMM D DD Do d dd ddd dddd H HH h hh m mm s ss SSS A a Z ZZ
 ```
 
-Use `[literal text]` or a backslash before a character to escape it. Empty
-formats, unsupported alphabetic tokens, unmatched/nested brackets and trailing
-backslashes are rejected. This is a supported subset of
-[Moment formatting](https://momentjs.com/docs/#/displaying/format/), translated to
-[Chrono formatting](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
+Use `[literal text]` to include text without interpreting it as a token. Invalid
+formats show an error and retain the last valid setting. Dates use local time
+and English names.
 
-## Saving and on-disk storage
+**View → Centered editor** toggles the centered text column. **View → Zoom**
+changes notebook zoom from 50% to 200%; Reset returns to 100%. Sidebar and
+terminal widths are independently resizable.
 
-An asterisk in the title means unsaved changes. Autosave is enabled by default
-after 1,000 ms without edits. Settings offers an enable switch and a delay from
-100 to 60,000 ms; invalid input retains the previous setting. Autosave preferences
-persist per notebook, while notes outside the active notebook use session
-preferences. Writes allow continued typing and serialize with manual saves and
-navigation. Ordinary write failures retain changes with a nonmodal error; edit
-again or use **Save** to retry.
+## Saving and conflicts
 
-If the file changes, is replaced, or disappears on disk, saving reports a conflict
-and pauses autosave for that document. Your text and undo history remain in the
-editor. Copy any changes you want to keep before reopening the file, then merge
-them with the disk version. **Save** explicitly retries the same version check;
-it does not force an overwrite. Opening a fresh baseline or a successful explicit
-save clears the pause.
+An asterisk in the window title means unsaved changes. Notebook autosave starts
+enabled with a 1,000 ms delay after edits. Settings offers an enable switch and
+a delay from 100 to 60,000 ms. **Ctrl+S** saves immediately.
 
-Opening another file, switching notebooks or closing prompts to Save, Discard or
-Cancel when needed. Failed opens/saves preserve the current buffer. Saves write
-a temporary file beside the original and then replace it. UTF-8 BOM and
-LF/CRLF/CR conventions are preserved. Mixed line endings normalize to the first
-observed convention on save; files without line endings use LF. Unix permission
-bits are preserved. Other metadata, including ownership, ACLs, extended attributes
-and Windows named streams, is not copied by the replacement policy. The Markdown
-file picker shows all files and rejects unsupported extensions. See the
-[storage contract](document-storage.md) for conflict checks and their limits.
+Files outside the active notebook show an **External file** badge. Their autosave
+has a separate **Autosave external files** switch, off by default.
+Without a notebook, that separate preference lasts for the session. Save these
+files explicitly unless you choose to enable their autosave.
 
-Each notebook keeps settings in `.markdown-note/settings.json`, including appearance,
-autosave, view mode, sidebar options, the last selected file and expanded folders.
-File/folder paths there are notebook-relative; the internal directory is hidden
-from Explorer. The user configuration stores registered notebook paths and the
-active notebook so they can be restored at startup:
+If a file changes, is replaced, or disappears on disk, saving reports a conflict
+and pauses autosave for that document. Your text and undo history stay available.
+Copy any changes you need before reopening the file, then reconcile them with the
+disk version. Save retries the version check; it does not force an overwrite.
 
-| Platform | User configuration |
+Opening a replacement file in the current tab, closing the last view of a dirty
+file, or closing the app prompts to Save, Discard, or Cancel when needed. Failed
+opens and saves preserve your work. Writes use a temporary file beside the
+original before replacing it, retaining UTF-8 BOM and newline conventions.
+See the [storage contract](document-storage.md) for detailed guarantees and limits.
+
+## Files and preferences
+
+Notes stay in the folders you choose. Each notebook stores preferences in
+`.markdown-note/settings.json`; this internal folder is hidden from Explorer.
+Registered notebook locations and window placement are stored per user:
+
+| Platform | Configuration directory |
 | --- | --- |
-| Windows | `%APPDATA%\markdown-note\notebooks.json` |
-| macOS | `~/Library/Application Support/markdown-note/notebooks.json` |
-| Linux | `$XDG_CONFIG_HOME/markdown-note/notebooks.json`, falling back to `~/.config/markdown-note/notebooks.json` if XDG_CONFIG_HOME is unset or not absolute |
+| Windows | `%APPDATA%\markdown-note` |
+| macOS | `~/Library/Application Support/markdown-note` |
+| Linux | `$XDG_CONFIG_HOME/markdown-note`, or `~/.config/markdown-note` when XDG_CONFIG_HOME is unset or not absolute |
 
-If you used a build from before the Markdown Note rename, close the app and rename
-the previous notebook metadata folder to `.markdown-note` in each notebook. Rename
-the previous app folder in your platform's user configuration directory to
-`markdown-note` as well. Keep the JSON files unchanged; existing settings are not
-automatically migrated. If a destination already exists, back up both folders
-before reconciling them.
+Markdown Note starts with its own preferences. To use an existing notes folder,
+open it through Manage notebooks; your note files do not need conversion.
+Settings from the previous application are not imported. Its `.mithril` metadata
+is kept hidden and protected without being read or changed.
 
-Settings use atomic file replacements. There is no Save As, file watcher,
-multiple-document tab interface or database.
+There is no built-in cloud sync, automatic file watcher, or Save As command.
+You can manage and back up the ordinary note files using your own tools.
 
-## Validation and contributor information
-
-For current ownership, extension rules and headless verification commands, start
-with [ARCHITECTURE.md](../ARCHITECTURE.md) and [AGENTS.md](../AGENTS.md). The
-[implementation progress](architecture-progress.md) records completed work
-and current verification; the [dated audit](architecture-audit.md) records
-the original findings and plan. The component is patched in
-`vendor/gpui-component`; its [patch notes](../vendor/gpui-component/EDITOR-PATCH.md)
-record the upstream source and local changes.
-
-Builds and validation run locally; there are no GitHub Actions workflows.
-Use the headless verification commands in [ARCHITECTURE.md](../ARCHITECTURE.md)
-with the repository's pinned Rust toolchain on each target platform.
-
-### User-run native diagnostics
-
-The in-app diagnostic harnesses create a real application window and are for a
-user to run manually. Agents must use headless tests and must not launch these
-harnesses, including hidden launches. The notebook harness uses disposable
-fixtures and an isolated notebook index:
-
-```powershell
-cargo build --locked --features editor-diagnostics
-$env:MARKDOWN_NOTE_NOTEBOOK_CHECK = Join-Path (Get-Location) 'target/notebook-smoke.txt'
-& ./target/debug/markdown-note.exe
-Remove-Item Env:MARKDOWN_NOTE_NOTEBOOK_CHECK
-Get-Content target/notebook-smoke.txt
-```
-
-It exits automatically and writes a result, progress file or panic report.
-`MARKDOWN_NOTE_AUTOSAVE_CHECK` selects a separate disposable-fixture diagnostic for
-timers, save races, failure recovery, task autosave and settings validation.
-[Performance validation](../benchmarks/README.md) documents the user-run release
-benchmark, fixtures, hardware, historical measurements, limitations and commands.
-Those recorded timings are not current measurements on every machine.
-
-For a manual UI check, use disposable files to exercise all three views,
-Save/Discard/Cancel, notebook switching, menus, native pickers, clipboard,
-selection, scrolling and physical IME input. Reopen saved files and check invalid
-UTF-8 and locked/read-only files. These native interactions are distinct from
-the headless regression suite.
-
-Use Ctrl+Up / Ctrl+Down (Command on macOS) in Source or Live preview to move the current line or selected lines.
-
-
-Right-click a sidebar file or folder (or press Shift+F10 on its selected row) for
-creation, rename, duplicate, relative-path copy, system reveal and Trash actions.
-Folder and background menus offer New note and New folder; Duplicate applies to
-files and copies the active note's unsaved text. Trash uses the system recycle
-bin and resolves unsaved changes before deleting the active note or its parent.
-
-In Live preview, drag a bullet or checkbox to move its item and nested content
-before or after another unordered/task item, including in another list. The
-item matches the destination indentation and bullet style, preserving checkbox
-state. Escape cancels; Undo restores the entire move. Numbered lists and moves
-between different blockquotes are excluded.
+For code changes and verification, see [Contributing](../CONTRIBUTING.md).
