@@ -80,7 +80,12 @@ fn current_and_legacy_metadata_names_are_reserved_at_every_depth() {
             assert!(!safe_relative(&path), "{}", path.display());
         }
     }
-    for name in ["mithril", "markdown-note", ".mithril-notes", ".markdown-note.md"] {
+    for name in [
+        "mithril",
+        "markdown-note",
+        ".mithril-notes",
+        ".markdown-note.md",
+    ] {
         assert!(!is_metadata_directory(OsStr::new(name)));
         validate_name(name).unwrap();
         assert!(safe_relative(Path::new(name)));

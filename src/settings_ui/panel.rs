@@ -116,7 +116,10 @@ type FontPicker = Entity<SelectState<SearchableVec<String>>>;
 type ChoicePicker = Entity<SelectState<Vec<&'static str>>>;
 const FOLLOW_EDITOR_FONT: &str = "Follow editor monospace font";
 const SHELL_OPTIONS: [(markdown_note::terminal::WindowsShell, &str); 2] = [
-    (markdown_note::terminal::WindowsShell::Powershell, "PowerShell"),
+    (
+        markdown_note::terminal::WindowsShell::Powershell,
+        "PowerShell",
+    ),
     (markdown_note::terminal::WindowsShell::GitBash, "Git Bash"),
 ];
 const CURSOR_OPTIONS: [(markdown_note::terminal::CursorStyle, &str); 3] = [

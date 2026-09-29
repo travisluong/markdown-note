@@ -185,7 +185,10 @@ fn both_metadata_names_are_hidden_from_explorer_search_and_go_to_at_any_depth() 
             .iter()
             .all(|entry| notebook::safe_relative(&entry.relative))
     );
-    assert_eq!(discovered.iter().filter(|entry| !entry.directory).count(), 2);
+    assert_eq!(
+        discovered.iter().filter(|entry| !entry.directory).count(),
+        2
+    );
     let results = search::scan_many(
         &book.root,
         &policy,
@@ -201,6 +204,9 @@ fn both_metadata_names_are_hidden_from_explorer_search_and_go_to_at_any_depth() 
             .iter()
             .map(|hit| hit.relative.clone())
             .collect::<Vec<_>>(),
-        [PathBuf::from("nested/visible.md"), PathBuf::from("visible.md")]
+        [
+            PathBuf::from("nested/visible.md"),
+            PathBuf::from("visible.md")
+        ]
     );
 }

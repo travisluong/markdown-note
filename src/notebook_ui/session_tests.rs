@@ -62,7 +62,13 @@ fn settings_json_resolution_admits_only_exact_regular_settings_file() {
         super::resolve_document_path(&book.root, &path).unwrap(),
         path
     );
-    assert!(notebook::resolve(&book.root, std::path::Path::new(".markdown-note/settings.json")).is_err());
+    assert!(
+        notebook::resolve(
+            &book.root,
+            std::path::Path::new(".markdown-note/settings.json")
+        )
+        .is_err()
+    );
     for relative in [
         ".markdown-note/other.json",
         "nested/.markdown-note/settings.json",

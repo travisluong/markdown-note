@@ -143,7 +143,8 @@ fn real_transport_checks_acknowledgment_status_and_never_follows_redirects() {
 #[test]
 #[ignore = "requires local Next.js and an isolated Postgres test database"]
 fn cross_repository_feedback_with_local_backend() {
-    let endpoint = std::env::var("MARKDOWN_NOTE_FEEDBACK_ENDPOINT").expect("test endpoint required");
+    let endpoint =
+        std::env::var("MARKDOWN_NOTE_FEEDBACK_ENDPOINT").expect("test endpoint required");
     assert!(endpoint.starts_with("http://127.0.0.1:"));
     let mut payload =
         Payload::new("Cross-repository test 🙂 <plain text>", "test@example.com").unwrap();

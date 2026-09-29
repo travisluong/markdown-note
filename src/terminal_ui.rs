@@ -838,7 +838,8 @@ mod tab_lifecycle_tests {
         cx.update(|window, cx| {
             owner.update(cx, |notes, cx| {
                 notes.toggle_right_panel(window, cx);
-                notes.session_terminal.cursor_style = markdown_note::terminal::CursorStyle::Underline;
+                notes.session_terminal.cursor_style =
+                    markdown_note::terminal::CursorStyle::Underline;
                 notes.sync_terminal(window, cx);
             })
         });

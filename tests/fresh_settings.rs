@@ -50,8 +50,14 @@ fn only_new_preferences_are_loaded_validated_and_saved() {
     fs::write(&path, "broken current settings").unwrap();
     assert!(Notebook::open(directory.path(), false).is_err());
     assert!(notebook::save_book(&book).is_err());
-    assert_eq!(fs::read_to_string(&path).unwrap(), "broken current settings");
-    assert_eq!(fs::read_to_string(&legacy).unwrap(), "broken legacy settings");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "broken current settings"
+    );
+    assert_eq!(
+        fs::read_to_string(&legacy).unwrap(),
+        "broken legacy settings"
+    );
     for relative in [
         ".mithril/note.md",
         "nested/.MITHRIL/note.md",
@@ -91,9 +97,7 @@ fn metadata_cannot_be_created_renamed_moved_duplicated_or_trashed() {
         assert!(notebook::rename_entry(&book.root, protected, "renamed").is_err());
         assert!(notebook::move_entry(&book.root, protected, Path::new("nested")).is_err());
         assert!(notebook::move_entry(&book.root, Path::new("note.md"), protected).is_err());
-        assert!(
-            notebook::duplicate_entry(&book.root, &protected.join("hidden.md"), None).is_err()
-        );
+        assert!(notebook::duplicate_entry(&book.root, &protected.join("hidden.md"), None).is_err());
         // Guards reject metadata before the native Trash backend is reached.
         assert!(notebook::trash_entry(&book.root, protected).is_err());
     }
@@ -144,5 +148,8 @@ fn linked_legacy_metadata_is_ignored_and_its_target_is_preserved() {
     saved.unwrap().unwrap();
     assert!(notebook::is_link(&metadata.unwrap()));
     assert_fresh_settings(&book);
-    assert_eq!(fs::read_to_string(target.join("settings.json")).unwrap(), bytes);
+    assert_eq!(
+        fs::read_to_string(target.join("settings.json")).unwrap(),
+        bytes
+    );
 }

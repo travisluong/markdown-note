@@ -979,8 +979,8 @@ impl Render for NotesWindow {
 
 fn main() {
     #[cfg(feature = "editor-diagnostics")]
-    if let Some(output) =
-        std::env::var_os("MARKDOWN_NOTE_BENCH").or_else(|| std::env::var_os("MARKDOWN_NOTE_NOTEBOOK_CHECK"))
+    if let Some(output) = std::env::var_os("MARKDOWN_NOTE_BENCH")
+        .or_else(|| std::env::var_os("MARKDOWN_NOTE_NOTEBOOK_CHECK"))
     {
         let output = PathBuf::from(output);
         let _ = fs::write(
