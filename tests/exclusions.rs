@@ -121,3 +121,86 @@ fn exclusions_round_trip_and_legacy_settings_default_to_empty() {
     assert_eq!(reopened.settings.excluded_patterns, ["[broken"]);
     assert!(notebook::Exclusions::compile(&reopened.settings.excluded_patterns).is_err());
 }
+
+#[test]
+fn both_metadata_names_are_hidden_from_explorer_search_and_go_to_at_any_depth() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut book = notebook::Notebook::open(temp.path(), false).unwrap();
+    let policy = notebook::Exclusions::default();
+    fs::create_dir(book.root.join("nested")).unwrap();
+    fs::write(book.root.join("visible.md"), "hit").unwrap();
+    fs::write(book.root.join("nested/visible.md"), "hit").unwrap();
+    let mut buffers = Vec::new();
+    for parent in ["", "nested"] {
+        for name in [".mithril", ".markdown-note"] {
+            let directory = book.root.join(parent).join(name);
+            fs::create_dir_all(&directory).unwrap();
+            let hidden = directory.join("hidden.md");
+            fs::write(&hidden, "hit").unwrap();
+            buffers.push((hidden, Rope::from("unsaved hit")));
+        }
+    }
+    // Case variants are separate fixtures to also work on case-insensitive volumes.
+    for (parent, name) in [("upper-old", ".MITHRIL"), ("upper-new", ".MARKDOWN-NOTE")] {
+        let directory = book.root.join(parent).join(name);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("hidden.md"), "hit").unwrap();
+    }
+    for parent in ["nested", "upper-old", "upper-new"] {
+        book.settings.expanded.insert(parent.into());
+    }
+    let mut explorer = Explorer::new(|_| false);
+    for parent in ["", "nested", "upper-old", "upper-new"] {
+        let path = PathBuf::from(parent);
+        let entries = notebook::read_directory_filtered(&book.root, &path, &policy).unwrap();
+        assert!(
+            entries
+                .iter()
+                .all(|entry| notebook::safe_relative(&entry.relative))
+        );
+        let generation = explorer.begin_directory(path.clone(), &book.settings);
+        explorer
+            .complete_directory(generation, path, Ok(entries), &book.settings)
+            .unwrap();
+    }
+    assert!(
+        explorer
+            .rows()
+            .iter()
+            .all(|row| notebook::safe_relative(&row.path))
+    );
+    assert!(
+        explorer
+            .rows()
+            .iter()
+            .any(|row| row.path == Path::new("nested/visible.md"))
+    );
+    for name in [".mithril", ".markdown-note"] {
+        let path = Path::new("nested").join(name);
+        assert!(notebook::read_directory(&book.root, &path).is_err());
+    }
+    let discovered = commands::discover(&book.root, &policy).unwrap();
+    assert!(
+        discovered
+            .iter()
+            .all(|entry| notebook::safe_relative(&entry.relative))
+    );
+    assert_eq!(discovered.iter().filter(|entry| !entry.directory).count(), 2);
+    let results = search::scan_many(
+        &book.root,
+        &policy,
+        "hit",
+        false,
+        buffers,
+        &AtomicBool::new(false),
+    );
+    assert_eq!(results.skipped, 0);
+    assert_eq!(
+        results
+            .hits
+            .iter()
+            .map(|hit| hit.relative.clone())
+            .collect::<Vec<_>>(),
+        [PathBuf::from("nested/visible.md"), PathBuf::from("visible.md")]
+    );
+}

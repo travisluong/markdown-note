@@ -63,3 +63,26 @@ fn exact_file_remap_preserves_a_usable_filename_without_a_trailing_separator() {
     let unrelated = directory.path().join("other.md");
     assert_eq!(super::remap_path(&unrelated, &from, &to), unrelated);
 }
+
+#[test]
+fn current_and_legacy_metadata_names_are_reserved_at_every_depth() {
+    use super::{is_metadata_directory, safe_relative};
+    use std::{ffi::OsStr, path::Path};
+
+    for name in [".markdown-note", ".MARKDOWN-NOTE", ".mithril", ".MiThRiL"] {
+        assert!(is_metadata_directory(OsStr::new(name)));
+        assert!(validate_name(name).is_err());
+        for path in [
+            PathBuf::from(name),
+            Path::new(name).join("settings.json"),
+            Path::new("nested").join(name).join("note.md"),
+        ] {
+            assert!(!safe_relative(&path), "{}", path.display());
+        }
+    }
+    for name in ["mithril", "markdown-note", ".mithril-notes", ".markdown-note.md"] {
+        assert!(!is_metadata_directory(OsStr::new(name)));
+        validate_name(name).unwrap();
+        assert!(safe_relative(Path::new(name)));
+    }
+}

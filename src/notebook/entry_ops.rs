@@ -38,6 +38,8 @@ fn child(parent: &Path, name: &str) -> io::Result<PathBuf> {
     Ok(path)
 }
 pub fn rename_destination(source: &Path, name: &str, directory: bool) -> io::Result<PathBuf> {
+    // Validate the requested name before preserving a file extension.
+    validate_name(name)?;
     let mut name = name.to_owned();
     if !directory
         && Path::new(&name).extension().is_none()

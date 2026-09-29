@@ -2,9 +2,15 @@
 //! Stored identities retain their original paths; display normalization never changes I/O.
 
 use std::{
+    ffi::OsStr,
     fs, io,
     path::{Component, Path, PathBuf},
 };
+
+/// Both current and legacy metadata names remain protected at every notebook depth.
+pub fn is_metadata_directory(name: &OsStr) -> bool {
+    name.eq_ignore_ascii_case(".markdown-note") || name.eq_ignore_ascii_case(".mithril")
+}
 
 pub fn validate_name(name: &str) -> io::Result<()> {
     let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
@@ -25,6 +31,7 @@ pub fn validate_name(name: &str) -> io::Result<()> {
             .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
         || name.encode_utf16().count() > 255
         || reserved
+        || is_metadata_directory(OsStr::new(name))
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -39,7 +46,7 @@ pub fn safe_relative(path: &Path) -> bool {
         && path.components().all(|c| matches!(c, Component::Normal(_)))
         && !path
             .components()
-            .any(|c| c.as_os_str().eq_ignore_ascii_case(".markdown-note"))
+            .any(|c| is_metadata_directory(c.as_os_str()))
 }
 
 pub fn markdown(path: &Path) -> bool {

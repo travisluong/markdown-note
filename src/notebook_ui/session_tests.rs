@@ -67,6 +67,10 @@ fn settings_json_resolution_admits_only_exact_regular_settings_file() {
         ".markdown-note/other.json",
         "nested/.markdown-note/settings.json",
         ".markdown-note/../note.md",
+        ".mithril/settings.json",
+        ".MITHRIL/settings.json",
+        "nested/.mithril/settings.json",
+        "nested/.MARKDOWN-NOTE/settings.json",
     ] {
         assert!(super::resolve_document_path(&book.root, &book.root.join(relative)).is_err());
     }
@@ -105,6 +109,7 @@ fn settings_json_resolution_rejects_linked_metadata_directory() {
         );
     }
     assert!(super::resolve_document_path(&root, &notebook::settings_path(&root)).is_err());
+    assert!(notebook::Notebook::open(&root, false).is_err());
     #[cfg(windows)]
     fs::remove_dir(&link).unwrap();
     #[cfg(unix)]
@@ -123,4 +128,5 @@ fn settings_json_resolution_rejects_linked_file() {
     fs::remove_file(&path).unwrap();
     std::os::unix::fs::symlink(&target, &path).unwrap();
     assert!(super::resolve_document_path(&book.root, &path).is_err());
+    assert!(notebook::Notebook::open(&book.root, false).is_err());
 }

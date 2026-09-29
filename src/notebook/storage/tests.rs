@@ -570,3 +570,22 @@ fn extension_settings_defaults_and_notebook_persistence() {
     assert!(other.settings.show_file_extensions);
     assert_eq!(other.settings.always_hide_extensions, ["md"]);
 }
+
+#[test]
+fn renamed_index_starts_fresh_and_preserves_legacy_index_bytes() {
+    let fixture = tempfile::tempdir().unwrap();
+    let legacy = fixture.path().join("mithril/notebooks.json");
+    fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    fs::write(&legacy, "damaged legacy index").unwrap();
+    let path = index_path_for("windows", |key| {
+        (key == "APPDATA").then(|| fixture.path().as_os_str().to_owned())
+    })
+    .unwrap();
+    assert_eq!(path, fixture.path().join("markdown-note/notebooks.json"));
+    let index = load_index(&path).unwrap();
+    assert!(index.notebooks.is_empty());
+    assert!(index.active.is_none());
+    super::save_index(&path, &index).unwrap();
+    assert_eq!(fs::read_to_string(&legacy).unwrap(), "damaged legacy index");
+    assert!(load_index(&path).unwrap().notebooks.is_empty());
+}

@@ -242,9 +242,12 @@ active document.
 
 Markdown Note stores each notebook's preferences in `.markdown-note/settings.json` and the
 per-user notebook index under the platform configuration directory's `markdown-note`
-folder. The explorer, search and path guards exclude `.markdown-note`. Earlier storage
-directory names are not automatically migrated; preserve settings by renaming
-those directories before opening existing notebooks with Markdown Note.
+folder. Missing new settings start from defaults; legacy per-user preferences and
+`.mithril` metadata are never loaded, validated, migrated or removed, even when
+malformed or linked. `notebook::is_metadata_directory` identifies both metadata
+names case-insensitively. Name validation, notebook-relative path guards and
+directory discovery protect both names at every depth, keeping them out of
+Explorer, search and Go to File and rejecting entry mutations into or out of them.
 
 Notebook discovery exclusions belong to `notebook/exclusions.rs`. Settings store
 `excluded_patterns` per notebook; `NotebookState` compiles an immutable policy on
@@ -733,7 +736,8 @@ unsaved-change prompt. Without a notebook the button is disabled.
 
 The document-loading adapter alone admits the exact `.markdown-note/settings.json` path,
 checking the notebook root, metadata directory and regular file for links. Tree
-resolution and persisted relative paths still exclude `.markdown-note`. JSON uses the
+resolution and persisted relative paths exclude both `.markdown-note` and `.mithril`
+at every depth. The exact active settings file is the only exception. JSON uses the
 existing Source-only installation and shared-buffer/save contracts. Opening or
 selecting this document skips last-note persistence, preserving the Markdown mode,
 last note and loaded disk baseline. This adds no automatic reload of manually

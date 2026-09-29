@@ -308,13 +308,7 @@ impl Notes {
                         notebook::rename_destination(&target.path, &name, target.directory)
                             .map(|_| ())
                     } else {
-                        notebook::validate_name(&name).and_then(|_| {
-                            if name.eq_ignore_ascii_case(".markdown-note") {
-                                Err(io::Error::other("This name is reserved."))
-                            } else {
-                                Ok(())
-                            }
-                        })
+                        notebook::validate_name(&name)
                     };
                     if let Err(message) = validation {
                         *error.borrow_mut() = message.to_string();

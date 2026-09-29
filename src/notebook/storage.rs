@@ -11,7 +11,7 @@ use std::{
 use serde::Serialize;
 
 use super::{
-    paths::{is_link, name, resolve, safe_relative, validate_name},
+    paths::{is_link, is_metadata_directory, name, resolve, safe_relative, validate_name},
     settings::{Index, Settings, VERSION, normalize_sidebar_width, normalize_terminal_width},
     tree::{Entry, FileSort},
 };
@@ -125,6 +125,7 @@ impl Notebook {
         if !root.is_dir() {
             return Err(io::Error::other("Choose an existing folder."));
         }
+        // Legacy metadata is intentionally neither read nor migrated.
         let metadata_dir = root.join(".markdown-note");
         if let Ok(metadata) = fs::symlink_metadata(&metadata_dir)
             && (is_link(&metadata) || !metadata.is_dir())
@@ -180,7 +181,7 @@ pub fn read_directory_filtered(
     let mut entries = Vec::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
-        if entry.file_name().eq_ignore_ascii_case(".markdown-note") {
+        if is_metadata_directory(&entry.file_name()) {
             continue;
         }
         let relative = relative.join(entry.file_name());

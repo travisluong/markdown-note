@@ -15,7 +15,8 @@ mod tree;
 mod writer;
 
 pub use paths::{
-    display_path, is_link, markdown, name, remap_path, resolve, safe_relative, validate_name,
+    display_path, is_link, is_metadata_directory, markdown, name, remap_path, resolve,
+    safe_relative, validate_name,
 };
 pub use settings::{
     Appearance, Autosave, FooterCountMode, FooterSettings, Index, Settings, ThemeChoice,

@@ -4,8 +4,8 @@ use markdown_note::explorer::Explorer;
 #[cfg(test)]
 use std::time::Duration;
 
-/// Only document loading admits the notebook's exact settings file. Tree and
-/// persisted relative paths continue to reject all metadata paths.
+/// Only document loading admits the notebook's exact active settings file. Tree
+/// and persisted relative paths reject both current and legacy metadata names.
 fn resolve_document_path(root: &Path, path: &Path) -> io::Result<PathBuf> {
     if path == notebook::settings_path(root) {
         for (component, directory) in [
