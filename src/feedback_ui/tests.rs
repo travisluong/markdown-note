@@ -79,10 +79,11 @@ fn feedback_help_modal_retains_draft_restores_focus_and_respects_busy_guards(
     settle(cx);
     cx.dispatch_action(HelpMenu);
     settle(cx);
-    // Activate the third Help-menu item through TestPlatform keyboard navigation.
-    cx.simulate_keystrokes("down down down enter");
+    // Activate the second Help-menu item through TestPlatform keyboard navigation.
+    cx.simulate_keystrokes("down down enter");
     settle(cx);
     assert!(cx.update(|window, cx| window.has_active_dialog(cx)));
+    assert!(cx.debug_bounds("feedback-message").is_some());
     draft(&notes, "draft survives", "reply@example.com", cx);
     cx.update(|window, cx| window.close_dialog(cx));
     settle(cx);
