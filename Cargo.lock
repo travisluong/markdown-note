@@ -4028,6 +4028,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "markdown-note"
+version = "0.1.1"
+dependencies = [
+ "alacritty_terminal",
+ "chrono",
+ "embed-resource",
+ "flume 0.12.0",
+ "futures",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "gpui-terminal",
+ "html5ever",
+ "image",
+ "libc",
+ "markdown",
+ "markup5ever_rcdom",
+ "merman",
+ "portable-pty",
+ "raw-window-handle",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "tempfile",
+ "trash",
+ "tree-sitter",
+ "unicode-segmentation",
+ "url",
+ "uuid",
+ "windows-sys 0.61.2",
+ "winreg 0.10.1",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4252,42 +4288,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "536bfad37a309d62069485248eeaba1e8d9853aaf951caaeaed0585a95346f08"
 dependencies = [
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "markdown-note"
-version = "0.1.1"
-dependencies = [
- "alacritty_terminal",
- "chrono",
- "embed-resource",
- "flume 0.12.0",
- "futures",
- "gpui",
- "gpui-component",
- "gpui-component-assets",
- "gpui-terminal",
- "html5ever",
- "image",
- "libc",
- "markdown",
- "markup5ever_rcdom",
- "merman",
- "portable-pty",
- "raw-window-handle",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "smallvec",
- "tempfile",
- "trash",
- "tree-sitter",
- "unicode-segmentation",
- "url",
- "uuid",
- "windows-sys 0.61.2",
- "winreg 0.10.1",
 ]
 
 [[package]]
