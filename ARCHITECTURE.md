@@ -377,11 +377,14 @@ semantic edit/save/search queries instead of repurposing a command's predicate.
 
 Application branding is owned by [`assets/brand/README.md`](assets/brand/README.md)
 and [`scripts/build-icons.mjs`](scripts/build-icons.mjs), generated from the
-checked-in `assets/brand/markdown-note.svg` mark. Regeneration loads the optional
-Sharp dependency from `target/icon-tools` or an explicit dependency directory;
+checked-in `assets/brand/markdown-note-icon-source.png` notebook icon. The separate
+`markdown-note-wordmark.png` contains the approved logo with its name. Regeneration
+loads the optional Sharp dependency from `target/icon-tools` or an explicit dependency directory;
 normal builds require neither Node nor a website checkout. `build.rs` embeds
-Windows icon resource 1;
-release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
+Windows icon resource 1 from `assets/brand/markdown-note.ico` and watches that
+file for rebuilds. GPUI loads that resource into the native window class for the
+taskbar; a running or separately installed older executable retains its old icon.
+Release packaging includes the macOS ICNS and Linux PNG/desktop entry. Linux's
 launcher identity matches `WindowOptions::app_id` (`io.github.travisluong.MarkdownNote`).
 The title bar owns the sidebar button before the menus. Settings → Toolbar → Top
 bar controls `toolbar.title_bar_sidebar` and `toolbar.title_bar_terminal` (both

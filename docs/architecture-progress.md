@@ -3002,3 +3002,29 @@ published Markdown Note package.
   publication. No packaged binary release has been published. Native desktop
   appearance and installer install, upgrade and uninstall behavior remain
   manual validation; no desktop UI or installer was launched by the agent.
+
+## Pocket branding and Windows icon verification (2026-09-29)
+
+- Moved the approved dark brown and cream Pocket notebook artwork into this
+  repository. The straight horizontal strap and lowercase wordmark are retained
+  in the source assets. The README and generated desktop icons use the new mark;
+  the former silver monogram SVG is removed.
+- `scripts/build-icons.mjs` now reads the checked-in icon source PNG and continues
+  to produce the 512px PNG, seven ICO resolutions and eleven ICNS images. Its
+  optional Sharp dependency and ordinary Cargo build requirements are unchanged.
+- The earlier taskbar export was saved only in the other application's repository
+  and never replaced Markdown Note's production assets. Existing `build.rs`,
+  resource ID 1, GPUI window-class icon loading and installer references were
+  already correct; no runtime workaround was needed.
+- `cargo build --locked --bin markdown-note` and
+  `cargo build --locked --release --bin markdown-note` passed. Headless Win32
+  resource inspection of both executables confirmed group-icon resource 1 and
+  all seven embedded image payloads match the new ICO byte-for-byte.
+- Decoding verified the source PNG, 512px application PNG, all seven ICO frames
+  (16, 24, 32, 48, 64, 128 and 256px), and all eleven ICNS frames (16 through
+  1024px), including transparency and clear corners. Script syntax and whitespace
+  checks passed. The existing `proc-macro-error2` future-incompatibility warning
+  remains unrelated to branding.
+- No application, installer or desktop controls were launched. Native taskbar
+  appearance remains a manual check using a rebuilt executable; older installed
+  copies and pinned shortcuts may still refer to an earlier build.

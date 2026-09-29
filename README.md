@@ -1,3 +1,5 @@
+<img src="assets/brand/markdown-note.png" alt="Markdown Note notebook logo" width="96" height="96" />
+
 # Markdown Note
 
 A free, open-source desktop app for notes, journals, and documentation in

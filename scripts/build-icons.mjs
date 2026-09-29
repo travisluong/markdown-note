@@ -10,8 +10,8 @@ const dependencies = resolve(process.argv[2] ?? fileURLToPath(new URL('../target
 const sharp = createRequire(resolve(dependencies, 'package.json'))('sharp');
 const output = fileURLToPath(new URL('../assets/brand/', import.meta.url));
 await mkdir(output, { recursive: true });
-const mark = await readFile(resolve(output, 'markdown-note.svg'));
-const png = (size) => sharp(mark, { density: 1536 }).resize(size, size).png().toBuffer();
+const mark = await readFile(resolve(output, 'markdown-note-icon-source.png'));
+const png = (size) => sharp(mark).resize(size, size).png().toBuffer();
 await writeFile(resolve(output, 'markdown-note.png'), await png(512));
 
 const sizes = [16, 24, 32, 48, 64, 128, 256];
@@ -48,4 +48,4 @@ const icns = Buffer.alloc(8);
 icns.write('icns');
 icns.writeUInt32BE(8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0), 4);
 await writeFile(resolve(output, 'markdown-note.icns'), Buffer.concat([icns, ...chunks]));
-console.log('Generated desktop icons from assets/brand/markdown-note.svg.');
+console.log('Generated desktop icons from assets/brand/markdown-note-icon-source.png.');
