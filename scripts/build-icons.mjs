@@ -1,17 +1,16 @@
-// Run: node scripts/build-icons.mjs ../markdown-note-astro-poc
-// Uses the marketing repository's installed sharp dependency; Cargo builds use
-// only the checked-in outputs and do not need Node or the marketing repository.
+// Run: npm install --prefix target/icon-tools sharp
+//      node scripts/build-icons.mjs [dependency-directory]
+// Cargo builds use checked-in icons and do not need Node or sharp.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const marketing = resolve(process.argv[2] ?? '../markdown-note-astro-poc');
-const sharp = createRequire(resolve(marketing, 'package.json'))('sharp');
+const dependencies = resolve(process.argv[2] ?? fileURLToPath(new URL('../target/icon-tools/', import.meta.url)));
+const sharp = createRequire(resolve(dependencies, 'package.json'))('sharp');
 const output = fileURLToPath(new URL('../assets/brand/', import.meta.url));
 await mkdir(output, { recursive: true });
-const mark = await readFile(resolve(marketing, 'public/brand/markdown-note-mark.svg'));
-await writeFile(resolve(output, 'markdown-note.svg'), mark);
+const mark = await readFile(resolve(output, 'markdown-note.svg'));
 const png = (size) => sharp(mark, { density: 1536 }).resize(size, size).png().toBuffer();
 await writeFile(resolve(output, 'markdown-note.png'), await png(512));
 
@@ -49,4 +48,4 @@ const icns = Buffer.alloc(8);
 icns.write('icns');
 icns.writeUInt32BE(8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0), 4);
 await writeFile(resolve(output, 'markdown-note.icns'), Buffer.concat([icns, ...chunks]));
-console.log('Generated desktop icons from the marketing logo.');
+console.log('Generated desktop icons from assets/brand/markdown-note.svg.');
